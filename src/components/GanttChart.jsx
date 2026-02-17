@@ -29,10 +29,14 @@ const GanttChart = ({ tasks, viewMode = 'week' }) => {
       containerRef.current.style.height = `${tasks.length * 40}px`;
     }
 
-    // Prepare chart data
-    const chartData = tasks.map(task => {
+    // Separate tasks and milestones for different rendering
+    const regularTasks = tasks.filter(t => t.type !== 'Milestone');
+    const milestones = tasks.filter(t => t.type === 'Milestone');
+    
+    // Prepare regular task data (bars)
+    const taskData = regularTasks.map(task => {
       const startTime = new Date(task.start).getTime();
-      const duration = (task.dur || 0.5) * 86400000; // Convert days to milliseconds
+      const duration = (task.dur || 0.5) * 86400000;
       const endTime = startTime + duration;
 
       return {
@@ -43,6 +47,14 @@ const GanttChart = ({ tasks, viewMode = 'week' }) => {
       };
     });
 
+    // Prepare milestone data (points)
+    const milestoneData = milestones.map(task => ({
+      x: new Date(task.start).getTime(),
+      y: task.name,
+      pct: task.pct,
+      type: task.type
+    }));
+
     // Destroy existing charts
     if (chartInstanceRef.current) {
       chartInstanceRef.current.destroy();
@@ -51,23 +63,45 @@ const GanttChart = ({ tasks, viewMode = 'week' }) => {
       axisInstanceRef.current.destroy();
     }
 
+    // Create datasets
+    const datasets = [];
+    
+    // Regular tasks dataset
+    if (taskData.length > 0) {
+      datasets.push({
+        type: 'bar',
+        data: taskData,
+        backgroundColor: (context) => {
+          const raw = context.raw;
+          if (raw?.pct === 100) return '#10B981';
+          if (raw?.pct > 0) return '#6366F1';
+          return '#E2E8F0';
+        },
+        borderRadius: 8,
+        barPercentage: 0.55
+      });
+    }
+
+    // Milestones dataset (as scatter points)
+    if (milestoneData.length > 0) {
+      datasets.push({
+        type: 'scatter',
+        data: milestoneData,
+        backgroundColor: '#F59E0B',
+        borderColor: '#D97706',
+        borderWidth: 2,
+        pointStyle: 'rectRot', // Diamond shape
+        radius: 8,
+        hoverRadius: 10
+      });
+    }
+
     // Create main Gantt chart
     chartInstanceRef.current = new Chart(canvasRef.current, {
       type: 'bar',
       data: {
         labels: tasks.map(t => t.name),
-        datasets: [{
-          data: chartData,
-          backgroundColor: (context) => {
-            const raw = context.raw;
-            if (raw?.type === 'Milestone') return '#F59E0B';
-            if (raw?.pct === 100) return '#10B981';
-            if (raw?.pct > 0) return '#6366F1';
-            return '#E2E8F0';
-          },
-          borderRadius: 8,
-          barPercentage: 0.55
-        }]
+        datasets: datasets
       },
       options: {
         indexAxis: 'y',
@@ -78,7 +112,18 @@ const GanttChart = ({ tasks, viewMode = 'week' }) => {
           tooltip: {
             callbacks: {
               label: (context) => {
-                const task = tasks[context.dataIndex];
+                const taskName = context.label;
+                const task = tasks.find(t => t.name === taskName);
+                if (!task) return '';
+                
+                if (task.type === 'Milestone') {
+                  return [
+                    `Milestone: ${task.name}`,
+                    `Date: ${task.start}`,
+                    `Progress: ${task.pct}%`
+                  ];
+                }
+                
                 return [
                   `Task: ${task.name}`,
                   `Start: ${task.start}`,
@@ -94,6 +139,14 @@ const GanttChart = ({ tasks, viewMode = 'week' }) => {
             type: 'time',
             min: minDate.getTime(),
             max: maxDate.getTime(),
+            time: {
+              unit: viewMode === 'week' ? 'day' : (viewMode === '2week' ? 'week' : 'month'),
+              displayFormats: {
+                day: 'MMM d',
+                week: 'MMM d',
+                month: 'MMM yyyy'
+              }
+            },
             display: false
           },
           y: {
@@ -123,6 +176,14 @@ const GanttChart = ({ tasks, viewMode = 'week' }) => {
             min: minDate.getTime(),
             max: maxDate.getTime(),
             position: 'top',
+            time: {
+              unit: viewMode === 'week' ? 'day' : (viewMode === '2week' ? 'week' : 'month'),
+              displayFormats: {
+                day: 'MMM d',
+                week: 'MMM d',
+                month: 'MMM yyyy'
+              }
+            },
             ticks: {
               font: {
                 size: 10,

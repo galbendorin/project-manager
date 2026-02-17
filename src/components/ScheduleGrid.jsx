@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { getFinishDate } from '../utils/helpers';
 import { ICONS } from '../utils/constants';
 
@@ -11,6 +11,21 @@ const ScheduleGrid = ({
   onInsertTask
 }) => {
   const [editingCell, setEditingCell] = useState(null);
+  const [columnWidths, setColumnWidths] = useState({
+    id: 50,
+    name: 250,
+    dep: 60,
+    type: 80,
+    dur: 60,
+    start: 120,
+    finish: 120,
+    pct: 60,
+    track: 80,
+    actions: 150
+  });
+  const [resizing, setResizing] = useState(null);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
 
   const handleCellEdit = (taskId, field, value) => {
     let processedValue = value;
@@ -31,6 +46,41 @@ const ScheduleGrid = ({
     
     setEditingCell(null);
   };
+
+  // Column resize handlers
+  const handleResizeStart = (e, column) => {
+    e.preventDefault();
+    setResizing(column);
+    startX.current = e.clientX;
+    startWidth.current = columnWidths[column];
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (resizing) {
+        const diff = e.clientX - startX.current;
+        const newWidth = Math.max(40, startWidth.current + diff);
+        setColumnWidths(prev => ({
+          ...prev,
+          [resizing]: newWidth
+        }));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setResizing(null);
+    };
+
+    if (resizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizing]);
 
   const EditableCell = ({ task, field, children, className = "" }) => {
     const isEditing = editingCell === `${task.id}-${field}`;
@@ -89,31 +139,81 @@ const ScheduleGrid = ({
           />
         );
       }
-      return <td className={className}>{input}</td>;
+      return <td className={className} style={{ width: `${columnWidths[field]}px` }}>{input}</td>;
     }
 
     return (
-      <td className={`${className} editable`} onClick={handleClick}>
+      <td className={`${className} editable`} onClick={handleClick} style={{ width: `${columnWidths[field]}px` }}>
         {children}
       </td>
     );
   };
 
+  const ResizeHandle = ({ column }) => (
+    <div
+      className="resizer"
+      onMouseDown={(e) => handleResizeStart(e, column)}
+      style={{ 
+        position: 'absolute',
+        right: 0,
+        top: 0,
+        width: '5px',
+        height: '100%',
+        cursor: 'col-resize',
+        background: resizing === column ? '#6366F1' : 'transparent',
+        zIndex: 10
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = '#CBD5E1'}
+      onMouseLeave={(e) => {
+        if (resizing !== column) e.currentTarget.style.background = 'transparent';
+      }}
+    />
+  );
+
   return (
     <div className="flex-grow overflow-auto custom-scrollbar" id="grid-scroll">
-      <table className="w-full">
+      <table className="w-full" style={{ tableLayout: 'fixed' }}>
         <thead className="gantt-header">
           <tr>
-            <th className="w-10 text-center">ID</th>
-            <th className="w-64">Name</th>
-            <th className="w-12 text-center">Dep</th>
-            <th className="w-16 text-center">Typ</th>
-            <th className="w-12 text-center">Dur</th>
-            <th className="w-24">Start</th>
-            <th className="w-24 text-slate-400">Finish</th>
-            <th className="w-12 text-center">%</th>
-            <th className="w-16 text-center">Track</th>
-            <th className="w-32 text-center">Actions</th>
+            <th style={{ width: `${columnWidths.id}px`, position: 'relative' }} className="text-center">
+              ID
+              <ResizeHandle column="id" />
+            </th>
+            <th style={{ width: `${columnWidths.name}px`, position: 'relative' }}>
+              Name
+              <ResizeHandle column="name" />
+            </th>
+            <th style={{ width: `${columnWidths.dep}px`, position: 'relative' }} className="text-center">
+              Dep
+              <ResizeHandle column="dep" />
+            </th>
+            <th style={{ width: `${columnWidths.type}px`, position: 'relative' }} className="text-center">
+              Typ
+              <ResizeHandle column="type" />
+            </th>
+            <th style={{ width: `${columnWidths.dur}px`, position: 'relative' }} className="text-center">
+              Dur
+              <ResizeHandle column="dur" />
+            </th>
+            <th style={{ width: `${columnWidths.start}px`, position: 'relative' }}>
+              Start
+              <ResizeHandle column="start" />
+            </th>
+            <th style={{ width: `${columnWidths.finish}px`, position: 'relative' }} className="text-slate-400">
+              Finish
+              <ResizeHandle column="finish" />
+            </th>
+            <th style={{ width: `${columnWidths.pct}px`, position: 'relative' }} className="text-center">
+              %
+              <ResizeHandle column="pct" />
+            </th>
+            <th style={{ width: `${columnWidths.track}px`, position: 'relative' }} className="text-center">
+              Track
+              <ResizeHandle column="track" />
+            </th>
+            <th style={{ width: `${columnWidths.actions}px`, position: 'relative' }} className="text-center">
+              Actions
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -123,14 +223,14 @@ const ScheduleGrid = ({
 
             return (
               <tr key={task.id} className="gantt-row group hover:bg-slate-50 transition-colors">
-                <td className="text-center font-mono font-bold text-slate-300 border-r border-slate-100 text-[10px]">
+                <td style={{ width: `${columnWidths.id}px` }} className="text-center font-mono font-bold text-slate-300 border-r border-slate-100 text-[10px]">
                   {task.id}
                 </td>
                 
                 <EditableCell task={task} field="name" className="border-r border-slate-100">
                   <div style={{ paddingLeft: `${(task.indent || 0) * 16}px` }} className="flex items-center gap-2">
-                    <span className={`text-[10px] ${isMilestone ? 'text-amber-500 font-black' : 'text-slate-300'}`}>
-                      {isMilestone ? '◆' : (task.indent > 0 ? '└' : '-')}
+                    <span className={`text-[12px] ${isMilestone ? 'text-amber-500' : 'text-slate-300'}`}>
+                      {isMilestone ? '⭐' : (task.indent > 0 ? '└' : '—')}
                     </span>
                     <span className="font-bold tracking-tight truncate">{task.name}</span>
                   </div>
@@ -152,7 +252,7 @@ const ScheduleGrid = ({
                   {task.start}
                 </EditableCell>
 
-                <td className="text-slate-400 font-mono text-[10px] border-r border-slate-100 bg-slate-50/30">
+                <td style={{ width: `${columnWidths.finish}px` }} className="text-slate-400 font-mono text-[10px] border-r border-slate-100 bg-slate-50/30">
                   {finishDate}
                 </td>
 
@@ -160,7 +260,7 @@ const ScheduleGrid = ({
                   {task.pct}%
                 </EditableCell>
 
-                <td className="text-center border-r border-slate-100">
+                <td style={{ width: `${columnWidths.track}px` }} className="text-center border-r border-slate-100">
                   <input
                     type="checkbox"
                     checked={task.tracked || false}
@@ -169,7 +269,7 @@ const ScheduleGrid = ({
                   />
                 </td>
 
-                <td className="text-center">
+                <td style={{ width: `${columnWidths.actions}px` }} className="text-center">
                   <div className="flex justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => onModifyHierarchy(task.id, -1)}

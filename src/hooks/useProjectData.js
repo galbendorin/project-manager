@@ -1,11 +1,13 @@
-import { useState, useCallback } from 'react';
-import { calculateSchedule, getNextId, getCurrentDate, getFinishDate } from '../utils/helpers';
-import { DEFAULT_TASK } from '../utils/constants';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { calculateSchedule, getNextId, getCurrentDate, getFinishDate, keyGen } from '../utils/helpers';
+import { DEFAULT_TASK, SCHEMAS } from '../utils/constants';
+import { supabase } from '../lib/supabase';
 
 /**
  * Custom hook for managing project data (tasks and registers)
+ * Now with Supabase persistence
  */
-export const useProjectData = () => {
+export const useProjectData = (projectId) => {
   const [projectData, setProjectData] = useState([]);
   const [registers, setRegisters] = useState({
     risks: [],
@@ -16,6 +18,79 @@ export const useProjectData = () => {
     changes: [],
     comms: []
   });
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [loadingData, setLoadingData] = useState(true);
+
+  // Track whether initial load is complete to avoid saving on load
+  const initialLoadDone = useRef(false);
+  const saveTimeoutRef = useRef(null);
+
+  // Load project data from Supabase
+  useEffect(() => {
+    if (!projectId) return;
+
+    const loadProject = async () => {
+      setLoadingData(true);
+      initialLoadDone.current = false;
+
+      const { data, error } = await supabase
+        .from('projects')
+        .select('tasks, registers')
+        .eq('id', projectId)
+        .single();
+
+      if (!error && data) {
+        setProjectData(data.tasks || []);
+        setRegisters(data.registers || {
+          risks: [], issues: [], actions: [],
+          minutes: [], costs: [], changes: [], comms: []
+        });
+      }
+
+      setLoadingData(false);
+      // Small delay to prevent the initial setState from triggering a save
+      setTimeout(() => {
+        initialLoadDone.current = true;
+      }, 500);
+    };
+
+    loadProject();
+  }, [projectId]);
+
+  // Auto-save to Supabase (debounced)
+  useEffect(() => {
+    if (!projectId || !initialLoadDone.current) return;
+
+    // Clear previous timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Debounce: save 1.5 seconds after last change
+    saveTimeoutRef.current = setTimeout(async () => {
+      setSaving(true);
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          tasks: projectData,
+          registers: registers,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', projectId);
+
+      if (!error) {
+        setLastSaved(new Date());
+      }
+      setSaving(false);
+    }, 1500);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [projectData, registers, projectId]);
 
   // Add a new task
   const addTask = useCallback((taskData, insertAfterId = null) => {
@@ -207,7 +282,7 @@ export const useProjectData = () => {
   // Register management functions
   const addRegisterItem = useCallback((registerType, itemData = {}) => {
     setRegisters(prev => {
-      const schema = require('../utils/constants').SCHEMAS[registerType];
+      const schema = SCHEMAS[registerType];
       const newItem = {
         _id: Date.now().toString(),
         public: true,
@@ -216,7 +291,7 @@ export const useProjectData = () => {
 
       // Initialize all columns with default values
       schema.cols.forEach(col => {
-        const key = require('../utils/helpers').keyGen(col);
+        const key = keyGen(col);
         if (col === "Visible") return;
         if (col === "Number") {
           newItem[key] = prev[registerType].length + 1;
@@ -262,6 +337,9 @@ export const useProjectData = () => {
   return {
     projectData,
     registers,
+    saving,
+    lastSaved,
+    loadingData,
     addTask,
     updateTask,
     deleteTask,
