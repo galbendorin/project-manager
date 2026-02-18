@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { getFinishDate } from '../utils/helpers';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { getFinishDate, calculateCriticalPath } from '../utils/helpers';
 import { ICONS } from '../utils/constants';
 
 const ScheduleGrid = ({ 
@@ -27,17 +27,17 @@ const ScheduleGrid = ({
   const startX = useRef(0);
   const startWidth = useRef(0);
 
+  const criticalPathIds = useMemo(() => calculateCriticalPath(tasks), [tasks]);
+
   const handleCellEdit = (taskId, field, value) => {
     let processedValue = value;
     
-    // Process value based on field type
     if (field === 'dur' || field === 'pct') {
       processedValue = value === "" ? 0 : parseInt(value) || 0;
     } else if (field === 'parent') {
       processedValue = value === "" ? null : parseInt(value) || null;
     }
 
-    // Auto-set duration to 0 for milestones
     if (field === 'type' && value === 'Milestone') {
       onUpdateTask(taskId, { [field]: processedValue, dur: 0 });
     } else {
@@ -47,7 +47,6 @@ const ScheduleGrid = ({
     setEditingCell(null);
   };
 
-  // Column resize handlers
   const handleResizeStart = (e, column) => {
     e.preventDefault();
     setResizing(column);
@@ -220,19 +219,35 @@ const ScheduleGrid = ({
           {tasks.map(task => {
             const finishDate = getFinishDate(task.start, task.dur);
             const isMilestone = task.type === 'Milestone';
+            const isCritical = criticalPathIds.has(task.id);
 
             return (
-              <tr key={task.id} className="gantt-row group hover:bg-slate-50 transition-colors">
-                <td style={{ width: `${columnWidths.id}px` }} className="text-center font-mono font-bold text-slate-300 border-r border-slate-100 text-[10px]">
+              <tr 
+                key={task.id} 
+                className="gantt-row group hover:bg-slate-50 transition-colors"
+              >
+                <td 
+                  style={{ width: `${columnWidths.id}px` }} 
+                  className="text-center font-mono font-bold text-slate-300 border-r border-slate-100 text-[10px]"
+                >
                   {task.id}
                 </td>
                 
                 <EditableCell task={task} field="name" className="border-r border-slate-100">
                   <div style={{ paddingLeft: `${(task.indent || 0) * 16}px` }} className="flex items-center gap-2">
-                    <span className={`text-[12px] ${isMilestone ? 'text-amber-500' : 'text-slate-300'}`}>
+                    <span className={`text-[12px] ${
+                      isMilestone ? 'text-amber-500' : 'text-slate-300'
+                    }`}>
                       {isMilestone ? '⭐' : (task.indent > 0 ? '└' : '—')}
                     </span>
-                    <span className="font-bold tracking-tight truncate">{task.name}</span>
+                    <span className="font-bold tracking-tight truncate">
+                      {task.name}
+                    </span>
+                    {isCritical && (
+                      <span className="text-[8px] font-black text-purple-600 bg-purple-100 px-1 rounded flex-shrink-0">
+                        CP
+                      </span>
+                    )}
                   </div>
                 </EditableCell>
 

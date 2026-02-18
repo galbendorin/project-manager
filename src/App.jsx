@@ -10,13 +10,11 @@ import ScheduleView from './components/ScheduleView';
 import RegisterView from './components/RegisterView';
 import TaskModal from './components/TaskModal';
 import { useProjectData } from './hooks/useProjectData';
-import './styles/index.css';
 
 function App() {
   const { user, loading: authLoading } = useAuth();
   const [currentProject, setCurrentProject] = useState(null);
 
-  // Show loading while checking auth
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -25,17 +23,14 @@ function App() {
     );
   }
 
-  // Show login if not authenticated
   if (!user) {
     return <AuthPage />;
   }
 
-  // Show project selector if no project is open
   if (!currentProject) {
     return <ProjectSelector onSelectProject={setCurrentProject} />;
   }
 
-  // Show main app with project loaded
   return (
     <MainApp
       project={currentProject}
@@ -55,6 +50,7 @@ function MainApp({ project, onBackToProjects }) {
   const {
     projectData,
     registers,
+    baseline,
     saving,
     lastSaved,
     loadingData,
@@ -64,6 +60,8 @@ function MainApp({ project, onBackToProjects }) {
     modifyHierarchy,
     toggleTrackTask,
     loadTemplate,
+    setBaseline,
+    clearBaseline,
     addRegisterItem,
     updateRegisterItem,
     deleteRegisterItem,
@@ -104,11 +102,13 @@ function MainApp({ project, onBackToProjects }) {
     Object.keys(registers).forEach(key => {
       if (registers[key].length > 0) {
         const schema = SCHEMAS[key];
-        XLSX.utils.book_append_sheet(
-          wb,
-          XLSX.utils.json_to_sheet(registers[key]),
-          schema.title
-        );
+        if (schema) {
+          XLSX.utils.book_append_sheet(
+            wb,
+            XLSX.utils.json_to_sheet(registers[key]),
+            schema.title
+          );
+        }
       }
     });
 
@@ -116,7 +116,6 @@ function MainApp({ project, onBackToProjects }) {
     XLSX.writeFile(wb, fileName);
   };
 
-  // Show loading while data loads from Supabase
   if (loadingData) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -162,6 +161,7 @@ function MainApp({ project, onBackToProjects }) {
         onExport={handleExport}
         onNewTask={() => handleOpenModal()}
         onAddRegisterItem={() => addRegisterItem(activeTab)}
+        onSetBaseline={setBaseline}
         activeTab={activeTab}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -177,6 +177,7 @@ function MainApp({ project, onBackToProjects }) {
           <ScheduleView
             tasks={projectData}
             viewMode={viewMode}
+            baseline={baseline}
             onUpdateTask={updateTask}
             onDeleteTask={deleteTask}
             onModifyHierarchy={modifyHierarchy}

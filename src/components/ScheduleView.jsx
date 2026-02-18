@@ -5,6 +5,7 @@ import GanttChart from './GanttChart';
 const ScheduleView = ({ 
   tasks,
   viewMode,
+  baseline,
   onUpdateTask,
   onDeleteTask,
   onModifyHierarchy,
@@ -110,7 +111,7 @@ const ScheduleView = ({
 
       {/* Right Panel - Gantt Chart */}
       <div ref={chartScrollRef}>
-        <GanttChart tasks={tasks} viewMode={viewMode} />
+        <GanttChart tasks={tasks} viewMode={viewMode} baseline={baseline} />
       </div>
     </div>
   );

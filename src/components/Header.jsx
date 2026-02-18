@@ -9,6 +9,7 @@ const Header = ({
   onExport,
   onNewTask,
   onAddRegisterItem,
+  onSetBaseline,
   activeTab,
   viewMode,
   onViewModeChange
@@ -34,11 +35,7 @@ const Header = ({
           onClick={onToggleExternalView}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 border-slate-200 text-slate-500 text-[10px] font-bold uppercase transition-all hover:bg-slate-50"
         >
-          <div 
-            className={`w-2 h-2 rounded-full transition-colors ${
-              isExternalView ? 'bg-emerald-500' : 'bg-slate-300'
-            }`}
-          />
+          <div className={`w-2 h-2 rounded-full transition-colors ${isExternalView ? 'bg-emerald-500' : 'bg-slate-300'}`} />
           External View
         </button>
 
@@ -49,6 +46,13 @@ const Header = ({
               className="text-[10px] font-bold uppercase text-slate-500 bg-white border border-slate-200 hover:border-indigo-300 px-3 py-1.5 rounded-lg transition-all"
             >
               Template
+            </button>
+            <button
+              onClick={onSetBaseline}
+              className="text-[10px] font-bold uppercase text-slate-500 bg-white border border-slate-200 hover:border-purple-300 hover:text-purple-600 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1"
+              title="Snapshot current dates as baseline"
+            >
+              Baseline
             </button>
             <div className="h-6 w-px bg-slate-200 mx-1" />
             <select

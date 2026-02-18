@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 
 /**
  * Custom hook for managing project data (tasks and registers)
- * Now with Supabase persistence
+ * With Supabase persistence and baseline support
  */
 export const useProjectData = (projectId) => {
   const [projectData, setProjectData] = useState([]);
@@ -18,11 +18,11 @@ export const useProjectData = (projectId) => {
     changes: [],
     comms: []
   });
+  const [baseline, setBaselineState] = useState(null);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
 
-  // Track whether initial load is complete to avoid saving on load
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef(null);
 
@@ -36,7 +36,7 @@ export const useProjectData = (projectId) => {
 
       const { data, error } = await supabase
         .from('projects')
-        .select('tasks, registers')
+        .select('tasks, registers, baseline')
         .eq('id', projectId)
         .single();
 
@@ -46,10 +46,10 @@ export const useProjectData = (projectId) => {
           risks: [], issues: [], actions: [],
           minutes: [], costs: [], changes: [], comms: []
         });
+        setBaselineState(data.baseline || null);
       }
 
       setLoadingData(false);
-      // Small delay to prevent the initial setState from triggering a save
       setTimeout(() => {
         initialLoadDone.current = true;
       }, 500);
@@ -62,21 +62,25 @@ export const useProjectData = (projectId) => {
   useEffect(() => {
     if (!projectId || !initialLoadDone.current) return;
 
-    // Clear previous timeout
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // Debounce: save 1.5 seconds after last change
     saveTimeoutRef.current = setTimeout(async () => {
       setSaving(true);
+      const updateData = {
+        tasks: projectData,
+        registers: registers,
+        updated_at: new Date().toISOString()
+      };
+      // Only include baseline if it exists
+      if (baseline !== undefined) {
+        updateData.baseline = baseline;
+      }
+
       const { error } = await supabase
         .from('projects')
-        .update({
-          tasks: projectData,
-          registers: registers,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', projectId);
 
       if (!error) {
@@ -90,7 +94,23 @@ export const useProjectData = (projectId) => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [projectData, registers, projectId]);
+  }, [projectData, registers, baseline, projectId]);
+
+  // Set baseline - snapshot current task dates
+  const setBaseline = useCallback(() => {
+    const baselineData = projectData.map(task => ({
+      id: task.id,
+      start: task.start,
+      dur: task.dur,
+      finish: getFinishDate(task.start, task.dur)
+    }));
+    setBaselineState(baselineData);
+  }, [projectData]);
+
+  // Clear baseline
+  const clearBaseline = useCallback(() => {
+    setBaselineState(null);
+  }, []);
 
   // Add a new task
   const addTask = useCallback((taskData, insertAfterId = null) => {
@@ -126,7 +146,6 @@ export const useProjectData = (projectId) => {
   const deleteTask = useCallback((taskId) => {
     setProjectData(prev => prev.filter(t => t.id !== taskId));
     
-    // Remove tracked action if exists
     setRegisters(prev => ({
       ...prev,
       actions: prev.actions.filter(a => a._id !== `track_${taskId}`)
@@ -283,13 +302,14 @@ export const useProjectData = (projectId) => {
   const addRegisterItem = useCallback((registerType, itemData = {}) => {
     setRegisters(prev => {
       const schema = SCHEMAS[registerType];
+      if (!schema) return prev;
+      
       const newItem = {
         _id: Date.now().toString(),
         public: true,
         visible: true
       };
 
-      // Initialize all columns with default values
       schema.cols.forEach(col => {
         const key = keyGen(col);
         if (col === "Visible") return;
@@ -337,6 +357,7 @@ export const useProjectData = (projectId) => {
   return {
     projectData,
     registers,
+    baseline,
     saving,
     lastSaved,
     loadingData,
@@ -347,6 +368,8 @@ export const useProjectData = (projectId) => {
     toggleTrackTask,
     updateTrackedActions,
     loadTemplate,
+    setBaseline,
+    clearBaseline,
     addRegisterItem,
     updateRegisterItem,
     deleteRegisterItem,
