@@ -7,6 +7,7 @@ const Header = ({
   onToggleExternalView, 
   onLoadTemplate,
   onExport,
+  onImport,
   onNewTask,
   onAddRegisterItem,
   onSetBaseline,
@@ -18,8 +19,8 @@ const Header = ({
 }) => {
   const [showBaselineMenu, setShowBaselineMenu] = useState(false);
   const menuRef = useRef(null);
+  const fileInputRef = useRef(null);
 
-  // Close menu on outside click
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
@@ -34,10 +35,8 @@ const Header = ({
 
   const handleSetBaseline = () => {
     if (hasBaseline) {
-      // Show menu for re-baseline / clear
       setShowBaselineMenu(!showBaselineMenu);
     } else {
-      // First time — set directly
       onSetBaseline();
     }
   };
@@ -50,6 +49,19 @@ const Header = ({
   const handleClearBaseline = () => {
     onClearBaseline();
     setShowBaselineMenu(false);
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onImport(file);
+      // Reset input so same file can be re-imported
+      e.target.value = '';
+    }
   };
 
   return (
@@ -86,6 +98,22 @@ const Header = ({
               Template
             </button>
 
+            {/* Import button */}
+            <button
+              onClick={handleImportClick}
+              className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+              title="Import from Excel (.xlsx)"
+            >
+              ↑ Import
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+
             {/* Baseline button with dropdown */}
             <div className="relative" ref={menuRef}>
               <button
@@ -106,7 +134,6 @@ const Header = ({
                 )}
               </button>
 
-              {/* Dropdown menu */}
               {showBaselineMenu && (
                 <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50 w-48">
                   <button

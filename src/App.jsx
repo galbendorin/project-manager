@@ -39,6 +39,105 @@ function App() {
   );
 }
 
+// ---------- Column name mapping helpers ----------
+
+const COLUMN_MAP_SCHEDULE = {
+  // Our export format
+  id: 'id', name: 'name', type: 'type', parent: 'parent',
+  deptype: 'depType', depType: 'depType', dur: 'dur', start: 'start',
+  pct: 'pct', indent: 'indent', tracked: 'tracked',
+  // SD-WAN / alternate format
+  'ID': 'id', 'Name': 'name', 'Type': 'type', 'Parent': 'parent',
+  'Dependency Type': 'depType', 'Duration': 'dur', 'Start': 'start',
+  '% Complete': 'pct', 'Indent Level': 'indent',
+  'Start Date': 'start', 'Progress': 'pct',
+  'Job Name': 'name', 'Task Name': 'name'
+};
+
+const COLUMN_MAP_RISKS = {
+  'ID': 'number', 'Category': 'category', 'Risk Details': 'riskdetails',
+  'Mitigating Action': 'mitigatingaction', 'Notes': 'notes',
+  'Raised': 'raised', 'Owner': 'owner', 'Level': 'level', 'Internal': '_internal'
+};
+
+const COLUMN_MAP_ISSUES = {
+  'ID': 'number', 'Category': 'category', 'Issue Assigned to': 'issueassignedto',
+  'Description': 'description', 'Current Status': 'currentstatus',
+  'Status': 'status', 'Raised': 'raised', 'Target': 'target',
+  'Updated': 'updated', 'Completed': 'completed', 'Internal': '_internal'
+};
+
+const COLUMN_MAP_ACTIONS = {
+  'ID': 'number', 'Description': 'description', 'Owner': 'actionassignedto',
+  'Due Date': 'target', 'Status': 'status', 'Internal': '_internal',
+  'Action Assigned to': 'actionassignedto', 'Current Status': 'currentstatus',
+  'Raised': 'raised', 'Target': 'target', 'Completed': 'completed'
+};
+
+const COLUMN_MAP_CHANGES = {
+  'ID': 'number', 'Description': 'description', 'Raised By': 'raisedby',
+  'Cost': 'cost', 'Time Impact': 'timeimpact', 'Status': 'status', 'Internal': '_internal'
+};
+
+const COLUMN_MAP_COMMS = {
+  'ID': 'number', 'Stakeholder': 'stakeholder', 'Info Required': 'inforequired',
+  'Frequency': 'frequency', 'Method': 'method', 'Provider': 'provider', 'Internal': '_internal'
+};
+
+function mapRow(row, columnMap) {
+  const mapped = {};
+  Object.entries(row).forEach(([key, value]) => {
+    const mappedKey = columnMap[key] || columnMap[key.trim()];
+    if (mappedKey) {
+      mapped[mappedKey] = value;
+    }
+  });
+  return mapped;
+}
+
+function parseScheduleSheet(rows) {
+  return rows.map((row, idx) => {
+    const mapped = mapRow(row, COLUMN_MAP_SCHEDULE);
+    return {
+      id: parseInt(mapped.id) || (idx + 1),
+      name: String(mapped.name || `Task ${idx + 1}`),
+      type: mapped.type === 'Milestone' ? 'Milestone' : 'Task',
+      parent: mapped.parent ? parseInt(mapped.parent) : null,
+      depType: mapped.depType || 'FS',
+      dur: parseInt(mapped.dur) || 0,
+      start: String(mapped.start || new Date().toISOString().split('T')[0]),
+      pct: parseInt(mapped.pct) || 0,
+      indent: parseInt(mapped.indent) || 0,
+      tracked: !!mapped.tracked
+    };
+  }).filter(t => t.name && t.name.trim());
+}
+
+function parseRegisterSheet(rows, columnMap) {
+  return rows.map((row, idx) => {
+    const mapped = mapRow(row, columnMap);
+    const isInternal = mapped._internal;
+    delete mapped._internal;
+    return {
+      _id: String(mapped.number || Date.now() + idx),
+      number: parseInt(mapped.number) || (idx + 1),
+      visible: true,
+      public: !isInternal,
+      ...mapped
+    };
+  });
+}
+
+// Sheet name matching
+function findSheet(sheetNames, candidates) {
+  const lower = sheetNames.map(s => s.toLowerCase());
+  for (const c of candidates) {
+    const idx = lower.indexOf(c.toLowerCase());
+    if (idx !== -1) return sheetNames[idx];
+  }
+  return null;
+}
+
 function MainApp({ project, onBackToProjects }) {
   const [activeTab, setActiveTab] = useState('schedule');
   const [viewMode, setViewMode] = useState('week');
@@ -46,6 +145,7 @@ function MainApp({ project, onBackToProjects }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [insertAfterId, setInsertAfterId] = useState(null);
+  const [importStatus, setImportStatus] = useState(null);
 
   const {
     projectData,
@@ -65,7 +165,9 @@ function MainApp({ project, onBackToProjects }) {
     addRegisterItem,
     updateRegisterItem,
     deleteRegisterItem,
-    toggleItemPublic
+    toggleItemPublic,
+    setProjectData,
+    setRegisters
   } = useProjectData(project.id);
 
   // Modal handlers
@@ -86,6 +188,96 @@ function MainApp({ project, onBackToProjects }) {
       updateTask(editingTask.id, taskData);
     } else {
       addTask(taskData, insertAfterId);
+    }
+  };
+
+  // Excel Import handler
+  const handleImport = async (file) => {
+    try {
+      setImportStatus('Importing...');
+      
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+      const sheetNames = workbook.SheetNames;
+
+      // Find schedule sheet
+      const scheduleSheet = findSheet(sheetNames, ['Schedule', 'Tasks', 'Gantt', 'Sheet1']) || sheetNames[0];
+      const scheduleRows = XLSX.utils.sheet_to_json(workbook.Sheets[scheduleSheet], { raw: false });
+      
+      if (scheduleRows.length === 0) {
+        setImportStatus('No data found in file');
+        setTimeout(() => setImportStatus(null), 3000);
+        return;
+      }
+
+      const tasks = parseScheduleSheet(scheduleRows);
+
+      // Parse register sheets
+      const newRegisters = {
+        risks: [],
+        issues: [],
+        actions: [],
+        minutes: [],
+        costs: [],
+        changes: [],
+        comms: []
+      };
+
+      const risksSheet = findSheet(sheetNames, ['Risks', 'Risk Log', 'Risk Register']);
+      if (risksSheet) {
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[risksSheet], { raw: false });
+        newRegisters.risks = parseRegisterSheet(rows, COLUMN_MAP_RISKS);
+      }
+
+      const issuesSheet = findSheet(sheetNames, ['Issues', 'Issue Log', 'Issue Register']);
+      if (issuesSheet) {
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[issuesSheet], { raw: false });
+        newRegisters.issues = parseRegisterSheet(rows, COLUMN_MAP_ISSUES);
+      }
+
+      const actionsSheet = findSheet(sheetNames, ['Actions', 'Action Log', 'Action Register']);
+      if (actionsSheet) {
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[actionsSheet], { raw: false });
+        newRegisters.actions = parseRegisterSheet(rows, COLUMN_MAP_ACTIONS);
+      }
+
+      const changesSheet = findSheet(sheetNames, ['Changes', 'Change Log', 'Change Register']);
+      if (changesSheet) {
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[changesSheet], { raw: false });
+        newRegisters.changes = parseRegisterSheet(rows, COLUMN_MAP_CHANGES);
+      }
+
+      const commsSheet = findSheet(sheetNames, ['Comms', 'Comms Plan', 'Communications']);
+      if (commsSheet) {
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[commsSheet], { raw: false });
+        newRegisters.comms = parseRegisterSheet(rows, COLUMN_MAP_COMMS);
+      }
+
+      // Set the data
+      setProjectData(tasks);
+      setRegisters(prev => ({
+        ...prev,
+        ...Object.fromEntries(
+          Object.entries(newRegisters).map(([key, val]) => [key, val.length > 0 ? val : prev[key]])
+        )
+      }));
+
+      const summary = [
+        `${tasks.length} tasks`,
+        newRegisters.risks.length > 0 ? `${newRegisters.risks.length} risks` : null,
+        newRegisters.issues.length > 0 ? `${newRegisters.issues.length} issues` : null,
+        newRegisters.actions.length > 0 ? `${newRegisters.actions.length} actions` : null,
+        newRegisters.changes.length > 0 ? `${newRegisters.changes.length} changes` : null,
+        newRegisters.comms.length > 0 ? `${newRegisters.comms.length} comms` : null,
+      ].filter(Boolean).join(', ');
+
+      setImportStatus(`✓ Imported: ${summary}`);
+      setTimeout(() => setImportStatus(null), 5000);
+
+    } catch (err) {
+      console.error('Import error:', err);
+      setImportStatus('Import failed — check file format');
+      setTimeout(() => setImportStatus(null), 4000);
     }
   };
 
@@ -139,7 +331,11 @@ function MainApp({ project, onBackToProjects }) {
           <span className="text-white font-medium">{project.name}</span>
         </div>
         <div className="flex items-center gap-2">
-          {saving ? (
+          {importStatus ? (
+            <span className={`flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' ? 'text-blue-400' : 'text-amber-400'}`}>
+              {importStatus}
+            </span>
+          ) : saving ? (
             <span className="text-yellow-400 flex items-center gap-1">
               <span className="animate-pulse">●</span> Saving...
             </span>
@@ -159,6 +355,7 @@ function MainApp({ project, onBackToProjects }) {
         onToggleExternalView={() => setIsExternalView(!isExternalView)}
         onLoadTemplate={loadTemplate}
         onExport={handleExport}
+        onImport={handleImport}
         onNewTask={() => handleOpenModal()}
         onAddRegisterItem={() => addRegisterItem(activeTab)}
         onSetBaseline={setBaseline}
