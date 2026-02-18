@@ -15,78 +15,76 @@ const Header = ({
   onViewModeChange
 }) => {
   return (
-    <header className="flex-none bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center z-30 shadow-sm">
+    <header className="flex-none bg-white border-b border-slate-200 px-4 py-2 flex justify-between items-center z-30">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-100">
+        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
           P
         </div>
         <div>
-          <h1 className="text-sm font-black text-slate-900 leading-tight tracking-tight">
+          <h1 className="text-sm font-semibold text-slate-800 leading-tight">
             Project Management OS
           </h1>
-          <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">
-            <span className="text-indigo-600">{taskCount}</span> Tasks Active
+          <p className="text-[10px] text-slate-400 font-medium">
+            {taskCount} tasks
           </p>
         </div>
       </div>
       
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <button
           onClick={onToggleExternalView}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 border-slate-200 text-slate-500 text-[10px] font-bold uppercase transition-all hover:bg-slate-50"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-500 text-[11px] font-medium transition-all hover:bg-slate-50 hover:border-slate-300"
         >
-          <div className={`w-2 h-2 rounded-full transition-colors ${isExternalView ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+          <div className={`w-1.5 h-1.5 rounded-full ${isExternalView ? 'bg-emerald-500' : 'bg-slate-300'}`} />
           External View
         </button>
 
         {activeTab === 'schedule' ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={onLoadTemplate}
-              className="text-[10px] font-bold uppercase text-slate-500 bg-white border border-slate-200 hover:border-indigo-300 px-3 py-1.5 rounded-lg transition-all"
+              className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
             >
               Template
             </button>
             <button
               onClick={onSetBaseline}
-              className="text-[10px] font-bold uppercase text-slate-500 bg-white border border-slate-200 hover:border-purple-300 hover:text-purple-600 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1"
+              className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-purple-300 hover:text-purple-600 hover:bg-purple-50 px-2.5 py-1.5 rounded-md transition-all"
               title="Snapshot current dates as baseline"
             >
               Baseline
             </button>
-            <div className="h-6 w-px bg-slate-200 mx-1" />
+            <div className="h-5 w-px bg-slate-200 mx-0.5" />
             <select
               value={viewMode}
               onChange={(e) => onViewModeChange(e.target.value)}
-              className="text-[10px] font-bold uppercase text-slate-600 bg-white border border-slate-200 px-2 py-1.5 rounded-lg outline-none cursor-pointer"
+              className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-1.5 rounded-md outline-none cursor-pointer hover:border-slate-300"
             >
-              <option value="week">Weekly View</option>
-              <option value="2week">Bi-Weekly</option>
+              <option value="week">1 Week</option>
+              <option value="2week">2 Weeks</option>
               <option value="month">Monthly</option>
             </select>
             <button
               onClick={onNewTask}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold py-1.5 px-5 rounded-lg shadow-lg transition-all flex items-center gap-2"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
             >
-              <div dangerouslySetInnerHTML={{ __html: ICONS.plus }} />
+              <span className="text-[13px] leading-none">+</span>
               New Task
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onAddRegisterItem}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1.5 px-5 rounded-lg shadow-lg transition-all flex items-center gap-2"
-            >
-              <div dangerouslySetInnerHTML={{ __html: ICONS.plus }} />
-              Add Entry
-            </button>
-          </div>
+          <button
+            onClick={onAddRegisterItem}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
+          >
+            <span className="text-[13px] leading-none">+</span>
+            Add Entry
+          </button>
         )}
 
         <button
           onClick={onExport}
-          className="bg-slate-800 hover:bg-black text-white text-[10px] font-bold py-1.5 px-4 rounded-lg transition-all shadow-md"
+          className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
         >
           Export
         </button>

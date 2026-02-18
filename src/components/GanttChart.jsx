@@ -3,7 +3,45 @@ import Chart from 'chart.js/auto';
 import 'chartjs-adapter-date-fns';
 import { getProjectDateRange, calculateCriticalPath } from '../utils/helpers';
 
-// Custom plugin to draw dependency lines and baseline ghost bars
+// Plugin: Draw alternating row backgrounds and gridlines
+const rowStripesPlugin = {
+  id: 'rowStripes',
+  beforeDatasetsDraw(chart) {
+    const { ctx, chartArea } = chart;
+    const yScale = chart.scales.y;
+    if (!yScale || !chartArea) return;
+
+    const labels = chart.data.labels || [];
+    if (labels.length === 0) return;
+
+    ctx.save();
+
+    for (let i = 0; i < labels.length; i++) {
+      const y = yScale.getPixelForValue(i);
+      const rowHeight = yScale.getPixelForValue(1) - yScale.getPixelForValue(0);
+      const halfRow = Math.abs(rowHeight) / 2;
+      const top = y - halfRow;
+
+      // Alternating background
+      if (i % 2 === 1) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, Math.abs(rowHeight));
+      }
+
+      // Row border line at bottom of each row
+      ctx.strokeStyle = '#f1f5f9';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(chartArea.left, top + Math.abs(rowHeight));
+      ctx.lineTo(chartArea.right, top + Math.abs(rowHeight));
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+};
+
+// Plugin: Draw dependency lines, baseline ghost bars
 const ganttOverlayPlugin = {
   id: 'ganttOverlay',
   afterDatasetsDraw(chart, args, options) {
@@ -22,7 +60,7 @@ const ganttOverlayPlugin = {
 
     ctx.save();
 
-    // --- Draw baseline ghost bars ---
+    // --- Baseline ghost bars ---
     if (baseline && baseline.length > 0) {
       const baselineMap = new Map(baseline.map(b => [b.id, b]));
 
@@ -35,7 +73,6 @@ const ganttOverlayPlugin = {
 
         const blStartX = xScale.getPixelForValue(new Date(bl.start).getTime());
         const blEndX = xScale.getPixelForValue(new Date(bl.start).getTime() + (bl.dur || 0) * 86400000);
-
         if (blStartX == null || blEndX == null) return;
 
         const ghostHeight = halfBar * 0.6;
@@ -53,12 +90,11 @@ const ganttOverlayPlugin = {
           ctx.fill();
           ctx.stroke();
         }
-
         ctx.setLineDash([]);
       });
     }
 
-    // --- Draw dependency lines ---
+    // --- Dependency lines ---
     tasks.forEach((task, taskIndex) => {
       if (!task.parent) return;
 
@@ -78,32 +114,17 @@ const ganttOverlayPlugin = {
 
       let fromX, toX;
       switch (depType) {
-        case 'FS':
-          fromX = xScale.getPixelForValue(predEnd);
-          toX = xScale.getPixelForValue(succStart);
-          break;
-        case 'SS':
-          fromX = xScale.getPixelForValue(predStart);
-          toX = xScale.getPixelForValue(succStart);
-          break;
-        case 'FF':
-          fromX = xScale.getPixelForValue(predEnd);
-          toX = xScale.getPixelForValue(succEnd);
-          break;
-        case 'SF':
-          fromX = xScale.getPixelForValue(predStart);
-          toX = xScale.getPixelForValue(succEnd);
-          break;
-        default:
-          fromX = xScale.getPixelForValue(predEnd);
-          toX = xScale.getPixelForValue(succStart);
+        case 'FS': fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succStart); break;
+        case 'SS': fromX = xScale.getPixelForValue(predStart); toX = xScale.getPixelForValue(succStart); break;
+        case 'FF': fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succEnd); break;
+        case 'SF': fromX = xScale.getPixelForValue(predStart); toX = xScale.getPixelForValue(succEnd); break;
+        default: fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succStart);
       }
       if (fromX == null || toX == null) return;
 
-      // Purple for critical path links, dark grey for others
       const isCriticalLink = criticalIds.has(task.id) && criticalIds.has(predTask.id);
-      ctx.strokeStyle = isCriticalLink ? '#7C3AED' : '#334155';
-      ctx.lineWidth = isCriticalLink ? 2 : 1.5;
+      ctx.strokeStyle = isCriticalLink ? '#7C3AED' : '#94a3b8';
+      ctx.lineWidth = isCriticalLink ? 2 : 1;
       ctx.setLineDash([]);
 
       const goingDown = succY > predY;
@@ -129,16 +150,15 @@ const ganttOverlayPlugin = {
         ctx.lineTo(jogX, endY);
         ctx.lineTo(endX - 2, endY);
       }
-
       ctx.stroke();
 
-      // Arrowhead - purple for critical, blue for normal
-      const arrowLen = 7;
-      const arrowWidth = 3.5;
+      // Arrowhead
+      const arrowLen = 6;
+      const arrowWidth = 3;
       const arrowX = Math.abs(succY - predY) < 2 ? toX - 2 : endX - 2;
       const arrowY = Math.abs(succY - predY) < 2 ? predY : endY;
 
-      ctx.fillStyle = isCriticalLink ? '#7C3AED' : '#3B82F6';
+      ctx.fillStyle = isCriticalLink ? '#7C3AED' : '#94a3b8';
       ctx.beginPath();
       ctx.moveTo(arrowX, arrowY);
       ctx.lineTo(arrowX - arrowLen, arrowY - arrowWidth);
@@ -151,8 +171,11 @@ const ganttOverlayPlugin = {
   }
 };
 
-// Register the plugin globally
+// Register plugins
+Chart.register(rowStripesPlugin);
 Chart.register(ganttOverlayPlugin);
+
+const ROW_HEIGHT = 36;
 
 const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
   const canvasRef = useRef(null);
@@ -174,9 +197,11 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
       ((maxDate - minDate) / 86400000) * pxPerDay
     );
 
+    const chartHeight = tasks.length * ROW_HEIGHT;
+
     if (containerRef.current) {
       containerRef.current.style.width = `${chartWidth}px`;
-      containerRef.current.style.height = `${tasks.length * 40}px`;
+      containerRef.current.style.height = `${chartHeight}px`;
     }
 
     const regularTasks = tasks.filter(t => t.type !== 'Milestone');
@@ -185,12 +210,10 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
     const taskData = regularTasks.map(task => {
       const startTime = new Date(task.start).getTime();
       const duration = (task.dur || 0.5) * 86400000;
-      const endTime = startTime + duration;
       return {
-        x: [startTime, endTime],
+        x: [startTime, startTime + duration],
         y: task.name,
         pct: task.pct,
-        type: task.type,
         taskId: task.id
       };
     });
@@ -198,8 +221,6 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
     const milestoneData = milestones.map(task => ({
       x: new Date(task.start).getTime(),
       y: task.name,
-      pct: task.pct,
-      type: task.type,
       taskId: task.id
     }));
 
@@ -208,34 +229,32 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
 
     const datasets = [];
 
-    // Standard bar colors - no red for critical path
     if (taskData.length > 0) {
       datasets.push({
         type: 'bar',
         data: taskData,
-        backgroundColor: (context) => {
-          const raw = context.raw;
-          if (!raw) return '#E2E8F0';
-          if (raw.pct === 100) return '#10B981';
-          if (raw.pct > 0) return '#6366F1';
-          return '#E2E8F0';
+        backgroundColor: (ctx) => {
+          const raw = ctx.raw;
+          if (!raw) return '#e2e8f0';
+          if (raw.pct === 100) return '#34d399';
+          if (raw.pct > 0) return '#6366f1';
+          return '#cbd5e1';
         },
-        borderRadius: 8,
-        barPercentage: 0.55
+        borderRadius: 4,
+        barPercentage: 0.5
       });
     }
 
-    // Standard milestone colors
     if (milestoneData.length > 0) {
       datasets.push({
         type: 'scatter',
         data: milestoneData,
-        backgroundColor: '#F59E0B',
-        borderColor: '#D97706',
+        backgroundColor: '#f59e0b',
+        borderColor: '#d97706',
         borderWidth: 2,
         pointStyle: 'rectRot',
-        radius: 8,
-        hoverRadius: 10
+        radius: 7,
+        hoverRadius: 9
       });
     }
 
@@ -243,46 +262,40 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
       type: 'bar',
       data: {
         labels: tasks.map(t => t.name),
-        datasets: datasets
+        datasets
       },
       options: {
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
+        layout: {
+          padding: { top: 0, bottom: 0 }
+        },
         plugins: {
           legend: { display: false },
           tooltip: {
+            backgroundColor: '#1e293b',
+            titleFont: { size: 11 },
+            bodyFont: { size: 11 },
+            padding: 8,
+            cornerRadius: 6,
             callbacks: {
               label: (context) => {
                 const taskName = context.label;
                 const task = tasks.find(t => t.name === taskName);
                 if (!task) return '';
-
                 const isCritical = criticalPathIds.has(task.id);
-
                 if (task.type === 'Milestone') {
-                  return [
-                    `Milestone: ${task.name}`,
-                    `Date: ${task.start}`,
-                    `Progress: ${task.pct}%`,
-                    ...(isCritical ? ['◆ Critical Path'] : [])
-                  ];
+                  return [`Milestone: ${task.name}`, `Date: ${task.start}`, ...(isCritical ? ['◆ Critical Path'] : [])];
                 }
-
-                return [
-                  `Task: ${task.name}`,
-                  `Start: ${task.start}`,
-                  `Duration: ${task.dur} days`,
-                  `Progress: ${task.pct}%`,
-                  ...(isCritical ? ['◆ Critical Path'] : [])
-                ];
+                return [`Task: ${task.name}`, `Start: ${task.start}`, `Duration: ${task.dur} days`, `Progress: ${task.pct}%`, ...(isCritical ? ['◆ Critical Path'] : [])];
               }
             }
           },
           ganttOverlay: {
-            tasks: tasks,
+            tasks,
             criticalIds: criticalPathIds,
-            baseline: baseline
+            baseline
           }
         },
         scales: {
@@ -292,19 +305,19 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
             max: maxDate.getTime(),
             time: {
               unit: viewMode === 'week' ? 'day' : (viewMode === '2week' ? 'week' : 'month'),
-              displayFormats: {
-                day: 'MMM d',
-                week: 'MMM d',
-                month: 'MMM yyyy'
-              }
+              displayFormats: { day: 'MMM d', week: 'MMM d', month: 'MMM yyyy' }
             },
             display: false
           },
-          y: { display: false }
+          y: {
+            display: false,
+            beginAtZero: true
+          }
         }
       }
     });
 
+    // Axis chart (timeline header)
     axisInstanceRef.current = new Chart(axisCanvasRef.current, {
       type: 'bar',
       data: { labels: [''], datasets: [] },
@@ -314,7 +327,8 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
         maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          ganttOverlay: false
+          ganttOverlay: false,
+          rowStripes: false
         },
         scales: {
           x: {
@@ -324,14 +338,16 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
             position: 'top',
             time: {
               unit: viewMode === 'week' ? 'day' : (viewMode === '2week' ? 'week' : 'month'),
-              displayFormats: {
-                day: 'MMM d',
-                week: 'MMM d',
-                month: 'MMM yyyy'
-              }
+              displayFormats: { day: 'MMM d', week: 'MMM d', month: 'MMM yyyy' }
             },
-            ticks: { font: { size: 10, weight: '800' }, color: '#94A3B8' },
-            grid: { color: '#F8FAFC' }
+            ticks: {
+              font: { size: 10, weight: '600' },
+              color: '#64748b'
+            },
+            grid: {
+              color: '#f1f5f9',
+              lineWidth: 1
+            }
           },
           y: { display: false }
         }
@@ -346,11 +362,13 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
 
   return (
     <div className="flex-grow flex flex-col bg-white relative min-w-0 overflow-hidden">
-      <div className="flex-none overflow-hidden bg-slate-50 border-b border-slate-200 h-[44px]">
-        <div className="relative">
+      {/* Timeline header - matches grid header height */}
+      <div className="flex-none overflow-hidden bg-white border-b-2 border-slate-200" style={{ height: '36px' }}>
+        <div className="relative" style={{ height: '36px' }}>
           <canvas ref={axisCanvasRef} />
         </div>
       </div>
+      {/* Chart body */}
       <div className="flex-grow overflow-auto custom-scrollbar" id="chart-scroll">
         <div ref={containerRef} className="relative">
           <canvas ref={canvasRef} />

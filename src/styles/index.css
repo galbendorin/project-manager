@@ -5,21 +5,155 @@
 html, body, #root {
   height: 100%;
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  color: #333;
 }
 
 /* Custom Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #f8fafc;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #cbd5e1;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Grid table styles */
+.grid-table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.grid-table th {
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  text-align: left;
+  white-space: nowrap;
+  position: relative;
+  user-select: none;
+}
+
+.grid-table th:last-child {
+  border-right: none;
+}
+
+.grid-table td {
+  padding: 0 10px;
+  border-bottom: 1px solid #f1f5f9;
+  border-right: 1px solid #f1f5f9;
+  font-size: 12.5px;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.grid-table td:last-child {
+  border-right: none;
+}
+
+.grid-table tbody tr {
+  transition: background 0.1s;
+}
+
+.grid-table tbody tr:hover {
+  background: #f1f5f9;
+}
+
+/* Editable cell hover */
+.grid-table td.editable {
+  cursor: pointer;
+}
+
+.grid-table td.editable:hover {
+  background: #EEF2FF;
+}
+
+/* Editing input */
+.editing-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 2px solid #6366f1;
+  border-radius: 4px;
+  outline: none;
+  font-size: 12.5px;
+  background: white;
+  color: #1e293b;
+}
+
+/* Navigation tabs */
+.nav-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #e2e8f0;
+  background: white;
+  padding: 0 16px;
+  overflow-x: auto;
+}
+
+.nav-tab {
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.nav-tab:hover {
+  color: #4f46e5;
+}
+
+.nav-tab.active {
+  color: #4f46e5;
+  border-bottom-color: #4f46e5;
+}
+
+/* Gantt header */
+.gantt-header th {
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  white-space: nowrap;
+  position: relative;
+}
+
+/* Progress bar colors */
+.progress-complete { color: #059669; }
+.progress-partial { color: #4f46e5; }
+.progress-none { color: #94a3b8; }
+
+/* No scrollbar helper */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

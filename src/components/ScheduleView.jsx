@@ -14,7 +14,7 @@ const ScheduleView = ({
 }) => {
   const leftPanelRef = useRef(null);
   const resizerRef = useRef(null);
-  const isSyncingScroll = useRef(false);
+  const scrollSourceRef = useRef(null);
 
   // Panel resizing logic
   useEffect(() => {
@@ -29,10 +29,8 @@ const ScheduleView = ({
 
     const handleMouseMove = (e) => {
       if (!isResizing) return;
-      
       const containerWidth = window.innerWidth;
       const newWidthPct = (e.clientX / containerWidth) * 100;
-      
       if (newWidthPct > 25 && newWidthPct < 85) {
         leftPanel.style.width = `${newWidthPct}%`;
       }
@@ -54,41 +52,35 @@ const ScheduleView = ({
     };
   }, []);
 
-  // Synchronized scrolling between grid and chart
+  // Synchronized vertical scrolling
   useEffect(() => {
-    // Small delay to ensure DOM elements are rendered
     const timer = setTimeout(() => {
       const gridScroll = document.getElementById('grid-scroll');
       const chartScroll = document.getElementById('chart-scroll');
-
       if (!gridScroll || !chartScroll) return;
 
-      const handleGridScroll = () => {
-        if (isSyncingScroll.current) return;
-        isSyncingScroll.current = true;
-        chartScroll.scrollTop = gridScroll.scrollTop;
-        requestAnimationFrame(() => {
-          isSyncingScroll.current = false;
-        });
+      const syncScroll = (source, target) => {
+        return () => {
+          if (scrollSourceRef.current && scrollSourceRef.current !== source) return;
+          scrollSourceRef.current = source;
+          target.scrollTop = source.scrollTop;
+          requestAnimationFrame(() => {
+            scrollSourceRef.current = null;
+          });
+        };
       };
 
-      const handleChartScroll = () => {
-        if (isSyncingScroll.current) return;
-        isSyncingScroll.current = true;
-        gridScroll.scrollTop = chartScroll.scrollTop;
-        requestAnimationFrame(() => {
-          isSyncingScroll.current = false;
-        });
-      };
+      const handleGridScroll = syncScroll(gridScroll, chartScroll);
+      const handleChartScroll = syncScroll(chartScroll, gridScroll);
 
-      gridScroll.addEventListener('scroll', handleGridScroll);
-      chartScroll.addEventListener('scroll', handleChartScroll);
+      gridScroll.addEventListener('scroll', handleGridScroll, { passive: true });
+      chartScroll.addEventListener('scroll', handleChartScroll, { passive: true });
 
       return () => {
         gridScroll.removeEventListener('scroll', handleGridScroll);
         chartScroll.removeEventListener('scroll', handleChartScroll);
       };
-    }, 100);
+    }, 150);
 
     return () => clearTimeout(timer);
   }, [tasks]);
@@ -99,7 +91,7 @@ const ScheduleView = ({
       <div
         ref={leftPanelRef}
         className="flex-none border-r border-slate-200 bg-white flex flex-col overflow-hidden z-20"
-        style={{ width: '58%', minWidth: '650px', height: '100%' }}
+        style={{ width: '55%', minWidth: '600px', height: '100%' }}
       >
         <ScheduleGrid
           tasks={tasks}
@@ -114,7 +106,7 @@ const ScheduleView = ({
       {/* Resizer */}
       <div
         ref={resizerRef}
-        className="w-1 bg-slate-100 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
+        className="w-1 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
       />
 
       {/* Right Panel - Gantt Chart */}
