@@ -162,6 +162,8 @@ function MainApp({ project, onBackToProjects }) {
         onNewTask={() => handleOpenModal()}
         onAddRegisterItem={() => addRegisterItem(activeTab)}
         onSetBaseline={setBaseline}
+        onClearBaseline={clearBaseline}
+        hasBaseline={!!baseline}
         activeTab={activeTab}
         viewMode={viewMode}
         onViewModeChange={setViewMode}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ICONS } from '../utils/constants';
 
 const Header = ({ 
@@ -10,10 +10,48 @@ const Header = ({
   onNewTask,
   onAddRegisterItem,
   onSetBaseline,
+  onClearBaseline,
+  hasBaseline,
   activeTab,
   viewMode,
   onViewModeChange
 }) => {
+  const [showBaselineMenu, setShowBaselineMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowBaselineMenu(false);
+      }
+    };
+    if (showBaselineMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showBaselineMenu]);
+
+  const handleSetBaseline = () => {
+    if (hasBaseline) {
+      // Show menu for re-baseline / clear
+      setShowBaselineMenu(!showBaselineMenu);
+    } else {
+      // First time — set directly
+      onSetBaseline();
+    }
+  };
+
+  const handleRebaseline = () => {
+    onSetBaseline();
+    setShowBaselineMenu(false);
+  };
+
+  const handleClearBaseline = () => {
+    onClearBaseline();
+    setShowBaselineMenu(false);
+  };
+
   return (
     <header className="flex-none bg-white border-b border-slate-200 px-4 py-2 flex justify-between items-center z-30">
       <div className="flex items-center gap-3">
@@ -47,13 +85,51 @@ const Header = ({
             >
               Template
             </button>
-            <button
-              onClick={onSetBaseline}
-              className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-purple-300 hover:text-purple-600 hover:bg-purple-50 px-2.5 py-1.5 rounded-md transition-all"
-              title="Snapshot current dates as baseline"
-            >
-              Baseline
-            </button>
+
+            {/* Baseline button with dropdown */}
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={handleSetBaseline}
+                className={`text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 border ${
+                  hasBaseline 
+                    ? 'text-purple-600 border-purple-200 bg-purple-50 hover:bg-purple-100' 
+                    : 'text-slate-500 border-slate-200 hover:border-purple-300 hover:text-purple-600 hover:bg-purple-50'
+                }`}
+                title={hasBaseline ? 'Baseline is set — click for options' : 'Set baseline snapshot'}
+              >
+                {hasBaseline && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                )}
+                Baseline
+                {hasBaseline && (
+                  <span className="text-[9px] ml-0.5">▾</span>
+                )}
+              </button>
+
+              {/* Dropdown menu */}
+              {showBaselineMenu && (
+                <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50 w-48">
+                  <button
+                    onClick={handleRebaseline}
+                    className="w-full text-left px-3 py-2 text-[11px] font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors flex items-center gap-2"
+                  >
+                    <span className="text-[13px]">🔄</span>
+                    Re-baseline
+                    <span className="text-[10px] text-slate-400 ml-auto">Update snapshot</span>
+                  </button>
+                  <div className="border-t border-slate-100 my-1" />
+                  <button
+                    onClick={handleClearBaseline}
+                    className="w-full text-left px-3 py-2 text-[11px] font-medium text-rose-600 hover:bg-rose-50 transition-colors flex items-center gap-2"
+                  >
+                    <span className="text-[13px]">✕</span>
+                    Clear baseline
+                    <span className="text-[10px] text-rose-400 ml-auto">Remove ghost bars</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="h-5 w-px bg-slate-200 mx-0.5" />
             <select
               value={viewMode}
