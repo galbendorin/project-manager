@@ -169,157 +169,170 @@ const ScheduleGrid = ({
     />
   );
 
+  // Fixed row height to match Gantt chart (40px per row)
+  const ROW_HEIGHT = 40;
+
   return (
-    <div className="flex-grow overflow-auto custom-scrollbar" id="grid-scroll">
-      <table className="w-full" style={{ tableLayout: 'fixed' }}>
-        <thead className="gantt-header">
-          <tr>
-            <th style={{ width: `${columnWidths.id}px`, position: 'relative' }} className="text-center">
-              ID
-              <ResizeHandle column="id" />
-            </th>
-            <th style={{ width: `${columnWidths.name}px`, position: 'relative' }}>
-              Name
-              <ResizeHandle column="name" />
-            </th>
-            <th style={{ width: `${columnWidths.dep}px`, position: 'relative' }} className="text-center">
-              Dep
-              <ResizeHandle column="dep" />
-            </th>
-            <th style={{ width: `${columnWidths.type}px`, position: 'relative' }} className="text-center">
-              Typ
-              <ResizeHandle column="type" />
-            </th>
-            <th style={{ width: `${columnWidths.dur}px`, position: 'relative' }} className="text-center">
-              Dur
-              <ResizeHandle column="dur" />
-            </th>
-            <th style={{ width: `${columnWidths.start}px`, position: 'relative' }}>
-              Start
-              <ResizeHandle column="start" />
-            </th>
-            <th style={{ width: `${columnWidths.finish}px`, position: 'relative' }} className="text-slate-400">
-              Finish
-              <ResizeHandle column="finish" />
-            </th>
-            <th style={{ width: `${columnWidths.pct}px`, position: 'relative' }} className="text-center">
-              %
-              <ResizeHandle column="pct" />
-            </th>
-            <th style={{ width: `${columnWidths.track}px`, position: 'relative' }} className="text-center">
-              Track
-              <ResizeHandle column="track" />
-            </th>
-            <th style={{ width: `${columnWidths.actions}px`, position: 'relative' }} className="text-center">
-              Actions
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {tasks.map(task => {
-            const finishDate = getFinishDate(task.start, task.dur);
-            const isMilestone = task.type === 'Milestone';
-            const isCritical = criticalPathIds.has(task.id);
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Sticky header */}
+      <div className="flex-none bg-white z-10 border-b border-slate-200">
+        <table className="w-full" style={{ tableLayout: 'fixed' }}>
+          <thead className="gantt-header">
+            <tr>
+              <th style={{ width: `${columnWidths.id}px`, position: 'relative' }} className="text-center">
+                ID
+                <ResizeHandle column="id" />
+              </th>
+              <th style={{ width: `${columnWidths.name}px`, position: 'relative' }}>
+                Name
+                <ResizeHandle column="name" />
+              </th>
+              <th style={{ width: `${columnWidths.dep}px`, position: 'relative' }} className="text-center">
+                Dep
+                <ResizeHandle column="dep" />
+              </th>
+              <th style={{ width: `${columnWidths.type}px`, position: 'relative' }} className="text-center">
+                Typ
+                <ResizeHandle column="type" />
+              </th>
+              <th style={{ width: `${columnWidths.dur}px`, position: 'relative' }} className="text-center">
+                Dur
+                <ResizeHandle column="dur" />
+              </th>
+              <th style={{ width: `${columnWidths.start}px`, position: 'relative' }}>
+                Start
+                <ResizeHandle column="start" />
+              </th>
+              <th style={{ width: `${columnWidths.finish}px`, position: 'relative' }} className="text-slate-400">
+                Finish
+                <ResizeHandle column="finish" />
+              </th>
+              <th style={{ width: `${columnWidths.pct}px`, position: 'relative' }} className="text-center">
+                %
+                <ResizeHandle column="pct" />
+              </th>
+              <th style={{ width: `${columnWidths.track}px`, position: 'relative' }} className="text-center">
+                Track
+                <ResizeHandle column="track" />
+              </th>
+              <th style={{ width: `${columnWidths.actions}px`, position: 'relative' }} className="text-center">
+                Actions
+              </th>
+            </tr>
+          </thead>
+        </table>
+      </div>
 
-            return (
-              <tr 
-                key={task.id} 
-                className="gantt-row group hover:bg-slate-50 transition-colors"
-              >
-                <td 
-                  style={{ width: `${columnWidths.id}px` }} 
-                  className="text-center font-mono font-bold text-slate-300 border-r border-slate-100 text-[10px]"
+      {/* Scrollable body */}
+      <div className="flex-grow overflow-auto custom-scrollbar" id="grid-scroll">
+        <table className="w-full" style={{ tableLayout: 'fixed' }}>
+          <tbody>
+            {tasks.map(task => {
+              const finishDate = getFinishDate(task.start, task.dur);
+              const isMilestone = task.type === 'Milestone';
+              const isCritical = criticalPathIds.has(task.id);
+
+              return (
+                <tr 
+                  key={task.id} 
+                  className="gantt-row group hover:bg-slate-50 transition-colors"
+                  style={{ height: `${ROW_HEIGHT}px` }}
                 >
-                  {task.id}
-                </td>
-                
-                <EditableCell task={task} field="name" className="border-r border-slate-100">
-                  <div style={{ paddingLeft: `${(task.indent || 0) * 16}px` }} className="flex items-center gap-2">
-                    <span className={`text-[12px] ${
-                      isMilestone ? 'text-amber-500' : 'text-slate-300'
-                    }`}>
-                      {isMilestone ? '⭐' : (task.indent > 0 ? '└' : '—')}
-                    </span>
-                    <span className="font-bold tracking-tight truncate">
-                      {task.name}
-                    </span>
-                    {isCritical && (
-                      <span className="text-[8px] font-black text-purple-600 bg-purple-100 px-1 rounded flex-shrink-0">
-                        CP
+                  <td 
+                    style={{ width: `${columnWidths.id}px`, height: `${ROW_HEIGHT}px` }} 
+                    className="text-center font-mono font-bold text-slate-300 border-r border-slate-100 text-[10px]"
+                  >
+                    {task.id}
+                  </td>
+                  
+                  <EditableCell task={task} field="name" className="border-r border-slate-100">
+                    <div style={{ paddingLeft: `${(task.indent || 0) * 16}px` }} className="flex items-center gap-2">
+                      <span className={`text-[12px] ${
+                        isMilestone ? 'text-amber-500' : 'text-slate-300'
+                      }`}>
+                        {isMilestone ? '⭐' : (task.indent > 0 ? '└' : '—')}
                       </span>
-                    )}
-                  </div>
-                </EditableCell>
+                      <span className="font-bold tracking-tight truncate">
+                        {task.name}
+                      </span>
+                      {isCritical && (
+                        <span className="text-[8px] font-black text-purple-600 bg-purple-100 px-1 rounded flex-shrink-0">
+                          CP
+                        </span>
+                      )}
+                    </div>
+                  </EditableCell>
 
-                <EditableCell task={task} field="parent" className="text-center font-mono text-slate-400 border-r border-slate-100">
-                  {task.parent || '-'}
-                </EditableCell>
+                  <EditableCell task={task} field="parent" className="text-center font-mono text-slate-400 border-r border-slate-100">
+                    {task.parent || '-'}
+                  </EditableCell>
 
-                <EditableCell task={task} field="type" className="text-center text-[9px] uppercase font-black text-slate-400 border-r border-slate-100">
-                  {task.type}
-                </EditableCell>
+                  <EditableCell task={task} field="type" className="text-center text-[9px] uppercase font-black text-slate-400 border-r border-slate-100">
+                    {task.type}
+                  </EditableCell>
 
-                <EditableCell task={task} field="dur" className="text-center font-bold text-slate-500 border-r border-slate-100">
-                  {task.dur}d
-                </EditableCell>
+                  <EditableCell task={task} field="dur" className="text-center font-bold text-slate-500 border-r border-slate-100">
+                    {task.dur}d
+                  </EditableCell>
 
-                <EditableCell task={task} field="start" className="text-slate-500 font-mono text-[10px] border-r border-slate-100">
-                  {task.start}
-                </EditableCell>
+                  <EditableCell task={task} field="start" className="text-slate-500 font-mono text-[10px] border-r border-slate-100">
+                    {task.start}
+                  </EditableCell>
 
-                <td style={{ width: `${columnWidths.finish}px` }} className="text-slate-400 font-mono text-[10px] border-r border-slate-100 bg-slate-50/30">
-                  {finishDate}
-                </td>
+                  <td style={{ width: `${columnWidths.finish}px` }} className="text-slate-400 font-mono text-[10px] border-r border-slate-100 bg-slate-50/30">
+                    {finishDate}
+                  </td>
 
-                <EditableCell task={task} field="pct" className="text-center font-bold text-indigo-600 border-r border-slate-100">
-                  {task.pct}%
-                </EditableCell>
+                  <EditableCell task={task} field="pct" className="text-center font-bold text-indigo-600 border-r border-slate-100">
+                    {task.pct}%
+                  </EditableCell>
 
-                <td style={{ width: `${columnWidths.track}px` }} className="text-center border-r border-slate-100">
-                  <input
-                    type="checkbox"
-                    checked={task.tracked || false}
-                    onChange={(e) => onToggleTrack(task.id, e.target.checked)}
-                    className="accent-indigo-600 cursor-pointer w-3.5 h-3.5"
-                  />
-                </td>
+                  <td style={{ width: `${columnWidths.track}px` }} className="text-center border-r border-slate-100">
+                    <input
+                      type="checkbox"
+                      checked={task.tracked || false}
+                      onChange={(e) => onToggleTrack(task.id, e.target.checked)}
+                      className="accent-indigo-600 cursor-pointer w-3.5 h-3.5"
+                    />
+                  </td>
 
-                <td style={{ width: `${columnWidths.actions}px` }} className="text-center">
-                  <div className="flex justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => onModifyHierarchy(task.id, -1)}
-                      className="p-1 hover:text-indigo-600"
-                      title="Outdent"
-                    >
-                      ←
-                    </button>
-                    <button
-                      onClick={() => onModifyHierarchy(task.id, 1)}
-                      className="p-1 hover:text-indigo-600"
-                      title="Indent"
-                    >
-                      →
-                    </button>
-                    <button
-                      onClick={() => onInsertTask(task.id)}
-                      className="p-1 hover:text-emerald-600"
-                      title="Insert Below"
-                    >
-                      <div dangerouslySetInnerHTML={{ __html: ICONS.plus }} />
-                    </button>
-                    <button
-                      onClick={() => onDeleteTask(task.id)}
-                      className="p-1 hover:text-rose-500"
-                    >
-                      <div dangerouslySetInnerHTML={{ __html: ICONS.trash }} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                  <td style={{ width: `${columnWidths.actions}px` }} className="text-center">
+                    <div className="flex justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => onModifyHierarchy(task.id, -1)}
+                        className="p-1 hover:text-indigo-600"
+                        title="Outdent"
+                      >
+                        ←
+                      </button>
+                      <button
+                        onClick={() => onModifyHierarchy(task.id, 1)}
+                        className="p-1 hover:text-indigo-600"
+                        title="Indent"
+                      >
+                        →
+                      </button>
+                      <button
+                        onClick={() => onInsertTask(task.id)}
+                        className="p-1 hover:text-emerald-600"
+                        title="Insert Below"
+                      >
+                        <div dangerouslySetInnerHTML={{ __html: ICONS.plus }} />
+                      </button>
+                      <button
+                        onClick={() => onDeleteTask(task.id)}
+                        className="p-1 hover:text-rose-500"
+                      >
+                        <div dangerouslySetInnerHTML={{ __html: ICONS.trash }} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

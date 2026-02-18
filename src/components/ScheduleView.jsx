@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import ScheduleGrid from './ScheduleGrid';
 import GanttChart from './GanttChart';
 
@@ -14,8 +14,7 @@ const ScheduleView = ({
 }) => {
   const leftPanelRef = useRef(null);
   const resizerRef = useRef(null);
-  const gridScrollRef = useRef(null);
-  const chartScrollRef = useRef(null);
+  const isSyncingScroll = useRef(false);
 
   // Panel resizing logic
   useEffect(() => {
@@ -55,62 +54,71 @@ const ScheduleView = ({
     };
   }, []);
 
-  // Synchronized scrolling
+  // Synchronized scrolling between grid and chart
   useEffect(() => {
-    const gridScroll = gridScrollRef.current;
-    const chartScroll = document.getElementById('chart-scroll');
+    // Small delay to ensure DOM elements are rendered
+    const timer = setTimeout(() => {
+      const gridScroll = document.getElementById('grid-scroll');
+      const chartScroll = document.getElementById('chart-scroll');
 
-    if (!gridScroll || !chartScroll) return;
+      if (!gridScroll || !chartScroll) return;
 
-    const handleGridScroll = () => {
-      if (chartScroll) {
+      const handleGridScroll = () => {
+        if (isSyncingScroll.current) return;
+        isSyncingScroll.current = true;
         chartScroll.scrollTop = gridScroll.scrollTop;
-      }
-    };
+        requestAnimationFrame(() => {
+          isSyncingScroll.current = false;
+        });
+      };
 
-    const handleChartScroll = () => {
-      if (gridScroll) {
+      const handleChartScroll = () => {
+        if (isSyncingScroll.current) return;
+        isSyncingScroll.current = true;
         gridScroll.scrollTop = chartScroll.scrollTop;
-      }
-    };
+        requestAnimationFrame(() => {
+          isSyncingScroll.current = false;
+        });
+      };
 
-    gridScroll.addEventListener('scroll', handleGridScroll);
-    chartScroll.addEventListener('scroll', handleChartScroll);
+      gridScroll.addEventListener('scroll', handleGridScroll);
+      chartScroll.addEventListener('scroll', handleChartScroll);
 
-    return () => {
-      gridScroll.removeEventListener('scroll', handleGridScroll);
-      chartScroll.removeEventListener('scroll', handleChartScroll);
-    };
-  }, []);
+      return () => {
+        gridScroll.removeEventListener('scroll', handleGridScroll);
+        chartScroll.removeEventListener('scroll', handleChartScroll);
+      };
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [tasks]);
 
   return (
-    <div className="flex-grow flex overflow-hidden w-full h-full bg-white">
+    <div className="flex overflow-hidden w-full h-full bg-white">
       {/* Left Panel - Task Grid */}
       <div
         ref={leftPanelRef}
-        className="flex-none border-r border-slate-200 bg-white flex flex-col z-20"
-        style={{ width: '58%', minWidth: '650px' }}
+        className="flex-none border-r border-slate-200 bg-white flex flex-col overflow-hidden z-20"
+        style={{ width: '58%', minWidth: '650px', height: '100%' }}
       >
-        <div ref={gridScrollRef}>
-          <ScheduleGrid
-            tasks={tasks}
-            onUpdateTask={onUpdateTask}
-            onDeleteTask={onDeleteTask}
-            onModifyHierarchy={onModifyHierarchy}
-            onToggleTrack={onToggleTrack}
-            onInsertTask={onInsertTask}
-          />
-        </div>
+        <ScheduleGrid
+          tasks={tasks}
+          onUpdateTask={onUpdateTask}
+          onDeleteTask={onDeleteTask}
+          onModifyHierarchy={onModifyHierarchy}
+          onToggleTrack={onToggleTrack}
+          onInsertTask={onInsertTask}
+        />
       </div>
 
       {/* Resizer */}
       <div
         ref={resizerRef}
-        className="w-1 bg-slate-100 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors"
+        className="w-1 bg-slate-100 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
       />
 
       {/* Right Panel - Gantt Chart */}
-      <div ref={chartScrollRef}>
+      <div className="flex-grow flex flex-col overflow-hidden" style={{ height: '100%' }}>
         <GanttChart tasks={tasks} viewMode={viewMode} baseline={baseline} />
       </div>
     </div>
