@@ -4,15 +4,15 @@ import 'chartjs-adapter-date-fns';
 
 Chart.register(BarController, CategoryScale, LinearScale, TimeScale, Tooltip);
 
-const HEADER_HEIGHT = 50; // Increased from 34 to 50 for better date visibility
+const HEADER_HEIGHT = 60; // Increased from 34 to 60 for better date visibility
 const ROW_HEIGHT = 34;
 
 export default function GanttChart({
-  tasks,
-  viewMode,
-  baseline,
-  collapsedIndices,
-  scrollTop,
+  tasks = [],
+  viewMode = '1 Week',
+  baseline = null,
+  collapsedIndices = new Set(),
+  scrollTop = 0,
   onBarClick
 }) {
   const axisCanvasRef = useRef(null);
@@ -316,12 +316,14 @@ export default function GanttChart({
         maxRotation: 0,
         minRotation: 0,
         autoSkip: true,
+        maxTicksLimit: 20,
         font: {
-          size: 12,
-          weight: '500'
+          size: 13,
+          weight: '500',
+          family: 'system-ui, -apple-system, sans-serif'
         },
-        color: '#475569',
-        padding: 8
+        color: '#1e293b',
+        padding: 10
       }
     };
 
@@ -424,7 +426,13 @@ export default function GanttChart({
   return (
     <div className="flex flex-col h-full bg-white border-l border-slate-200">
       {/* Fixed header canvas */}
-      <div style={{ height: `${HEADER_HEIGHT}px`, flexShrink: 0 }}>
+      <div 
+        style={{ 
+          height: `${HEADER_HEIGHT}px`, 
+          flexShrink: 0,
+          overflow: 'hidden'
+        }}
+      >
         <canvas
           ref={axisCanvasRef}
           width={800}

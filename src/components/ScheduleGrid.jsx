@@ -1,21 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
 
-const GRID_HEADER_HEIGHT = 50; // Increased from 34 to 50 to match GanttChart
+const GRID_HEADER_HEIGHT = 60; // Increased from 34 to 60 to match GanttChart
 const ROW_HEIGHT = 34;
 
 export default function ScheduleGrid({
-  tasks,
-  onUpdate,
-  onIndent,
-  onOutdent,
-  onInsert,
-  onDelete,
-  collapsedIndices,
-  onToggleCollapse,
-  onSendToTracker,
-  isInTracker,
-  scrollTop,
-  onScrollChange
+  tasks = [],
+  onUpdate = () => {},
+  onIndent = () => {},
+  onOutdent = () => {},
+  onInsert = () => {},
+  onDelete = () => {},
+  collapsedIndices = new Set(),
+  onToggleCollapse = () => {},
+  onSendToTracker = () => {},
+  isInTracker = () => false,
+  scrollTop = 0,
+  onScrollChange = () => {}
 }) {
   const containerRef = useRef(null);
   const [editingCell, setEditingCell] = useState(null);
