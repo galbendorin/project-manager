@@ -9,6 +9,7 @@ import Navigation from './components/Navigation';
 import ScheduleView from './components/ScheduleView';
 import RegisterView from './components/RegisterView';
 import TrackerView from './components/TrackerView';
+import StatusReportView from './components/StatusReportView';
 import TaskModal from './components/TaskModal';
 import { useProjectData } from './hooks/useProjectData';
 
@@ -149,6 +150,7 @@ function MainApp({ project, onBackToProjects }) {
     projectData,
     registers,
     tracker,
+    statusReport,
     baseline,
     saving,
     lastSaved,
@@ -169,6 +171,7 @@ function MainApp({ project, onBackToProjects }) {
     removeFromTracker,
     updateTrackerItem,
     isInTracker,
+    updateStatusReport,
     setProjectData,
     setRegisters
   } = useProjectData(project.id);
@@ -186,7 +189,6 @@ function MainApp({ project, onBackToProjects }) {
   // Navigate to schedule tab (used by TrackerView link)
   const handleNavigateToSchedule = useCallback((taskId) => {
     setActiveTab('schedule');
-    // Could scroll to task in future enhancement
   }, []);
 
   // Modal handlers
@@ -287,13 +289,13 @@ function MainApp({ project, onBackToProjects }) {
     }
   };
 
-  // Export to Excel (now includes tracker)
+  // Export to Excel (includes tracker + status report)
   const handleExport = () => {
     const wb = XLSX.utils.book_new();
     
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(projectData), "Schedule");
 
-    // Export tracker if it has items
+    // Export tracker
     if (tracker.length > 0) {
       const trackerExport = tracker.map(item => ({
         'Task Name': item.taskName,
@@ -306,6 +308,20 @@ function MainApp({ project, onBackToProjects }) {
         'Last Updated': item.lastUpdated
       }));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(trackerExport), "Master Tracker");
+    }
+
+    // Export status report
+    if (statusReport) {
+      const srExport = [{
+        'Overall RAG': statusReport.overallRag,
+        'Overall Narrative': statusReport.overallNarrative,
+        'Main Risks': statusReport.mainRisks,
+        'Main Issues': statusReport.mainIssues,
+        'Deliverables This Period': statusReport.deliverablesThisPeriod,
+        'Deliverables Next Period': statusReport.deliverablesNextPeriod,
+        'Additional Notes': statusReport.additionalNotes
+      }];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(srExport), "Status Report");
     }
 
     Object.keys(registers).forEach(key => {
@@ -406,6 +422,14 @@ function MainApp({ project, onBackToProjects }) {
             onUpdateItem={updateTrackerItem}
             onRemoveItem={removeFromTracker}
             onNavigateToSchedule={handleNavigateToSchedule}
+          />
+        ) : activeTab === 'statusreport' ? (
+          <StatusReportView
+            tasks={projectData}
+            baseline={baseline}
+            registers={registers}
+            statusReport={statusReport}
+            onUpdateStatusReport={updateStatusReport}
           />
         ) : (
           <RegisterView

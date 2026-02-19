@@ -1,10 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { calculateSchedule, getNextId, getCurrentDate, getFinishDate, keyGen } from '../utils/helpers';
-import { DEFAULT_TASK, SCHEMAS } from '../utils/constants';
+import { DEFAULT_TASK, SCHEMAS, DEFAULT_STATUS_REPORT } from '../utils/constants';
 import { supabase } from '../lib/supabase';
 
 /**
- * Custom hook for managing project data (tasks, registers, and tracker)
+ * Custom hook for managing project data (tasks, registers, tracker, and status report)
  * With Supabase persistence and baseline support
  */
 export const useProjectData = (projectId) => {
@@ -19,6 +19,7 @@ export const useProjectData = (projectId) => {
     comms: []
   });
   const [tracker, setTracker] = useState([]);
+  const [statusReport, setStatusReport] = useState({ ...DEFAULT_STATUS_REPORT });
   const [baseline, setBaselineState] = useState(null);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
@@ -37,7 +38,7 @@ export const useProjectData = (projectId) => {
 
       const { data, error } = await supabase
         .from('projects')
-        .select('tasks, registers, baseline, tracker')
+        .select('tasks, registers, baseline, tracker, status_report')
         .eq('id', projectId)
         .single();
 
@@ -49,6 +50,7 @@ export const useProjectData = (projectId) => {
         });
         setBaselineState(data.baseline || null);
         setTracker(data.tracker || []);
+        setStatusReport(data.status_report || { ...DEFAULT_STATUS_REPORT });
       }
 
       setLoadingData(false);
@@ -74,6 +76,7 @@ export const useProjectData = (projectId) => {
         tasks: projectData,
         registers: registers,
         tracker: tracker,
+        status_report: statusReport,
         updated_at: new Date().toISOString()
       };
       // Only include baseline if it exists
@@ -97,7 +100,7 @@ export const useProjectData = (projectId) => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [projectData, registers, tracker, baseline, projectId]);
+  }, [projectData, registers, tracker, statusReport, baseline, projectId]);
 
   // Set baseline - snapshot current task dates
   const setBaseline = useCallback(() => {
@@ -256,13 +259,11 @@ export const useProjectData = (projectId) => {
 
   // ==================== TRACKER FUNCTIONS ====================
 
-  // Send a task to the Master Tracker
   const sendToTracker = useCallback((taskId) => {
     const task = projectData.find(t => t.id === taskId);
     if (!task) return;
 
     setTracker(prev => {
-      // Don't add duplicates
       if (prev.find(t => t.taskId === taskId)) return prev;
 
       return [...prev, {
@@ -280,12 +281,10 @@ export const useProjectData = (projectId) => {
     });
   }, [projectData]);
 
-  // Remove a task from the Master Tracker
   const removeFromTracker = useCallback((trackerId) => {
     setTracker(prev => prev.filter(t => t._id !== trackerId));
   }, []);
 
-  // Update a tracker item field
   const updateTrackerItem = useCallback((trackerId, key, value) => {
     setTracker(prev => prev.map(item =>
       item._id === trackerId
@@ -294,12 +293,17 @@ export const useProjectData = (projectId) => {
     ));
   }, []);
 
-  // Check if a task is in the tracker
   const isInTracker = useCallback((taskId) => {
     return tracker.some(t => t.taskId === taskId);
   }, [tracker]);
 
-  // ==================== END TRACKER FUNCTIONS ====================
+  // ==================== STATUS REPORT FUNCTIONS ====================
+
+  const updateStatusReport = useCallback((key, value) => {
+    setStatusReport(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  // ==================== END ====================
 
   // Load template data
   const loadTemplate = useCallback(() => {
@@ -429,6 +433,7 @@ export const useProjectData = (projectId) => {
     projectData,
     registers,
     tracker,
+    statusReport,
     baseline,
     saving,
     lastSaved,
@@ -450,6 +455,7 @@ export const useProjectData = (projectId) => {
     removeFromTracker,
     updateTrackerItem,
     isInTracker,
+    updateStatusReport,
     setProjectData,
     setRegisters,
     setTracker

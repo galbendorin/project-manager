@@ -34,7 +34,7 @@ export const SCHEMAS = {
   }
 };
 
-// Tracker schema (not in SCHEMAS because TrackerView has its own layout)
+// Tracker schema
 export const TRACKER_COLS = [
   { key: 'taskName', label: 'Task Name', width: 220, editable: false },
   { key: 'notes', label: 'Notes', width: 200, editable: true },
@@ -45,6 +45,17 @@ export const TRACKER_COLS = [
   { key: 'dateAdded', label: 'Date Added', width: 110, editable: false },
   { key: 'lastUpdated', label: 'Last Updated', width: 110, editable: false }
 ];
+
+// Default status report data
+export const DEFAULT_STATUS_REPORT = {
+  overallRag: 'Green',
+  overallNarrative: '',
+  mainIssues: '',
+  mainRisks: '',
+  deliverablesThisPeriod: '',
+  deliverablesNextPeriod: '',
+  additionalNotes: ''
+};
 
 // SVG Icons
 export const ICONS = {
@@ -96,6 +107,7 @@ export const DEFAULT_TASK = {
 export const TABS = [
   { id: 'schedule', label: 'Schedule' },
   { id: 'tracker', label: 'Master Tracker' },
+  { id: 'statusreport', label: 'Status Report' },
   { id: 'risks', label: 'Risk Log' },
   { id: 'issues', label: 'Issue Log' },
   { id: 'actions', label: 'Action Log' },
