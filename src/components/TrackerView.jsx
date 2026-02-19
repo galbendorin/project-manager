@@ -68,14 +68,15 @@ const TrackerView = ({
     // Non-editable: Task Name (link to schedule)
     if (!col.editable) {
       if (col.key === 'taskName') {
+        const hasLongName = value && value.length > 30;
         return (
-          <td className="px-4 py-3">
+          <td className={`px-4 py-3 ${hasLongName ? 'cell-with-tooltip' : ''}`}>
             <button
               onClick={() => onNavigateToSchedule && onNavigateToSchedule(item.taskId)}
-              className="text-left text-indigo-600 hover:text-indigo-800 font-medium text-[12.5px] hover:underline truncate block max-w-full"
+              className="text-left text-indigo-600 hover:text-indigo-800 font-medium text-[12.5px] hover:underline block max-w-full"
               title="Go to task in Schedule"
             >
-              {value}
+              <span className="cell-clamp">{value}</span>
             </button>
             {getTaskProgress(item.taskId) !== null && (
               <div className="flex items-center gap-1.5 mt-1">
@@ -87,6 +88,9 @@ const TrackerView = ({
                 </div>
                 <span className="text-[10px] text-slate-400">{getTaskProgress(item.taskId)}%</span>
               </div>
+            )}
+            {hasLongName && (
+              <div className="cell-tooltip">{value}</div>
             )}
           </td>
         );
@@ -164,7 +168,10 @@ const TrackerView = ({
       );
     }
 
-    // Generic editable text
+    // Generic editable text (notes, nextAction, owner, etc.)
+    const isLongField = ['notes', 'nextAction', 'taskName'].includes(col.key);
+    const hasContent = value && value !== '...' && value.length > 30;
+
     if (isEditing) {
       return (
         <td className="px-4 py-3">
@@ -180,10 +187,24 @@ const TrackerView = ({
       );
     }
 
+    if (isLongField) {
+      return (
+        <td
+          className={`px-4 py-3 ${col.editable ? 'editable cursor-pointer' : ''} text-[12.5px] text-slate-600 ${hasContent ? 'cell-with-tooltip' : ''}`}
+          onClick={() => col.editable && setEditingCell(cellId)}
+        >
+          <div className="cell-clamp">{value || <span className="text-slate-300">...</span>}</div>
+          {hasContent && (
+            <div className="cell-tooltip">{value}</div>
+          )}
+        </td>
+      );
+    }
+
     return (
       <td
-        className="px-4 py-3 editable cursor-pointer text-[12.5px] text-slate-600"
-        onClick={() => setEditingCell(cellId)}
+        className={`px-4 py-3 ${col.editable ? 'editable cursor-pointer' : ''} text-[12.5px] text-slate-600`}
+        onClick={() => col.editable && setEditingCell(cellId)}
       >
         {value || <span className="text-slate-300">...</span>}
       </td>

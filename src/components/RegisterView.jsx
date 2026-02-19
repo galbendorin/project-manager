@@ -2,6 +2,14 @@ import React, { useState } from 'react';
 import { SCHEMAS, ICONS } from '../utils/constants';
 import { keyGen, filterBySearch } from '../utils/helpers';
 
+// Columns that are short/fixed — don't need clamp/tooltip
+const SHORT_COLS = ['visible', 'number', 'status', 'level', 'raised', 'target', 'completed', 'date', 'updated', 'complete', 'cost', 'billing', 'mobile', 'phone'];
+
+const isLongTextCol = (colName) => {
+  const k = colName.toLowerCase().replace(/[^a-z]/g, '');
+  return !SHORT_COLS.some(s => k.includes(s));
+};
+
 const RegisterView = ({ 
   registerType,
   items,
@@ -33,6 +41,10 @@ const RegisterView = ({
     const key = keyGen(colName);
     const cellId = `${item._id}-${key}`;
     const isEditing = editingCell === cellId;
+    const value = item[key];
+    const textValue = value || '...';
+    const isLong = isLongTextCol(colName);
+    const hasContent = value && value !== '...' && value.length > 30;
 
     if (colName === "Visible") {
       return (
@@ -51,7 +63,7 @@ const RegisterView = ({
     if (colName === "Number") {
       return (
         <td className="px-8 py-3 font-mono text-slate-300 font-bold">
-          {item[key] || "..."}
+          {textValue}
         </td>
       );
     }
@@ -76,11 +88,25 @@ const RegisterView = ({
           <input
             autoFocus
             type="text"
-            defaultValue={item[key] === "..." ? "" : item[key]}
+            defaultValue={value === "..." ? "" : value}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             className="editing-input bg-indigo-50"
           />
+        </td>
+      );
+    }
+
+    if (isLong) {
+      return (
+        <td
+          className={`px-8 py-3 editable ${hasContent ? 'cell-with-tooltip' : ''}`}
+          onClick={handleClick}
+        >
+          <div className="cell-clamp">{textValue}</div>
+          {hasContent && (
+            <div className="cell-tooltip">{value}</div>
+          )}
         </td>
       );
     }
@@ -90,7 +116,7 @@ const RegisterView = ({
         className="px-8 py-3 editable"
         onClick={handleClick}
       >
-        {item[key] || "..."}
+        {textValue}
       </td>
     );
   };
