@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { getFinishDate, calculateCriticalPath, getHierarchyMap } from '../utils/helpers';
 
+const GRID_HEADER_HEIGHT = 34;
+
 const ScheduleGrid = ({ 
   allTasks,
   visibleTasks,
@@ -60,7 +62,6 @@ const ScheduleGrid = ({
     return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
   }, [resizing]);
 
-  // Drag handlers use original indices
   const handleDragStart = useCallback((e, origIdx) => {
     setDragIndex(origIdx);
     e.dataTransfer.effectAllowed = 'move';
@@ -114,149 +115,162 @@ const ScheduleGrid = ({
   const ROW_HEIGHT = 36;
   const getProgressColor = (pct) => pct === 100 ? 'progress-complete' : pct > 0 ? 'progress-partial' : 'progress-none';
 
+  const colGroupCols = (
+    <colgroup>
+      <col style={{ width: `${columnWidths.drag}px` }} />
+      {Object.entries(columnWidths).filter(([k]) => k !== 'drag').map(([col, w]) => (
+        <col key={col} style={{ width: `${w}px` }} />
+      ))}
+    </colgroup>
+  );
+
   return (
-    <div className="h-full overflow-auto custom-scrollbar" id="grid-scroll">
-      <table className="grid-table">
-        <colgroup>
-          <col style={{ width: `${columnWidths.drag}px` }} />
-          {Object.entries(columnWidths).filter(([k]) => k !== 'drag').map(([col, w]) => (
-            <col key={col} style={{ width: `${w}px` }} />
-          ))}
-        </colgroup>
-        <thead>
-          <tr>
-            <th style={{ position: 'sticky', top: 0, zIndex: 5, textAlign: 'center', padding: '8px 2px' }}>⠿</th>
-            <th className="text-center" style={{ position: 'sticky', top: 0, zIndex: 5 }}>ID <ResizeHandle column="id" /></th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 5 }}>Task Name <ResizeHandle column="name" /></th>
-            <th className="text-center" style={{ position: 'sticky', top: 0, zIndex: 5 }}>Dep <ResizeHandle column="dep" /></th>
-            <th className="text-center" style={{ position: 'sticky', top: 0, zIndex: 5 }}>Type <ResizeHandle column="type" /></th>
-            <th className="text-center" style={{ position: 'sticky', top: 0, zIndex: 5 }}>Dur <ResizeHandle column="dur" /></th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 5 }}>Start Date <ResizeHandle column="start" /></th>
-            <th style={{ position: 'sticky', top: 0, zIndex: 5 }}>Finish <ResizeHandle column="finish" /></th>
-            <th className="text-center" style={{ position: 'sticky', top: 0, zIndex: 5 }}>Progress <ResizeHandle column="pct" /></th>
-            <th className="text-center" style={{ position: 'sticky', top: 0, zIndex: 5 }}>Track <ResizeHandle column="track" /></th>
-            <th className="text-center" style={{ position: 'sticky', top: 0, zIndex: 5, borderRight: 'none' }}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleTasks.map((task, rowIdx) => {
-            const origIdx = task._originalIndex;
-            const isParentRow = task._isParent;
-            const isCollapsed = collapsedIndices.has(origIdx);
-            const isMilestone = task.type === 'Milestone';
-            const isCritical = criticalPathIds.has(task.id);
-            const finishDate = getFinishDate(task.start, task.dur);
-            const isEven = rowIdx % 2 === 0;
-            const isDragging = dragIndex === origIdx;
-            const isOver = dragOverIndex === origIdx;
-            const tracked = isInTracker ? isInTracker(task.id) : false;
+    <div className="h-full flex flex-col">
+      {/* Fixed header */}
+      <div className="flex-none overflow-hidden" style={{ height: `${GRID_HEADER_HEIGHT}px` }}>
+        <table className="grid-table">
+          {colGroupCols}
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'center', padding: '8px 2px' }}>⠿</th>
+              <th className="text-center">ID <ResizeHandle column="id" /></th>
+              <th>Task Name <ResizeHandle column="name" /></th>
+              <th className="text-center">Dep <ResizeHandle column="dep" /></th>
+              <th className="text-center">Type <ResizeHandle column="type" /></th>
+              <th className="text-center">Dur <ResizeHandle column="dur" /></th>
+              <th>Start Date <ResizeHandle column="start" /></th>
+              <th>Finish <ResizeHandle column="finish" /></th>
+              <th className="text-center">Progress <ResizeHandle column="pct" /></th>
+              <th className="text-center">Track <ResizeHandle column="track" /></th>
+              <th className="text-center" style={{ borderRight: 'none' }}>Actions</th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+      {/* Scrollable body */}
+      <div className="flex-grow overflow-auto custom-scrollbar" id="grid-scroll">
+        <table className="grid-table">
+          {colGroupCols}
+          <tbody>
+            {visibleTasks.map((task, rowIdx) => {
+              const origIdx = task._originalIndex;
+              const isParentRow = task._isParent;
+              const isCollapsed = collapsedIndices.has(origIdx);
+              const isMilestone = task.type === 'Milestone';
+              const isCritical = criticalPathIds.has(task.id);
+              const finishDate = getFinishDate(task.start, task.dur);
+              const isEven = rowIdx % 2 === 0;
+              const isDragging = dragIndex === origIdx;
+              const isOver = dragOverIndex === origIdx;
+              const tracked = isInTracker ? isInTracker(task.id) : false;
 
-            const childCount = isParentRow && isCollapsed && directChildCount.has(origIdx)
-              ? directChildCount.get(origIdx) : 0;
+              const childCount = isParentRow && isCollapsed && directChildCount.has(origIdx)
+                ? directChildCount.get(origIdx) : 0;
 
-            return (
-              <tr
-                key={task.id}
-                className="group"
-                draggable
-                onDragStart={(e) => handleDragStart(e, origIdx)}
-                onDragEnd={handleDragEnd}
-                onDragOver={(e) => handleDragOver(e, origIdx)}
-                onDrop={(e) => handleDrop(e, origIdx)}
-                style={{
-                  height: `${ROW_HEIGHT}px`,
-                  background: isDragging ? '#EEF2FF' : isParentRow ? '#f1f5f9' : isEven ? '#ffffff' : '#fafbfc',
-                  borderTop: isOver && dragIndex !== null && dragIndex > origIdx ? '2px solid #6366f1' : undefined,
-                  borderBottom: isOver && dragIndex !== null && dragIndex < origIdx ? '2px solid #6366f1' : undefined,
-                  opacity: isDragging ? 0.5 : 1
-                }}
-              >
-                <td style={{ textAlign: 'center', cursor: 'grab', padding: '0 2px', userSelect: 'none' }} className="text-slate-300 hover:text-slate-500 text-[11px]" title="Drag to reorder">⠿</td>
+              return (
+                <tr
+                  key={task.id}
+                  className="group"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, origIdx)}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={(e) => handleDragOver(e, origIdx)}
+                  onDrop={(e) => handleDrop(e, origIdx)}
+                  style={{
+                    height: `${ROW_HEIGHT}px`,
+                    background: isDragging ? '#EEF2FF' : isParentRow ? '#f1f5f9' : isEven ? '#ffffff' : '#fafbfc',
+                    borderTop: isOver && dragIndex !== null && dragIndex > origIdx ? '2px solid #6366f1' : undefined,
+                    borderBottom: isOver && dragIndex !== null && dragIndex < origIdx ? '2px solid #6366f1' : undefined,
+                    opacity: isDragging ? 0.5 : 1
+                  }}
+                >
+                  <td style={{ textAlign: 'center', cursor: 'grab', padding: '0 2px', userSelect: 'none' }} className="text-slate-300 hover:text-slate-500 text-[11px]" title="Drag to reorder">⠿</td>
 
-                <td className="text-center text-slate-400 font-mono text-[11px]">{task.id}</td>
+                  <td className="text-center text-slate-400 font-mono text-[11px]">{task.id}</td>
 
-                <EditableCell task={task} field="name">
-                  <div style={{ paddingLeft: `${(task.indent || 0) * 18}px` }} className="flex items-center gap-1">
-                    {isParentRow ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onToggleCollapse(origIdx); }}
-                        className="text-slate-400 hover:text-indigo-600 w-4 h-4 flex items-center justify-center flex-shrink-0"
-                        style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
-                        title={isCollapsed ? 'Expand' : 'Collapse'}
-                      >
-                        <span className="text-[11px]">▾</span>
-                      </button>
-                    ) : (
-                      <span className="w-4 flex-shrink-0 text-center">
-                        {isMilestone ? <span className="text-amber-500 text-[11px]">◆</span>
-                          : task.indent > 0 ? <span className="text-slate-300 text-[11px]">└</span>
-                          : <span className="text-slate-300 text-[10px]">–</span>}
-                      </span>
-                    )}
-                    <span className={`truncate text-[12.5px] ${isParentRow ? 'font-semibold text-slate-800' : 'font-medium'}`}>
-                      {task.name}
-                    </span>
-                    {isParentRow && isCollapsed && childCount > 0 && (
-                      <span className="text-[8px] text-slate-400 bg-slate-200 px-1 py-px rounded flex-shrink-0">
-                        +{childCount}
-                      </span>
-                    )}
-                    {isCritical && (
-                      <span className="text-[7px] font-bold text-purple-600 bg-purple-50 border border-purple-200 px-1 py-px rounded flex-shrink-0">CP</span>
-                    )}
-                  </div>
-                </EditableCell>
-
-                <EditableCell task={task} field="parent" className="text-center font-mono text-slate-400 text-[11px]" disabled={isParentRow}>
-                  {task.parent || '–'}
-                </EditableCell>
-
-                <EditableCell task={task} field="type" className="text-center">
-                  {isMilestone ? <span className="text-[9px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">MS</span>
-                    : isParentRow ? <span className="text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">GROUP</span>
-                    : <span className="text-[9px] font-semibold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">TASK</span>}
-                </EditableCell>
-
-                <EditableCell task={task} field="dur" className={`text-center text-[12px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || isMilestone}>
-                  {task.dur}d
-                </EditableCell>
-
-                <EditableCell task={task} field="start" className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow}>
-                  {task.start}
-                </EditableCell>
-
-                <td className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-400'}`}>
-                  {finishDate}
-                </td>
-
-                <EditableCell task={task} field="pct" className={`text-center font-semibold text-[12px] ${getProgressColor(task.pct)}`} disabled={isParentRow}>
-                  {task.pct}%
-                </EditableCell>
-
-                <td className="text-center">
-                  <input type="checkbox" checked={task.tracked || false} onChange={(e) => onToggleTrack(task.id, e.target.checked)} className="accent-indigo-600 cursor-pointer w-3.5 h-3.5" />
-                </td>
-
-                <td className="text-center">
-                  <div className="flex justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => onModifyHierarchy(task.id, -1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Outdent">←</button>
-                    <button onClick={() => onModifyHierarchy(task.id, 1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Indent">→</button>
-                    <button onClick={() => onInsertTask(task.id)} className="p-0.5 text-slate-400 hover:text-emerald-600 text-[11px]" title="Insert">+</button>
-                    {onSendToTracker && (
-                      tracked ? (
-                        <span className="p-0.5 text-indigo-500 text-[11px]" title="In tracker">◆</span>
+                  <EditableCell task={task} field="name">
+                    <div style={{ paddingLeft: `${(task.indent || 0) * 18}px` }} className="flex items-center gap-1">
+                      {isParentRow ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onToggleCollapse(origIdx); }}
+                          className="text-slate-400 hover:text-indigo-600 w-4 h-4 flex items-center justify-center flex-shrink-0"
+                          style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
+                          title={isCollapsed ? 'Expand' : 'Collapse'}
+                        >
+                          <span className="text-[11px]">▾</span>
+                        </button>
                       ) : (
-                        <button onClick={() => onSendToTracker(task.id)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Send to Tracker">▸</button>
-                      )
-                    )}
-                    <button onClick={() => onDeleteTask(task.id)} className="p-0.5 text-slate-400 hover:text-rose-500 text-[11px]" title="Delete">×</button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                        <span className="w-4 flex-shrink-0 text-center">
+                          {isMilestone ? <span className="text-amber-500 text-[11px]">◆</span>
+                            : task.indent > 0 ? <span className="text-slate-300 text-[11px]">└</span>
+                            : <span className="text-slate-300 text-[10px]">–</span>}
+                        </span>
+                      )}
+                      <span className={`truncate text-[12.5px] ${isParentRow ? 'font-semibold text-slate-800' : 'font-medium'}`}>
+                        {task.name}
+                      </span>
+                      {isParentRow && isCollapsed && childCount > 0 && (
+                        <span className="text-[8px] text-slate-400 bg-slate-200 px-1 py-px rounded flex-shrink-0">
+                          +{childCount}
+                        </span>
+                      )}
+                      {isCritical && (
+                        <span className="text-[7px] font-bold text-purple-600 bg-purple-50 border border-purple-200 px-1 py-px rounded flex-shrink-0">CP</span>
+                      )}
+                    </div>
+                  </EditableCell>
+
+                  <EditableCell task={task} field="parent" className="text-center font-mono text-slate-400 text-[11px]" disabled={isParentRow}>
+                    {task.parent || '–'}
+                  </EditableCell>
+
+                  <EditableCell task={task} field="type" className="text-center">
+                    {isMilestone ? <span className="text-[9px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">MS</span>
+                      : isParentRow ? <span className="text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">GROUP</span>
+                      : <span className="text-[9px] font-semibold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">TASK</span>}
+                  </EditableCell>
+
+                  <EditableCell task={task} field="dur" className={`text-center text-[12px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || isMilestone}>
+                    {task.dur}d
+                  </EditableCell>
+
+                  <EditableCell task={task} field="start" className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow}>
+                    {task.start}
+                  </EditableCell>
+
+                  <td className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-400'}`}>
+                    {finishDate}
+                  </td>
+
+                  <EditableCell task={task} field="pct" className={`text-center font-semibold text-[12px] ${getProgressColor(task.pct)}`} disabled={isParentRow}>
+                    {task.pct}%
+                  </EditableCell>
+
+                  <td className="text-center">
+                    <input type="checkbox" checked={task.tracked || false} onChange={(e) => onToggleTrack(task.id, e.target.checked)} className="accent-indigo-600 cursor-pointer w-3.5 h-3.5" />
+                  </td>
+
+                  <td className="text-center">
+                    <div className="flex justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => onModifyHierarchy(task.id, -1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Outdent">←</button>
+                      <button onClick={() => onModifyHierarchy(task.id, 1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Indent">→</button>
+                      <button onClick={() => onInsertTask(task.id)} className="p-0.5 text-slate-400 hover:text-emerald-600 text-[11px]" title="Insert">+</button>
+                      {onSendToTracker && (
+                        tracked ? (
+                          <span className="p-0.5 text-indigo-500 text-[11px]" title="In tracker">◆</span>
+                        ) : (
+                          <button onClick={() => onSendToTracker(task.id)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Send to Tracker">▸</button>
+                        )
+                      )}
+                      <button onClick={() => onDeleteTask(task.id)} className="p-0.5 text-slate-400 hover:text-rose-500 text-[11px]" title="Delete">×</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
