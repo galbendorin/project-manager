@@ -7,7 +7,10 @@ const SHORT_COLS = ['visible', 'number', 'status', 'level', 'raised', 'target', 
 
 const isLongTextCol = (colName) => {
   const k = colName.toLowerCase().replace(/[^a-z]/g, '');
-  return !SHORT_COLS.some(s => k.includes(s));
+  // Don't apply special rendering to short columns
+  // But "Current Status" and "Issue Assigned to" etc should get the treatment
+  if (k === 'status' || k === 'number' || k === 'visible' || k === 'level' || k === 'complete') return false;
+  return !SHORT_COLS.some(s => s !== 'status' && k.includes(s));
 };
 
 const RegisterView = ({ 
@@ -100,11 +103,34 @@ const RegisterView = ({
     if (isLong) {
       return (
         <td
-          className="px-8 py-3 editable"
+          className="px-8 py-3 editable relative group/cell"
           onClick={handleClick}
-          title={hasContent ? value : undefined}
         >
-          {textValue}
+          <div 
+            className="overflow-hidden text-ellipsis"
+            style={{
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              lineHeight: '1.4em',
+              maxHeight: '2.8em'
+            }}
+          >
+            {textValue}
+          </div>
+          {hasContent && (
+            <div 
+              className="absolute invisible group-hover/cell:visible hover:visible left-0 top-full mt-1 z-[9999] bg-slate-800 text-white text-xs rounded-lg shadow-xl p-3 min-w-[200px] max-w-[500px] overflow-y-auto cursor-text"
+              style={{ 
+                whiteSpace: 'normal', 
+                wordWrap: 'break-word', 
+                maxHeight: '400px',
+                lineHeight: '1.5'
+              }}
+            >
+              {value}
+            </div>
+          )}
         </td>
       );
     }

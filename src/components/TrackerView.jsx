@@ -190,12 +190,33 @@ const TrackerView = ({
     if (isLongField) {
       return (
         <td
-          className={`px-4 py-3 ${col.editable ? 'editable cursor-pointer' : ''} text-[12.5px] text-slate-600 ${hasContent ? 'cell-with-tooltip' : ''}`}
+          className={`px-4 py-3 ${col.editable ? 'editable cursor-pointer' : ''} text-[12.5px] text-slate-600 relative group/cell`}
           onClick={() => col.editable && setEditingCell(cellId)}
         >
-          <div className="cell-clamp">{value || <span className="text-slate-300">...</span>}</div>
+          <div 
+            className="overflow-hidden text-ellipsis"
+            style={{
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              lineHeight: '1.4em',
+              maxHeight: '2.8em'
+            }}
+          >
+            {value || <span className="text-slate-300">...</span>}
+          </div>
           {hasContent && (
-            <div className="cell-tooltip">{value}</div>
+            <div 
+              className="absolute invisible group-hover/cell:visible hover:visible left-0 top-full mt-1 z-[9999] bg-slate-800 text-white text-xs rounded-lg shadow-xl p-3 min-w-[200px] max-w-[500px] overflow-y-auto cursor-text"
+              style={{ 
+                whiteSpace: 'normal', 
+                wordWrap: 'break-word', 
+                maxHeight: '400px',
+                lineHeight: '1.5'
+              }}
+            >
+              {value}
+            </div>
           )}
         </td>
       );
