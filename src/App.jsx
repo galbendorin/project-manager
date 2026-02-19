@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { SCHEMAS } from './utils/constants';
 import { useAuth } from './contexts/AuthContext';
@@ -42,11 +42,9 @@ function App() {
 // ---------- Column name mapping helpers ----------
 
 const COLUMN_MAP_SCHEDULE = {
-  // Our export format
   id: 'id', name: 'name', type: 'type', parent: 'parent',
   deptype: 'depType', depType: 'depType', dur: 'dur', start: 'start',
   pct: 'pct', indent: 'indent', tracked: 'tracked',
-  // SD-WAN / alternate format
   'ID': 'id', 'Name': 'name', 'Type': 'type', 'Parent': 'parent',
   'Dependency Type': 'depType', 'Duration': 'dur', 'Start': 'start',
   '% Complete': 'pct', 'Indent Level': 'indent',
@@ -128,7 +126,6 @@ function parseRegisterSheet(rows, columnMap) {
   });
 }
 
-// Sheet name matching
 function findSheet(sheetNames, candidates) {
   const lower = sheetNames.map(s => s.toLowerCase());
   for (const c of candidates) {
@@ -170,6 +167,16 @@ function MainApp({ project, onBackToProjects }) {
     setRegisters
   } = useProjectData(project.id);
 
+  // Reorder task by moving from one index to another
+  const handleReorderTask = useCallback((fromIndex, toIndex) => {
+    setProjectData(prev => {
+      const newTasks = [...prev];
+      const [moved] = newTasks.splice(fromIndex, 1);
+      newTasks.splice(toIndex, 0, moved);
+      return newTasks;
+    });
+  }, [setProjectData]);
+
   // Modal handlers
   const handleOpenModal = (task = null, isInsert = false, afterId = null) => {
     setEditingTask(task);
@@ -200,7 +207,6 @@ function MainApp({ project, onBackToProjects }) {
       const workbook = XLSX.read(data, { type: 'array', cellDates: true });
       const sheetNames = workbook.SheetNames;
 
-      // Find schedule sheet
       const scheduleSheet = findSheet(sheetNames, ['Schedule', 'Tasks', 'Gantt', 'Sheet1']) || sheetNames[0];
       const scheduleRows = XLSX.utils.sheet_to_json(workbook.Sheets[scheduleSheet], { raw: false });
       
@@ -212,48 +218,36 @@ function MainApp({ project, onBackToProjects }) {
 
       const tasks = parseScheduleSheet(scheduleRows);
 
-      // Parse register sheets
       const newRegisters = {
-        risks: [],
-        issues: [],
-        actions: [],
-        minutes: [],
-        costs: [],
-        changes: [],
-        comms: []
+        risks: [], issues: [], actions: [],
+        minutes: [], costs: [], changes: [], comms: []
       };
 
       const risksSheet = findSheet(sheetNames, ['Risks', 'Risk Log', 'Risk Register']);
       if (risksSheet) {
-        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[risksSheet], { raw: false });
-        newRegisters.risks = parseRegisterSheet(rows, COLUMN_MAP_RISKS);
+        newRegisters.risks = parseRegisterSheet(XLSX.utils.sheet_to_json(workbook.Sheets[risksSheet], { raw: false }), COLUMN_MAP_RISKS);
       }
 
       const issuesSheet = findSheet(sheetNames, ['Issues', 'Issue Log', 'Issue Register']);
       if (issuesSheet) {
-        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[issuesSheet], { raw: false });
-        newRegisters.issues = parseRegisterSheet(rows, COLUMN_MAP_ISSUES);
+        newRegisters.issues = parseRegisterSheet(XLSX.utils.sheet_to_json(workbook.Sheets[issuesSheet], { raw: false }), COLUMN_MAP_ISSUES);
       }
 
       const actionsSheet = findSheet(sheetNames, ['Actions', 'Action Log', 'Action Register']);
       if (actionsSheet) {
-        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[actionsSheet], { raw: false });
-        newRegisters.actions = parseRegisterSheet(rows, COLUMN_MAP_ACTIONS);
+        newRegisters.actions = parseRegisterSheet(XLSX.utils.sheet_to_json(workbook.Sheets[actionsSheet], { raw: false }), COLUMN_MAP_ACTIONS);
       }
 
       const changesSheet = findSheet(sheetNames, ['Changes', 'Change Log', 'Change Register']);
       if (changesSheet) {
-        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[changesSheet], { raw: false });
-        newRegisters.changes = parseRegisterSheet(rows, COLUMN_MAP_CHANGES);
+        newRegisters.changes = parseRegisterSheet(XLSX.utils.sheet_to_json(workbook.Sheets[changesSheet], { raw: false }), COLUMN_MAP_CHANGES);
       }
 
       const commsSheet = findSheet(sheetNames, ['Comms', 'Comms Plan', 'Communications']);
       if (commsSheet) {
-        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[commsSheet], { raw: false });
-        newRegisters.comms = parseRegisterSheet(rows, COLUMN_MAP_COMMS);
+        newRegisters.comms = parseRegisterSheet(XLSX.utils.sheet_to_json(workbook.Sheets[commsSheet], { raw: false }), COLUMN_MAP_COMMS);
       }
 
-      // Set the data
       setProjectData(tasks);
       setRegisters(prev => ({
         ...prev,
@@ -285,21 +279,13 @@ function MainApp({ project, onBackToProjects }) {
   const handleExport = () => {
     const wb = XLSX.utils.book_new();
     
-    XLSX.utils.book_append_sheet(
-      wb, 
-      XLSX.utils.json_to_sheet(projectData), 
-      "Schedule"
-    );
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(projectData), "Schedule");
 
     Object.keys(registers).forEach(key => {
       if (registers[key].length > 0) {
         const schema = SCHEMAS[key];
         if (schema) {
-          XLSX.utils.book_append_sheet(
-            wb,
-            XLSX.utils.json_to_sheet(registers[key]),
-            schema.title
-          );
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(registers[key]), schema.title);
         }
       }
     });
@@ -382,6 +368,7 @@ function MainApp({ project, onBackToProjects }) {
             onModifyHierarchy={modifyHierarchy}
             onToggleTrack={toggleTrackTask}
             onInsertTask={(taskId) => handleOpenModal(null, true, taskId)}
+            onReorderTask={handleReorderTask}
           />
         ) : (
           <RegisterView
