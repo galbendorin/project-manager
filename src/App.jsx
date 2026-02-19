@@ -176,6 +176,14 @@ function MainApp({ project, onBackToProjects }) {
     setRegisters
   } = useProjectData(project.id);
 
+  // Remove from tracker by taskId (wrapper for removeFromTracker which expects trackerId)
+  const handleRemoveFromTracker = useCallback((taskId) => {
+    const trackerItem = tracker.find(t => t.taskId === taskId);
+    if (trackerItem) {
+      removeFromTracker(trackerItem._id);
+    }
+  }, [tracker, removeFromTracker]);
+
   // Reorder task by moving from one index to another
   const handleReorderTask = useCallback((fromIndex, toIndex) => {
     setProjectData(prev => {
@@ -413,6 +421,7 @@ function MainApp({ project, onBackToProjects }) {
             onInsertTask={(taskId) => handleOpenModal(null, true, taskId)}
             onReorderTask={handleReorderTask}
             onSendToTracker={sendToTracker}
+            onRemoveFromTracker={handleRemoveFromTracker}
             isInTracker={isInTracker}
           />
         ) : activeTab === 'tracker' ? (

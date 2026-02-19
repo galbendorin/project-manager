@@ -15,6 +15,7 @@ const ScheduleGrid = ({
   onInsertTask,
   onReorderTask,
   onSendToTracker,
+  onRemoveFromTracker,
   isInTracker
 }) => {
   const [editingCell, setEditingCell] = useState(null);
@@ -256,8 +257,8 @@ const ScheduleGrid = ({
                       <button onClick={() => onModifyHierarchy(task.id, 1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Indent">→</button>
                       <button onClick={() => onInsertTask(task.id)} className="p-0.5 text-slate-400 hover:text-emerald-600 text-[11px]" title="Insert">+</button>
                       {onSendToTracker && (
-                        tracked ? (
-                          <span className="p-0.5 text-indigo-500 text-[11px]" title="In tracker">◆</span>
+                        isInTracker && isInTracker(task.id) ? (
+                          <button onClick={() => onRemoveFromTracker && onRemoveFromTracker(task.id)} className="p-0.5 text-indigo-500 hover:text-rose-500 text-[11px]" title="Remove from Tracker (click to remove)">◆</button>
                         ) : (
                           <button onClick={() => onSendToTracker(task.id)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Send to Tracker">▸</button>
                         )
