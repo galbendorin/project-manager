@@ -95,7 +95,7 @@ const ScheduleGrid = ({
       } else if (field === 'depType') {
         input = (<select autoFocus defaultValue={task[field]} onBlur={handleBlur} className="editing-input"><option value="FS">FS</option><option value="SS">SS</option><option value="FF">FF</option><option value="SF">SF</option></select>);
       } else {
-        input = (<input autoFocus type={field === 'start' ? 'date' : field === 'dur' || field === 'pct' ? 'number' : 'text'} defaultValue={task[field] ?? ''} onBlur={handleBlur} onKeyDown={handleKeyDown} className="editing-input" />);
+        input = (<input autoFocus type={field === 'start' ? 'date' : field === 'dur' || field === 'pct' ? 'number' : 'text'} defaultValue={task[field] ?? ''} onBlur={handleBlur} onKeyDown={handleKeyDown} className="editing-input" min={field === 'dur' ? '0' : undefined} />);
       }
       return <td className={className}>{input}</td>;
     }
@@ -149,9 +149,8 @@ const ScheduleGrid = ({
             const isEven = rowIdx % 2 === 0;
             const isDragging = dragIndex === origIdx;
             const isOver = dragOverIndex === origIdx;
-            const inTracker = isInTracker && isInTracker(task.id);
+            const tracked = isInTracker ? isInTracker(task.id) : false;
 
-            // Count hidden children for badge
             const childCount = isParentRow && isCollapsed && directChildCount.has(origIdx)
               ? directChildCount.get(origIdx) : 0;
 
@@ -218,9 +217,9 @@ const ScheduleGrid = ({
                     : <span className="text-[9px] font-semibold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">TASK</span>}
                 </EditableCell>
 
-                <td className={`text-center text-[12px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`}>
+                <EditableCell task={task} field="dur" className={`text-center text-[12px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || isMilestone}>
                   {task.dur}d
-                </td>
+                </EditableCell>
 
                 <EditableCell task={task} field="start" className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow}>
                   {task.start}
@@ -244,14 +243,11 @@ const ScheduleGrid = ({
                     <button onClick={() => onModifyHierarchy(task.id, 1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Indent">→</button>
                     <button onClick={() => onInsertTask(task.id)} className="p-0.5 text-slate-400 hover:text-emerald-600 text-[11px]" title="Insert">+</button>
                     {onSendToTracker && (
-                      <button
-                        onClick={() => onSendToTracker(task.id)}
-                        className={`p-0.5 text-[11px] ${inTracker ? 'text-indigo-500 cursor-default' : 'text-slate-400 hover:text-indigo-600'}`}
-                        title={inTracker ? 'Already in Tracker' : 'Send to Master Tracker'}
-                        disabled={inTracker}
-                      >
-                        {inTracker ? '◆' : '▸'}
-                      </button>
+                      tracked ? (
+                        <span className="p-0.5 text-indigo-500 text-[11px]" title="In tracker">◆</span>
+                      ) : (
+                        <button onClick={() => onSendToTracker(task.id)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Send to Tracker">▸</button>
+                      )
                     )}
                     <button onClick={() => onDeleteTask(task.id)} className="p-0.5 text-slate-400 hover:text-rose-500 text-[11px]" title="Delete">×</button>
                   </div>

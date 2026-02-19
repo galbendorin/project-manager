@@ -1,12 +1,66 @@
 /**
  * Utility functions for project management
+ * All duration calculations use business days (Mon-Fri), skipping weekends.
  */
 
+/**
+ * Add business days to a date, skipping Sat/Sun.
+ * Returns a new Date object.
+ */
+export const addBusinessDays = (startDate, days) => {
+  const date = new Date(startDate);
+  let remaining = Math.abs(parseInt(days) || 0);
+  const direction = days >= 0 ? 1 : -1;
+
+  if (remaining === 0) return date;
+
+  while (remaining > 0) {
+    date.setDate(date.getDate() + direction);
+    const dow = date.getDay();
+    if (dow !== 0 && dow !== 6) {
+      remaining--;
+    }
+  }
+  return date;
+};
+
+/**
+ * Count business days between two dates (exclusive of start, inclusive of end).
+ */
+export const countBusinessDays = (start, end) => {
+  const s = new Date(start);
+  const e = new Date(end);
+  if (e <= s) return 0;
+  let count = 0;
+  const d = new Date(s);
+  while (d < e) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+};
+
+/**
+ * Get finish date by adding business days to start date.
+ */
 export const getFinishDate = (startDate, duration) => {
   if (!startDate) return "";
-  const date = new Date(startDate);
-  date.setDate(date.getDate() + (parseInt(duration) || 0));
-  return date.toISOString().split('T')[0];
+  const dur = parseInt(duration) || 0;
+  if (dur === 0) return startDate;
+  const finish = addBusinessDays(startDate, dur);
+  return finish.toISOString().split('T')[0];
+};
+
+/**
+ * Get calendar days span for a task (used for Gantt bar width).
+ * This converts business days duration to actual calendar days.
+ */
+export const getCalendarSpan = (startDate, businessDays) => {
+  if (!startDate || !businessDays) return businessDays || 0;
+  const start = new Date(startDate);
+  const finish = addBusinessDays(startDate, businessDays);
+  return Math.round((finish - start) / 86400000);
 };
 
 export const keyGen = (str) => {
@@ -33,8 +87,7 @@ export const getProjectDateRange = (tasks) => {
 
   const minDate = new Date(Math.min(...tasks.map(t => new Date(t.start))));
   const maxDate = new Date(Math.max(...tasks.map(t => {
-    const finish = new Date(t.start);
-    finish.setDate(finish.getDate() + (t.dur || 1));
+    const finish = addBusinessDays(t.start, t.dur || 1);
     return finish;
   })));
   maxDate.setDate(maxDate.getDate() + 14);
@@ -43,13 +96,11 @@ export const getProjectDateRange = (tasks) => {
 
 /**
  * Determine parent-child relationships based on indent levels.
- * A task is a "parent" if the next task has a higher indent.
- * Its children are all subsequent tasks with higher indent until indent drops back.
  */
 export const getHierarchyMap = (tasks) => {
-  const parentChildren = new Map(); // index -> array of direct+nested child indices
+  const parentChildren = new Map();
   const isParent = new Set();
-  const directChildCount = new Map(); // index -> count of direct children only
+  const directChildCount = new Map();
 
   for (let i = 0; i < tasks.length; i++) {
     const myIndent = tasks[i].indent || 0;
@@ -78,13 +129,12 @@ export const getHierarchyMap = (tasks) => {
 
 /**
  * Calculate summary dates/duration for parent tasks.
- * Parent start = earliest child start, finish = latest child finish.
+ * Duration is in business days.
  */
 export const calculateParentSummaries = (tasks) => {
   const { parentChildren, isParent } = getHierarchyMap(tasks);
   const summaries = new Map();
 
-  // Process deepest parents first
   const parentIndices = [...isParent].sort((a, b) => b - a);
 
   for (const pIdx of parentIndices) {
@@ -110,11 +160,15 @@ export const calculateParentSummaries = (tasks) => {
     }
 
     if (earliestStart && latestFinish) {
-      const durDays = Math.round((latestFinish - earliestStart) / 86400000);
+      const startStr = earliestStart.toISOString().split('T')[0];
+      const finishStr = latestFinish.toISOString().split('T')[0];
+      const durDays = countBusinessDays(earliestStart, latestFinish);
+      const calendarDays = Math.round((latestFinish - earliestStart) / 86400000);
       summaries.set(pIdx, {
-        start: earliestStart.toISOString().split('T')[0],
-        finish: latestFinish.toISOString().split('T')[0],
-        dur: durDays
+        start: startStr,
+        finish: finishStr,
+        dur: durDays,
+        _calendarDays: calendarDays
       });
     }
   }
@@ -124,7 +178,6 @@ export const calculateParentSummaries = (tasks) => {
 
 /**
  * Get visible task indices based on collapsed state.
- * When a parent is collapsed, all its nested children are hidden.
  */
 export const getVisibleTaskIndices = (tasks, collapsedIndices) => {
   if (!collapsedIndices || collapsedIndices.size === 0) {
@@ -146,7 +199,6 @@ export const getVisibleTaskIndices = (tasks, collapsedIndices) => {
 
 /**
  * Build visible tasks array with summary overrides for parent rows.
- * Returns task objects (cloned for parents with overridden dates/dur).
  */
 export const buildVisibleTasks = (tasks, collapsedIndices) => {
   const visibleIndices = getVisibleTaskIndices(tasks, collapsedIndices);
@@ -157,12 +209,16 @@ export const buildVisibleTasks = (tasks, collapsedIndices) => {
     const task = tasks[idx];
     const summary = summaries.get(idx);
     if (isParent.has(idx) && summary) {
-      return { ...task, start: summary.start, dur: summary.dur, _isParent: true, _originalIndex: idx };
+      return { ...task, start: summary.start, dur: summary.dur, _calendarDays: summary._calendarDays, _isParent: true, _originalIndex: idx };
     }
-    return { ...task, _isParent: false, _originalIndex: idx };
+    return { ...task, _calendarDays: getCalendarSpan(task.start, task.dur), _isParent: false, _originalIndex: idx };
   });
 };
 
+/**
+ * Schedule calculation — dependency-based start date resolution.
+ * Uses business days for finish date calculations.
+ */
 export const calculateSchedule = (tasks) => {
   const taskMap = new Map(tasks.map(t => [t.id, t]));
   const resolved = new Set();
@@ -173,15 +229,23 @@ export const calculateSchedule = (tasks) => {
       const parent = taskMap.get(task.parent);
       resolve(parent);
       const pStart = new Date(parent.start);
-      const pEnd = new Date(parent.start);
-      pEnd.setDate(pEnd.getDate() + (parent.dur || 0));
-      let calculatedStart = new Date(task.start);
+      const pEnd = addBusinessDays(parent.start, parent.dur || 0);
+      let calculatedStart;
       switch (task.depType) {
         case 'FS': calculatedStart = new Date(pEnd); break;
         case 'SS': calculatedStart = new Date(pStart); break;
-        case 'FF': calculatedStart = new Date(pEnd); calculatedStart.setDate(calculatedStart.getDate() - (task.dur || 0)); break;
-        case 'SF': calculatedStart = new Date(pStart); calculatedStart.setDate(calculatedStart.getDate() - (task.dur || 0)); break;
+        case 'FF':
+          calculatedStart = addBusinessDays(pEnd.toISOString().split('T')[0], -(task.dur || 0));
+          break;
+        case 'SF':
+          calculatedStart = addBusinessDays(pStart.toISOString().split('T')[0], -(task.dur || 0));
+          break;
+        default: calculatedStart = new Date(pEnd);
       }
+      // If calculated start falls on weekend, move to next Monday
+      const dow = calculatedStart.getDay();
+      if (dow === 0) calculatedStart.setDate(calculatedStart.getDate() + 1);
+      if (dow === 6) calculatedStart.setDate(calculatedStart.getDate() + 2);
       task.start = calculatedStart.toISOString().split('T')[0];
     }
     resolved.add(task.id);
@@ -190,6 +254,9 @@ export const calculateSchedule = (tasks) => {
   return tasks;
 };
 
+/**
+ * Critical path calculation using calendar day positions for Gantt.
+ */
 export const calculateCriticalPath = (tasks) => {
   if (!tasks || tasks.length === 0) return new Set();
 
@@ -202,9 +269,9 @@ export const calculateCriticalPath = (tasks) => {
   const nodes = new Map();
   tasks.forEach(t => {
     const es = toDayNum(t.start);
-    const dur = t.dur || 0;
+    const calDays = getCalendarSpan(t.start, t.dur) || 0;
     nodes.set(t.id, {
-      id: t.id, dur, es, ef: es + dur,
+      id: t.id, dur: calDays, es, ef: es + calDays,
       ls: Infinity, lf: Infinity, float: 0,
       predecessorId: t.parent || null,
       depType: t.depType || 'FS'

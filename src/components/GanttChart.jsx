@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import Chart from 'chart.js/auto';
 import 'chartjs-adapter-date-fns';
-import { getProjectDateRange, calculateCriticalPath } from '../utils/helpers';
+import { getProjectDateRange, calculateCriticalPath, getCalendarSpan } from '../utils/helpers';
 
 // Plugin: Row stripes
 const rowStripesPlugin = {
@@ -43,11 +43,9 @@ const todayLinePlugin = {
     const todayX = xScale.getPixelForValue(today.getTime());
     if (todayX < chartArea.left || todayX > chartArea.right) return;
     ctx.save();
-    // Dashed red line
     ctx.strokeStyle = '#EF4444'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
     ctx.beginPath(); ctx.moveTo(todayX, chartArea.top); ctx.lineTo(todayX, chartArea.bottom); ctx.stroke();
     ctx.setLineDash([]);
-    // Small red dot at top instead of text label (saves vertical space)
     ctx.fillStyle = '#EF4444';
     ctx.beginPath();
     ctx.arc(todayX, chartArea.top + 4, 3, 0, Math.PI * 2);
@@ -67,12 +65,48 @@ const todayLineAxisPlugin = {
     const todayX = xScale.getPixelForValue(today.getTime());
     if (todayX < chartArea.left || todayX > chartArea.right) return;
     ctx.save();
-    // Solid red line in header
     ctx.strokeStyle = '#EF4444'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(todayX, 0); ctx.lineTo(todayX, chart.height); ctx.stroke();
-    // "Today" label in the header
     ctx.fillStyle = '#EF4444'; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('TODAY', todayX, 10);
+    ctx.restore();
+  }
+};
+
+// Plugin: Weekend shading
+const weekendShadingPlugin = {
+  id: 'weekendShading',
+  beforeDatasetsDraw(chart) {
+    const { ctx, chartArea } = chart;
+    const xScale = chart.scales.x;
+    if (!xScale || !chartArea) return;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(241, 245, 249, 0.6)';
+
+    const minTime = xScale.min;
+    const maxTime = xScale.max;
+    const d = new Date(minTime);
+    d.setHours(0, 0, 0, 0);
+
+    while (d.getTime() <= maxTime) {
+      const dow = d.getDay();
+      if (dow === 0 || dow === 6) {
+        const x1 = xScale.getPixelForValue(d.getTime());
+        const nextDay = new Date(d);
+        nextDay.setDate(nextDay.getDate() + 1);
+        const x2 = xScale.getPixelForValue(nextDay.getTime());
+        if (x2 > chartArea.left && x1 < chartArea.right) {
+          ctx.fillRect(
+            Math.max(x1, chartArea.left),
+            chartArea.top,
+            Math.min(x2, chartArea.right) - Math.max(x1, chartArea.left),
+            chartArea.bottom - chartArea.top
+          );
+        }
+      }
+      d.setDate(d.getDate() + 1);
+    }
     ctx.restore();
   }
 };
@@ -93,13 +127,14 @@ const ganttOverlayPlugin = {
     const halfBar = Math.abs(barHeight) * 0.275;
     ctx.save();
 
-    // SUMMARY / GROUP BARS — MS Project bracket style
+    // SUMMARY / GROUP BARS
     tasks.forEach((task, taskIndex) => {
       if (!task._isParent) return;
       const y = yScale.getPixelForValue(taskIndex);
       if (y == null) return;
+      const calDays = task._calendarDays || getCalendarSpan(task.start, task.dur) || 0;
       const startX = xScale.getPixelForValue(new Date(task.start).getTime());
-      const endX = xScale.getPixelForValue(new Date(task.start).getTime() + (task.dur || 0) * 86400000);
+      const endX = xScale.getPixelForValue(new Date(task.start).getTime() + calDays * 86400000);
       if (startX == null || endX == null) return;
       const width = endX - startX;
       if (width <= 0) return;
@@ -109,11 +144,9 @@ const ganttOverlayPlugin = {
       const triangleSize = 7;
       const barY = y - barThickness / 2;
 
-      // Thin horizontal bar
       ctx.fillStyle = barColor;
       ctx.fillRect(startX, barY, width, barThickness);
 
-      // Left downward triangle
       ctx.beginPath();
       ctx.moveTo(startX, barY + barThickness);
       ctx.lineTo(startX + triangleSize, barY + barThickness);
@@ -121,7 +154,6 @@ const ganttOverlayPlugin = {
       ctx.closePath();
       ctx.fill();
 
-      // Right downward triangle
       ctx.beginPath();
       ctx.moveTo(endX, barY + barThickness);
       ctx.lineTo(endX - triangleSize, barY + barThickness);
@@ -139,8 +171,9 @@ const ganttOverlayPlugin = {
         if (!bl) return;
         const y = yScale.getPixelForValue(taskIndex);
         if (y == null) return;
+        const blCalDays = getCalendarSpan(bl.start, bl.dur) || 0;
         const blStartX = xScale.getPixelForValue(new Date(bl.start).getTime());
-        const blEndX = xScale.getPixelForValue(new Date(bl.start).getTime() + (bl.dur || 0) * 86400000);
+        const blEndX = xScale.getPixelForValue(new Date(bl.start).getTime() + blCalDays * 86400000);
         if (blStartX == null || blEndX == null) return;
         const ghostHeight = halfBar * 0.6;
         const ghostY = y + halfBar + 2;
@@ -163,10 +196,12 @@ const ganttOverlayPlugin = {
       const succY = yScale.getPixelForValue(taskIndex);
       if (predY == null || succY == null) return;
       const depType = task.depType || 'FS';
+      const predCalDays = predTask._calendarDays || getCalendarSpan(predTask.start, predTask.dur) || 0.5;
+      const succCalDays = task._calendarDays || getCalendarSpan(task.start, task.dur) || 0.5;
       const predStart = new Date(predTask.start).getTime();
-      const predEnd = predStart + (predTask.dur || 0.5) * 86400000;
+      const predEnd = predStart + predCalDays * 86400000;
       const succStart = new Date(task.start).getTime();
-      const succEnd = succStart + (task.dur || 0.5) * 86400000;
+      const succEnd = succStart + succCalDays * 86400000;
       let fromX, toX;
       switch (depType) {
         case 'FS': fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succStart); break;
@@ -198,6 +233,7 @@ const ganttOverlayPlugin = {
 };
 
 Chart.register(rowStripesPlugin);
+Chart.register(weekendShadingPlugin);
 Chart.register(ganttOverlayPlugin);
 Chart.register(todayLinePlugin);
 Chart.register(todayLineAxisPlugin);
@@ -239,9 +275,11 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
     const regularTasks = tasks.filter(t => t.type !== 'Milestone' && !t._isParent);
     const milestones = tasks.filter(t => t.type === 'Milestone');
 
+    // Use calendar days for bar rendering (so bars span weekends visually)
     const taskData = regularTasks.map(task => {
       const startTime = new Date(task.start).getTime();
-      const duration = (task.dur || 0.5) * 86400000;
+      const calDays = task._calendarDays || getCalendarSpan(task.start, task.dur) || 0.5;
+      const duration = calDays * 86400000;
       return { x: [startTime, startTime + duration], y: task.name, pct: task.pct, taskId: task.id };
     });
 
@@ -289,9 +327,9 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
                 const task = tasks.find(t => t.name === context.label);
                 if (!task) return '';
                 const isCritical = criticalPathIds.has(task.id);
-                if (task._isParent) return [`Summary: ${task.name}`, `Start: ${task.start}`, `Duration: ${task.dur} days`, ...(isCritical ? ['◆ Critical Path'] : [])];
+                if (task._isParent) return [`Summary: ${task.name}`, `Start: ${task.start}`, `Duration: ${task.dur} business days`, ...(isCritical ? ['◆ Critical Path'] : [])];
                 if (task.type === 'Milestone') return [`Milestone: ${task.name}`, `Date: ${task.start}`, ...(isCritical ? ['◆ Critical Path'] : [])];
-                return [`Task: ${task.name}`, `Start: ${task.start}`, `Duration: ${task.dur} days`, `Progress: ${task.pct}%`, ...(isCritical ? ['◆ Critical Path'] : [])];
+                return [`Task: ${task.name}`, `Start: ${task.start}`, `Duration: ${task.dur} business days`, `Progress: ${task.pct}%`, ...(isCritical ? ['◆ Critical Path'] : [])];
               }
             }
           },
@@ -312,7 +350,7 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
       options: {
         indexAxis: 'y', responsive: true, maintainAspectRatio: false,
         layout: { padding: { left: 0, right: 0, top: 0, bottom: 0 } },
-        plugins: { legend: { display: false }, ganttOverlay: false, rowStripes: false, todayLine: false },
+        plugins: { legend: { display: false }, ganttOverlay: false, rowStripes: false, todayLine: false, weekendShading: false },
         scales: {
           x: { type: 'time', min: minDate.getTime(), max: maxDate.getTime(), position: 'bottom',
             time: { unit: viewMode === 'week' ? 'day' : (viewMode === '2week' ? 'week' : 'month'), displayFormats: { day: 'MMM d', week: 'MMM d', month: 'MMM yyyy' } },
