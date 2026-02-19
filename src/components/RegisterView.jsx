@@ -100,13 +100,11 @@ const RegisterView = ({
     if (isLong) {
       return (
         <td
-          className={`px-8 py-3 editable ${hasContent ? 'cell-with-tooltip' : ''}`}
+          className="px-8 py-3 editable"
           onClick={handleClick}
+          title={hasContent ? value : undefined}
         >
-          <div className="cell-clamp">{textValue}</div>
-          {hasContent && (
-            <div className="cell-tooltip">{value}</div>
-          )}
+          {textValue}
         </td>
       );
     }

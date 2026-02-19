@@ -199,6 +199,34 @@ function MainApp({ project, onBackToProjects }) {
     setActiveTab('schedule');
   }, []);
 
+  // ONE-TIME CLEANUP: Fix duplicate descriptions in Action Log
+  const cleanupDuplicateDescriptions = useCallback(() => {
+    setRegisters(prev => {
+      const cleanedActions = prev.actions.map(action => {
+        if (action.description) {
+          // Remove duplicate text patterns like "Text\nText" or "Text Text"
+          const cleaned = action.description
+            .trim()
+            .replace(/(.+)\n\1/g, '$1')  // Remove newline duplicates
+            .replace(/^(.+?)\s+\1$/g, '$1');  // Remove space duplicates
+          
+          return {
+            ...action,
+            description: cleaned
+          };
+        }
+        return action;
+      });
+      
+      return {
+        ...prev,
+        actions: cleanedActions
+      };
+    });
+    
+    alert('Action Log descriptions have been cleaned! Check the Action Log tab.');
+  }, [setRegisters]);
+
   // Modal handlers
   const handleOpenModal = (task = null, isInsert = false, afterId = null) => {
     setEditingTask(task);
@@ -368,6 +396,13 @@ function MainApp({ project, onBackToProjects }) {
           <span className="text-white font-medium">{project.name}</span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={cleanupDuplicateDescriptions}
+            className="text-xs px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
+            title="One-time cleanup of duplicate text in Action Log"
+          >
+            Clean Action Log
+          </button>
           {importStatus ? (
             <span className={`flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' ? 'text-blue-400' : 'text-amber-400'}`}>
               {importStatus}
