@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { getFinishDate } from '../utils/helpers';
+import React, { useState, useMemo } from 'react';
+import { getFinishDate, getCurrentDate } from '../utils/helpers';
 
 const RAG_OPTIONS = ['Green', 'Amber', 'Red'];
 const RAG_STYLES = {
@@ -8,13 +8,61 @@ const RAG_STYLES = {
   Red: { bg: 'bg-rose-500', ring: 'ring-rose-200', label: 'text-rose-700', labelBg: 'bg-rose-50' }
 };
 
+// Date helpers
+const daysAgo = (n) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().split('T')[0];
+};
+
+const startOfMonth = () => {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+};
+
+const isInRange = (dateStr, from, to) => {
+  if (!dateStr) return false;
+  // Handle both ISO timestamps and YYYY-MM-DD
+  const d = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+  return d >= from && d <= to;
+};
+
+const PRESETS = [
+  { label: 'Last 7 days', from: () => daysAgo(7), to: () => getCurrentDate() },
+  { label: 'Last 14 days', from: () => daysAgo(14), to: () => getCurrentDate() },
+  { label: 'Last 30 days', from: () => daysAgo(30), to: () => getCurrentDate() },
+  { label: 'This month', from: () => startOfMonth(), to: () => getCurrentDate() },
+];
+
 const StatusReportView = ({
   tasks,
   baseline,
   registers,
+  tracker,
   statusReport,
   onUpdateStatusReport
 }) => {
+  // Date range state
+  const [dateFrom, setDateFrom] = useState(daysAgo(14));
+  const [dateTo, setDateTo] = useState(getCurrentDate());
+  const [activePreset, setActivePreset] = useState('Last 14 days');
+
+  const handlePreset = (preset) => {
+    setDateFrom(preset.from());
+    setDateTo(preset.to());
+    setActivePreset(preset.label);
+  };
+
+  const handleCustomFrom = (val) => {
+    setDateFrom(val);
+    setActivePreset('Custom');
+  };
+
+  const handleCustomTo = (val) => {
+    setDateTo(val);
+    setActivePreset('Custom');
+  };
+
   // Calculate overall project completion
   const projectCompletion = useMemo(() => {
     if (!tasks || tasks.length === 0) return 0;
@@ -34,68 +82,177 @@ const StatusReportView = ({
     };
   }, [tasks]);
 
+  // ==================== PERIOD ACTIVITY (date-filtered) ====================
+
+  const periodActivity = useMemo(() => {
+    const result = {
+      newTasks: [],
+      updatedTasks: [],
+      newRisks: [],
+      updatedRisks: [],
+      newIssues: [],
+      updatedIssues: [],
+      newActions: [],
+      completedActions: [],
+      newChanges: [],
+      trackerUpdates: []
+    };
+
+    // Tasks created in period
+    result.newTasks = (tasks || []).filter(t => isInRange(t.createdAt, dateFrom, dateTo));
+    // Tasks updated in period (but not newly created — avoid duplicates)
+    result.updatedTasks = (tasks || []).filter(t =>
+      isInRange(t.updatedAt, dateFrom, dateTo) && !isInRange(t.createdAt, dateFrom, dateTo)
+    );
+
+    // Risks
+    const risks = registers?.risks || [];
+    result.newRisks = risks.filter(r => isInRange(r.createdAt, dateFrom, dateTo));
+    result.updatedRisks = risks.filter(r =>
+      isInRange(r.updatedAt, dateFrom, dateTo) && !isInRange(r.createdAt, dateFrom, dateTo)
+    );
+
+    // Issues
+    const issues = registers?.issues || [];
+    result.newIssues = issues.filter(i => isInRange(i.createdAt, dateFrom, dateTo));
+    result.updatedIssues = issues.filter(i =>
+      isInRange(i.updatedAt, dateFrom, dateTo) && !isInRange(i.createdAt, dateFrom, dateTo)
+    );
+
+    // Actions
+    const actions = registers?.actions || [];
+    result.newActions = actions.filter(a => isInRange(a.createdAt, dateFrom, dateTo));
+    result.completedActions = actions.filter(a => {
+      const status = (a.status || '').toLowerCase();
+      return (status === 'completed' || status === 'closed') && isInRange(a.updatedAt, dateFrom, dateTo);
+    });
+
+    // Changes
+    const changes = registers?.changes || [];
+    result.newChanges = changes.filter(c => isInRange(c.createdAt, dateFrom, dateTo));
+
+    // Tracker
+    result.trackerUpdates = (tracker || []).filter(t => isInRange(t.updatedAt, dateFrom, dateTo));
+
+    return result;
+  }, [tasks, registers, tracker, dateFrom, dateTo]);
+
+  // Total activity count
+  const totalActivity = useMemo(() => {
+    return periodActivity.newTasks.length + periodActivity.updatedTasks.length +
+      periodActivity.newRisks.length + periodActivity.updatedRisks.length +
+      periodActivity.newIssues.length + periodActivity.updatedIssues.length +
+      periodActivity.newActions.length + periodActivity.completedActions.length +
+      periodActivity.newChanges.length + periodActivity.trackerUpdates.length;
+  }, [periodActivity]);
+
   // Milestone comparison (baseline vs actual)
   const milestoneComparison = useMemo(() => {
     const milestones = tasks.filter(t => t.type === 'Milestone');
     if (!milestones.length) return [];
-
     const baselineMap = baseline ? new Map(baseline.map(b => [b.id, b])) : new Map();
-
     return milestones.map(ms => {
       const bl = baselineMap.get(ms.id);
       const actualStart = ms.start;
       const actualFinish = getFinishDate(ms.start, ms.dur);
       const baselineStart = bl ? bl.start : '—';
       const baselineFinish = bl ? bl.finish || getFinishDate(bl.start, bl.dur) : '—';
-
       let varianceDays = null;
       if (bl) {
-        const actualDate = new Date(actualStart);
-        const baselineDate = new Date(bl.start);
-        varianceDays = Math.round((actualDate - baselineDate) / 86400000);
+        varianceDays = Math.round((new Date(actualStart) - new Date(bl.start)) / 86400000);
       }
-
-      return {
-        id: ms.id,
-        name: ms.name,
-        baselineStart,
-        baselineFinish,
-        actualStart,
-        actualFinish,
-        varianceDays,
-        pct: ms.pct
-      };
+      return { id: ms.id, name: ms.name, baselineStart, baselineFinish, actualStart, actualFinish, varianceDays, pct: ms.pct };
     });
   }, [tasks, baseline]);
 
-  // Top open risks from register
+  // Top open risks
   const topRisks = useMemo(() => {
     if (!registers?.risks) return [];
-    return registers.risks
-      .filter(r => r.level && r.level.toString().toLowerCase() !== 'closed')
-      .slice(0, 5);
+    return registers.risks.filter(r => r.level && r.level.toString().toLowerCase() !== 'closed').slice(0, 5);
   }, [registers]);
 
-  // Top open issues from register
+  // Top open issues
   const topIssues = useMemo(() => {
     if (!registers?.issues) return [];
-    return registers.issues
-      .filter(i => {
-        const status = (i.status || '').toLowerCase();
-        return status !== 'closed' && status !== 'completed';
-      })
-      .slice(0, 5);
+    return registers.issues.filter(i => {
+      const status = (i.status || '').toLowerCase();
+      return status !== 'closed' && status !== 'completed';
+    }).slice(0, 5);
   }, [registers]);
 
   const ragStyle = RAG_STYLES[statusReport.overallRag] || RAG_STYLES.Green;
+  const handleFieldChange = (key, value) => onUpdateStatusReport(key, value);
 
-  const handleFieldChange = (key, value) => {
-    onUpdateStatusReport(key, value);
+  // Activity row component
+  const ActivityRow = ({ label, newItems, updatedItems, icon, color }) => {
+    const newCount = newItems?.length || 0;
+    const updatedCount = updatedItems?.length || 0;
+    if (newCount === 0 && updatedCount === 0) return null;
+    return (
+      <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-slate-50 text-[12px]">
+        <div className="flex items-center gap-2">
+          <span>{icon}</span>
+          <span className="font-medium text-slate-700">{label}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {newCount > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${color} bg-opacity-10`}>
+              +{newCount} new
+            </span>
+          )}
+          {updatedCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-500 bg-slate-200">
+              {updatedCount} updated
+            </span>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="w-full h-full bg-slate-50 p-6 overflow-auto">
       <div className="max-w-[1200px] mx-auto space-y-5">
+
+        {/* Date Range Picker */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Reporting Period</span>
+              <div className="flex gap-1 ml-2">
+                {PRESETS.map(preset => (
+                  <button
+                    key={preset.label}
+                    onClick={() => handlePreset(preset)}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+                      activePreset === preset.label
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 font-medium">From</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => handleCustomFrom(e.target.value)}
+                className="text-[11px] border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-indigo-300"
+              />
+              <span className="text-[10px] text-slate-400 font-medium">To</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => handleCustomTo(e.target.value)}
+                className="text-[11px] border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-indigo-300"
+              />
+            </div>
+          </div>
+        </div>
 
         {/* Header Row: RAG + Completion + Task Stats */}
         <div className="grid grid-cols-12 gap-4">
@@ -127,12 +284,9 @@ const StatusReportView = ({
             <div className="relative w-24 h-24">
               <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 100 100">
                 <circle cx="50" cy="50" r="42" stroke="#e2e8f0" strokeWidth="8" fill="none" />
-                <circle
-                  cx="50" cy="50" r="42"
+                <circle cx="50" cy="50" r="42"
                   stroke={projectCompletion === 100 ? '#10b981' : '#6366f1'}
-                  strokeWidth="8"
-                  fill="none"
-                  strokeLinecap="round"
+                  strokeWidth="8" fill="none" strokeLinecap="round"
                   strokeDasharray={`${projectCompletion * 2.64} ${264 - projectCompletion * 2.64}`}
                 />
               </svg>
@@ -163,7 +317,6 @@ const StatusReportView = ({
                 <span className="text-lg font-black text-slate-600">{taskStats.notStarted}</span>
               </div>
             </div>
-            {/* Progress bar */}
             <div className="mt-3 flex items-center gap-2">
               <div className="flex-grow h-2.5 bg-slate-200 rounded-full overflow-hidden flex">
                 <div className="bg-emerald-500 h-full" style={{ width: `${taskStats.total ? (taskStats.completed / taskStats.total) * 100 : 0}%` }} />
@@ -172,6 +325,77 @@ const StatusReportView = ({
               <span className="text-[10px] text-slate-400 flex-shrink-0">{taskStats.milestones} milestones</span>
             </div>
           </div>
+        </div>
+
+        {/* Period Activity Summary */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Period Activity — {dateFrom} to {dateTo}
+            </label>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              totalActivity > 0 ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'
+            }`}>
+              {totalActivity} total changes
+            </span>
+          </div>
+
+          {totalActivity > 0 ? (
+            <div className="space-y-1.5">
+              <ActivityRow label="Tasks" icon="📋" color="text-indigo-600" newItems={periodActivity.newTasks} updatedItems={periodActivity.updatedTasks} />
+              <ActivityRow label="Risks" icon="⚠️" color="text-amber-600" newItems={periodActivity.newRisks} updatedItems={periodActivity.updatedRisks} />
+              <ActivityRow label="Issues" icon="🔴" color="text-rose-600" newItems={periodActivity.newIssues} updatedItems={periodActivity.updatedIssues} />
+              <ActivityRow label="Actions" icon="✅" color="text-emerald-600" newItems={periodActivity.newActions} updatedItems={periodActivity.completedActions} />
+              <ActivityRow label="Changes" icon="🔄" color="text-blue-600" newItems={periodActivity.newChanges} updatedItems={[]} />
+              <ActivityRow label="Tracker Items" icon="📌" color="text-purple-600" newItems={[]} updatedItems={periodActivity.trackerUpdates} />
+
+              {/* Detail lists for new items */}
+              {periodActivity.newTasks.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Tasks This Period</div>
+                  {periodActivity.newTasks.map(t => (
+                    <div key={t.id} className="text-[11px] text-slate-600 py-0.5 pl-3 border-l-2 border-indigo-300">
+                      {t.name} <span className="text-slate-300 ml-1">({t.pct}%)</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {periodActivity.newRisks.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Risks This Period</div>
+                  {periodActivity.newRisks.map((r, i) => (
+                    <div key={r._id || i} className="text-[11px] text-slate-600 py-0.5 pl-3 border-l-2 border-amber-300">
+                      R{r.number}: {r.riskdetails || r.description || '—'}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {periodActivity.newIssues.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Issues This Period</div>
+                  {periodActivity.newIssues.map((i, idx) => (
+                    <div key={i._id || idx} className="text-[11px] text-slate-600 py-0.5 pl-3 border-l-2 border-rose-300">
+                      I{i.number}: {i.description || '—'}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {periodActivity.completedActions.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Actions Completed This Period</div>
+                  {periodActivity.completedActions.map((a, i) => (
+                    <div key={a._id || i} className="text-[11px] text-slate-600 py-0.5 pl-3 border-l-2 border-emerald-300">
+                      A{a.number}: {a.description || '—'}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-slate-300 text-sm">
+              No activity recorded in this period
+            </div>
+          )}
         </div>
 
         {/* Narrative Section */}
@@ -218,19 +442,16 @@ const StatusReportView = ({
           </div>
         </div>
 
-        {/* Risks & Issues from Registers */}
+        {/* Risks & Issues */}
         <div className="grid grid-cols-2 gap-4">
-          {/* Main Risks */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
             <div className="flex items-center justify-between mb-3">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Main Risks</label>
               {topRisks.length > 0 && (
-                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                  {topRisks.length} open
-                </span>
+                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{topRisks.length} open</span>
               )}
             </div>
-            {topRisks.length > 0 ? (
+            {topRisks.length > 0 && (
               <div className="space-y-2 mb-3">
                 {topRisks.map((risk, i) => (
                   <div key={risk._id || i} className="flex items-start gap-2 text-[11px] bg-slate-50 rounded-lg px-3 py-2">
@@ -241,14 +462,12 @@ const StatusReportView = ({
                         risk.level.toLowerCase() === 'high' ? 'bg-rose-100 text-rose-600' :
                         risk.level.toLowerCase() === 'medium' ? 'bg-amber-100 text-amber-600' :
                         'bg-emerald-100 text-emerald-600'
-                      }`}>
-                        {risk.level}
-                      </span>
+                      }`}>{risk.level}</span>
                     )}
                   </div>
                 ))}
               </div>
-            ) : null}
+            )}
             <textarea
               value={statusReport.mainRisks}
               onChange={(e) => handleFieldChange('mainRisks', e.target.value)}
@@ -256,32 +475,26 @@ const StatusReportView = ({
               className="w-full h-16 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] text-slate-700 outline-none focus:border-indigo-300 resize-none transition-colors"
             />
           </div>
-
-          {/* Main Issues */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
             <div className="flex items-center justify-between mb-3">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Main Issues</label>
               {topIssues.length > 0 && (
-                <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">
-                  {topIssues.length} open
-                </span>
+                <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">{topIssues.length} open</span>
               )}
             </div>
-            {topIssues.length > 0 ? (
+            {topIssues.length > 0 && (
               <div className="space-y-2 mb-3">
                 {topIssues.map((issue, i) => (
                   <div key={issue._id || i} className="flex items-start gap-2 text-[11px] bg-slate-50 rounded-lg px-3 py-2">
                     <span className="text-rose-500 font-bold flex-shrink-0">I{issue.number}</span>
                     <span className="text-slate-600 flex-grow">{issue.description || '—'}</span>
                     {issue.status && (
-                      <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500">
-                        {issue.status}
-                      </span>
+                      <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500">{issue.status}</span>
                     )}
                   </div>
                 ))}
               </div>
-            ) : null}
+            )}
             <textarea
               value={statusReport.mainIssues}
               onChange={(e) => handleFieldChange('mainIssues', e.target.value)}
@@ -294,7 +507,6 @@ const StatusReportView = ({
         {/* Milestone Comparison Table */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-3">Milestone Comparison — Baseline vs Actual</label>
-          
           {milestoneComparison.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -313,8 +525,7 @@ const StatusReportView = ({
                   {milestoneComparison.map(ms => (
                     <tr key={ms.id} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="px-4 py-3 font-medium text-slate-700 text-[12px]">
-                        <span className="text-amber-500 mr-1.5">◆</span>
-                        {ms.name}
+                        <span className="text-amber-500 mr-1.5">◆</span>{ms.name}
                       </td>
                       <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-400">{ms.baselineStart}</td>
                       <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-400">{ms.baselineFinish}</td>
@@ -324,8 +535,7 @@ const StatusReportView = ({
                         {ms.varianceDays !== null ? (
                           <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
                             ms.varianceDays === 0 ? 'text-emerald-600 bg-emerald-50' :
-                            ms.varianceDays > 0 ? 'text-rose-600 bg-rose-50' :
-                            'text-blue-600 bg-blue-50'
+                            ms.varianceDays > 0 ? 'text-rose-600 bg-rose-50' : 'text-blue-600 bg-blue-50'
                           }`}>
                             {ms.varianceDays === 0 ? 'On Track' : ms.varianceDays > 0 ? `+${ms.varianceDays}d late` : `${ms.varianceDays}d early`}
                           </span>
@@ -334,9 +544,7 @@ const StatusReportView = ({
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`text-[11px] font-bold ${ms.pct === 100 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                          {ms.pct}%
-                        </span>
+                        <span className={`text-[11px] font-bold ${ms.pct === 100 ? 'text-emerald-600' : 'text-slate-400'}`}>{ms.pct}%</span>
                       </td>
                     </tr>
                   ))}
@@ -348,7 +556,6 @@ const StatusReportView = ({
               No milestones in schedule. Add milestone tasks to see the comparison table.
             </div>
           )}
-
           {!baseline && milestoneComparison.length > 0 && (
             <div className="mt-3 text-center text-[11px] text-amber-500 bg-amber-50 rounded-lg py-2">
               Set a baseline in the Schedule tab to enable variance tracking

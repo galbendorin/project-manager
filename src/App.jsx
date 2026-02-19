@@ -428,6 +428,7 @@ function MainApp({ project, onBackToProjects }) {
             tasks={projectData}
             baseline={baseline}
             registers={registers}
+            tracker={tracker}
             statusReport={statusReport}
             onUpdateStatusReport={updateStatusReport}
           />

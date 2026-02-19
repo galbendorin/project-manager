@@ -3,9 +3,12 @@ import { calculateSchedule, getNextId, getCurrentDate, getFinishDate, keyGen } f
 import { DEFAULT_TASK, SCHEMAS, DEFAULT_STATUS_REPORT } from '../utils/constants';
 import { supabase } from '../lib/supabase';
 
+// Helper: get ISO timestamp
+const now = () => new Date().toISOString();
+
 /**
  * Custom hook for managing project data (tasks, registers, tracker, and status report)
- * With Supabase persistence and baseline support
+ * With Supabase persistence, baseline support, and timestamps
  */
 export const useProjectData = (projectId) => {
   const [projectData, setProjectData] = useState([]);
@@ -43,13 +46,40 @@ export const useProjectData = (projectId) => {
         .single();
 
       if (!error && data) {
-        setProjectData(data.tasks || []);
-        setRegisters(data.registers || {
+        // Backfill timestamps on load for any items missing them
+        const backfillTimestamps = (items) => {
+          if (!items || !Array.isArray(items)) return items;
+          return items.map(item => ({
+            ...item,
+            createdAt: item.createdAt || item.dateAdded || now(),
+            updatedAt: item.updatedAt || item.lastUpdated || now()
+          }));
+        };
+
+        const backfillTasks = (tasks) => {
+          if (!tasks || !Array.isArray(tasks)) return tasks;
+          return tasks.map(t => ({
+            ...t,
+            createdAt: t.createdAt || now(),
+            updatedAt: t.updatedAt || now()
+          }));
+        };
+
+        const loadedRegisters = data.registers || {
           risks: [], issues: [], actions: [],
           minutes: [], costs: [], changes: [], comms: []
+        };
+
+        // Backfill all registers
+        const backfilledRegisters = {};
+        Object.keys(loadedRegisters).forEach(key => {
+          backfilledRegisters[key] = backfillTimestamps(loadedRegisters[key]);
         });
+
+        setProjectData(backfillTasks(data.tasks || []));
+        setRegisters(backfilledRegisters);
         setBaselineState(data.baseline || null);
-        setTracker(data.tracker || []);
+        setTracker(backfillTimestamps(data.tracker || []));
         setStatusReport(data.status_report || { ...DEFAULT_STATUS_REPORT });
       }
 
@@ -79,7 +109,6 @@ export const useProjectData = (projectId) => {
         status_report: statusReport,
         updated_at: new Date().toISOString()
       };
-      // Only include baseline if it exists
       if (baseline !== undefined) {
         updateData.baseline = baseline;
       }
@@ -102,7 +131,7 @@ export const useProjectData = (projectId) => {
     };
   }, [projectData, registers, tracker, statusReport, baseline, projectId]);
 
-  // Set baseline - snapshot current task dates
+  // Set baseline
   const setBaseline = useCallback(() => {
     const baselineData = projectData.map(task => ({
       id: task.id,
@@ -113,18 +142,19 @@ export const useProjectData = (projectId) => {
     setBaselineState(baselineData);
   }, [projectData]);
 
-  // Clear baseline
   const clearBaseline = useCallback(() => {
     setBaselineState(null);
   }, []);
 
-  // Add a new task
+  // Add a new task — with timestamps
   const addTask = useCallback((taskData, insertAfterId = null) => {
     setProjectData(prev => {
       const newTask = {
         ...DEFAULT_TASK,
         ...taskData,
-        id: getNextId(prev)
+        id: getNextId(prev),
+        createdAt: now(),
+        updatedAt: now()
       };
 
       if (insertAfterId !== null) {
@@ -138,22 +168,22 @@ export const useProjectData = (projectId) => {
     });
   }, []);
 
-  // Update an existing task
+  // Update a task — stamp updatedAt
   const updateTask = useCallback((taskId, updates) => {
     setProjectData(prev => {
       const newData = prev.map(task =>
-        task.id === taskId ? { ...task, ...updates } : task
+        task.id === taskId ? { ...task, ...updates, updatedAt: now() } : task
       );
       return calculateSchedule(newData);
     });
 
-    // Also update the tracker if this task is tracked
+    // Also update tracker if this task is tracked
     setTracker(prev => {
       const trackerItem = prev.find(t => t.taskId === taskId);
       if (!trackerItem) return prev;
       return prev.map(item => {
         if (item.taskId === taskId) {
-          const updatedItem = { ...item, lastUpdated: getCurrentDate() };
+          const updatedItem = { ...item, updatedAt: now(), lastUpdated: getCurrentDate() };
           if (updates.name) updatedItem.taskName = updates.name;
           if (updates.pct !== undefined) {
             if (updates.pct === 100) updatedItem.status = 'Completed';
@@ -169,29 +199,26 @@ export const useProjectData = (projectId) => {
   // Delete a task
   const deleteTask = useCallback((taskId) => {
     setProjectData(prev => prev.filter(t => t.id !== taskId));
-    
     setRegisters(prev => ({
       ...prev,
       actions: prev.actions.filter(a => a._id !== `track_${taskId}`)
     }));
-
-    // Also remove from tracker
     setTracker(prev => prev.filter(t => t.taskId !== taskId));
   }, []);
 
-  // Modify task hierarchy (indent/outdent)
+  // Modify hierarchy — stamp updatedAt
   const modifyHierarchy = useCallback((taskId, delta) => {
     setProjectData(prev => {
-      const newData = prev.map(task => {
+      return prev.map(task => {
         if (task.id === taskId) {
           return {
             ...task,
-            indent: Math.max(0, (task.indent || 0) + delta)
+            indent: Math.max(0, (task.indent || 0) + delta),
+            updatedAt: now()
           };
         }
         return task;
       });
-      return newData;
     });
   }, []);
 
@@ -208,7 +235,6 @@ export const useProjectData = (projectId) => {
       setRegisters(prev => {
         const exists = prev.actions.find(a => a._id === actionId);
         if (exists) return prev;
-
         return {
           ...prev,
           actions: [...prev.actions, {
@@ -224,7 +250,9 @@ export const useProjectData = (projectId) => {
             raised: task.start,
             target: getFinishDate(task.start, task.dur),
             update: getCurrentDate(),
-            completed: ""
+            completed: "",
+            createdAt: now(),
+            updatedAt: now()
           }]
         };
       });
@@ -236,7 +264,7 @@ export const useProjectData = (projectId) => {
     }
   }, [projectData, updateTask]);
 
-  // Update tracked actions when task changes
+  // Update tracked actions
   const updateTrackedActions = useCallback((task) => {
     setRegisters(prev => {
       const actionId = `track_${task.id}`;
@@ -247,12 +275,12 @@ export const useProjectData = (projectId) => {
             description: task.name,
             raised: task.start,
             target: getFinishDate(task.start, task.dur),
-            status: task.pct === 100 ? "Completed" : "In Progress"
+            status: task.pct === 100 ? "Completed" : "In Progress",
+            updatedAt: now()
           };
         }
         return action;
       });
-
       return { ...prev, actions: newActions };
     });
   }, []);
@@ -265,7 +293,6 @@ export const useProjectData = (projectId) => {
 
     setTracker(prev => {
       if (prev.find(t => t.taskId === taskId)) return prev;
-
       return [...prev, {
         _id: `tracker_${taskId}_${Date.now()}`,
         taskId: taskId,
@@ -276,7 +303,9 @@ export const useProjectData = (projectId) => {
         nextAction: '',
         owner: '',
         dateAdded: getCurrentDate(),
-        lastUpdated: getCurrentDate()
+        lastUpdated: getCurrentDate(),
+        createdAt: now(),
+        updatedAt: now()
       }];
     });
   }, [projectData]);
@@ -288,7 +317,7 @@ export const useProjectData = (projectId) => {
   const updateTrackerItem = useCallback((trackerId, key, value) => {
     setTracker(prev => prev.map(item =>
       item._id === trackerId
-        ? { ...item, [key]: value, lastUpdated: getCurrentDate() }
+        ? { ...item, [key]: value, lastUpdated: getCurrentDate(), updatedAt: now() }
         : item
     ));
   }, []);
@@ -303,77 +332,23 @@ export const useProjectData = (projectId) => {
     setStatusReport(prev => ({ ...prev, [key]: value }));
   }, []);
 
-  // ==================== END ====================
+  // ==================== TEMPLATE ====================
 
-  // Load template data
   const loadTemplate = useCallback(() => {
+    const ts = now();
     const templateData = [
-      {
-        id: 1,
-        name: "Project Initiation",
-        type: "Task",
-        start: "2026-03-01",
-        dur: 3,
-        pct: 100,
-        parent: null,
-        depType: 'FS',
-        indent: 0,
-        tracked: false
-      },
-      {
-        id: 2,
-        name: "Requirements Gathering",
-        type: "Task",
-        start: "2026-03-04",
-        dur: 5,
-        pct: 75,
-        parent: 1,
-        depType: 'FS',
-        indent: 1,
-        tracked: false
-      },
-      {
-        id: 3,
-        name: "Design Phase",
-        type: "Task",
-        start: "2026-03-09",
-        dur: 7,
-        pct: 50,
-        parent: 2,
-        depType: 'FS',
-        indent: 1,
-        tracked: false
-      },
-      {
-        id: 4,
-        name: "Development Sprint 1",
-        type: "Task",
-        start: "2026-03-16",
-        dur: 10,
-        pct: 25,
-        parent: 3,
-        depType: 'FS',
-        indent: 1,
-        tracked: false
-      },
-      {
-        id: 5,
-        name: "Phase 1 Complete",
-        type: "Milestone",
-        start: "2026-03-26",
-        dur: 0,
-        pct: 0,
-        parent: 4,
-        depType: 'FS',
-        indent: 0,
-        tracked: false
-      }
+      { id: 1, name: "Project Initiation", type: "Task", start: "2026-03-01", dur: 3, pct: 100, parent: null, depType: 'FS', indent: 0, tracked: false, createdAt: ts, updatedAt: ts },
+      { id: 2, name: "Requirements Gathering", type: "Task", start: "2026-03-04", dur: 5, pct: 75, parent: 1, depType: 'FS', indent: 1, tracked: false, createdAt: ts, updatedAt: ts },
+      { id: 3, name: "Design Phase", type: "Task", start: "2026-03-09", dur: 7, pct: 50, parent: 2, depType: 'FS', indent: 1, tracked: false, createdAt: ts, updatedAt: ts },
+      { id: 4, name: "Development Sprint 1", type: "Task", start: "2026-03-16", dur: 10, pct: 25, parent: 3, depType: 'FS', indent: 1, tracked: false, createdAt: ts, updatedAt: ts },
+      { id: 5, name: "Phase 1 Complete", type: "Milestone", start: "2026-03-26", dur: 0, pct: 0, parent: 4, depType: 'FS', indent: 0, tracked: false, createdAt: ts, updatedAt: ts }
     ];
-
     setProjectData(calculateSchedule(templateData));
   }, []);
 
-  // Register management functions
+  // ==================== REGISTER FUNCTIONS ====================
+
+  // Add register item — with timestamps
   const addRegisterItem = useCallback((registerType, itemData = {}) => {
     setRegisters(prev => {
       const schema = SCHEMAS[registerType];
@@ -382,7 +357,9 @@ export const useProjectData = (projectId) => {
       const newItem = {
         _id: Date.now().toString(),
         public: true,
-        visible: true
+        visible: true,
+        createdAt: now(),
+        updatedAt: now()
       };
 
       schema.cols.forEach(col => {
@@ -404,11 +381,12 @@ export const useProjectData = (projectId) => {
     });
   }, []);
 
+  // Update register item — stamp updatedAt
   const updateRegisterItem = useCallback((registerType, itemId, key, value) => {
     setRegisters(prev => ({
       ...prev,
       [registerType]: prev[registerType].map(item =>
-        item._id === itemId ? { ...item, [key]: value } : item
+        item._id === itemId ? { ...item, [key]: value, updatedAt: now() } : item
       )
     }));
   }, []);
@@ -424,7 +402,7 @@ export const useProjectData = (projectId) => {
     setRegisters(prev => ({
       ...prev,
       [registerType]: prev[registerType].map(item =>
-        item._id === itemId ? { ...item, public: !item.public } : item
+        item._id === itemId ? { ...item, public: !item.public, updatedAt: now() } : item
       )
     }));
   }, []);
