@@ -239,7 +239,7 @@ Chart.register(todayLinePlugin);
 Chart.register(todayLineAxisPlugin);
 
 const ROW_HEIGHT = 36;
-const HEADER_HEIGHT = 48;
+const HEADER_HEIGHT = 36;
 
 const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
   const canvasRef = useRef(null);
@@ -269,7 +269,7 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
     const chartWidth = Math.max(containerRef.current?.parentElement?.clientWidth || 800, ((maxDate - minDate) / 86400000) * pxPerDay);
     const chartHeight = tasks.length * ROW_HEIGHT;
 
-    if (containerRef.current) { containerRef.current.style.width = `${chartWidth}px`; containerRef.current.style.height = `${chartHeight}px`; }
+    if (containerRef.current) { containerRef.current.style.width = `${chartWidth}px`; containerRef.current.style.height = `${chartHeight + HEADER_HEIGHT}px`; }
     if (axisCanvasRef.current?.parentElement) { axisCanvasRef.current.parentElement.style.width = `${chartWidth}px`; }
 
     const regularTasks = tasks.filter(t => t.type !== 'Milestone' && !t._isParent);
@@ -317,7 +317,7 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
       data: { labels: tasks.map(t => t.name), datasets },
       options: {
         indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-        layout: { padding: { top: 0, bottom: 0, left: 0, right: 0 } },
+        layout: { padding: { top: 4, bottom: 0, left: 0, right: 0 } },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -372,7 +372,7 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
         </div>
       </div>
       <div ref={bodyScrollRef} className="flex-grow overflow-auto custom-scrollbar" id="chart-scroll">
-        <div ref={containerRef} className="relative">
+        <div ref={containerRef} className="relative" style={{ paddingTop: `${HEADER_HEIGHT}px` }}>
           <canvas ref={canvasRef} />
         </div>
       </div>
