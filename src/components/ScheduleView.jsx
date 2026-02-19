@@ -12,7 +12,9 @@ const ScheduleView = ({
   onModifyHierarchy,
   onToggleTrack,
   onInsertTask,
-  onReorderTask
+  onReorderTask,
+  onSendToTracker,
+  isInTracker
 }) => {
   const leftPanelRef = useRef(null);
   const resizerRef = useRef(null);
@@ -115,6 +117,8 @@ const ScheduleView = ({
           onToggleTrack={onToggleTrack}
           onInsertTask={onInsertTask}
           onReorderTask={onReorderTask}
+          onSendToTracker={onSendToTracker}
+          isInTracker={isInTracker}
         />
       </div>
 

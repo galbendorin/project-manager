@@ -8,6 +8,7 @@ import Header from './components/Header';
 import Navigation from './components/Navigation';
 import ScheduleView from './components/ScheduleView';
 import RegisterView from './components/RegisterView';
+import TrackerView from './components/TrackerView';
 import TaskModal from './components/TaskModal';
 import { useProjectData } from './hooks/useProjectData';
 
@@ -147,6 +148,7 @@ function MainApp({ project, onBackToProjects }) {
   const {
     projectData,
     registers,
+    tracker,
     baseline,
     saving,
     lastSaved,
@@ -163,6 +165,10 @@ function MainApp({ project, onBackToProjects }) {
     updateRegisterItem,
     deleteRegisterItem,
     toggleItemPublic,
+    sendToTracker,
+    removeFromTracker,
+    updateTrackerItem,
+    isInTracker,
     setProjectData,
     setRegisters
   } = useProjectData(project.id);
@@ -176,6 +182,12 @@ function MainApp({ project, onBackToProjects }) {
       return newTasks;
     });
   }, [setProjectData]);
+
+  // Navigate to schedule tab (used by TrackerView link)
+  const handleNavigateToSchedule = useCallback((taskId) => {
+    setActiveTab('schedule');
+    // Could scroll to task in future enhancement
+  }, []);
 
   // Modal handlers
   const handleOpenModal = (task = null, isInsert = false, afterId = null) => {
@@ -275,11 +287,26 @@ function MainApp({ project, onBackToProjects }) {
     }
   };
 
-  // Export to Excel
+  // Export to Excel (now includes tracker)
   const handleExport = () => {
     const wb = XLSX.utils.book_new();
     
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(projectData), "Schedule");
+
+    // Export tracker if it has items
+    if (tracker.length > 0) {
+      const trackerExport = tracker.map(item => ({
+        'Task Name': item.taskName,
+        'Notes': item.notes,
+        'Status': item.status,
+        'RAG': item.rag,
+        'Next Action': item.nextAction,
+        'Owner': item.owner,
+        'Date Added': item.dateAdded,
+        'Last Updated': item.lastUpdated
+      }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(trackerExport), "Master Tracker");
+    }
 
     Object.keys(registers).forEach(key => {
       if (registers[key].length > 0) {
@@ -369,6 +396,16 @@ function MainApp({ project, onBackToProjects }) {
             onToggleTrack={toggleTrackTask}
             onInsertTask={(taskId) => handleOpenModal(null, true, taskId)}
             onReorderTask={handleReorderTask}
+            onSendToTracker={sendToTracker}
+            isInTracker={isInTracker}
+          />
+        ) : activeTab === 'tracker' ? (
+          <TrackerView
+            trackerItems={tracker}
+            tasks={projectData}
+            onUpdateItem={updateTrackerItem}
+            onRemoveItem={removeFromTracker}
+            onNavigateToSchedule={handleNavigateToSchedule}
           />
         ) : (
           <RegisterView

@@ -4,7 +4,7 @@ import { DEFAULT_TASK, SCHEMAS } from '../utils/constants';
 import { supabase } from '../lib/supabase';
 
 /**
- * Custom hook for managing project data (tasks and registers)
+ * Custom hook for managing project data (tasks, registers, and tracker)
  * With Supabase persistence and baseline support
  */
 export const useProjectData = (projectId) => {
@@ -18,6 +18,7 @@ export const useProjectData = (projectId) => {
     changes: [],
     comms: []
   });
+  const [tracker, setTracker] = useState([]);
   const [baseline, setBaselineState] = useState(null);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
@@ -36,7 +37,7 @@ export const useProjectData = (projectId) => {
 
       const { data, error } = await supabase
         .from('projects')
-        .select('tasks, registers, baseline')
+        .select('tasks, registers, baseline, tracker')
         .eq('id', projectId)
         .single();
 
@@ -47,6 +48,7 @@ export const useProjectData = (projectId) => {
           minutes: [], costs: [], changes: [], comms: []
         });
         setBaselineState(data.baseline || null);
+        setTracker(data.tracker || []);
       }
 
       setLoadingData(false);
@@ -71,6 +73,7 @@ export const useProjectData = (projectId) => {
       const updateData = {
         tasks: projectData,
         registers: registers,
+        tracker: tracker,
         updated_at: new Date().toISOString()
       };
       // Only include baseline if it exists
@@ -94,7 +97,7 @@ export const useProjectData = (projectId) => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [projectData, registers, baseline, projectId]);
+  }, [projectData, registers, tracker, baseline, projectId]);
 
   // Set baseline - snapshot current task dates
   const setBaseline = useCallback(() => {
@@ -140,6 +143,24 @@ export const useProjectData = (projectId) => {
       );
       return calculateSchedule(newData);
     });
+
+    // Also update the tracker if this task is tracked
+    setTracker(prev => {
+      const trackerItem = prev.find(t => t.taskId === taskId);
+      if (!trackerItem) return prev;
+      return prev.map(item => {
+        if (item.taskId === taskId) {
+          const updatedItem = { ...item, lastUpdated: getCurrentDate() };
+          if (updates.name) updatedItem.taskName = updates.name;
+          if (updates.pct !== undefined) {
+            if (updates.pct === 100) updatedItem.status = 'Completed';
+            else if (updates.pct > 0 && updatedItem.status === 'Not Started') updatedItem.status = 'In Progress';
+          }
+          return updatedItem;
+        }
+        return item;
+      });
+    });
   }, []);
 
   // Delete a task
@@ -150,6 +171,9 @@ export const useProjectData = (projectId) => {
       ...prev,
       actions: prev.actions.filter(a => a._id !== `track_${taskId}`)
     }));
+
+    // Also remove from tracker
+    setTracker(prev => prev.filter(t => t.taskId !== taskId));
   }, []);
 
   // Modify task hierarchy (indent/outdent)
@@ -168,7 +192,7 @@ export const useProjectData = (projectId) => {
     });
   }, []);
 
-  // Toggle task tracking
+  // Toggle task tracking (actions register)
   const toggleTrackTask = useCallback((taskId, isTracked) => {
     updateTask(taskId, { tracked: isTracked });
     
@@ -229,6 +253,53 @@ export const useProjectData = (projectId) => {
       return { ...prev, actions: newActions };
     });
   }, []);
+
+  // ==================== TRACKER FUNCTIONS ====================
+
+  // Send a task to the Master Tracker
+  const sendToTracker = useCallback((taskId) => {
+    const task = projectData.find(t => t.id === taskId);
+    if (!task) return;
+
+    setTracker(prev => {
+      // Don't add duplicates
+      if (prev.find(t => t.taskId === taskId)) return prev;
+
+      return [...prev, {
+        _id: `tracker_${taskId}_${Date.now()}`,
+        taskId: taskId,
+        taskName: task.name,
+        notes: '',
+        status: task.pct === 100 ? 'Completed' : task.pct > 0 ? 'In Progress' : 'Not Started',
+        rag: 'Green',
+        nextAction: '',
+        owner: '',
+        dateAdded: getCurrentDate(),
+        lastUpdated: getCurrentDate()
+      }];
+    });
+  }, [projectData]);
+
+  // Remove a task from the Master Tracker
+  const removeFromTracker = useCallback((trackerId) => {
+    setTracker(prev => prev.filter(t => t._id !== trackerId));
+  }, []);
+
+  // Update a tracker item field
+  const updateTrackerItem = useCallback((trackerId, key, value) => {
+    setTracker(prev => prev.map(item =>
+      item._id === trackerId
+        ? { ...item, [key]: value, lastUpdated: getCurrentDate() }
+        : item
+    ));
+  }, []);
+
+  // Check if a task is in the tracker
+  const isInTracker = useCallback((taskId) => {
+    return tracker.some(t => t.taskId === taskId);
+  }, [tracker]);
+
+  // ==================== END TRACKER FUNCTIONS ====================
 
   // Load template data
   const loadTemplate = useCallback(() => {
@@ -357,6 +428,7 @@ export const useProjectData = (projectId) => {
   return {
     projectData,
     registers,
+    tracker,
     baseline,
     saving,
     lastSaved,
@@ -374,7 +446,12 @@ export const useProjectData = (projectId) => {
     updateRegisterItem,
     deleteRegisterItem,
     toggleItemPublic,
+    sendToTracker,
+    removeFromTracker,
+    updateTrackerItem,
+    isInTracker,
     setProjectData,
-    setRegisters
+    setRegisters,
+    setTracker
   };
 };

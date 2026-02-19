@@ -34,6 +34,18 @@ export const SCHEMAS = {
   }
 };
 
+// Tracker schema (not in SCHEMAS because TrackerView has its own layout)
+export const TRACKER_COLS = [
+  { key: 'taskName', label: 'Task Name', width: 220, editable: false },
+  { key: 'notes', label: 'Notes', width: 200, editable: true },
+  { key: 'status', label: 'Status', width: 120, editable: true, type: 'select', options: ['Not Started', 'In Progress', 'On Hold', 'Completed', 'Cancelled'] },
+  { key: 'rag', label: 'RAG', width: 70, editable: true, type: 'select', options: ['Green', 'Amber', 'Red'] },
+  { key: 'nextAction', label: 'Next Action', width: 200, editable: true },
+  { key: 'owner', label: 'Owner', width: 120, editable: true },
+  { key: 'dateAdded', label: 'Date Added', width: 110, editable: false },
+  { key: 'lastUpdated', label: 'Last Updated', width: 110, editable: false }
+];
+
 // SVG Icons
 export const ICONS = {
   eyeOpen: `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>`,
@@ -83,6 +95,7 @@ export const DEFAULT_TASK = {
 // Tab configurations
 export const TABS = [
   { id: 'schedule', label: 'Schedule' },
+  { id: 'tracker', label: 'Master Tracker' },
   { id: 'risks', label: 'Risk Log' },
   { id: 'issues', label: 'Issue Log' },
   { id: 'actions', label: 'Action Log' },

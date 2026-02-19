@@ -11,12 +11,14 @@ const ScheduleGrid = ({
   onModifyHierarchy,
   onToggleTrack,
   onInsertTask,
-  onReorderTask
+  onReorderTask,
+  onSendToTracker,
+  isInTracker
 }) => {
   const [editingCell, setEditingCell] = useState(null);
   const [columnWidths, setColumnWidths] = useState({
     drag: 28, id: 40, name: 220, dep: 50, type: 70,
-    dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 90
+    dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 110
   });
   const [resizing, setResizing] = useState(null);
   const startX = useRef(0);
@@ -147,6 +149,7 @@ const ScheduleGrid = ({
             const isEven = rowIdx % 2 === 0;
             const isDragging = dragIndex === origIdx;
             const isOver = dragOverIndex === origIdx;
+            const inTracker = isInTracker && isInTracker(task.id);
 
             // Count hidden children for badge
             const childCount = isParentRow && isCollapsed && directChildCount.has(origIdx)
@@ -240,6 +243,16 @@ const ScheduleGrid = ({
                     <button onClick={() => onModifyHierarchy(task.id, -1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Outdent">←</button>
                     <button onClick={() => onModifyHierarchy(task.id, 1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Indent">→</button>
                     <button onClick={() => onInsertTask(task.id)} className="p-0.5 text-slate-400 hover:text-emerald-600 text-[11px]" title="Insert">+</button>
+                    {onSendToTracker && (
+                      <button
+                        onClick={() => onSendToTracker(task.id)}
+                        className={`p-0.5 text-[11px] ${inTracker ? 'text-indigo-500 cursor-default' : 'text-slate-400 hover:text-indigo-600'}`}
+                        title={inTracker ? 'Already in Tracker' : 'Send to Master Tracker'}
+                        disabled={inTracker}
+                      >
+                        {inTracker ? '◆' : '▸'}
+                      </button>
+                    )}
                     <button onClick={() => onDeleteTask(task.id)} className="p-0.5 text-slate-400 hover:text-rose-500 text-[11px]" title="Delete">×</button>
                   </div>
                 </td>
