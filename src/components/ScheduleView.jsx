@@ -74,6 +74,7 @@ const ScheduleView = ({
 
   // Synchronized vertical scrolling
   useEffect(() => {
+    let cleanup = null;
     const timer = setTimeout(() => {
       const gridScroll = document.getElementById('grid-scroll');
       const chartScroll = document.getElementById('chart-scroll');
@@ -92,12 +93,15 @@ const ScheduleView = ({
       gridScroll.addEventListener('scroll', handleGridScroll, { passive: true });
       chartScroll.addEventListener('scroll', handleChartScroll, { passive: true });
 
-      return () => {
+      cleanup = () => {
         gridScroll.removeEventListener('scroll', handleGridScroll);
         chartScroll.removeEventListener('scroll', handleChartScroll);
       };
     }, 150);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (cleanup) cleanup();
+    };
   }, [visibleTasks]);
 
   return (

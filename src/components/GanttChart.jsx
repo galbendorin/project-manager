@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import Chart from 'chart.js/auto';
 import 'chartjs-adapter-date-fns';
-import { getProjectDateRange, calculateCriticalPath, getCalendarSpan } from '../utils/helpers';
+import { getProjectDateRange, calculateCriticalPath, getCalendarSpan, parseDateValue, formatDateDDMMMyy } from '../utils/helpers';
 
 // Plugin: Row stripes
 const rowStripesPlugin = {
@@ -133,8 +133,10 @@ const ganttOverlayPlugin = {
       const y = yScale.getPixelForValue(taskIndex);
       if (y == null) return;
       const calDays = task._calendarDays || getCalendarSpan(task.start, task.dur) || 0;
-      const startX = xScale.getPixelForValue(new Date(task.start).getTime());
-      const endX = xScale.getPixelForValue(new Date(task.start).getTime() + calDays * 86400000);
+      const parsedStart = parseDateValue(task.start);
+      if (!parsedStart) return;
+      const startX = xScale.getPixelForValue(parsedStart.getTime());
+      const endX = xScale.getPixelForValue(parsedStart.getTime() + calDays * 86400000);
       if (startX == null || endX == null) return;
       const width = endX - startX;
       if (width <= 0) return;
@@ -172,8 +174,10 @@ const ganttOverlayPlugin = {
         const y = yScale.getPixelForValue(taskIndex);
         if (y == null) return;
         const blCalDays = getCalendarSpan(bl.start, bl.dur) || 0;
-        const blStartX = xScale.getPixelForValue(new Date(bl.start).getTime());
-        const blEndX = xScale.getPixelForValue(new Date(bl.start).getTime() + blCalDays * 86400000);
+        const blStart = parseDateValue(bl.start);
+        if (!blStart) return;
+        const blStartX = xScale.getPixelForValue(blStart.getTime());
+        const blEndX = xScale.getPixelForValue(blStart.getTime() + blCalDays * 86400000);
         if (blStartX == null || blEndX == null) return;
         const ghostHeight = halfBar * 0.6;
         const ghostY = y + halfBar + 2;
@@ -207,9 +211,12 @@ const ganttOverlayPlugin = {
       const depType = task.depType || 'FS';
       const predCalDays = predTask._calendarDays || getCalendarSpan(predTask.start, predTask.dur) || 0.5;
       const succCalDays = task._calendarDays || getCalendarSpan(task.start, task.dur) || 0.5;
-      const predStart = new Date(predTask.start).getTime();
+      const predStartDate = parseDateValue(predTask.start);
+      const succStartDate = parseDateValue(task.start);
+      if (!predStartDate || !succStartDate) return;
+      const predStart = predStartDate.getTime();
       const predEnd = predStart + predCalDays * 86400000;
-      const succStart = new Date(task.start).getTime();
+      const succStart = succStartDate.getTime();
       const succEnd = succStart + succCalDays * 86400000;
       let fromX, toX;
       switch (depType) {
@@ -277,11 +284,10 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
     const rangeDays = Math.max(1, Math.ceil((maxDate - minDate) / 86400000));
     const basePxPerDay = viewMode === 'week' ? 36 : (viewMode === '2week' ? 18 : 9);
 
-    // Prevent giant canvases that exceed browser limits (blank chart on long projects).
-    const dpr = window.devicePixelRatio || 1;
-    const maxInternalCanvas = 32760;
-    const maxCssCanvas = Math.floor(maxInternalCanvas / dpr);
-    const safePxPerDay = Math.max(1, Math.min(basePxPerDay, maxCssCanvas / rangeDays));
+    // Keep charts responsive for very large plans by hard-capping CSS width.
+    const maxCssCanvas = 8000;
+    const safePxPerDay = Math.max(2, Math.min(basePxPerDay, maxCssCanvas / rangeDays));
+    const isHeavyPlan = rangeDays > 450 || tasks.length > 120;
 
     const viewportWidth = containerRef.current?.parentElement?.clientWidth || 800;
     const desiredWidth = Math.max(viewportWidth, Math.floor(rangeDays * safePxPerDay));
@@ -296,15 +302,19 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
 
     // Use calendar days for bar rendering (so bars span weekends visually)
     const taskData = regularTasks.map(task => {
-      const startTime = new Date(task.start).getTime();
+      const start = parseDateValue(task.start);
+      if (!start) return null;
+      const startTime = start.getTime();
       const calDays = task._calendarDays || getCalendarSpan(task.start, task.dur) || 0.5;
       const duration = calDays * 86400000;
       return { x: [startTime, startTime + duration], y: task.name, pct: task.pct, taskId: task.id };
-    });
+    }).filter(Boolean);
 
-    const milestoneData = milestones.map(task => ({
-      x: new Date(task.start).getTime(), y: task.name, taskId: task.id
-    }));
+    const milestoneData = milestones.map(task => {
+      const start = parseDateValue(task.start);
+      if (!start) return null;
+      return { x: start.getTime(), y: task.name, taskId: task.id };
+    }).filter(Boolean);
 
     if (chartInstanceRef.current) chartInstanceRef.current.destroy();
     if (axisInstanceRef.current) axisInstanceRef.current.destroy();
@@ -335,6 +345,8 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
       type: 'bar',
       data: { labels: tasks.map(t => t.name), datasets },
       options: {
+        animation: false,
+        events: isHeavyPlan ? [] : undefined,
         indexAxis: 'y', responsive: true, maintainAspectRatio: false,
         layout: { padding: { top: 0, bottom: 0, left: 0, right: 0 } },
         plugins: {
@@ -346,9 +358,10 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
                 const task = tasks.find(t => t.name === context.label);
                 if (!task) return '';
                 const isCritical = criticalPathIds.has(task.id);
-                if (task._isParent) return [`Summary: ${task.name}`, `Start: ${task.start}`, `Duration: ${task.dur} business days`, ...(isCritical ? ['◆ Critical Path'] : [])];
-                if (task.type === 'Milestone') return [`Milestone: ${task.name}`, `Date: ${task.start}`, ...(isCritical ? ['◆ Critical Path'] : [])];
-                return [`Task: ${task.name}`, `Start: ${task.start}`, `Duration: ${task.dur} business days`, `Progress: ${task.pct}%`, ...(isCritical ? ['◆ Critical Path'] : [])];
+                const displayStart = formatDateDDMMMyy(task.start) || task.start;
+                if (task._isParent) return [`Summary: ${task.name}`, `Start: ${displayStart}`, `Duration: ${task.dur} business days`, ...(isCritical ? ['◆ Critical Path'] : [])];
+                if (task.type === 'Milestone') return [`Milestone: ${task.name}`, `Date: ${displayStart}`, ...(isCritical ? ['◆ Critical Path'] : [])];
+                return [`Task: ${task.name}`, `Start: ${displayStart}`, `Duration: ${task.dur} business days`, `Progress: ${task.pct}%`, ...(isCritical ? ['◆ Critical Path'] : [])];
               }
             }
           },

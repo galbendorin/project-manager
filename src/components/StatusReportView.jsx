@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { getFinishDate, getCurrentDate } from '../utils/helpers';
+import { getFinishDate, getCurrentDate, countBusinessDays, parseDateValue, formatDateDDMMMyy } from '../utils/helpers';
 
 // Track which detail sections are expanded
 
@@ -27,6 +27,20 @@ const isInRange = (dateStr, from, to) => {
   // Handle both ISO timestamps and YYYY-MM-DD
   const d = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
   return d >= from && d <= to;
+};
+
+const formatDateDisplay = (dateStr) => {
+  if (!dateStr || dateStr === '—') return '—';
+  return formatDateDDMMMyy(dateStr) || dateStr;
+};
+
+const getBusinessDayVariance = (baselineDate, actualDate) => {
+  const bl = parseDateValue(baselineDate);
+  const ac = parseDateValue(actualDate);
+  if (!bl || !ac) return null;
+  if (bl.getTime() === ac.getTime()) return 0;
+  if (ac > bl) return countBusinessDays(bl, ac);
+  return -countBusinessDays(ac, bl);
 };
 
 const PRESETS = [
@@ -160,10 +174,7 @@ const StatusReportView = ({
       const actualFinish = getFinishDate(ms.start, ms.dur);
       const baselineStart = bl ? bl.start : '—';
       const baselineFinish = bl ? bl.finish || getFinishDate(bl.start, bl.dur) : '—';
-      let varianceDays = null;
-      if (bl) {
-        varianceDays = Math.round((new Date(actualStart) - new Date(bl.start)) / 86400000);
-      }
+      const varianceDays = bl ? getBusinessDayVariance(bl.start, actualStart) : null;
       return { id: ms.id, name: ms.name, baselineStart, baselineFinish, actualStart, actualFinish, varianceDays, pct: ms.pct };
     });
   }, [tasks, baseline]);
@@ -334,7 +345,7 @@ const StatusReportView = ({
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Period Activity — {dateFrom} to {dateTo}
+              Period Activity — {formatDateDisplay(dateFrom)} to {formatDateDisplay(dateTo)}
             </label>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
               totalActivity > 0 ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'
@@ -488,10 +499,10 @@ const StatusReportView = ({
                       <td className="px-4 py-3 font-medium text-slate-700 text-[12px]">
                         <span className="text-amber-500 mr-1.5">◆</span>{ms.name}
                       </td>
-                      <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-400">{ms.baselineStart}</td>
-                      <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-400">{ms.baselineFinish}</td>
-                      <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-600">{ms.actualStart}</td>
-                      <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-600">{ms.actualFinish}</td>
+                      <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-400">{formatDateDisplay(ms.baselineStart)}</td>
+                      <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-400">{formatDateDisplay(ms.baselineFinish)}</td>
+                      <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-600">{formatDateDisplay(ms.actualStart)}</td>
+                      <td className="px-4 py-3 text-center font-mono text-[11px] text-slate-600">{formatDateDisplay(ms.actualFinish)}</td>
                       <td className="px-4 py-3 text-center">
                         {ms.varianceDays !== null ? (
                           <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
@@ -539,7 +550,7 @@ const StatusReportView = ({
                   ▶
                 </span>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  Period Detail — {dateFrom} to {dateTo}
+                  Period Detail — {formatDateDisplay(dateFrom)} to {formatDateDisplay(dateTo)}
                 </span>
               </div>
               <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">

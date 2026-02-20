@@ -3,12 +3,98 @@
  * All duration calculations use business days (Mon-Fri), skipping weekends.
  */
 
+const MONTH_INDEX = {
+  jan: 0,
+  feb: 1,
+  mar: 2,
+  apr: 3,
+  may: 4,
+  jun: 5,
+  jul: 6,
+  aug: 7,
+  sep: 8,
+  oct: 9,
+  nov: 10,
+  dec: 11
+};
+
+/**
+ * Parse supported date formats safely:
+ * - YYYY-MM-DD
+ * - DD-MMM-YY
+ * - DD-MMM-YYYY
+ * - ISO timestamps
+ */
+export const parseDateValue = (value) => {
+  if (!value && value !== 0) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : new Date(value);
+  }
+
+  if (typeof value === 'string') {
+    const raw = value.trim();
+    if (!raw) return null;
+
+    // Fast path for canonical project format.
+    const isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoDate) {
+      const y = parseInt(isoDate[1], 10);
+      const m = parseInt(isoDate[2], 10) - 1;
+      const d = parseInt(isoDate[3], 10);
+      const dt = new Date(y, m, d);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+
+    // Support imported "09-Nov-28" / "09-Nov-2028" values.
+    const dmy = raw.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2}|\d{4})$/);
+    if (dmy) {
+      const day = parseInt(dmy[1], 10);
+      const mon = MONTH_INDEX[dmy[2].toLowerCase()];
+      if (mon !== undefined) {
+        const yearRaw = dmy[3];
+        const year = yearRaw.length === 2 ? 2000 + parseInt(yearRaw, 10) : parseInt(yearRaw, 10);
+        const dt = new Date(year, mon, day);
+        return Number.isNaN(dt.getTime()) ? null : dt;
+      }
+    }
+
+    // Fallback for full ISO timestamps and any browser-parseable value.
+    const dt = new Date(raw);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+export const toISODateString = (value) => {
+  const dt = parseDateValue(value);
+  if (!dt) return '';
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+export const formatDateDDMMMyy = (value) => {
+  const dt = parseDateValue(value);
+  if (!dt) return '';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const day = String(dt.getDate()).padStart(2, '0');
+  const month = months[dt.getMonth()];
+  const year = String(dt.getFullYear()).slice(-2);
+  return `${day}-${month}-${year}`;
+};
+
 /**
  * Add business days to a date, skipping Sat/Sun.
  * Returns a new Date object.
  */
 export const addBusinessDays = (startDate, days) => {
-  const date = new Date(startDate);
+  const parsed = parseDateValue(startDate);
+  if (!parsed) return new Date(NaN);
+  const date = new Date(parsed);
   let remaining = Math.abs(parseInt(days) || 0);
   const direction = days >= 0 ? 1 : -1;
 
@@ -28,8 +114,9 @@ export const addBusinessDays = (startDate, days) => {
  * Count business days between two dates (exclusive of start, inclusive of end).
  */
 export const countBusinessDays = (start, end) => {
-  const s = new Date(start);
-  const e = new Date(end);
+  const s = parseDateValue(start);
+  const e = parseDateValue(end);
+  if (!s || !e) return 0;
   if (e <= s) return 0;
   let count = 0;
   const d = new Date(s);
@@ -46,10 +133,12 @@ export const countBusinessDays = (start, end) => {
  */
 export const getFinishDate = (startDate, duration) => {
   if (!startDate) return "";
+  const start = parseDateValue(startDate);
+  if (!start) return "";
   const dur = parseInt(duration) || 0;
-  if (dur === 0) return startDate;
-  const finish = addBusinessDays(startDate, dur);
-  return finish.toISOString().split('T')[0];
+  if (dur === 0) return toISODateString(start);
+  const finish = addBusinessDays(start, dur);
+  return toISODateString(finish);
 };
 
 /**
@@ -58,8 +147,10 @@ export const getFinishDate = (startDate, duration) => {
  */
 export const getCalendarSpan = (startDate, businessDays) => {
   if (!startDate || !businessDays) return businessDays || 0;
-  const start = new Date(startDate);
+  const start = parseDateValue(startDate);
+  if (!start) return 0;
   const finish = addBusinessDays(startDate, businessDays);
+  if (Number.isNaN(finish.getTime())) return 0;
   return Math.round((finish - start) / 86400000);
 };
 
@@ -69,12 +160,13 @@ export const keyGen = (str) => {
 
 export const formatDate = (dateStr) => {
   if (!dateStr) return "";
-  const date = new Date(dateStr);
+  const date = parseDateValue(dateStr);
+  if (!date) return "";
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 export const getCurrentDate = () => {
-  return new Date().toISOString().split('T')[0];
+  return toISODateString(new Date());
 };
 
 export const getProjectDateRange = (tasks) => {
@@ -85,11 +177,27 @@ export const getProjectDateRange = (tasks) => {
     return { minDate: today, maxDate: future };
   }
 
-  const minDate = new Date(Math.min(...tasks.map(t => new Date(t.start))));
-  const maxDate = new Date(Math.max(...tasks.map(t => {
-    const finish = addBusinessDays(t.start, t.dur || 1);
-    return finish;
-  })));
+  const startDates = tasks
+    .map(t => parseDateValue(t.start))
+    .filter(Boolean);
+
+  if (startDates.length === 0) {
+    const today = new Date();
+    const future = new Date(today);
+    future.setDate(future.getDate() + 30);
+    return { minDate: today, maxDate: future };
+  }
+
+  const minDate = new Date(Math.min(...startDates.map(d => d.getTime())));
+
+  const finishDates = tasks
+    .map(t => addBusinessDays(t.start, t.dur || 1))
+    .filter(d => !Number.isNaN(d.getTime()));
+
+  const maxDate = finishDates.length > 0
+    ? new Date(Math.max(...finishDates.map(d => d.getTime())))
+    : new Date(Math.max(...startDates.map(d => d.getTime())));
+
   maxDate.setDate(maxDate.getDate() + 14);
   return { minDate, maxDate };
 };
@@ -152,16 +260,17 @@ export const calculateParentSummaries = (tasks) => {
 
       if (!cStart) continue;
 
-      const startDate = new Date(cStart);
-      const finishDate = new Date(cFinish);
+      const startDate = parseDateValue(cStart);
+      const finishDate = parseDateValue(cFinish);
+      if (!startDate || !finishDate) continue;
 
       if (!earliestStart || startDate < earliestStart) earliestStart = startDate;
       if (!latestFinish || finishDate > latestFinish) latestFinish = finishDate;
     }
 
     if (earliestStart && latestFinish) {
-      const startStr = earliestStart.toISOString().split('T')[0];
-      const finishStr = latestFinish.toISOString().split('T')[0];
+      const startStr = toISODateString(earliestStart);
+      const finishStr = toISODateString(latestFinish);
       const durDays = countBusinessDays(earliestStart, latestFinish);
       const calendarDays = Math.round((latestFinish - earliestStart) / 86400000);
       summaries.set(pIdx, {
@@ -239,21 +348,23 @@ export const calculateSchedule = (tasks) => {
         if (!parent) continue;
         
         resolve(parent);
-        const pStart = new Date(parent.start);
+        const pStart = parseDateValue(parent.start);
         const pEnd = addBusinessDays(parent.start, parent.dur || 0);
+        if (!pStart || Number.isNaN(pEnd.getTime())) continue;
         let calculatedStart;
         
         switch (dep.depType || 'FS') {
           case 'FS': calculatedStart = new Date(pEnd); break;
           case 'SS': calculatedStart = new Date(pStart); break;
           case 'FF':
-            calculatedStart = addBusinessDays(pEnd.toISOString().split('T')[0], -(task.dur || 0));
+            calculatedStart = addBusinessDays(toISODateString(pEnd), -(task.dur || 0));
             break;
           case 'SF':
-            calculatedStart = addBusinessDays(pStart.toISOString().split('T')[0], -(task.dur || 0));
+            calculatedStart = addBusinessDays(toISODateString(pStart), -(task.dur || 0));
             break;
           default: calculatedStart = new Date(pEnd);
         }
+        if (!calculatedStart || Number.isNaN(calculatedStart.getTime())) continue;
         
         // If calculated start falls on weekend, move to next Monday
         const dow = calculatedStart.getDay();
@@ -269,7 +380,7 @@ export const calculateSchedule = (tasks) => {
           ? new Date(Math.min(...calculatedStarts)) // Earliest - start when ANY parent allows
           : new Date(Math.max(...calculatedStarts)); // Latest - wait for ALL parents (default)
         
-        task.start = finalStart.toISOString().split('T')[0];
+        task.start = toISODateString(finalStart);
       }
     }
     resolved.add(task.id);
@@ -285,10 +396,21 @@ export const calculateCriticalPath = (tasks) => {
   if (!tasks || tasks.length === 0) return new Set();
 
   const taskMap = new Map(tasks.map(t => [t.id, t]));
-  const projectStart = Math.min(...tasks.map(t => new Date(t.start).getTime()));
+  const startTimes = tasks
+    .map(t => parseDateValue(t.start))
+    .filter(Boolean)
+    .map(d => d.getTime());
+
+  if (startTimes.length === 0) return new Set();
+
+  const projectStart = Math.min(...startTimes);
   const msPerDay = 86400000;
 
-  const toDayNum = (dateStr) => Math.round((new Date(dateStr).getTime() - projectStart) / msPerDay);
+  const toDayNum = (dateStr) => {
+    const dt = parseDateValue(dateStr);
+    if (!dt) return 0;
+    return Math.round((dt.getTime() - projectStart) / msPerDay);
+  };
 
   const nodes = new Map();
   tasks.forEach(t => {
@@ -440,5 +562,5 @@ export const formatDependencies = (task) => {
  * Check if task has any dependencies
  */
 export const hasDependencies = (task) => {
-  return (task.dependencies && task.dependencies.length > 0) || task.parent !== null;
+  return (task.dependencies && task.dependencies.length > 0) || (task.parent !== null && task.parent !== undefined);
 };
