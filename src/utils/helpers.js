@@ -331,7 +331,18 @@ export const buildVisibleTasks = (tasks, collapsedIndices) => {
  */
 export const calculateSchedule = (tasks) => {
   const taskMap = new Map(tasks.map(t => [t.id, t]));
+  const idToIndex = new Map(tasks.map((t, idx) => [t.id, idx]));
+  const { parentChildren } = getHierarchyMap(tasks);
+  const parentSummaries = calculateParentSummaries(tasks);
   const resolved = new Set();
+
+  const isDescendantOf = (ancestorId, childId) => {
+    const ancestorIdx = idToIndex.get(ancestorId);
+    const childIdx = idToIndex.get(childId);
+    if (ancestorIdx === undefined || childIdx === undefined) return false;
+    const descendants = parentChildren.get(ancestorIdx);
+    return !!(descendants && descendants.includes(childIdx));
+  };
 
   function resolve(task) {
     if (!task || resolved.has(task.id)) return;
@@ -348,8 +359,20 @@ export const calculateSchedule = (tasks) => {
         if (!parent) continue;
         
         resolve(parent);
-        const pStart = parseDateValue(parent.start);
-        const pEnd = addBusinessDays(parent.start, parent.dur || 0);
+
+        // Use computed summary timing for group dependencies, but avoid
+        // descendant->ancestor loops (child depending on its own summary parent).
+        let parentStart = parent.start;
+        let parentDur = parent.dur || 0;
+        const parentIdx = idToIndex.get(parent.id);
+        const parentSummary = parentIdx !== undefined ? parentSummaries.get(parentIdx) : null;
+        if (parentSummary && !isDescendantOf(parent.id, task.id)) {
+          parentStart = parentSummary.start;
+          parentDur = parentSummary.dur;
+        }
+
+        const pStart = parseDateValue(parentStart);
+        const pEnd = addBusinessDays(parentStart, parentDur);
         if (!pStart || Number.isNaN(pEnd.getTime())) continue;
         let calculatedStart;
         
@@ -385,7 +408,9 @@ export const calculateSchedule = (tasks) => {
     }
     resolved.add(task.id);
   }
+
   tasks.forEach(t => resolve(t));
+
   return tasks;
 };
 
