@@ -181,7 +181,16 @@ const ganttOverlayPlugin = {
         ctx.strokeStyle = 'rgba(148, 163, 184, 0.5)';
         ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
         const w = blEndX - blStartX;
-        if (w > 0) { ctx.beginPath(); ctx.roundRect(blStartX, ghostY, w, ghostHeight, 4); ctx.fill(); ctx.stroke(); }
+        if (w > 0) {
+          ctx.beginPath();
+          if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(blStartX, ghostY, w, ghostHeight, 4);
+          } else {
+            ctx.rect(blStartX, ghostY, w, ghostHeight);
+          }
+          ctx.fill();
+          ctx.stroke();
+        }
         ctx.setLineDash([]);
       });
     }
@@ -265,8 +274,18 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
   useEffect(() => {
     if (!canvasRef.current || !axisCanvasRef.current || tasks.length === 0) return;
     const { minDate, maxDate } = getProjectDateRange(tasks);
-    const pxPerDay = viewMode === 'week' ? 36 : (viewMode === '2week' ? 18 : 9);
-    const chartWidth = Math.max(containerRef.current?.parentElement?.clientWidth || 800, ((maxDate - minDate) / 86400000) * pxPerDay);
+    const rangeDays = Math.max(1, Math.ceil((maxDate - minDate) / 86400000));
+    const basePxPerDay = viewMode === 'week' ? 36 : (viewMode === '2week' ? 18 : 9);
+
+    // Prevent giant canvases that exceed browser limits (blank chart on long projects).
+    const dpr = window.devicePixelRatio || 1;
+    const maxInternalCanvas = 32760;
+    const maxCssCanvas = Math.floor(maxInternalCanvas / dpr);
+    const safePxPerDay = Math.max(1, Math.min(basePxPerDay, maxCssCanvas / rangeDays));
+
+    const viewportWidth = containerRef.current?.parentElement?.clientWidth || 800;
+    const desiredWidth = Math.max(viewportWidth, Math.floor(rangeDays * safePxPerDay));
+    const chartWidth = Math.min(desiredWidth, maxCssCanvas);
     const chartHeight = tasks.length * ROW_HEIGHT;
 
     if (containerRef.current) { containerRef.current.style.width = `${chartWidth}px`; containerRef.current.style.height = `${chartHeight}px`; }
