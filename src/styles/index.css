@@ -157,3 +157,45 @@ html, body, #root {
 /* No scrollbar helper */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Cell text clamping - using line-clamp without webkit issues */
+.cell-clamp {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  line-height: 1.4em;
+  max-height: 2.8em;
+  position: relative;
+}
+
+.cell-with-tooltip {
+  position: relative;
+}
+
+.cell-tooltip {
+  display: none !important;
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 1000;
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: #1e293b;
+  color: white;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  min-width: 200px;
+  max-width: 400px;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  white-space: normal;
+  word-wrap: break-word;
+  pointer-events: none;
+}
+
+.cell-with-tooltip:hover .cell-tooltip {
+  display: block !important;
+  pointer-events: auto;
+}
