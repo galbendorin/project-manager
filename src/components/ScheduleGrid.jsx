@@ -42,6 +42,17 @@ const ScheduleGrid = ({
     setEditingCell(null);
   };
 
+  // Format date as dd-mmm-yy
+  const formatDateDisplay = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr + 'T00:00:00'); // Add time to avoid timezone issues
+    const day = date.getDate().toString().padStart(2, '0');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[date.getMonth()];
+    const year = date.getFullYear().toString().slice(-2);
+    return `${day}-${month}-${year}`;
+  };
+
   const handleResizeStart = (e, column) => {
     e.preventDefault();
     setResizing(column);
@@ -276,12 +287,12 @@ const ScheduleGrid = ({
                     {task.dur}d
                   </EditableCell>
 
-                  <EditableCell task={task} field="start" className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow}>
-                    {task.start}
+                  <EditableCell task={task} field="start" className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || task.parent !== null}>
+                    {formatDateDisplay(task.start)}
                   </EditableCell>
 
                   <td className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-400'}`}>
-                    {finishDate}
+                    {formatDateDisplay(finishDate)}
                   </td>
 
                   <EditableCell task={task} field="pct" className={`text-center font-semibold text-[12px] ${getProgressColor(task.pct)}`} disabled={isParentRow}>
