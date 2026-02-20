@@ -9,7 +9,6 @@ const ProjectSelector = ({ onSelectProject }) => {
   const [newProjectName, setNewProjectName] = useState('');
   const [creating, setCreating] = useState(false);
 
-  // Fetch user's projects
   useEffect(() => {
     fetchProjects();
   }, []);
@@ -39,8 +38,13 @@ const ProjectSelector = ({ onSelectProject }) => {
         name: newProjectName.trim(),
         tasks: [],
         registers: {
-          risks: [], issues: [], actions: [],
-          minutes: [], costs: [], changes: [], comms: []
+          risks: [],
+          issues: [],
+          actions: [],
+          minutes: [],
+          costs: [],
+          changes: [],
+          comms: []
         }
       })
       .select()
@@ -64,21 +68,21 @@ const ProjectSelector = ({ onSelectProject }) => {
   const formatDate = (dateStr) => {
     const d = new Date(dateStr);
     return d.toLocaleDateString('en-GB', {
-      day: 'numeric', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Your Projects</h1>
-            <p className="text-gray-400 text-sm mt-1">
-              {user.email}
-            </p>
+            <p className="text-gray-400 text-sm mt-1">{user.email}</p>
           </div>
           <button
             onClick={signOut}
@@ -88,7 +92,6 @@ const ProjectSelector = ({ onSelectProject }) => {
           </button>
         </div>
 
-        {/* Create New Project */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 p-4 mb-4">
           <div className="flex gap-2">
             <input
@@ -109,7 +112,6 @@ const ProjectSelector = ({ onSelectProject }) => {
           </div>
         </div>
 
-        {/* Project List */}
         <div className="space-y-2">
           {loading ? (
             <div className="text-center text-gray-400 py-8">Loading projects...</div>
@@ -119,11 +121,19 @@ const ProjectSelector = ({ onSelectProject }) => {
               <p className="text-sm">Create your first project above</p>
             </div>
           ) : (
-            projects.map(project => (
-              <button
+            projects.map((project) => (
+              <div
                 key={project.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectProject(project)}
-                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-gray-600 rounded-xl p-4 transition-colors group"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectProject(project);
+                  }
+                }}
+                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-gray-600 rounded-xl p-4 transition-colors group cursor-pointer"
               >
                 <div className="flex items-center justify-between">
                   <div>
@@ -135,21 +145,25 @@ const ProjectSelector = ({ onSelectProject }) => {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-600 group-hover:text-gray-400 text-sm">
-                      Open →
-                    </span>
+                    <span className="text-gray-600 group-hover:text-gray-400 text-sm">Open →</span>
                     <button
                       onClick={(e) => deleteProject(project.id, e)}
                       className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 p-1 transition-all"
                       title="Delete project"
+                      type="button"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
                       </svg>
                     </button>
                   </div>
                 </div>
-              </button>
+              </div>
             ))
           )}
         </div>
