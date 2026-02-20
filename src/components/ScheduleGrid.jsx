@@ -19,6 +19,7 @@ const ScheduleGrid = ({
   isInTracker
 }) => {
   const [editingCell, setEditingCell] = useState(null);
+  const [colorPickerOpen, setColorPickerOpen] = useState(null);
   const [columnWidths, setColumnWidths] = useState({
     drag: 28, id: 40, name: 220, dep: 50, type: 70,
     dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 110
@@ -168,6 +169,41 @@ const ScheduleGrid = ({
               const childCount = isParentRow && isCollapsed && directChildCount.has(origIdx)
                 ? directChildCount.get(origIdx) : 0;
 
+              // Determine row background color
+              const getRowColor = () => {
+                // Manual color override takes priority
+                if (task.rowColor) {
+                  const colorMap = {
+                    red: '#fee2e2',      // red-100
+                    amber: '#fef3c7',    // amber-100
+                    brown: '#d6c5b0'     // custom brown
+                  };
+                  return colorMap[task.rowColor] || null;
+                }
+
+                // Dragging state
+                if (isDragging) return '#EEF2FF';
+
+                // Parent rows
+                if (isParentRow) return '#f1f5f9';
+
+                // Check if task is past deadline (finish date in the past and not 100% complete)
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const taskFinish = new Date(finishDate);
+                taskFinish.setHours(0, 0, 0, 0);
+                const isPastDeadline = taskFinish < today && task.pct < 100;
+
+                if (isPastDeadline) return '#fee2e2'; // red-100
+
+                // Progress-based coloring
+                if (task.pct === 100) return '#d1fae5'; // green-100
+                if (task.pct > 0 && task.pct < 100) return '#ecfdf5'; // green-50 (light green)
+
+                // Default alternating rows
+                return isEven ? '#ffffff' : '#fafbfc';
+              };
+
               return (
                 <tr
                   key={task.id}
@@ -179,7 +215,7 @@ const ScheduleGrid = ({
                   onDrop={(e) => handleDrop(e, origIdx)}
                   style={{
                     height: `${ROW_HEIGHT}px`,
-                    background: isDragging ? '#EEF2FF' : isParentRow ? '#f1f5f9' : isEven ? '#ffffff' : '#fafbfc',
+                    background: getRowColor(),
                     borderTop: isOver && dragIndex !== null && dragIndex > origIdx ? '2px solid #6366f1' : undefined,
                     borderBottom: isOver && dragIndex !== null && dragIndex < origIdx ? '2px solid #6366f1' : undefined,
                     opacity: isDragging ? 0.5 : 1
@@ -262,6 +298,75 @@ const ScheduleGrid = ({
                         ) : (
                           <button onClick={() => onSendToTracker(task.id)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Send to Tracker">▸</button>
                         )
+                      )}
+                      <>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setColorPickerOpen(colorPickerOpen === task.id ? null : task.id);
+                          }}
+                          className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" 
+                          title="Set row color"
+                        >
+                          🎨
+                        </button>
+                      </>
+                      {colorPickerOpen === task.id && (
+                        <div 
+                          className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-[9999]"
+                          onClick={() => setColorPickerOpen(null)}
+                        >
+                          <div 
+                            className="bg-white border border-slate-300 rounded-lg shadow-2xl p-3"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ minWidth: '160px' }}
+                          >
+                            <div className="text-sm font-semibold text-slate-700 mb-2 pb-2 border-b">Choose Row Color</div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateTask(task.id, { rowColor: null });
+                                setColorPickerOpen(null);
+                              }}
+                              className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-100 rounded mb-1"
+                            >
+                              ⚪ Default
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateTask(task.id, { rowColor: 'red' });
+                                setColorPickerOpen(null);
+                              }}
+                              className="block w-full text-left px-3 py-2 text-sm hover:bg-red-100 rounded mb-1"
+                              style={{ backgroundColor: task.rowColor === 'red' ? '#fee2e2' : undefined }}
+                            >
+                              🔴 Red
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateTask(task.id, { rowColor: 'amber' });
+                                setColorPickerOpen(null);
+                              }}
+                              className="block w-full text-left px-3 py-2 text-sm hover:bg-amber-100 rounded mb-1"
+                              style={{ backgroundColor: task.rowColor === 'amber' ? '#fef3c7' : undefined }}
+                            >
+                              🟡 Amber
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateTask(task.id, { rowColor: 'brown' });
+                                setColorPickerOpen(null);
+                              }}
+                              className="block w-full text-left px-3 py-2 text-sm hover:bg-amber-100 rounded"
+                              style={{ backgroundColor: task.rowColor === 'brown' ? '#d6c5b0' : undefined }}
+                            >
+                              🟤 Brown
+                            </button>
+                          </div>
+                        </div>
                       )}
                       <button onClick={() => onDeleteTask(task.id)} className="p-0.5 text-slate-400 hover:text-rose-500 text-[11px]" title="Delete">×</button>
                     </div>
