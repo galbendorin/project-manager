@@ -21,7 +21,7 @@ const ScheduleGrid = ({
   const [editingCell, setEditingCell] = useState(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(null);
   const [columnWidths, setColumnWidths] = useState({
-    drag: 28, id: 40, name: 220, dep: 50, type: 70,
+    drag: 28, id: 40, name: 220, parent: 50, dep: 50, type: 70,
     dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 110
   });
   const [resizing, setResizing] = useState(null);
@@ -137,7 +137,8 @@ const ScheduleGrid = ({
               <th style={{ textAlign: 'center', padding: '8px 2px' }}>⠿</th>
               <th className="text-center">ID <ResizeHandle column="id" /></th>
               <th>Task Name <ResizeHandle column="name" /></th>
-              <th className="text-center">Dep <ResizeHandle column="dep" /></th>
+              <th className="text-center" title="Parent Task ID">Parent <ResizeHandle column="parent" /></th>
+              <th className="text-center" title="Dependency Logic Type">Dep <ResizeHandle column="dep" /></th>
               <th className="text-center">Type <ResizeHandle column="type" /></th>
               <th className="text-center">Dur <ResizeHandle column="dur" /></th>
               <th>Start Date <ResizeHandle column="start" /></th>
@@ -259,6 +260,10 @@ const ScheduleGrid = ({
 
                   <EditableCell task={task} field="parent" className="text-center font-mono text-slate-400 text-[11px]" disabled={isParentRow}>
                     {task.parent || '–'}
+                  </EditableCell>
+
+                  <EditableCell task={task} field="depType" className="text-center">
+                    <span className="text-[10px] font-semibold text-slate-500">{task.depType || 'FS'}</span>
                   </EditableCell>
 
                   <EditableCell task={task} field="type" className="text-center">
