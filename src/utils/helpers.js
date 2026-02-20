@@ -218,6 +218,7 @@ export const buildVisibleTasks = (tasks, collapsedIndices) => {
 /**
  * Schedule calculation — dependency-based start date resolution.
  * Uses business days for finish date calculations.
+ * Supports multiple dependencies per task with individual dependency types.
  */
 export const calculateSchedule = (tasks) => {
   const taskMap = new Map(tasks.map(t => [t.id, t]));
@@ -225,28 +226,51 @@ export const calculateSchedule = (tasks) => {
 
   function resolve(task) {
     if (!task || resolved.has(task.id)) return;
-    if (task.parent && taskMap.has(task.parent)) {
-      const parent = taskMap.get(task.parent);
-      resolve(parent);
-      const pStart = new Date(parent.start);
-      const pEnd = addBusinessDays(parent.start, parent.dur || 0);
-      let calculatedStart;
-      switch (task.depType) {
-        case 'FS': calculatedStart = new Date(pEnd); break;
-        case 'SS': calculatedStart = new Date(pStart); break;
-        case 'FF':
-          calculatedStart = addBusinessDays(pEnd.toISOString().split('T')[0], -(task.dur || 0));
-          break;
-        case 'SF':
-          calculatedStart = addBusinessDays(pStart.toISOString().split('T')[0], -(task.dur || 0));
-          break;
-        default: calculatedStart = new Date(pEnd);
+    
+    // Handle both old (parent/depType) and new (dependencies array) format
+    const deps = task.dependencies || (task.parent ? [{ parentId: task.parent, depType: task.depType || 'FS' }] : []);
+    
+    if (deps.length > 0) {
+      const depLogic = task.depLogic || 'ALL'; // Default to ALL (wait for all parents)
+      let calculatedStarts = [];
+      
+      for (const dep of deps) {
+        const parent = taskMap.get(dep.parentId);
+        if (!parent) continue;
+        
+        resolve(parent);
+        const pStart = new Date(parent.start);
+        const pEnd = addBusinessDays(parent.start, parent.dur || 0);
+        let calculatedStart;
+        
+        switch (dep.depType || 'FS') {
+          case 'FS': calculatedStart = new Date(pEnd); break;
+          case 'SS': calculatedStart = new Date(pStart); break;
+          case 'FF':
+            calculatedStart = addBusinessDays(pEnd.toISOString().split('T')[0], -(task.dur || 0));
+            break;
+          case 'SF':
+            calculatedStart = addBusinessDays(pStart.toISOString().split('T')[0], -(task.dur || 0));
+            break;
+          default: calculatedStart = new Date(pEnd);
+        }
+        
+        // If calculated start falls on weekend, move to next Monday
+        const dow = calculatedStart.getDay();
+        if (dow === 0) calculatedStart.setDate(calculatedStart.getDate() + 1);
+        if (dow === 6) calculatedStart.setDate(calculatedStart.getDate() + 2);
+        
+        calculatedStarts.push(calculatedStart);
       }
-      // If calculated start falls on weekend, move to next Monday
-      const dow = calculatedStart.getDay();
-      if (dow === 0) calculatedStart.setDate(calculatedStart.getDate() + 1);
-      if (dow === 6) calculatedStart.setDate(calculatedStart.getDate() + 2);
-      task.start = calculatedStart.toISOString().split('T')[0];
+      
+      if (calculatedStarts.length > 0) {
+        // Apply dependency logic
+        const finalStart = depLogic === 'ANY' 
+          ? new Date(Math.min(...calculatedStarts)) // Earliest - start when ANY parent allows
+          : new Date(Math.max(...calculatedStarts)); // Latest - wait for ALL parents (default)
+        
+        task.start = finalStart.toISOString().split('T')[0];
+      }
     }
     resolved.add(task.id);
   }
@@ -396,4 +420,25 @@ export const sortRegisterItems = (items, sortKey, sortDirection = 'asc') => {
     const comparison = String(aVal).localeCompare(String(bVal));
     return sortDirection === 'asc' ? comparison : -comparison;
   });
+};
+
+/**
+ * Format dependencies for display in grid
+ * Returns string like "1FS, 5SS, 10FF"
+ */
+export const formatDependencies = (task) => {
+  if (task.dependencies && task.dependencies.length > 0) {
+    return task.dependencies.map(d => `${d.parentId}${d.depType}`).join(', ');
+  }
+  if (task.parent) {
+    return `${task.parent}${task.depType || 'FS'}`;
+  }
+  return '–';
+};
+
+/**
+ * Check if task has any dependencies
+ */
+export const hasDependencies = (task) => {
+  return (task.dependencies && task.dependencies.length > 0) || task.parent !== null;
 };

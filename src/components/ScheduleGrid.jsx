@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { getFinishDate, calculateCriticalPath, getHierarchyMap } from '../utils/helpers';
+import { getFinishDate, calculateCriticalPath, getHierarchyMap, formatDependencies, hasDependencies } from '../utils/helpers';
 
 const GRID_HEADER_HEIGHT = 55;
 
@@ -20,6 +20,9 @@ const ScheduleGrid = ({
 }) => {
   const [editingCell, setEditingCell] = useState(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(null);
+  const [dependenciesEditorOpen, setDependenciesEditorOpen] = useState(null);
+  const [editingDependencies, setEditingDependencies] = useState([]);
+  const [editingDepLogic, setEditingDepLogic] = useState('ALL');
   const [columnWidths, setColumnWidths] = useState({
     drag: 28, id: 40, name: 220, parent: 50, dep: 50, type: 70,
     dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 110
@@ -51,6 +54,44 @@ const ScheduleGrid = ({
     const month = months[date.getMonth()];
     const year = date.getFullYear().toString().slice(-2);
     return `${day}-${month}-${year}`;
+  };
+
+  // Open dependencies editor
+  const openDependenciesEditor = (task) => {
+    // Load existing dependencies or convert old format
+    const deps = task.dependencies || (task.parent ? [{ parentId: task.parent, depType: task.depType || 'FS' }] : []);
+    setEditingDependencies(deps.length > 0 ? deps : [{ parentId: '', depType: 'FS' }]);
+    setEditingDepLogic(task.depLogic || 'ALL');
+    setDependenciesEditorOpen(task.id);
+  };
+
+  // Save dependencies
+  const saveDependencies = () => {
+    const validDeps = editingDependencies.filter(d => d.parentId && d.parentId !== '');
+    onUpdateTask(dependenciesEditorOpen, {
+      dependencies: validDeps.length > 0 ? validDeps : null,
+      depLogic: editingDepLogic,
+      parent: null, // Clear old parent field
+      depType: null // Clear old depType field
+    });
+    setDependenciesEditorOpen(null);
+  };
+
+  // Add new dependency row
+  const addDependency = () => {
+    setEditingDependencies([...editingDependencies, { parentId: '', depType: 'FS' }]);
+  };
+
+  // Remove dependency row
+  const removeDependency = (index) => {
+    setEditingDependencies(editingDependencies.filter((_, i) => i !== index));
+  };
+
+  // Update dependency
+  const updateDependency = (index, field, value) => {
+    const updated = [...editingDependencies];
+    updated[index][field] = field === 'parentId' ? (value === '' ? '' : parseInt(value) || '') : value;
+    setEditingDependencies(updated);
   };
 
   const handleResizeStart = (e, column) => {
@@ -148,8 +189,7 @@ const ScheduleGrid = ({
               <th style={{ textAlign: 'center', padding: '8px 2px' }}>⠿</th>
               <th className="text-center">ID <ResizeHandle column="id" /></th>
               <th>Task Name <ResizeHandle column="name" /></th>
-              <th className="text-center" title="Parent Task ID">Parent <ResizeHandle column="parent" /></th>
-              <th className="text-center" title="Dependency Logic Type">Dep <ResizeHandle column="dep" /></th>
+              <th className="text-center" colSpan={2} title="Dependencies (Parent ID + Type)">Dependencies</th>
               <th className="text-center">Type <ResizeHandle column="type" /></th>
               <th className="text-center">Dur <ResizeHandle column="dur" /></th>
               <th>Start Date <ResizeHandle column="start" /></th>
@@ -269,13 +309,14 @@ const ScheduleGrid = ({
                     </div>
                   </EditableCell>
 
-                  <EditableCell task={task} field="parent" className="text-center font-mono text-slate-400 text-[11px]" disabled={isParentRow}>
-                    {task.parent || '–'}
-                  </EditableCell>
-
-                  <EditableCell task={task} field="depType" className="text-center">
-                    <span className="text-[10px] font-semibold text-slate-500">{task.depType || 'FS'}</span>
-                  </EditableCell>
+                  <td 
+                    className="text-center text-[10px] text-slate-600 cursor-pointer hover:bg-indigo-50 px-2"
+                    onClick={() => !isParentRow && openDependenciesEditor(task)}
+                    title="Click to edit dependencies"
+                    colSpan={2}
+                  >
+                    {formatDependencies(task)}
+                  </td>
 
                   <EditableCell task={task} field="type" className="text-center">
                     {isMilestone ? <span className="text-[9px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">MS</span>
@@ -287,7 +328,7 @@ const ScheduleGrid = ({
                     {task.dur}d
                   </EditableCell>
 
-                  <EditableCell task={task} field="start" className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || task.parent !== null}>
+                  <EditableCell task={task} field="start" className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || hasDependencies(task)}>
                     {formatDateDisplay(task.start)}
                   </EditableCell>
 
@@ -393,6 +434,106 @@ const ScheduleGrid = ({
           </tbody>
         </table>
       </div>
+
+      {/* Dependencies Editor Modal */}
+      {dependenciesEditorOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[9999]"
+          onClick={() => setDependenciesEditorOpen(null)}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-2xl p-6 max-w-2xl w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Edit Dependencies - Task #{dependenciesEditorOpen}</h3>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Dependency Logic:
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="depLogic" 
+                    value="ALL" 
+                    checked={editingDepLogic === 'ALL'}
+                    onChange={(e) => setEditingDepLogic(e.target.value)}
+                    className="accent-indigo-600"
+                  />
+                  <span className="text-sm">ALL (wait for all parents to finish)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="depLogic" 
+                    value="ANY" 
+                    checked={editingDepLogic === 'ANY'}
+                    onChange={(e) => setEditingDepLogic(e.target.value)}
+                    className="accent-indigo-600"
+                  />
+                  <span className="text-sm">ANY (start when any parent allows)</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Dependencies:</label>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {editingDependencies.map((dep, index) => (
+                  <div key={index} className="flex gap-2 items-center">
+                    <input
+                      type="number"
+                      placeholder="Parent ID"
+                      value={dep.parentId}
+                      onChange={(e) => updateDependency(index, 'parentId', e.target.value)}
+                      className="border border-slate-300 rounded px-3 py-2 text-sm flex-1"
+                      min="1"
+                    />
+                    <select
+                      value={dep.depType}
+                      onChange={(e) => updateDependency(index, 'depType', e.target.value)}
+                      className="border border-slate-300 rounded px-3 py-2 text-sm w-24"
+                    >
+                      <option value="FS">FS</option>
+                      <option value="SS">SS</option>
+                      <option value="FF">FF</option>
+                      <option value="SF">SF</option>
+                    </select>
+                    <button
+                      onClick={() => removeDependency(index)}
+                      className="px-3 py-2 text-rose-600 hover:bg-rose-50 rounded text-sm font-semibold"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={addDependency}
+                className="mt-2 px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-sm font-semibold"
+              >
+                + Add Dependency
+              </button>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDependenciesEditorOpen(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded text-sm font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveDependencies}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm font-semibold"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
