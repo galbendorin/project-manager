@@ -76,7 +76,8 @@ const todayLineAxisPlugin = {
 // Plugin: Weekend shading
 const weekendShadingPlugin = {
   id: 'weekendShading',
-  beforeDatasetsDraw(chart) {
+  beforeDatasetsDraw(chart, args, options) {
+    if (options?.compact) return;
     const { ctx, chartArea } = chart;
     const xScale = chart.scales.x;
     if (!xScale || !chartArea) return;
@@ -119,10 +120,12 @@ const ganttOverlayPlugin = {
     const tasks = options.tasks || [];
     const criticalIds = options.criticalIds || new Set();
     const baseline = options.baseline || null;
+    const compact = !!options.compact;
     if (tasks.length === 0) return;
     const xScale = chart.scales.x;
     const yScale = chart.scales.y;
     if (!xScale || !yScale) return;
+    const taskIndexById = new Map(tasks.map((task, idx) => [task.id, idx]));
     const barHeight = yScale.getPixelForValue(1) - yScale.getPixelForValue(0);
     const halfBar = Math.abs(barHeight) * 0.275;
     ctx.save();
@@ -165,7 +168,7 @@ const ganttOverlayPlugin = {
     });
 
     // BASELINE GHOST BARS
-    if (baseline && baseline.length > 0) {
+    if (!compact && baseline && baseline.length > 0) {
       const baselineMap = new Map(baseline.map(b => [b.id, b]));
       tasks.forEach((task, taskIndex) => {
         if (task._isParent) return;
@@ -200,10 +203,10 @@ const ganttOverlayPlugin = {
     }
 
     // DEPENDENCY LINES
-    tasks.forEach((task, taskIndex) => {
+    if (!compact) tasks.forEach((task, taskIndex) => {
       if (!task.parent) return;
-      const predIndex = tasks.findIndex(t => t.id === task.parent);
-      if (predIndex === -1) return;
+      const predIndex = taskIndexById.get(task.parent);
+      if (predIndex === undefined) return;
       const predTask = tasks[predIndex];
       const predY = yScale.getPixelForValue(predIndex);
       const succY = yScale.getPixelForValue(taskIndex);
@@ -266,7 +269,10 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
   const axisContainerRef = useRef(null);
   const bodyScrollRef = useRef(null);
 
-  const criticalPathIds = useMemo(() => calculateCriticalPath(tasks), [tasks]);
+  const criticalPathIds = useMemo(() => {
+    if ((tasks?.length || 0) > 250) return new Set();
+    return calculateCriticalPath(tasks);
+  }, [tasks]);
 
   // Sync horizontal scroll
   useEffect(() => {
@@ -282,12 +288,15 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
     if (!canvasRef.current || !axisCanvasRef.current || tasks.length === 0) return;
     const { minDate, maxDate } = getProjectDateRange(tasks);
     const rangeDays = Math.max(1, Math.ceil((maxDate - minDate) / 86400000));
-    const basePxPerDay = viewMode === 'week' ? 36 : (viewMode === '2week' ? 18 : 9);
+    const isHeavyPlan = rangeDays > 450 || tasks.length > 120;
+    const basePxPerDay = isHeavyPlan
+      ? (viewMode === 'week' ? 14 : (viewMode === '2week' ? 10 : 6))
+      : (viewMode === 'week' ? 36 : (viewMode === '2week' ? 18 : 9));
 
     // Keep charts responsive for very large plans by hard-capping CSS width.
-    const maxCssCanvas = 8000;
-    const safePxPerDay = Math.max(2, Math.min(basePxPerDay, maxCssCanvas / rangeDays));
-    const isHeavyPlan = rangeDays > 450 || tasks.length > 120;
+    const maxCssCanvas = isHeavyPlan ? 4500 : 8000;
+    const safePxPerDay = Math.max(isHeavyPlan ? 1 : 2, Math.min(basePxPerDay, maxCssCanvas / rangeDays));
+    const compactMode = isHeavyPlan;
 
     const viewportWidth = containerRef.current?.parentElement?.clientWidth || 800;
     const desiredWidth = Math.max(viewportWidth, Math.floor(rangeDays * safePxPerDay));
@@ -315,6 +324,7 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
       if (!start) return null;
       return { x: start.getTime(), y: task.name, taskId: task.id };
     }).filter(Boolean);
+    const taskById = new Map(tasks.map(task => [task.id, task]));
 
     if (chartInstanceRef.current) chartInstanceRef.current.destroy();
     if (axisInstanceRef.current) axisInstanceRef.current.destroy();
@@ -337,7 +347,7 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
       datasets.push({
         type: 'scatter', data: milestoneData,
         backgroundColor: '#f59e0b', borderColor: '#d97706', borderWidth: 2,
-        pointStyle: 'rectRot', radius: 7, hoverRadius: 9
+        pointStyle: 'rectRot', radius: compactMode ? 5 : 7, hoverRadius: compactMode ? 6 : 9
       });
     }
 
@@ -352,10 +362,12 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
         plugins: {
           legend: { display: false },
           tooltip: {
+            enabled: !compactMode,
             backgroundColor: '#1e293b', titleFont: { size: 11 }, bodyFont: { size: 11 }, padding: 8, cornerRadius: 6,
             callbacks: {
               label: (context) => {
-                const task = tasks.find(t => t.name === context.label);
+                const taskId = context.raw?.taskId;
+                const task = taskById.get(taskId);
                 if (!task) return '';
                 const isCritical = criticalPathIds.has(task.id);
                 const displayStart = formatDateDDMMMyy(task.start) || task.start;
@@ -365,7 +377,8 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
               }
             }
           },
-          ganttOverlay: { tasks, criticalIds: criticalPathIds, baseline }
+          weekendShading: { compact: compactMode },
+          ganttOverlay: { tasks, criticalIds: criticalPathIds, baseline, compact: compactMode }
         },
         scales: {
           x: { type: 'time', min: minDate.getTime(), max: maxDate.getTime(),

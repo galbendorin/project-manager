@@ -2,8 +2,12 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { getFinishDate, calculateCriticalPath, getHierarchyMap, formatDependencies, hasDependencies } from '../utils/helpers';
 
 const GRID_HEADER_HEIGHT = 55;
+const ROW_HEIGHT = 36;
+const VIRTUALIZATION_THRESHOLD = 120;
+const OVERSCAN_ROWS = 20;
+const TOTAL_COLS = 12;
 
-const ScheduleGrid = ({ 
+const ScheduleGrid = ({
   allTasks,
   visibleTasks,
   collapsedIndices,
@@ -32,14 +36,22 @@ const ScheduleGrid = ({
   const startWidth = useRef(0);
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  const gridBodyRef = useRef(null);
+  const scrollRafRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(640);
 
-  const criticalPathIds = useMemo(() => calculateCriticalPath(allTasks), [allTasks]);
-  const { isParent, directChildCount } = useMemo(() => getHierarchyMap(allTasks), [allTasks]);
+  // Critical path is expensive on very large plans; skip it to keep scrolling responsive.
+  const criticalPathIds = useMemo(() => {
+    if ((allTasks?.length || 0) > 250) return new Set();
+    return calculateCriticalPath(allTasks);
+  }, [allTasks]);
+  const { directChildCount } = useMemo(() => getHierarchyMap(allTasks), [allTasks]);
 
   const handleCellEdit = (taskId, field, value) => {
     let processedValue = value;
-    if (field === 'dur' || field === 'pct') processedValue = value === "" ? 0 : parseInt(value) || 0;
-    else if (field === 'parent') processedValue = value === "" ? null : parseInt(value) || null;
+    if (field === 'dur' || field === 'pct') processedValue = value === "" ? 0 : parseInt(value, 10) || 0;
+    else if (field === 'parent') processedValue = value === "" ? null : parseInt(value, 10) || null;
     if (field === 'type' && value === 'Milestone') onUpdateTask(taskId, { [field]: processedValue, dur: 0 });
     else onUpdateTask(taskId, { [field]: processedValue });
     setEditingCell(null);
@@ -48,7 +60,7 @@ const ScheduleGrid = ({
   // Format date as dd-mmm-yy
   const formatDateDisplay = (dateStr) => {
     if (!dateStr) return '';
-    const date = new Date(dateStr + 'T00:00:00'); // Add time to avoid timezone issues
+    const date = new Date(`${dateStr}T00:00:00`);
     const day = date.getDate().toString().padStart(2, '0');
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const month = months[date.getMonth()];
@@ -58,7 +70,6 @@ const ScheduleGrid = ({
 
   // Open dependencies editor
   const openDependenciesEditor = (task) => {
-    // Load existing dependencies or convert old format
     const deps = task.dependencies || (task.parent ? [{ parentId: task.parent, depType: task.depType || 'FS' }] : []);
     setEditingDependencies(deps.length > 0 ? deps : [{ parentId: '', depType: 'FS' }]);
     setEditingDepLogic(task.depLogic || 'ALL');
@@ -71,26 +82,23 @@ const ScheduleGrid = ({
     onUpdateTask(dependenciesEditorOpen, {
       dependencies: validDeps.length > 0 ? validDeps : null,
       depLogic: editingDepLogic,
-      parent: null, // Clear old parent field
-      depType: null // Clear old depType field
+      parent: null,
+      depType: null
     });
     setDependenciesEditorOpen(null);
   };
 
-  // Add new dependency row
   const addDependency = () => {
     setEditingDependencies([...editingDependencies, { parentId: '', depType: 'FS' }]);
   };
 
-  // Remove dependency row
   const removeDependency = (index) => {
     setEditingDependencies(editingDependencies.filter((_, i) => i !== index));
   };
 
-  // Update dependency
   const updateDependency = (index, field, value) => {
     const updated = [...editingDependencies];
-    updated[index][field] = field === 'parentId' ? (value === '' ? '' : parseInt(value) || '') : value;
+    updated[index][field] = field === 'parentId' ? (value === '' ? '' : parseInt(value, 10) || '') : value;
     setEditingDependencies(updated);
   };
 
@@ -113,8 +121,36 @@ const ScheduleGrid = ({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     }
-    return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
   }, [resizing]);
+
+  useEffect(() => {
+    const el = gridBodyRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      setViewportHeight(el.clientHeight || 640);
+    });
+    observer.observe(el);
+    setViewportHeight(el.clientHeight || 640);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+    };
+  }, []);
+
+  const handleGridScroll = useCallback((e) => {
+    const nextTop = e.currentTarget.scrollTop;
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      setScrollTop(nextTop);
+    });
+  }, []);
 
   const handleDragStart = useCallback((e, origIdx) => {
     setDragIndex(origIdx);
@@ -122,19 +158,24 @@ const ScheduleGrid = ({
     e.dataTransfer.setData('text/plain', origIdx.toString());
     if (e.currentTarget) e.currentTarget.style.opacity = '0.4';
   }, []);
+
   const handleDragEnd = useCallback((e) => {
     if (e.currentTarget) e.currentTarget.style.opacity = '1';
-    setDragIndex(null); setDragOverIndex(null);
+    setDragIndex(null);
+    setDragOverIndex(null);
   }, []);
+
   const handleDragOver = useCallback((e, origIdx) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (origIdx !== dragOverIndex) setDragOverIndex(origIdx);
   }, [dragOverIndex]);
+
   const handleDrop = useCallback((e, dropOrigIdx) => {
     e.preventDefault();
     if (dragIndex !== null && dragIndex !== dropOrigIdx) onReorderTask(dragIndex, dropOrigIdx);
-    setDragIndex(null); setDragOverIndex(null);
+    setDragIndex(null);
+    setDragOverIndex(null);
   }, [dragIndex, onReorderTask]);
 
   const EditableCell = ({ task, field, children, className = "", disabled = false }) => {
@@ -146,11 +187,33 @@ const ScheduleGrid = ({
     if (isEditing) {
       let input;
       if (field === 'type') {
-        input = (<select autoFocus defaultValue={task[field]} onBlur={handleBlur} className="editing-input"><option value="Task">Task</option><option value="Milestone">Milestone</option></select>);
+        input = (
+          <select autoFocus defaultValue={task[field]} onBlur={handleBlur} className="editing-input">
+            <option value="Task">Task</option>
+            <option value="Milestone">Milestone</option>
+          </select>
+        );
       } else if (field === 'depType') {
-        input = (<select autoFocus defaultValue={task[field]} onBlur={handleBlur} className="editing-input"><option value="FS">FS</option><option value="SS">SS</option><option value="FF">FF</option><option value="SF">SF</option></select>);
+        input = (
+          <select autoFocus defaultValue={task[field]} onBlur={handleBlur} className="editing-input">
+            <option value="FS">FS</option>
+            <option value="SS">SS</option>
+            <option value="FF">FF</option>
+            <option value="SF">SF</option>
+          </select>
+        );
       } else {
-        input = (<input autoFocus type={field === 'start' ? 'date' : field === 'dur' || field === 'pct' ? 'number' : 'text'} defaultValue={task[field] ?? ''} onBlur={handleBlur} onKeyDown={handleKeyDown} className="editing-input" min={field === 'dur' ? '0' : undefined} />);
+        input = (
+          <input
+            autoFocus
+            type={field === 'start' ? 'date' : field === 'dur' || field === 'pct' ? 'number' : 'text'}
+            defaultValue={task[field] ?? ''}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            className="editing-input"
+            min={field === 'dur' ? '0' : undefined}
+          />
+        );
       }
       return <td className={className}>{input}</td>;
     }
@@ -161,12 +224,13 @@ const ScheduleGrid = ({
     <div
       onMouseDown={(e) => handleResizeStart(e, column)}
       style={{ position: 'absolute', right: 0, top: 0, width: '4px', height: '100%', cursor: 'col-resize', background: resizing === column ? '#6366F1' : 'transparent', zIndex: 10 }}
-      onMouseEnter={(e) => e.currentTarget.style.background = '#CBD5E1'}
-      onMouseLeave={(e) => { if (resizing !== column) e.currentTarget.style.background = 'transparent'; }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = '#CBD5E1'; }}
+      onMouseLeave={(e) => {
+        if (resizing !== column) e.currentTarget.style.background = 'transparent';
+      }}
     />
   );
 
-  const ROW_HEIGHT = 36;
   const getProgressColor = (pct) => pct === 100 ? 'progress-complete' : pct > 0 ? 'progress-partial' : 'progress-none';
 
   const colGroupCols = (
@@ -178,9 +242,256 @@ const ScheduleGrid = ({
     </colgroup>
   );
 
+  const isVirtualized = visibleTasks.length > VIRTUALIZATION_THRESHOLD;
+
+  const { startIndex, endIndex, topSpacerHeight, bottomSpacerHeight, renderTasks } = useMemo(() => {
+    if (!isVirtualized) {
+      return {
+        startIndex: 0,
+        endIndex: visibleTasks.length,
+        topSpacerHeight: 0,
+        bottomSpacerHeight: 0,
+        renderTasks: visibleTasks
+      };
+    }
+
+    const safeViewport = Math.max(ROW_HEIGHT, viewportHeight);
+    const nextStart = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
+    const nextEnd = Math.min(
+      visibleTasks.length,
+      Math.ceil((scrollTop + safeViewport) / ROW_HEIGHT) + OVERSCAN_ROWS
+    );
+    return {
+      startIndex: nextStart,
+      endIndex: nextEnd,
+      topSpacerHeight: nextStart * ROW_HEIGHT,
+      bottomSpacerHeight: Math.max(0, (visibleTasks.length - nextEnd) * ROW_HEIGHT),
+      renderTasks: visibleTasks.slice(nextStart, nextEnd)
+    };
+  }, [isVirtualized, scrollTop, viewportHeight, visibleTasks]);
+
+  const todayMidnightTs = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today.getTime();
+  }, []);
+
+  const renderTaskRow = (task, absoluteRowIdx) => {
+    const origIdx = task._originalIndex;
+    const isParentRow = task._isParent;
+    const isCollapsed = collapsedIndices.has(origIdx);
+    const isMilestone = task.type === 'Milestone';
+    const isCritical = criticalPathIds.has(task.id);
+    const finishDate = getFinishDate(task.start, task.dur);
+    const isEven = absoluteRowIdx % 2 === 0;
+    const isDragging = dragIndex === origIdx;
+    const isOver = dragOverIndex === origIdx;
+
+    const childCount = isParentRow && isCollapsed && directChildCount.has(origIdx)
+      ? directChildCount.get(origIdx)
+      : 0;
+
+    const getRowColor = () => {
+      if (task.rowColor) {
+        const colorMap = {
+          red: '#fee2e2',
+          amber: '#fef3c7',
+          brown: '#d6c5b0'
+        };
+        return colorMap[task.rowColor] || null;
+      }
+
+      if (isDragging) return '#EEF2FF';
+      if (isParentRow) return '#f1f5f9';
+
+      const taskFinish = new Date(finishDate);
+      taskFinish.setHours(0, 0, 0, 0);
+      const isPastDeadline = taskFinish.getTime() < todayMidnightTs && task.pct < 100;
+      if (isPastDeadline) return '#fee2e2';
+
+      if (task.pct === 100) return '#d1fae5';
+      if (task.pct > 0 && task.pct < 100) return '#ecfdf5';
+      return isEven ? '#ffffff' : '#fafbfc';
+    };
+
+    return (
+      <tr
+        key={task.id}
+        className="group"
+        draggable
+        onDragStart={(e) => handleDragStart(e, origIdx)}
+        onDragEnd={handleDragEnd}
+        onDragOver={(e) => handleDragOver(e, origIdx)}
+        onDrop={(e) => handleDrop(e, origIdx)}
+        style={{
+          height: `${ROW_HEIGHT}px`,
+          background: getRowColor(),
+          borderTop: isOver && dragIndex !== null && dragIndex > origIdx ? '2px solid #6366f1' : undefined,
+          borderBottom: isOver && dragIndex !== null && dragIndex < origIdx ? '2px solid #6366f1' : undefined,
+          opacity: isDragging ? 0.5 : 1
+        }}
+      >
+        <td style={{ textAlign: 'center', cursor: 'grab', padding: '0 2px', userSelect: 'none' }} className="text-slate-300 hover:text-slate-500 text-[11px]" title="Drag to reorder">⠿</td>
+
+        <td className="text-center text-slate-400 font-mono text-[11px]">{task.id}</td>
+
+        <EditableCell task={task} field="name">
+          <div style={{ paddingLeft: `${(task.indent || 0) * 18}px` }} className="flex items-center gap-1">
+            {isParentRow ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); onToggleCollapse(origIdx); }}
+                className="text-slate-400 hover:text-indigo-600 w-4 h-4 flex items-center justify-center flex-shrink-0"
+                style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
+                title={isCollapsed ? 'Expand' : 'Collapse'}
+              >
+                <span className="text-[11px]">▾</span>
+              </button>
+            ) : (
+              <span className="w-4 flex-shrink-0 text-center">
+                {isMilestone ? <span className="text-amber-500 text-[11px]">◆</span>
+                  : task.indent > 0 ? <span className="text-slate-300 text-[11px]">└</span>
+                  : <span className="text-slate-300 text-[10px]">–</span>}
+              </span>
+            )}
+            <span className={`truncate text-[12.5px] ${isParentRow ? 'font-semibold text-slate-800' : 'font-medium'}`}>
+              {task.name}
+            </span>
+            {isParentRow && isCollapsed && childCount > 0 && (
+              <span className="text-[8px] text-slate-400 bg-slate-200 px-1 py-px rounded flex-shrink-0">
+                +{childCount}
+              </span>
+            )}
+            {isCritical && (
+              <span className="text-[7px] font-bold text-purple-600 bg-purple-50 border border-purple-200 px-1 py-px rounded flex-shrink-0">CP</span>
+            )}
+          </div>
+        </EditableCell>
+
+        <td
+          className="text-center text-[10px] text-slate-600 cursor-pointer hover:bg-indigo-50 px-2"
+          onClick={() => !isParentRow && openDependenciesEditor(task)}
+          title="Click to edit dependencies"
+          colSpan={2}
+        >
+          {formatDependencies(task)}
+        </td>
+
+        <EditableCell task={task} field="type" className="text-center">
+          {isMilestone ? <span className="text-[9px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">MS</span>
+            : isParentRow ? <span className="text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">GROUP</span>
+            : <span className="text-[9px] font-semibold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">TASK</span>}
+        </EditableCell>
+
+        <EditableCell task={task} field="dur" className={`text-center text-[12px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || isMilestone}>
+          {task.dur}d
+        </EditableCell>
+
+        <EditableCell task={task} field="start" className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || hasDependencies(task)}>
+          {formatDateDisplay(task.start)}
+        </EditableCell>
+
+        <td className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-400'}`}>
+          {formatDateDisplay(finishDate)}
+        </td>
+
+        <EditableCell task={task} field="pct" className={`text-center font-semibold text-[12px] ${getProgressColor(task.pct)}`} disabled={isParentRow}>
+          {task.pct}%
+        </EditableCell>
+
+        <td className="text-center">
+          <input type="checkbox" checked={task.tracked || false} onChange={(e) => onToggleTrack(task.id, e.target.checked)} className="accent-indigo-600 cursor-pointer w-3.5 h-3.5" />
+        </td>
+
+        <td className="text-center">
+          <div className="flex justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => onModifyHierarchy(task.id, -1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Outdent">←</button>
+            <button onClick={() => onModifyHierarchy(task.id, 1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Indent">→</button>
+            <button onClick={() => onInsertTask(task.id)} className="p-0.5 text-slate-400 hover:text-emerald-600 text-[11px]" title="Insert">+</button>
+            {onSendToTracker && (
+              isInTracker && isInTracker(task.id) ? (
+                <button onClick={() => onRemoveFromTracker && onRemoveFromTracker(task.id)} className="p-0.5 text-indigo-500 hover:text-rose-500 text-[11px]" title="Remove from Tracker (click to remove)">◆</button>
+              ) : (
+                <button onClick={() => onSendToTracker(task.id)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Send to Tracker">▸</button>
+              )
+            )}
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setColorPickerOpen(colorPickerOpen === task.id ? null : task.id);
+                }}
+                className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]"
+                title="Set row color"
+              >
+                🎨
+              </button>
+            </>
+            {colorPickerOpen === task.id && (
+              <div
+                className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-[9999]"
+                onClick={() => setColorPickerOpen(null)}
+              >
+                <div
+                  className="bg-white border border-slate-300 rounded-lg shadow-2xl p-3"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ minWidth: '160px' }}
+                >
+                  <div className="text-sm font-semibold text-slate-700 mb-2 pb-2 border-b">Choose Row Color</div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateTask(task.id, { rowColor: null });
+                      setColorPickerOpen(null);
+                    }}
+                    className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-100 rounded mb-1"
+                  >
+                    ⚪ Default
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateTask(task.id, { rowColor: 'red' });
+                      setColorPickerOpen(null);
+                    }}
+                    className="block w-full text-left px-3 py-2 text-sm hover:bg-red-100 rounded mb-1"
+                    style={{ backgroundColor: task.rowColor === 'red' ? '#fee2e2' : undefined }}
+                  >
+                    🔴 Red
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateTask(task.id, { rowColor: 'amber' });
+                      setColorPickerOpen(null);
+                    }}
+                    className="block w-full text-left px-3 py-2 text-sm hover:bg-amber-100 rounded mb-1"
+                    style={{ backgroundColor: task.rowColor === 'amber' ? '#fef3c7' : undefined }}
+                  >
+                    🟡 Amber
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateTask(task.id, { rowColor: 'brown' });
+                      setColorPickerOpen(null);
+                    }}
+                    className="block w-full text-left px-3 py-2 text-sm hover:bg-amber-100 rounded"
+                    style={{ backgroundColor: task.rowColor === 'brown' ? '#d6c5b0' : undefined }}
+                  >
+                    🟤 Brown
+                  </button>
+                </div>
+              </div>
+            )}
+            <button onClick={() => onDeleteTask(task.id)} className="p-0.5 text-slate-400 hover:text-rose-500 text-[11px]" title="Delete">×</button>
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
   return (
     <div className="h-full flex flex-col">
-      {/* Fixed header */}
       <div className="flex-none overflow-hidden" style={{ height: `${GRID_HEADER_HEIGHT}px` }}>
         <table className="grid-table">
           {colGroupCols}
@@ -201,262 +512,54 @@ const ScheduleGrid = ({
           </thead>
         </table>
       </div>
-      {/* Scrollable body */}
-      <div className="flex-grow overflow-auto custom-scrollbar" id="grid-scroll">
+
+      <div
+        ref={gridBodyRef}
+        className="flex-grow overflow-auto custom-scrollbar"
+        id="grid-scroll"
+        onScroll={handleGridScroll}
+      >
         <table className="grid-table">
           {colGroupCols}
           <tbody>
-            {visibleTasks.map((task, rowIdx) => {
-              const origIdx = task._originalIndex;
-              const isParentRow = task._isParent;
-              const isCollapsed = collapsedIndices.has(origIdx);
-              const isMilestone = task.type === 'Milestone';
-              const isCritical = criticalPathIds.has(task.id);
-              const finishDate = getFinishDate(task.start, task.dur);
-              const isEven = rowIdx % 2 === 0;
-              const isDragging = dragIndex === origIdx;
-              const isOver = dragOverIndex === origIdx;
-              const tracked = isInTracker ? isInTracker(task.id) : false;
+            {isVirtualized && topSpacerHeight > 0 && (
+              <tr aria-hidden="true" style={{ height: `${topSpacerHeight}px` }}>
+                <td colSpan={TOTAL_COLS} style={{ padding: 0, border: 'none' }} />
+              </tr>
+            )}
 
-              const childCount = isParentRow && isCollapsed && directChildCount.has(origIdx)
-                ? directChildCount.get(origIdx) : 0;
+            {renderTasks.map((task, idx) => renderTaskRow(task, startIndex + idx))}
 
-              // Determine row background color
-              const getRowColor = () => {
-                // Manual color override takes priority
-                if (task.rowColor) {
-                  const colorMap = {
-                    red: '#fee2e2',      // red-100
-                    amber: '#fef3c7',    // amber-100
-                    brown: '#d6c5b0'     // custom brown
-                  };
-                  return colorMap[task.rowColor] || null;
-                }
-
-                // Dragging state
-                if (isDragging) return '#EEF2FF';
-
-                // Parent rows
-                if (isParentRow) return '#f1f5f9';
-
-                // Check if task is past deadline (finish date in the past and not 100% complete)
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const taskFinish = new Date(finishDate);
-                taskFinish.setHours(0, 0, 0, 0);
-                const isPastDeadline = taskFinish < today && task.pct < 100;
-
-                if (isPastDeadline) return '#fee2e2'; // red-100
-
-                // Progress-based coloring
-                if (task.pct === 100) return '#d1fae5'; // green-100
-                if (task.pct > 0 && task.pct < 100) return '#ecfdf5'; // green-50 (light green)
-
-                // Default alternating rows
-                return isEven ? '#ffffff' : '#fafbfc';
-              };
-
-              return (
-                <tr
-                  key={task.id}
-                  className="group"
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, origIdx)}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={(e) => handleDragOver(e, origIdx)}
-                  onDrop={(e) => handleDrop(e, origIdx)}
-                  style={{
-                    height: `${ROW_HEIGHT}px`,
-                    background: getRowColor(),
-                    borderTop: isOver && dragIndex !== null && dragIndex > origIdx ? '2px solid #6366f1' : undefined,
-                    borderBottom: isOver && dragIndex !== null && dragIndex < origIdx ? '2px solid #6366f1' : undefined,
-                    opacity: isDragging ? 0.5 : 1
-                  }}
-                >
-                  <td style={{ textAlign: 'center', cursor: 'grab', padding: '0 2px', userSelect: 'none' }} className="text-slate-300 hover:text-slate-500 text-[11px]" title="Drag to reorder">⠿</td>
-
-                  <td className="text-center text-slate-400 font-mono text-[11px]">{task.id}</td>
-
-                  <EditableCell task={task} field="name">
-                    <div style={{ paddingLeft: `${(task.indent || 0) * 18}px` }} className="flex items-center gap-1">
-                      {isParentRow ? (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onToggleCollapse(origIdx); }}
-                          className="text-slate-400 hover:text-indigo-600 w-4 h-4 flex items-center justify-center flex-shrink-0"
-                          style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
-                          title={isCollapsed ? 'Expand' : 'Collapse'}
-                        >
-                          <span className="text-[11px]">▾</span>
-                        </button>
-                      ) : (
-                        <span className="w-4 flex-shrink-0 text-center">
-                          {isMilestone ? <span className="text-amber-500 text-[11px]">◆</span>
-                            : task.indent > 0 ? <span className="text-slate-300 text-[11px]">└</span>
-                            : <span className="text-slate-300 text-[10px]">–</span>}
-                        </span>
-                      )}
-                      <span className={`truncate text-[12.5px] ${isParentRow ? 'font-semibold text-slate-800' : 'font-medium'}`}>
-                        {task.name}
-                      </span>
-                      {isParentRow && isCollapsed && childCount > 0 && (
-                        <span className="text-[8px] text-slate-400 bg-slate-200 px-1 py-px rounded flex-shrink-0">
-                          +{childCount}
-                        </span>
-                      )}
-                      {isCritical && (
-                        <span className="text-[7px] font-bold text-purple-600 bg-purple-50 border border-purple-200 px-1 py-px rounded flex-shrink-0">CP</span>
-                      )}
-                    </div>
-                  </EditableCell>
-
-                  <td 
-                    className="text-center text-[10px] text-slate-600 cursor-pointer hover:bg-indigo-50 px-2"
-                    onClick={() => !isParentRow && openDependenciesEditor(task)}
-                    title="Click to edit dependencies"
-                    colSpan={2}
-                  >
-                    {formatDependencies(task)}
-                  </td>
-
-                  <EditableCell task={task} field="type" className="text-center">
-                    {isMilestone ? <span className="text-[9px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">MS</span>
-                      : isParentRow ? <span className="text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">GROUP</span>
-                      : <span className="text-[9px] font-semibold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">TASK</span>}
-                  </EditableCell>
-
-                  <EditableCell task={task} field="dur" className={`text-center text-[12px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || isMilestone}>
-                    {task.dur}d
-                  </EditableCell>
-
-                  <EditableCell task={task} field="start" className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-500'}`} disabled={isParentRow || hasDependencies(task)}>
-                    {formatDateDisplay(task.start)}
-                  </EditableCell>
-
-                  <td className={`font-mono text-[11px] ${isParentRow ? 'text-indigo-600 font-semibold' : 'text-slate-400'}`}>
-                    {formatDateDisplay(finishDate)}
-                  </td>
-
-                  <EditableCell task={task} field="pct" className={`text-center font-semibold text-[12px] ${getProgressColor(task.pct)}`} disabled={isParentRow}>
-                    {task.pct}%
-                  </EditableCell>
-
-                  <td className="text-center">
-                    <input type="checkbox" checked={task.tracked || false} onChange={(e) => onToggleTrack(task.id, e.target.checked)} className="accent-indigo-600 cursor-pointer w-3.5 h-3.5" />
-                  </td>
-
-                  <td className="text-center">
-                    <div className="flex justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => onModifyHierarchy(task.id, -1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Outdent">←</button>
-                      <button onClick={() => onModifyHierarchy(task.id, 1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Indent">→</button>
-                      <button onClick={() => onInsertTask(task.id)} className="p-0.5 text-slate-400 hover:text-emerald-600 text-[11px]" title="Insert">+</button>
-                      {onSendToTracker && (
-                        isInTracker && isInTracker(task.id) ? (
-                          <button onClick={() => onRemoveFromTracker && onRemoveFromTracker(task.id)} className="p-0.5 text-indigo-500 hover:text-rose-500 text-[11px]" title="Remove from Tracker (click to remove)">◆</button>
-                        ) : (
-                          <button onClick={() => onSendToTracker(task.id)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Send to Tracker">▸</button>
-                        )
-                      )}
-                      <>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setColorPickerOpen(colorPickerOpen === task.id ? null : task.id);
-                          }}
-                          className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" 
-                          title="Set row color"
-                        >
-                          🎨
-                        </button>
-                      </>
-                      {colorPickerOpen === task.id && (
-                        <div 
-                          className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-[9999]"
-                          onClick={() => setColorPickerOpen(null)}
-                        >
-                          <div 
-                            className="bg-white border border-slate-300 rounded-lg shadow-2xl p-3"
-                            onClick={(e) => e.stopPropagation()}
-                            style={{ minWidth: '160px' }}
-                          >
-                            <div className="text-sm font-semibold text-slate-700 mb-2 pb-2 border-b">Choose Row Color</div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateTask(task.id, { rowColor: null });
-                                setColorPickerOpen(null);
-                              }}
-                              className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-100 rounded mb-1"
-                            >
-                              ⚪ Default
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateTask(task.id, { rowColor: 'red' });
-                                setColorPickerOpen(null);
-                              }}
-                              className="block w-full text-left px-3 py-2 text-sm hover:bg-red-100 rounded mb-1"
-                              style={{ backgroundColor: task.rowColor === 'red' ? '#fee2e2' : undefined }}
-                            >
-                              🔴 Red
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateTask(task.id, { rowColor: 'amber' });
-                                setColorPickerOpen(null);
-                              }}
-                              className="block w-full text-left px-3 py-2 text-sm hover:bg-amber-100 rounded mb-1"
-                              style={{ backgroundColor: task.rowColor === 'amber' ? '#fef3c7' : undefined }}
-                            >
-                              🟡 Amber
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateTask(task.id, { rowColor: 'brown' });
-                                setColorPickerOpen(null);
-                              }}
-                              className="block w-full text-left px-3 py-2 text-sm hover:bg-amber-100 rounded"
-                              style={{ backgroundColor: task.rowColor === 'brown' ? '#d6c5b0' : undefined }}
-                            >
-                              🟤 Brown
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      <button onClick={() => onDeleteTask(task.id)} className="p-0.5 text-slate-400 hover:text-rose-500 text-[11px]" title="Delete">×</button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+            {isVirtualized && bottomSpacerHeight > 0 && (
+              <tr aria-hidden="true" style={{ height: `${bottomSpacerHeight}px` }}>
+                <td colSpan={TOTAL_COLS} style={{ padding: 0, border: 'none' }} />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Dependencies Editor Modal */}
       {dependenciesEditorOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[9999]"
           onClick={() => setDependenciesEditorOpen(null)}
         >
-          <div 
+          <div
             className="bg-white rounded-lg shadow-2xl p-6 max-w-2xl w-full mx-4"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold text-slate-800 mb-4">Edit Dependencies - Task #{dependenciesEditorOpen}</h3>
-            
+
             <div className="mb-4">
               <label className="block text-sm font-semibold text-slate-700 mb-2">
                 Dependency Logic:
               </label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="depLogic" 
-                    value="ALL" 
+                  <input
+                    type="radio"
+                    name="depLogic"
+                    value="ALL"
                     checked={editingDepLogic === 'ALL'}
                     onChange={(e) => setEditingDepLogic(e.target.value)}
                     className="accent-indigo-600"
@@ -464,10 +567,10 @@ const ScheduleGrid = ({
                   <span className="text-sm">ALL (wait for all parents to finish)</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="depLogic" 
-                    value="ANY" 
+                  <input
+                    type="radio"
+                    name="depLogic"
+                    value="ANY"
                     checked={editingDepLogic === 'ANY'}
                     onChange={(e) => setEditingDepLogic(e.target.value)}
                     className="accent-indigo-600"
