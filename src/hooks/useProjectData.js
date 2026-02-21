@@ -10,7 +10,7 @@ const now = () => new Date().toISOString();
  * Custom hook for managing project data (tasks, registers, tracker, and status report)
  * With Supabase persistence, baseline support, and timestamps
  */
-export const useProjectData = (projectId) => {
+export const useProjectData = (projectId, userId = null) => {
   const [projectData, setProjectData] = useState([]);
   const [registers, setRegisters] = useState({
     risks: [],
@@ -27,74 +27,83 @@ export const useProjectData = (projectId) => {
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
+  const [saveConflict, setSaveConflict] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef(null);
+  const projectVersionRef = useRef(1);
 
   // Load project data from Supabase
-  useEffect(() => {
+  const loadProject = useCallback(async () => {
     if (!projectId) return;
 
-    const loadProject = async () => {
-      setLoadingData(true);
-      initialLoadDone.current = false;
+    setLoadingData(true);
+    initialLoadDone.current = false;
+    setSaveConflict(false);
+    setSaveError(null);
 
-      const { data, error } = await supabase
-        .from('projects')
-        .select('tasks, registers, baseline, tracker, status_report')
-        .eq('id', projectId)
-        .single();
+    let loadQuery = supabase
+      .from('projects')
+      .select('tasks, registers, baseline, tracker, status_report, version')
+      .eq('id', projectId);
+    if (userId) loadQuery = loadQuery.eq('user_id', userId);
+    const { data, error } = await loadQuery.single();
 
-      if (!error && data) {
-        // Backfill timestamps on load for any items missing them
-        const backfillTimestamps = (items) => {
-          if (!items || !Array.isArray(items)) return items;
-          return items.map(item => ({
-            ...item,
-            createdAt: item.createdAt || item.dateAdded || now(),
-            updatedAt: item.updatedAt || item.lastUpdated || now()
-          }));
-        };
+    if (!error && data) {
+      // Backfill timestamps on load for any items missing them
+      const backfillTimestamps = (items) => {
+        if (!items || !Array.isArray(items)) return items;
+        return items.map(item => ({
+          ...item,
+          createdAt: item.createdAt || item.dateAdded || now(),
+          updatedAt: item.updatedAt || item.lastUpdated || now()
+        }));
+      };
 
-        const backfillTasks = (tasks) => {
-          if (!tasks || !Array.isArray(tasks)) return tasks;
-          return tasks.map(t => ({
-            ...t,
-            createdAt: t.createdAt || now(),
-            updatedAt: t.updatedAt || now()
-          }));
-        };
+      const backfillTasks = (tasks) => {
+        if (!tasks || !Array.isArray(tasks)) return tasks;
+        return tasks.map(t => ({
+          ...t,
+          createdAt: t.createdAt || now(),
+          updatedAt: t.updatedAt || now()
+        }));
+      };
 
-        const loadedRegisters = data.registers || {
-          risks: [], issues: [], actions: [],
-          minutes: [], costs: [], changes: [], comms: []
-        };
+      const loadedRegisters = data.registers || {
+        risks: [], issues: [], actions: [],
+        minutes: [], costs: [], changes: [], comms: []
+      };
 
-        // Backfill all registers
-        const backfilledRegisters = {};
-        Object.keys(loadedRegisters).forEach(key => {
-          backfilledRegisters[key] = backfillTimestamps(loadedRegisters[key]);
-        });
+      // Backfill all registers
+      const backfilledRegisters = {};
+      Object.keys(loadedRegisters).forEach(key => {
+        backfilledRegisters[key] = backfillTimestamps(loadedRegisters[key]);
+      });
 
-        setProjectData(backfillTasks(data.tasks || []));
-        setRegisters(backfilledRegisters);
-        setBaselineState(data.baseline || null);
-        setTracker(backfillTimestamps(data.tracker || []));
-        setStatusReport(data.status_report || { ...DEFAULT_STATUS_REPORT });
-      }
+      setProjectData(backfillTasks(data.tasks || []));
+      setRegisters(backfilledRegisters);
+      setBaselineState(data.baseline || null);
+      setTracker(backfillTimestamps(data.tracker || []));
+      setStatusReport(data.status_report || { ...DEFAULT_STATUS_REPORT });
+      projectVersionRef.current = Number.isInteger(data.version) ? data.version : 1;
+    } else if (error) {
+      setSaveError(`Unable to load project: ${error.message}`);
+    }
 
-      setLoadingData(false);
-      setTimeout(() => {
-        initialLoadDone.current = true;
-      }, 500);
-    };
+    setLoadingData(false);
+    setTimeout(() => {
+      initialLoadDone.current = true;
+    }, 500);
+  }, [projectId, userId]);
 
+  useEffect(() => {
     loadProject();
-  }, [projectId]);
+  }, [loadProject]);
 
   // Auto-save to Supabase (debounced)
   useEffect(() => {
-    if (!projectId || !initialLoadDone.current) return;
+    if (!projectId || !initialLoadDone.current || saveConflict) return;
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -102,6 +111,7 @@ export const useProjectData = (projectId) => {
 
     saveTimeoutRef.current = setTimeout(async () => {
       setSaving(true);
+      setSaveError(null);
       const updateData = {
         tasks: projectData,
         registers: registers,
@@ -113,14 +123,28 @@ export const useProjectData = (projectId) => {
         updateData.baseline = baseline;
       }
 
-      const { error } = await supabase
+      const expectedVersion = projectVersionRef.current;
+
+      let saveQuery = supabase
         .from('projects')
         .update(updateData)
-        .eq('id', projectId);
+        .eq('id', projectId)
+        .eq('version', expectedVersion)
+        .select('version');
+      if (userId) saveQuery = saveQuery.eq('user_id', userId);
+      const { data, error } = await saveQuery.maybeSingle();
 
-      if (!error) {
+      if (!error && data && Number.isInteger(data.version)) {
+        projectVersionRef.current = data.version;
         setLastSaved(new Date());
+        setSaveConflict(false);
+      } else if (!error && !data) {
+        setSaveConflict(true);
+        setSaveError('Save conflict detected. This project was changed in another tab or session. Click Reload Latest.');
+      } else if (error) {
+        setSaveError(`Save failed: ${error.message}`);
       }
+
       setSaving(false);
     }, 1500);
 
@@ -129,7 +153,11 @@ export const useProjectData = (projectId) => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [projectData, registers, tracker, statusReport, baseline, projectId]);
+  }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict]);
+
+  const reloadProject = useCallback(async () => {
+    await loadProject();
+  }, [loadProject]);
 
   // Set baseline
   const setBaseline = useCallback(() => {
@@ -416,6 +444,8 @@ export const useProjectData = (projectId) => {
     saving,
     lastSaved,
     loadingData,
+    saveConflict,
+    saveError,
     addTask,
     updateTask,
     deleteTask,
@@ -434,6 +464,7 @@ export const useProjectData = (projectId) => {
     updateTrackerItem,
     isInTracker,
     updateStatusReport,
+    reloadProject,
     setProjectData,
     setRegisters,
     setTracker

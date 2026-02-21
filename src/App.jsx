@@ -36,6 +36,7 @@ function App() {
   return (
     <MainApp
       project={currentProject}
+      currentUserId={user.id}
       onBackToProjects={() => setCurrentProject(null)}
     />
   );
@@ -137,7 +138,7 @@ function findSheet(sheetNames, candidates) {
   return null;
 }
 
-function MainApp({ project, onBackToProjects }) {
+function MainApp({ project, currentUserId, onBackToProjects }) {
   const [activeTab, setActiveTab] = useState('schedule');
   const [viewMode, setViewMode] = useState('week');
   const [isExternalView, setIsExternalView] = useState(false);
@@ -155,6 +156,8 @@ function MainApp({ project, onBackToProjects }) {
     saving,
     lastSaved,
     loadingData,
+    saveConflict,
+    saveError,
     addTask,
     updateTask,
     deleteTask,
@@ -172,9 +175,10 @@ function MainApp({ project, onBackToProjects }) {
     updateTrackerItem,
     isInTracker,
     updateStatusReport,
+    reloadProject,
     setProjectData,
     setRegisters
-  } = useProjectData(project.id);
+  } = useProjectData(project.id, currentUserId);
 
   // Remove from tracker by taskId (wrapper for removeFromTracker which expects trackerId)
   const handleRemoveFromTracker = useCallback((taskId) => {
@@ -407,6 +411,19 @@ function MainApp({ project, onBackToProjects }) {
             <span className={`flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' ? 'text-blue-400' : 'text-amber-400'}`}>
               {importStatus}
             </span>
+          ) : saveConflict ? (
+            <div className="flex items-center gap-2">
+              <span className="text-rose-400">Save conflict detected</span>
+              <button
+                onClick={reloadProject}
+                className="px-2 py-1 text-[11px] bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors"
+                title="Reload server version to resolve conflict"
+              >
+                Reload Latest
+              </button>
+            </div>
+          ) : saveError ? (
+            <span className="text-rose-400" title={saveError}>Save failed</span>
           ) : saving ? (
             <span className="text-yellow-400 flex items-center gap-1">
               <span className="animate-pulse">●</span> Saving...

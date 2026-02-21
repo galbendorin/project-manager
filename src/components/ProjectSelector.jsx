@@ -10,8 +10,10 @@ const ProjectSelector = ({ onSelectProject }) => {
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    fetchProjects();
-  }, []);
+    if (user?.id) {
+      fetchProjects();
+    }
+  }, [user?.id]);
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -61,7 +63,7 @@ const ProjectSelector = ({ onSelectProject }) => {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this project? This cannot be undone.')) return;
 
-    await supabase.from('projects').delete().eq('id', projectId);
+    await supabase.from('projects').delete().eq('id', projectId).eq('user_id', user.id);
     fetchProjects();
   };
 
