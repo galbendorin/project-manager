@@ -178,7 +178,6 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     deleteTask,
     modifyHierarchy,
     toggleTrackTask,
-    loadTemplate,
     loadDemoDataAllTabs,
     resetDemoData,
     setBaseline,
@@ -250,7 +249,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
   const handleLoadDemoData = useCallback(() => {
     const proceed = window.confirm(
-      'Load sample content across all tabs? This will replace current tracker/register demo content in this project.'
+      'Load SD-WAN demo plan and fill all tabs with sample content? This will replace current demo content in this project.'
     );
     if (!proceed) return;
     loadDemoDataAllTabs();
@@ -492,8 +491,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         isExternalView={isExternalView}
         onToggleExternalView={() => setIsExternalView(!isExternalView)}
         onShowDemoBenefits={() => setIsBenefitsOpen(true)}
-        onLoadTemplate={loadTemplate}
-        onLoadDemoData={handleLoadDemoData}
+        onLoadTemplate={handleLoadDemoData}
         onResetDemoData={handleResetDemoData}
         onExport={handleExport}
         onImport={handleImport}
