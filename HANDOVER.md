@@ -259,3 +259,154 @@ Long text in registers and tracker uses CSS-only approach:
 - Plugins are in GanttChart.jsx: `rowStripesPlugin`, `todayLinePlugin`, `weekendShadingPlugin`, `ganttOverlayPlugin`
 - Bar colors set in the dataset's `backgroundColor` callback
 - Summary bars, baselines, and dependency arrows are all in `ganttOverlayPlugin.afterDatasetsDraw`
+
+---
+
+## NEXT-WEEK IMPLEMENTATION PLAN (2026-02-22)
+
+### Current reality (important)
+- Primary working repo is now: `/Users/doringalben/project-manager/`
+- Local dev server currently runs at: `http://localhost:3002/`
+- Recent demo commits:
+  - `5416184` demo visuals + MT/AL quick actions
+  - `4bdc441` merged Fill Tabs into SD-WAN Demo
+  - `f33dd56` demo benefits modal + all-tabs loader
+  - `fb3cd0f` SD-WAN template
+
+### Goal A: Auto Demo Project for new users (efficient + low memory)
+
+#### Business behavior
+1. First login for a user with zero projects:
+   - auto-create one project: `SD-WAN Demo`
+   - this project includes demo schedule/registers/tracker/status data
+2. When user creates a new project:
+   - new project is blank (no demo data)
+3. Demo-only controls are shown only inside demo project (optional but recommended):
+   - `SD-WAN Demo`, `Reset Demo`, `Free Benefits`
+
+#### Technical design (optimized)
+- Add project metadata flag instead of duplicating logic by name:
+  - `is_demo boolean not null default false`
+- Keep only one demo project per user:
+  - optional partial unique index on `(user_id)` where `is_demo = true`
+- Extract demo payload generation into a shared utility:
+  - new file suggestion: `src/utils/demoProjectBuilder.js`
+  - output: `{ tasks, registers, tracker, status_report, baseline }`
+  - used by:
+    - `useProjectData.loadDemoDataAllTabs()`
+    - `ProjectSelector` first-login auto-seed
+- Memory strategy:
+  - no additional static data in DB besides one demo project per user
+  - new projects remain empty JSON structures
+  - ToDo aggregation (below) will be derived at runtime to avoid duplicate storage
+
+#### Files to touch
+- `src/components/ProjectSelector.jsx`
+  - detect zero projects and seed demo project once
+  - include `is_demo` in select
+  - set `is_demo: false` for user-created projects
+- `src/App.jsx`
+  - pass project `is_demo` to header (if hiding demo buttons by project type)
+- `src/components/Header.jsx`
+  - optionally gate demo buttons based on `is_demo`
+- `src/hooks/useProjectData.js`
+  - replace inline demo seed duplication with shared builder
+- `src/utils/demoProjectBuilder.js` (new)
+- Supabase SQL migration (manual run in SQL editor)
+
+#### DB migration draft
+```sql
+alter table public.projects
+  add column if not exists is_demo boolean not null default false;
+
+create index if not exists idx_projects_user_demo
+  on public.projects(user_id, is_demo);
+
+create unique index if not exists uq_projects_one_demo_per_user
+  on public.projects(user_id)
+  where is_demo = true;
+```
+
+### Goal B: Add ToDo tab (aggregated + manual + recurring)
+
+#### Business behavior
+- New tab: `ToDo`
+- Shows one action list merged from:
+  - Action Log
+  - Issue Log
+  - Change Log
+  - (optional) tracked schedule tasks / tracker items with due dates
+- Grouping buckets:
+  - `Passed deadline`
+  - `This week`
+  - `Next week`
+  - `In 2 weeks`
+  - `Weeks 3-4`
+  - `Later / no deadline` (recommended for edge cases)
+- Users can add manual ToDo items (not part of Action Log)
+- Manual ToDo supports recurring weekly reminders (v1)
+
+#### Data model (lean)
+- New top-level project json payload: `todos` array
+- Store only manual todos.
+- Aggregated register/schedule items are computed in memory at render time.
+- Proposed manual todo shape:
+```js
+{
+  _id: "todo_...",
+  title: "Send weekly report",
+  dueDate: "YYYY-MM-DD",
+  owner: "PM",
+  status: "Open" | "Done",
+  recurrence: null | { type: "weekly", interval: 1 },
+  createdAt: "...",
+  updatedAt: "...",
+  completedAt: "..." // optional
+}
+```
+
+#### Implementation blocks
+1. Add `todos` to project load/save state in `useProjectData.js`
+2. Add helper functions:
+   - `collectDerivedTodos(projectData, registers, tracker)`
+   - `bucketByDeadline(items, today)`
+3. New component:
+   - `src/components/TodoView.jsx`
+4. Add tab entry in `src/utils/constants.js`
+5. Route tab in `src/App.jsx`
+6. Recurring logic (v1):
+   - when recurring todo marked done, create next due item automatically (+7d)
+
+#### Testing focus
+- New unit tests in `src/utils/helpers.test.js`:
+  - bucket boundaries for all groups
+  - overdue behavior
+  - recurring weekly next date generation
+
+### Goal C: Rename Schedule tab label to Project Plan
+- Keep tab id as `schedule` (do not change key; avoids regressions)
+- Change only label in `src/utils/constants.js`:
+  - from `"Schedule"` to `"Project Plan"`
+- Also update user-facing text/tooltips where relevant
+
+### Suggested execution order (low risk)
+1. Rename tab label (quick win, very low risk)
+2. Extract shared demo builder + first-login demo auto-seed
+3. Add `is_demo` DB column + UI gating for demo controls
+4. Add ToDo tab skeleton (manual items only)
+5. Add derived action aggregation + bucket grouping
+6. Add recurring weekly behavior + tests
+
+### Effort estimate
+- A) Auto demo onboarding + cleanup: 0.5 to 1 day
+- B) ToDo tab full v1 (manual + aggregation + buckets + recurring): 1.5 to 2.5 days
+- C) Rename Schedule to Project Plan: < 1 hour
+
+### Rollout approach
+- Implement in small commits and test locally first (`npm run dev`, `npm run test`, `npm run build`)
+- Push only after each phase passes local checks
+- Keep one short validation checklist per phase in commit message body
+
+### Channel continuity note
+- This chat is still usable right now, but it is already very long.
+- Before starting the next coding block, start a fresh thread and reference this section plus commit `5416184` as your baseline.
