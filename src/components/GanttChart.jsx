@@ -288,13 +288,14 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
     if (!canvasRef.current || !axisCanvasRef.current || tasks.length === 0) return;
     const { minDate, maxDate } = getProjectDateRange(tasks);
     const rangeDays = Math.max(1, Math.ceil((maxDate - minDate) / 86400000));
-    const isHeavyPlan = rangeDays > 450 || tasks.length > 120;
+    // Enter compact mode earlier to keep scrolling responsive on large, long-range plans.
+    const isHeavyPlan = rangeDays > 365 || tasks.length > 90;
     const basePxPerDay = isHeavyPlan
       ? (viewMode === 'week' ? 14 : (viewMode === '2week' ? 10 : 6))
       : (viewMode === 'week' ? 36 : (viewMode === '2week' ? 18 : 9));
 
     // Keep charts responsive for very large plans by hard-capping CSS width.
-    const maxCssCanvas = isHeavyPlan ? 4500 : 8000;
+    const maxCssCanvas = isHeavyPlan ? 3200 : 8000;
     const safePxPerDay = Math.max(isHeavyPlan ? 1 : 2, Math.min(basePxPerDay, maxCssCanvas / rangeDays));
     const compactMode = isHeavyPlan;
 

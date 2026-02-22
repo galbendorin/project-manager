@@ -1,17 +1,30 @@
-import React, { useState, useCallback } from 'react';
-import * as XLSX from 'xlsx';
+import React, { useState, useCallback, lazy, Suspense } from 'react';
 import { SCHEMAS } from './utils/constants';
 import { useAuth } from './contexts/AuthContext';
 import AuthPage from './components/AuthPage';
 import ProjectSelector from './components/ProjectSelector';
 import Header from './components/Header';
 import Navigation from './components/Navigation';
-import ScheduleView from './components/ScheduleView';
-import RegisterView from './components/RegisterView';
-import TrackerView from './components/TrackerView';
-import StatusReportView from './components/StatusReportView';
 import TaskModal from './components/TaskModal';
 import { useProjectData } from './hooks/useProjectData';
+
+const ScheduleView = lazy(() => import('./components/ScheduleView'));
+const RegisterView = lazy(() => import('./components/RegisterView'));
+const TrackerView = lazy(() => import('./components/TrackerView'));
+const StatusReportView = lazy(() => import('./components/StatusReportView'));
+
+let xlsxModulePromise = null;
+
+async function loadXLSX() {
+  if (!xlsxModulePromise) {
+    xlsxModulePromise = import('xlsx').catch((err) => {
+      xlsxModulePromise = null;
+      throw err;
+    });
+  }
+  const module = await xlsxModulePromise;
+  return module.default?.utils ? module.default : module;
+}
 
 function App() {
   const { user, loading: authLoading } = useAuth();
@@ -256,7 +269,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const handleImport = async (file) => {
     try {
       setImportStatus('Importing...');
-      
+      const XLSX = await loadXLSX();
+
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array', cellDates: true });
       const sheetNames = workbook.SheetNames;
@@ -330,7 +344,11 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   };
 
   // Export to Excel (includes tracker + status report)
-  const handleExport = () => {
+  const handleExport = async () => {
+    try {
+      setImportStatus('Exporting...');
+      const XLSX = await loadXLSX();
+
     const wb = XLSX.utils.book_new();
     
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(projectData), "Schedule");
@@ -373,8 +391,15 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       }
     });
 
-    const fileName = `${project.name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+      const fileName = `${project.name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      setImportStatus(`✓ Exported: ${fileName}`);
+      setTimeout(() => setImportStatus(null), 3000);
+    } catch (err) {
+      console.error('Export error:', err);
+      setImportStatus('Export failed');
+      setTimeout(() => setImportStatus(null), 4000);
+    }
   };
 
   if (loadingData) {
@@ -461,48 +486,56 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       />
 
       <main className="flex-grow overflow-hidden relative">
-        {activeTab === 'schedule' ? (
-          <ScheduleView
-            tasks={projectData}
-            viewMode={viewMode}
-            baseline={baseline}
-            onUpdateTask={updateTask}
-            onDeleteTask={deleteTask}
-            onModifyHierarchy={modifyHierarchy}
-            onToggleTrack={toggleTrackTask}
-            onInsertTask={(taskId) => handleOpenModal(null, true, taskId)}
-            onReorderTask={handleReorderTask}
-            onSendToTracker={sendToTracker}
-            onRemoveFromTracker={handleRemoveFromTracker}
-            isInTracker={isInTracker}
-          />
-        ) : activeTab === 'tracker' ? (
-          <TrackerView
-            trackerItems={tracker}
-            tasks={projectData}
-            onUpdateItem={updateTrackerItem}
-            onRemoveItem={removeFromTracker}
-            onNavigateToSchedule={handleNavigateToSchedule}
-          />
-        ) : activeTab === 'statusreport' ? (
-          <StatusReportView
-            tasks={projectData}
-            baseline={baseline}
-            registers={registers}
-            tracker={tracker}
-            statusReport={statusReport}
-            onUpdateStatusReport={updateStatusReport}
-          />
-        ) : (
-          <RegisterView
-            registerType={activeTab}
-            items={registers[activeTab] || []}
-            isExternalView={isExternalView}
-            onUpdateItem={updateRegisterItem}
-            onDeleteItem={deleteRegisterItem}
-            onTogglePublic={toggleItemPublic}
-          />
-        )}
+        <Suspense
+          fallback={
+            <div className="h-full flex items-center justify-center text-sm text-slate-500">
+              Loading view...
+            </div>
+          }
+        >
+          {activeTab === 'schedule' ? (
+            <ScheduleView
+              tasks={projectData}
+              viewMode={viewMode}
+              baseline={baseline}
+              onUpdateTask={updateTask}
+              onDeleteTask={deleteTask}
+              onModifyHierarchy={modifyHierarchy}
+              onToggleTrack={toggleTrackTask}
+              onInsertTask={(taskId) => handleOpenModal(null, true, taskId)}
+              onReorderTask={handleReorderTask}
+              onSendToTracker={sendToTracker}
+              onRemoveFromTracker={handleRemoveFromTracker}
+              isInTracker={isInTracker}
+            />
+          ) : activeTab === 'tracker' ? (
+            <TrackerView
+              trackerItems={tracker}
+              tasks={projectData}
+              onUpdateItem={updateTrackerItem}
+              onRemoveItem={removeFromTracker}
+              onNavigateToSchedule={handleNavigateToSchedule}
+            />
+          ) : activeTab === 'statusreport' ? (
+            <StatusReportView
+              tasks={projectData}
+              baseline={baseline}
+              registers={registers}
+              tracker={tracker}
+              statusReport={statusReport}
+              onUpdateStatusReport={updateStatusReport}
+            />
+          ) : (
+            <RegisterView
+              registerType={activeTab}
+              items={registers[activeTab] || []}
+              isExternalView={isExternalView}
+              onUpdateItem={updateRegisterItem}
+              onDeleteItem={deleteRegisterItem}
+              onTogglePublic={toggleItemPublic}
+            />
+          )}
+        </Suspense>
       </main>
 
       <TaskModal
