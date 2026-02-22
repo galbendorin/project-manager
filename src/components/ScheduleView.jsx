@@ -14,6 +14,8 @@ const ScheduleView = ({
   onInsertTask,
   onReorderTask,
   onSendToTracker,
+  onSendToActionLog,
+  onRemoveFromActionLog,
   onRemoveFromTracker,
   isInTracker
 }) => {
@@ -132,42 +134,56 @@ const ScheduleView = ({
   }, [isCompactLayout]);
 
   return (
-    <div className={`flex overflow-hidden w-full h-full bg-white ${isCompactLayout ? 'flex-col' : 'flex-row'}`}>
-      <div
-        className={`flex-none bg-white flex flex-col overflow-hidden z-20 ${
-          isCompactLayout ? 'border-b border-slate-200' : 'border-r border-slate-200'
-        }`}
-        style={leftPaneStyle}
-      >
-        <ScheduleGrid
-          allTasks={tasks}
-          visibleTasks={visibleTasks}
-          collapsedIndices={collapsedIndices}
-          onToggleCollapse={toggleCollapse}
-          onUpdateTask={onUpdateTask}
-          onDeleteTask={onDeleteTask}
-          onModifyHierarchy={onModifyHierarchy}
-          onToggleTrack={onToggleTrack}
-          onInsertTask={onInsertTask}
-          onReorderTask={onReorderTask}
-          onSendToTracker={onSendToTracker}
-          onRemoveFromTracker={onRemoveFromTracker}
-          isInTracker={isInTracker}
-        />
+    <div className="h-full w-full bg-white flex flex-col overflow-hidden">
+      <div className="flex-none px-2 py-1 bg-slate-50 border-b border-slate-200 text-[10px] text-slate-600 flex flex-wrap items-center gap-2">
+        <span className="font-semibold text-slate-700">Demo Guide</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-200 border border-red-300" /> Red</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-200 border border-amber-300" /> Amber</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-700 border border-amber-800" /> Brown</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-200 border border-emerald-300" /> Complete</span>
+        <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-indigo-300 text-indigo-700 bg-indigo-50 text-[9px] font-semibold">MT+</span> Move task to Master Tracker</span>
+        <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-emerald-300 text-emerald-700 bg-emerald-50 text-[9px] font-semibold">AL+</span> Move task to Action Log</span>
       </div>
 
-      {!isCompactLayout && (
+      <div className={`flex-grow min-h-0 flex overflow-hidden ${isCompactLayout ? 'flex-col' : 'flex-row'}`}>
         <div
-          ref={resizerRef}
-          className="w-1 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
-        />
-      )}
+          className={`flex-none bg-white flex flex-col overflow-hidden z-20 ${
+            isCompactLayout ? 'border-b border-slate-200' : 'border-r border-slate-200'
+          }`}
+          style={leftPaneStyle}
+        >
+          <ScheduleGrid
+            allTasks={tasks}
+            visibleTasks={visibleTasks}
+            collapsedIndices={collapsedIndices}
+            onToggleCollapse={toggleCollapse}
+            onUpdateTask={onUpdateTask}
+            onDeleteTask={onDeleteTask}
+            onModifyHierarchy={onModifyHierarchy}
+            onToggleTrack={onToggleTrack}
+            onInsertTask={onInsertTask}
+            onReorderTask={onReorderTask}
+            onSendToTracker={onSendToTracker}
+            onSendToActionLog={onSendToActionLog}
+            onRemoveFromActionLog={onRemoveFromActionLog}
+            onRemoveFromTracker={onRemoveFromTracker}
+            isInTracker={isInTracker}
+          />
+        </div>
 
-      <div
-        className={`flex flex-col overflow-hidden min-h-0 ${isCompactLayout ? 'flex-none' : 'flex-grow min-w-0'}`}
-        style={rightPaneStyle}
-      >
-        <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
+        {!isCompactLayout && (
+          <div
+            ref={resizerRef}
+            className="w-1 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
+          />
+        )}
+
+        <div
+          className={`flex flex-col overflow-hidden min-h-0 ${isCompactLayout ? 'flex-none' : 'flex-grow min-w-0'}`}
+          style={rightPaneStyle}
+        >
+          <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
+        </div>
       </div>
     </div>
   );

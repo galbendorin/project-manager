@@ -421,6 +421,7 @@ export const useProjectData = (projectId, userId = null) => {
       name: 'Site data packs collected for 10 locations',
       dur: 5,
       pct: 60,
+      rowColor: 'amber',
       parent: kickoffId,
       depType: 'FS',
       indent: 1
@@ -468,6 +469,7 @@ export const useProjectData = (projectId, userId = null) => {
       name: 'Validate order references, addresses, and target RFS dates',
       dur: 3,
       pct: 0,
+      rowColor: 'brown',
       parent: submitOrdersId,
       depType: 'FS',
       indent: 1,
@@ -491,7 +493,8 @@ export const useProjectData = (projectId, userId = null) => {
       const installId = addTemplateTask({
         name: `Site ${i} - Ethernet circuit install and light-level test`,
         dur: 3,
-        pct: 0,
+        pct: i === 1 ? 100 : i === 2 ? 45 : 0,
+        rowColor: i === 4 ? 'red' : undefined,
         parent: surveyId,
         depType: 'FS',
         indent: 1,

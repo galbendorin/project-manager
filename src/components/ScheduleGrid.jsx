@@ -19,6 +19,8 @@ const ScheduleGrid = ({
   onInsertTask,
   onReorderTask,
   onSendToTracker,
+  onSendToActionLog,
+  onRemoveFromActionLog,
   onRemoveFromTracker,
   isInTracker
 }) => {
@@ -29,7 +31,7 @@ const ScheduleGrid = ({
   const [editingDepLogic, setEditingDepLogic] = useState('ALL');
   const [columnWidths, setColumnWidths] = useState({
     drag: 28, id: 40, name: 220, parent: 50, dep: 50, type: 70,
-    dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 110
+    dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 150
   });
   const [resizing, setResizing] = useState(null);
   const startX = useRef(0);
@@ -409,10 +411,39 @@ const ScheduleGrid = ({
             <button onClick={() => onInsertTask(task.id)} className="p-0.5 text-slate-400 hover:text-emerald-600 text-[11px]" title="Insert">+</button>
             {onSendToTracker && (
               isInTracker && isInTracker(task.id) ? (
-                <button onClick={() => onRemoveFromTracker && onRemoveFromTracker(task.id)} className="p-0.5 text-indigo-500 hover:text-rose-500 text-[11px]" title="Remove from Tracker (click to remove)">◆</button>
+                <button
+                  onClick={() => onRemoveFromTracker && onRemoveFromTracker(task.id)}
+                  className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-indigo-700 border-indigo-200 bg-indigo-50 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+                  title="Remove from Master Tracker"
+                >
+                  MT✓
+                </button>
               ) : (
-                <button onClick={() => onSendToTracker(task.id)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Send to Tracker">▸</button>
+                <button
+                  onClick={() => onSendToTracker(task.id)}
+                  className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-slate-500 border-slate-200 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50"
+                  title="Send to Master Tracker"
+                >
+                  MT+
+                </button>
               )
+            )}
+            {task.tracked ? (
+              <button
+                onClick={() => onRemoveFromActionLog && onRemoveFromActionLog(task.id)}
+                className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+                title="Remove from Action Log"
+              >
+                AL✓
+              </button>
+            ) : (
+              <button
+                onClick={() => onSendToActionLog && onSendToActionLog(task.id)}
+                className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-slate-500 border-slate-200 hover:text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50"
+                title="Send to Action Log"
+              >
+                AL+
+              </button>
             )}
             <>
               <button

@@ -204,6 +204,14 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     }
   }, [tracker, removeFromTracker]);
 
+  const handleSendToActionLog = useCallback((taskId) => {
+    toggleTrackTask(taskId, true);
+  }, [toggleTrackTask]);
+
+  const handleRemoveFromActionLog = useCallback((taskId) => {
+    toggleTrackTask(taskId, false);
+  }, [toggleTrackTask]);
+
   // Reorder task by moving from one index to another
   const handleReorderTask = useCallback((fromIndex, toIndex) => {
     setProjectData(prev => {
@@ -530,6 +538,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               onInsertTask={(taskId) => handleOpenModal(null, true, taskId)}
               onReorderTask={handleReorderTask}
               onSendToTracker={sendToTracker}
+              onSendToActionLog={handleSendToActionLog}
+              onRemoveFromActionLog={handleRemoveFromActionLog}
               onRemoveFromTracker={handleRemoveFromTracker}
               isInTracker={isInTracker}
             />
