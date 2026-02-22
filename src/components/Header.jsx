@@ -93,9 +93,10 @@ const Header = ({
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={onLoadTemplate}
+              title="Load SD-WAN + 10 Ethernet circuits demo plan"
               className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
             >
-              Template
+              SD-WAN Demo
             </button>
 
             {/* Import button */}
