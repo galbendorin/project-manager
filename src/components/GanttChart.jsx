@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import Chart from 'chart.js/auto';
 import 'chartjs-adapter-date-fns';
 import { getProjectDateRange, calculateCriticalPath, getCalendarSpan, parseDateValue, formatDateDDMMMyy } from '../utils/helpers';
@@ -28,47 +28,6 @@ const rowStripesPlugin = {
       ctx.lineTo(chartArea.right, top + Math.abs(rowHeight));
       ctx.stroke();
     }
-    ctx.restore();
-  }
-};
-
-// Plugin: Today line
-const todayLinePlugin = {
-  id: 'todayLine',
-  afterDatasetsDraw(chart) {
-    const { ctx, chartArea } = chart;
-    const xScale = chart.scales.x;
-    if (!xScale || !chartArea) return;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const todayX = xScale.getPixelForValue(today.getTime());
-    if (todayX < chartArea.left || todayX > chartArea.right) return;
-    ctx.save();
-    ctx.strokeStyle = '#EF4444'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
-    ctx.beginPath(); ctx.moveTo(todayX, chartArea.top); ctx.lineTo(todayX, chartArea.bottom); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#EF4444';
-    ctx.beginPath();
-    ctx.arc(todayX, chartArea.top + 4, 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-};
-
-// Plugin: Today line for axis header
-const todayLineAxisPlugin = {
-  id: 'todayLineAxis',
-  afterDraw(chart) {
-    const { ctx, chartArea } = chart;
-    const xScale = chart.scales.x;
-    if (!xScale || !chartArea) return;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const todayX = xScale.getPixelForValue(today.getTime());
-    if (todayX < chartArea.left || todayX > chartArea.right) return;
-    ctx.save();
-    ctx.strokeStyle = '#EF4444'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(todayX, 0); ctx.lineTo(todayX, chart.height); ctx.stroke();
-    ctx.fillStyle = '#EF4444'; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('TODAY', todayX, 10);
     ctx.restore();
   }
 };
@@ -254,8 +213,6 @@ const ganttOverlayPlugin = {
 Chart.register(rowStripesPlugin);
 Chart.register(weekendShadingPlugin);
 Chart.register(ganttOverlayPlugin);
-Chart.register(todayLinePlugin);
-Chart.register(todayLineAxisPlugin);
 
 const ROW_HEIGHT = 36;
 const HEADER_HEIGHT = 55;
@@ -268,6 +225,8 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
   const containerRef = useRef(null);
   const axisContainerRef = useRef(null);
   const bodyScrollRef = useRef(null);
+  const [todayMarkerX, setTodayMarkerX] = useState(null);
+  const [showTodayMarker, setShowTodayMarker] = useState(false);
 
   const criticalPathIds = useMemo(() => {
     if ((tasks?.length || 0) > 250) return new Set();
@@ -285,7 +244,11 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
   }, [tasks]);
 
   useEffect(() => {
-    if (!canvasRef.current || !axisCanvasRef.current || tasks.length === 0) return;
+    if (!canvasRef.current || !axisCanvasRef.current || tasks.length === 0) {
+      setTodayMarkerX(null);
+      setShowTodayMarker(false);
+      return;
+    }
     const { minDate, maxDate } = getProjectDateRange(tasks);
     const rangeDays = Math.max(1, Math.ceil((maxDate - minDate) / 86400000));
     // Enter compact mode earlier to keep scrolling responsive on large, long-range plans.
@@ -407,19 +370,52 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
       }
     });
 
+    const bodyScale = chartInstanceRef.current?.scales?.x;
+    const bodyArea = chartInstanceRef.current?.chartArea;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const markerX = bodyScale ? bodyScale.getPixelForValue(today.getTime()) : null;
+    if (Number.isFinite(markerX) && bodyArea && markerX >= bodyArea.left && markerX <= bodyArea.right) {
+      setTodayMarkerX(markerX);
+      setShowTodayMarker(true);
+    } else {
+      setTodayMarkerX(null);
+      setShowTodayMarker(false);
+    }
+
     return () => { if (chartInstanceRef.current) chartInstanceRef.current.destroy(); if (axisInstanceRef.current) axisInstanceRef.current.destroy(); };
   }, [tasks, viewMode, criticalPathIds, baseline]);
 
   return (
     <div className="flex-grow flex flex-col bg-white relative min-w-0 overflow-hidden">
       <div ref={axisContainerRef} className="flex-none overflow-hidden bg-slate-50 border-b-2 border-slate-200" style={{ height: `${HEADER_HEIGHT}px` }}>
-        <div style={{ height: `${HEADER_HEIGHT}px`, minWidth: '100%' }}>
+        <div className="relative" style={{ height: `${HEADER_HEIGHT}px`, minWidth: '100%' }}>
           <canvas ref={axisCanvasRef} style={{ height: `${HEADER_HEIGHT}px` }} />
+          {showTodayMarker && todayMarkerX !== null && (
+            <>
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-rose-500 pointer-events-none z-20"
+                style={{ left: `${todayMarkerX}px` }}
+              />
+              <div
+                className="absolute top-1 -translate-x-1/2 text-[10px] font-bold text-rose-500 pointer-events-none z-20"
+                style={{ left: `${todayMarkerX}px` }}
+              >
+                TODAY
+              </div>
+            </>
+          )}
         </div>
       </div>
       <div ref={bodyScrollRef} className="flex-grow overflow-auto custom-scrollbar" id="chart-scroll">
         <div ref={containerRef} className="relative">
           <canvas ref={canvasRef} />
+          {showTodayMarker && todayMarkerX !== null && (
+            <div
+              className="absolute top-0 bottom-0 w-0.5 bg-rose-500 pointer-events-none z-20"
+              style={{ left: `${todayMarkerX}px` }}
+            />
+          )}
         </div>
       </div>
     </div>
