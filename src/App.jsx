@@ -509,6 +509,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         onClearBaseline={clearBaseline}
         hasBaseline={!!baseline}
         activeTab={activeTab}
+        isDemoProject={!!project?.is_demo}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
       />
