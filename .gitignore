@@ -35,3 +35,4 @@ coverage/
 .vercel
 .env.bak*
 backups/
+backup-pack/
