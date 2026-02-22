@@ -267,7 +267,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
   const handleResetDemoData = useCallback(() => {
     const proceed = window.confirm(
-      'Reset this project to a blank state? This clears schedule, tracker, registers, and baseline in this project.'
+      'Reset this project to a blank state? This clears the Project Plan, tracker, registers, and baseline in this project.'
     );
     if (!proceed) return;
     resetDemoData();

@@ -273,7 +273,7 @@ export const useProjectData = (projectId, userId = null) => {
             category: "Task",
             actionassignedto: "PM",
             description: task.name,
-            currentstatus: "Tracked from Schedule",
+            currentstatus: "Tracked from Project Plan",
             status: task.pct === 100 ? "Completed" : "In Progress",
             raised: task.start,
             target: getFinishDate(task.start, task.dur),

@@ -65,7 +65,7 @@ const TrackerView = ({
     const isEditing = editingCell === cellId;
     const value = item[col.key] || '';
 
-    // Non-editable: Task Name (link to schedule)
+    // Non-editable: Task Name (link to Project Plan)
     if (!col.editable) {
       if (col.key === 'taskName') {
         const hasLongName = value && value.length > 30;
@@ -74,7 +74,7 @@ const TrackerView = ({
             <button
               onClick={() => onNavigateToSchedule && onNavigateToSchedule(item.taskId)}
               className="text-left text-indigo-600 hover:text-indigo-800 font-medium text-[12.5px] hover:underline block max-w-full"
-              title="Go to task in Schedule"
+              title="Go to task in Project Plan"
             >
               <span className="cell-clamp">{value}</span>
             </button>
@@ -336,7 +336,7 @@ const TrackerView = ({
                 </div>
                 {trackerItems.length === 0 && (
                   <div className="text-slate-300 text-xs mt-2">
-                    Use the <span className="font-semibold text-indigo-400">▸</span> button in the Schedule grid to send tasks here
+                    Use the <span className="font-semibold text-indigo-400">▸</span> button in the Project Plan grid to send tasks here
                   </div>
                 )}
               </div>

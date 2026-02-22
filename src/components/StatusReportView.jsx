@@ -525,12 +525,12 @@ const StatusReportView = ({
             </div>
           ) : (
             <div className="text-center py-8 text-slate-300 text-sm">
-              No milestones in schedule. Add milestone tasks to see the comparison table.
+              No milestones in the Project Plan. Add milestone tasks to see the comparison table.
             </div>
           )}
           {!baseline && milestoneComparison.length > 0 && (
             <div className="mt-3 text-center text-[11px] text-amber-500 bg-amber-50 rounded-lg py-2">
-              Set a baseline in the Schedule tab to enable variance tracking
+              Set a baseline in the Project Plan tab to enable variance tracking
             </div>
           )}
         </div>
