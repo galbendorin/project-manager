@@ -34,3 +34,4 @@ Thumbs.db
 coverage/
 .vercel
 .env.bak*
+backups/

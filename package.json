@@ -10,7 +10,10 @@
     "test": "node --test ./src/**/*.test.js",
     "test:watch": "node --test --watch ./src/**/*.test.js",
     "test:ci": "node --test --test-reporter=spec ./src/**/*.test.js",
-    "ci": "npm run test:ci && npm run build"
+    "ci": "npm run test:ci && npm run build",
+    "backup:projects": "node scripts/backup_projects.cjs",
+    "backup:list": "node scripts/list_project_ids.cjs",
+    "backup:restore": "node scripts/restore_project.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.96.0",
