@@ -17,9 +17,12 @@ const ScheduleView = ({
   onRemoveFromTracker,
   isInTracker
 }) => {
-  const leftPanelRef = useRef(null);
   const resizerRef = useRef(null);
   const scrollSourceRef = useRef(null);
+  const [isCompactLayout, setIsCompactLayout] = useState(() => (
+    typeof window !== 'undefined' ? window.innerWidth < 1200 : false
+  ));
+  const [leftPaneWidthPct, setLeftPaneWidthPct] = useState(55);
 
   // Collapsed state lives here so both grid + Gantt stay in sync
   const [collapsedIndices, setCollapsedIndices] = useState(new Set());
@@ -42,20 +45,30 @@ const ScheduleView = ({
     [tasks, collapsedIndices]
   );
 
+  useEffect(() => {
+    const handleResize = () => {
+      setIsCompactLayout(window.innerWidth < 1200);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize, { passive: true });
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Panel resizing
   useEffect(() => {
     const resizer = resizerRef.current;
-    const leftPanel = leftPanelRef.current;
+    if (!resizer) return;
     let isResizing = false;
 
     const handleMouseDown = () => {
+      if (isCompactLayout) return;
       isResizing = true;
       document.body.style.cursor = 'col-resize';
     };
     const handleMouseMove = (e) => {
-      if (!isResizing) return;
+      if (!isResizing || isCompactLayout) return;
       const newWidthPct = (e.clientX / window.innerWidth) * 100;
-      if (newWidthPct > 25 && newWidthPct < 85) leftPanel.style.width = `${newWidthPct}%`;
+      if (newWidthPct > 25 && newWidthPct < 85) setLeftPaneWidthPct(newWidthPct);
     };
     const handleMouseUp = () => {
       isResizing = false;
@@ -70,7 +83,7 @@ const ScheduleView = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, []);
+  }, [isCompactLayout]);
 
   // Synchronized vertical scrolling
   useEffect(() => {
@@ -104,12 +117,27 @@ const ScheduleView = ({
     };
   }, [visibleTasks]);
 
+  const leftPaneStyle = useMemo(() => {
+    if (isCompactLayout) {
+      return { width: '100%', minWidth: '0', height: '52%' };
+    }
+    return { width: `${leftPaneWidthPct}%`, minWidth: '460px', height: '100%' };
+  }, [isCompactLayout, leftPaneWidthPct]);
+
+  const rightPaneStyle = useMemo(() => {
+    if (isCompactLayout) {
+      return { height: '48%' };
+    }
+    return { height: '100%' };
+  }, [isCompactLayout]);
+
   return (
-    <div className="flex overflow-hidden w-full h-full bg-white">
+    <div className={`flex overflow-hidden w-full h-full bg-white ${isCompactLayout ? 'flex-col' : 'flex-row'}`}>
       <div
-        ref={leftPanelRef}
-        className="flex-none border-r border-slate-200 bg-white flex flex-col overflow-hidden z-20"
-        style={{ width: '55%', minWidth: '600px', height: '100%' }}
+        className={`flex-none bg-white flex flex-col overflow-hidden z-20 ${
+          isCompactLayout ? 'border-b border-slate-200' : 'border-r border-slate-200'
+        }`}
+        style={leftPaneStyle}
       >
         <ScheduleGrid
           allTasks={tasks}
@@ -128,12 +156,17 @@ const ScheduleView = ({
         />
       </div>
 
-      <div
-        ref={resizerRef}
-        className="w-1 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
-      />
+      {!isCompactLayout && (
+        <div
+          ref={resizerRef}
+          className="w-1 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
+        />
+      )}
 
-      <div className="flex-grow flex flex-col overflow-hidden" style={{ height: '100%' }}>
+      <div
+        className={`flex flex-col overflow-hidden min-h-0 ${isCompactLayout ? 'flex-none' : 'flex-grow min-w-0'}`}
+        style={rightPaneStyle}
+      >
         <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
       </div>
     </div>

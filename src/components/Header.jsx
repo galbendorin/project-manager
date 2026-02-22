@@ -65,13 +65,13 @@ const Header = ({
   };
 
   return (
-    <header className="flex-none bg-white border-b border-slate-200 px-4 py-2 flex justify-between items-center z-30">
-      <div className="flex items-center gap-3">
+    <header className="flex-none bg-white border-b border-slate-200 px-3 sm:px-4 py-2 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-2 z-30">
+      <div className="flex items-center gap-3 min-w-0">
         <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
           P
         </div>
-        <div>
-          <h1 className="text-sm font-semibold text-slate-800 leading-tight">
+        <div className="min-w-0">
+          <h1 className="text-sm font-semibold text-slate-800 leading-tight truncate">
             Project Management OS
           </h1>
           <p className="text-[10px] text-slate-400 font-medium">
@@ -80,7 +80,7 @@ const Header = ({
         </div>
       </div>
       
-      <div className="flex items-center gap-2">
+      <div className="w-full lg:w-auto flex flex-wrap items-center gap-1.5 lg:justify-end">
         <button
           onClick={onToggleExternalView}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-500 text-[11px] font-medium transition-all hover:bg-slate-50 hover:border-slate-300"
@@ -90,7 +90,7 @@ const Header = ({
         </button>
 
         {activeTab === 'schedule' ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={onLoadTemplate}
               className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"

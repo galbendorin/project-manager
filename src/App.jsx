@@ -413,8 +413,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Save Status Bar */}
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-1.5 flex items-center justify-between text-xs">
-        <div className="flex items-center gap-3">
+      <div className="bg-gray-800 border-b border-gray-700 px-3 sm:px-4 py-1.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 text-xs">
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
             onClick={onBackToProjects}
             className="text-gray-400 hover:text-white transition-colors flex items-center gap-1"
@@ -422,9 +422,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
             ← Projects
           </button>
           <span className="text-gray-600">|</span>
-          <span className="text-white font-medium">{project.name}</span>
+          <span className="text-white font-medium truncate">{project.name}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={cleanupDuplicateDescriptions}
             className="text-xs px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"

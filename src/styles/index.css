@@ -199,3 +199,36 @@ html, body, #root {
   display: block !important;
   pointer-events: auto;
 }
+
+@media (max-width: 1279px) {
+  .nav-tabs {
+    padding: 0 10px;
+  }
+
+  .nav-tab {
+    padding: 9px 12px;
+    letter-spacing: 0.03em;
+  }
+}
+
+@media (max-width: 1024px) {
+  .grid-table th {
+    padding: 7px 8px;
+    font-size: 10px;
+  }
+
+  .grid-table td {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .nav-tabs {
+    padding: 0 8px;
+  }
+
+  .nav-tab {
+    padding: 8px 10px;
+    font-size: 10px;
+    letter-spacing: 0.02em;
+  }
+}
