@@ -108,6 +108,7 @@ export const TABS = [
   { id: 'statusreport', label: 'Status Report' },
   { id: 'schedule', label: 'Project Plan' },
   { id: 'tracker', label: 'Master Tracker' },
+  { id: 'todo', label: 'ToDo' },
   { id: 'risks', label: 'Risk Log' },
   { id: 'issues', label: 'Issue Log' },
   { id: 'actions', label: 'Action Log' },

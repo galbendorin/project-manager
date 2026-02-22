@@ -13,6 +13,7 @@ const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
 const TrackerView = lazy(() => import('./components/TrackerView'));
 const StatusReportView = lazy(() => import('./components/StatusReportView'));
+const TodoView = lazy(() => import('./components/TodoView'));
 
 let xlsxModulePromise = null;
 
@@ -167,6 +168,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     registers,
     tracker,
     statusReport,
+    todos,
     baseline,
     saving,
     lastSaved,
@@ -191,6 +193,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     updateTrackerItem,
     isInTracker,
     updateStatusReport,
+    addTodo,
+    updateTodo,
+    deleteTodo,
     reloadProject,
     setProjectData,
     setRegisters
@@ -504,7 +509,14 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         onExport={handleExport}
         onImport={handleImport}
         onNewTask={() => handleOpenModal()}
-        onAddRegisterItem={() => addRegisterItem(activeTab)}
+        onAddRegisterItem={() => {
+          if (activeTab === 'todo') {
+            addTodo();
+            return;
+          }
+          addRegisterItem(activeTab);
+        }}
+        addEntryLabel={activeTab === 'todo' ? 'Add ToDo' : 'Add Entry'}
         onSetBaseline={setBaseline}
         onClearBaseline={clearBaseline}
         hasBaseline={!!baseline}
@@ -560,6 +572,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               tracker={tracker}
               statusReport={statusReport}
               onUpdateStatusReport={updateStatusReport}
+            />
+          ) : activeTab === 'todo' ? (
+            <TodoView
+              todos={todos}
+              isExternalView={isExternalView}
+              onUpdateTodo={updateTodo}
+              onDeleteTodo={deleteTodo}
             />
           ) : (
             <RegisterView

@@ -6,9 +6,14 @@ import { supabase } from '../lib/supabase';
 
 // Helper: get ISO timestamp
 const now = () => new Date().toISOString();
+const createTodoId = () => `todo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const isMissingColumnError = (error, columnName) => {
+  const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+  return msg.includes(columnName.toLowerCase()) && msg.includes('column');
+};
 
 /**
- * Custom hook for managing project data (tasks, registers, tracker, and status report)
+ * Custom hook for managing project data (tasks, registers, tracker, status report, and todos)
  * With Supabase persistence, baseline support, and timestamps
  */
 export const useProjectData = (projectId, userId = null) => {
@@ -24,6 +29,7 @@ export const useProjectData = (projectId, userId = null) => {
   });
   const [tracker, setTracker] = useState([]);
   const [statusReport, setStatusReport] = useState({ ...DEFAULT_STATUS_REPORT });
+  const [todos, setTodos] = useState([]);
   const [baseline, setBaselineState] = useState(null);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
@@ -34,6 +40,7 @@ export const useProjectData = (projectId, userId = null) => {
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef(null);
   const projectVersionRef = useRef(1);
+  const supportsTodosColumnRef = useRef(true);
 
   // Load project data from Supabase
   const loadProject = useCallback(async () => {
@@ -44,12 +51,28 @@ export const useProjectData = (projectId, userId = null) => {
     setSaveConflict(false);
     setSaveError(null);
 
+    const primarySelect = supportsTodosColumnRef.current
+      ? 'tasks, registers, baseline, tracker, status_report, todos, version'
+      : 'tasks, registers, baseline, tracker, status_report, version';
+
     let loadQuery = supabase
       .from('projects')
-      .select('tasks, registers, baseline, tracker, status_report, version')
+      .select(primarySelect)
       .eq('id', projectId);
     if (userId) loadQuery = loadQuery.eq('user_id', userId);
-    const { data, error } = await loadQuery.single();
+    let { data, error } = await loadQuery.single();
+
+    if (error && supportsTodosColumnRef.current && isMissingColumnError(error, 'todos')) {
+      supportsTodosColumnRef.current = false;
+      let fallbackQuery = supabase
+        .from('projects')
+        .select('tasks, registers, baseline, tracker, status_report, version')
+        .eq('id', projectId);
+      if (userId) fallbackQuery = fallbackQuery.eq('user_id', userId);
+      const fallback = await fallbackQuery.single();
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (!error && data) {
       // Backfill timestamps on load for any items missing them
@@ -71,6 +94,21 @@ export const useProjectData = (projectId, userId = null) => {
         }));
       };
 
+      const backfillTodos = (items) => {
+        if (!items || !Array.isArray(items)) return [];
+        return items.map((todo, idx) => ({
+          _id: todo._id || `${createTodoId()}_${idx}`,
+          title: todo.title || '',
+          dueDate: todo.dueDate || '',
+          owner: todo.owner || '',
+          status: todo.status === 'Done' ? 'Done' : 'Open',
+          recurrence: todo.recurrence || null,
+          createdAt: todo.createdAt || now(),
+          updatedAt: todo.updatedAt || now(),
+          completedAt: todo.completedAt || ''
+        }));
+      };
+
       const loadedRegisters = data.registers || {
         risks: [], issues: [], actions: [],
         minutes: [], costs: [], changes: [], comms: []
@@ -87,6 +125,7 @@ export const useProjectData = (projectId, userId = null) => {
       setBaselineState(data.baseline || null);
       setTracker(backfillTimestamps(data.tracker || []));
       setStatusReport(data.status_report || { ...DEFAULT_STATUS_REPORT });
+      setTodos(backfillTodos(data.todos || []));
       projectVersionRef.current = Number.isInteger(data.version) ? data.version : 1;
     } else if (error) {
       setSaveError(`Unable to load project: ${error.message}`);
@@ -120,6 +159,9 @@ export const useProjectData = (projectId, userId = null) => {
         status_report: statusReport,
         updated_at: new Date().toISOString()
       };
+      if (supportsTodosColumnRef.current) {
+        updateData.todos = todos;
+      }
       if (baseline !== undefined) {
         updateData.baseline = baseline;
       }
@@ -154,7 +196,7 @@ export const useProjectData = (projectId, userId = null) => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict]);
+  }, [projectData, registers, tracker, statusReport, todos, baseline, projectId, userId, saveConflict]);
 
   const reloadProject = useCallback(async () => {
     await loadProject();
@@ -361,6 +403,46 @@ export const useProjectData = (projectId, userId = null) => {
     setStatusReport(prev => ({ ...prev, [key]: value }));
   }, []);
 
+  // ==================== TODO FUNCTIONS ====================
+
+  const addTodo = useCallback((todoData = {}) => {
+    const ts = now();
+    setTodos(prev => ([
+      ...prev,
+      {
+        _id: createTodoId(),
+        title: todoData.title || 'New ToDo',
+        dueDate: todoData.dueDate || getCurrentDate(),
+        owner: todoData.owner || 'PM',
+        status: todoData.status === 'Done' ? 'Done' : 'Open',
+        recurrence: todoData.recurrence || null,
+        createdAt: ts,
+        updatedAt: ts,
+        completedAt: todoData.status === 'Done' ? ts : ''
+      }
+    ]));
+  }, []);
+
+  const updateTodo = useCallback((todoId, key, value) => {
+    setTodos(prev => prev.map(todo => {
+      if (todo._id !== todoId) return todo;
+
+      const updated = {
+        ...todo,
+        [key]: value,
+        updatedAt: now()
+      };
+      if (key === 'status') {
+        updated.completedAt = value === 'Done' ? (todo.completedAt || now()) : '';
+      }
+      return updated;
+    }));
+  }, []);
+
+  const deleteTodo = useCallback((todoId) => {
+    setTodos(prev => prev.filter(todo => todo._id !== todoId));
+  }, []);
+
   // ==================== TEMPLATE ====================
 
   const loadTemplate = useCallback(() => {
@@ -373,6 +455,7 @@ export const useProjectData = (projectId, userId = null) => {
     setRegisters(demoPayload.registers);
     setTracker(demoPayload.tracker);
     setStatusReport(demoPayload.status_report);
+    setTodos([]);
     setBaselineState(demoPayload.baseline);
   }, []);
 
@@ -389,6 +472,7 @@ export const useProjectData = (projectId, userId = null) => {
     });
     setTracker([]);
     setStatusReport({ ...DEFAULT_STATUS_REPORT });
+    setTodos([]);
     setBaselineState(null);
   }, []);
 
@@ -458,6 +542,7 @@ export const useProjectData = (projectId, userId = null) => {
     registers,
     tracker,
     statusReport,
+    todos,
     baseline,
     saving,
     lastSaved,
@@ -484,9 +569,13 @@ export const useProjectData = (projectId, userId = null) => {
     updateTrackerItem,
     isInTracker,
     updateStatusReport,
+    addTodo,
+    updateTodo,
+    deleteTodo,
     reloadProject,
     setProjectData,
     setRegisters,
-    setTracker
+    setTracker,
+    setTodos
   };
 };

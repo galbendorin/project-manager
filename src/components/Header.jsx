@@ -12,6 +12,7 @@ const Header = ({
   onImport,
   onNewTask,
   onAddRegisterItem,
+  addEntryLabel = 'Add Entry',
   onSetBaseline,
   onClearBaseline,
   hasBaseline,
@@ -205,7 +206,7 @@ const Header = ({
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
           >
             <span className="text-[13px] leading-none">+</span>
-            Add Entry
+            {addEntryLabel}
           </button>
         )}
 
