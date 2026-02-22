@@ -6,6 +6,9 @@ const Header = ({
   isExternalView, 
   onToggleExternalView, 
   onLoadTemplate,
+  onLoadDemoData,
+  onResetDemoData,
+  onShowDemoBenefits,
   onExport,
   onImport,
   onNewTask,
@@ -92,11 +95,35 @@ const Header = ({
         {activeTab === 'schedule' ? (
           <div className="flex flex-wrap items-center gap-1.5">
             <button
+              onClick={onShowDemoBenefits}
+              title="Show client-facing benefits of the platform"
+              className="text-[11px] font-medium text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-md transition-all"
+            >
+              Benefits
+            </button>
+
+            <button
               onClick={onLoadTemplate}
               title="Load SD-WAN + 10 Ethernet circuits demo plan"
               className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
             >
               SD-WAN Demo
+            </button>
+
+            <button
+              onClick={onLoadDemoData}
+              title="Load sample data across all tabs"
+              className="text-[11px] font-medium text-emerald-600 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-md transition-all"
+            >
+              Fill Tabs
+            </button>
+
+            <button
+              onClick={onResetDemoData}
+              title="Reset demo content in this project"
+              className="text-[11px] font-medium text-rose-600 border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2.5 py-1.5 rounded-md transition-all"
+            >
+              Reset Demo
             </button>
 
             {/* Import button */}

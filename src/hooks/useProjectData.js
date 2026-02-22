@@ -574,6 +574,323 @@ export const useProjectData = (projectId, userId = null) => {
     setProjectData(calculateSchedule(templateData));
   }, [setProjectData]);
 
+  const loadDemoDataAllTabs = useCallback(() => {
+    const ts = now();
+    const today = getCurrentDate();
+    const plusDays = (days) => {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      return d.toISOString().split('T')[0];
+    };
+
+    const makeRegisterItem = (id, data) => ({
+      _id: id,
+      public: true,
+      visible: true,
+      createdAt: ts,
+      updatedAt: ts,
+      ...data
+    });
+
+    // Reuse the SD-WAN schedule demo template
+    loadTemplate();
+
+    setRegisters({
+      risks: [
+        makeRegisterItem('risk_demo_1', {
+          number: 1,
+          category: 'Carrier',
+          riskdetails: 'RFS dates for 3 circuits may slip due to access permit constraints at customer sites.',
+          mitigationaction: 'Escalate permits weekly and hold backup cutover windows in migration plan.',
+          notes: 'Top risk for delivery timeline.',
+          raised: today,
+          owner: 'Delivery Manager',
+          level: 'High'
+        }),
+        makeRegisterItem('risk_demo_2', {
+          number: 2,
+          category: 'Technical',
+          riskdetails: 'Incorrect LAN segmentation mapping could impact policy rollout consistency.',
+          mitigationaction: 'Run design checkpoint and pre-cutover policy validation in lab.',
+          notes: 'Linked to design sign-off.',
+          raised: plusDays(1),
+          owner: 'Network Architect',
+          level: 'Medium'
+        }),
+        makeRegisterItem('risk_demo_3', {
+          number: 3,
+          category: 'Operational',
+          riskdetails: 'Local site contacts may be unavailable during planned change windows.',
+          mitigationaction: 'Confirm contacts in Comms Plan and send 72h/24h reminders.',
+          notes: 'Can delay same-day cutovers.',
+          raised: plusDays(2),
+          owner: 'Project Manager',
+          level: 'Medium'
+        })
+      ],
+      issues: [
+        makeRegisterItem('issue_demo_1', {
+          number: 1,
+          issueassignedto: 'Carrier Service Desk',
+          description: 'Site 4 handoff device delivered with wrong port profile.',
+          currentstatus: 'Replacement requested and ETA confirmed.',
+          status: 'In Progress',
+          raised: today,
+          target: plusDays(3),
+          update: plusDays(1),
+          completed: ''
+        }),
+        makeRegisterItem('issue_demo_2', {
+          number: 2,
+          issueassignedto: 'Customer Firewall Team',
+          description: 'NAT exemption missing for orchestrator API reachability from pilot site.',
+          currentstatus: 'Change request approved and scheduled.',
+          status: 'Open',
+          raised: plusDays(1),
+          target: plusDays(4),
+          update: plusDays(2),
+          completed: ''
+        }),
+        makeRegisterItem('issue_demo_3', {
+          number: 3,
+          issueassignedto: 'Field Engineer',
+          description: 'Site 2 CPE rack space blocked by legacy equipment.',
+          currentstatus: 'Relocation completed and install resumed.',
+          status: 'Completed',
+          raised: plusDays(-2),
+          target: today,
+          update: today,
+          completed: today
+        })
+      ],
+      actions: [
+        makeRegisterItem('action_demo_1', {
+          number: 1,
+          category: 'Delivery',
+          actionassignedto: 'PMO',
+          description: 'Publish weekly circuit readiness dashboard to steering team.',
+          currentstatus: 'Drafted',
+          status: 'In Progress',
+          raised: today,
+          target: plusDays(2),
+          update: plusDays(1),
+          completed: ''
+        }),
+        makeRegisterItem('action_demo_2', {
+          number: 2,
+          category: 'Design',
+          actionassignedto: 'Network Architect',
+          description: 'Finalize QoS profile mapping for voice and business-critical apps.',
+          currentstatus: 'Awaiting customer confirmation.',
+          status: 'Open',
+          raised: plusDays(1),
+          target: plusDays(5),
+          update: plusDays(1),
+          completed: ''
+        }),
+        makeRegisterItem('action_demo_3', {
+          number: 3,
+          category: 'Cutover',
+          actionassignedto: 'Operations Lead',
+          description: 'Run pilot rollback drill and evidence capture.',
+          currentstatus: 'Executed in lab.',
+          status: 'Completed',
+          raised: plusDays(-1),
+          target: today,
+          update: today,
+          completed: today
+        })
+      ],
+      minutes: [
+        makeRegisterItem('minutes_demo_1', {
+          number: 1,
+          dateraised: today,
+          minutedescription: 'Steering committee approved two-wave migration model and freeze window.',
+          status: 'Approved'
+        }),
+        makeRegisterItem('minutes_demo_2', {
+          number: 2,
+          dateraised: plusDays(2),
+          minutedescription: 'Carrier confirmed expedited delivery for Sites 1, 2, and 3.',
+          status: 'Noted'
+        })
+      ],
+      costs: [
+        makeRegisterItem('cost_demo_1', {
+          number: 1,
+          costdescription: 'Out-of-hours migration support - Wave 1',
+          dateraised: today,
+          sitename: 'Regional Hub',
+          cost: '1800',
+          tobechargedto: 'Project Budget',
+          acceptedby: 'Finance Controller',
+          date: plusDays(2),
+          billing: 'Pending'
+        }),
+        makeRegisterItem('cost_demo_2', {
+          number: 2,
+          costdescription: 'Additional site survey visit',
+          dateraised: plusDays(1),
+          sitename: 'Site 4',
+          cost: '450',
+          tobechargedto: 'Change Budget',
+          acceptedby: 'Project Sponsor',
+          date: plusDays(3),
+          billing: 'Approved'
+        }),
+        makeRegisterItem('cost_demo_3', {
+          number: 3,
+          costdescription: 'Temporary LTE backup during circuit delay',
+          dateraised: plusDays(2),
+          sitename: 'Site 7',
+          cost: '320',
+          tobechargedto: 'Operations',
+          acceptedby: 'Service Manager',
+          date: plusDays(4),
+          billing: 'In Review'
+        })
+      ],
+      changes: [
+        makeRegisterItem('change_demo_1', {
+          number: 1,
+          category: 'Scope',
+          assignedto: 'Project Manager',
+          description: 'Include guest Wi-Fi breakout policy in phase 2 rollout.',
+          impactstatus: 'Low time impact, medium design impact.',
+          status: 'Under Review',
+          raised: today,
+          target: plusDays(5),
+          updated: plusDays(1),
+          complete: ''
+        }),
+        makeRegisterItem('change_demo_2', {
+          number: 2,
+          category: 'Schedule',
+          assignedto: 'Delivery Manager',
+          description: 'Move Wave 2 cutover from Friday to Sunday maintenance window.',
+          impactstatus: 'No cost impact, improved business continuity.',
+          status: 'Approved',
+          raised: plusDays(1),
+          target: plusDays(6),
+          updated: plusDays(2),
+          complete: ''
+        }),
+        makeRegisterItem('change_demo_3', {
+          number: 3,
+          category: 'Technical',
+          assignedto: 'Network Architect',
+          description: 'Raise underlay MTU baseline from 1500 to 1600 for encapsulation overhead.',
+          impactstatus: 'Requires edge validation at 2 pilot sites.',
+          status: 'Implemented',
+          raised: plusDays(-1),
+          target: today,
+          updated: today,
+          complete: today
+        })
+      ],
+      comms: [
+        makeRegisterItem('comms_demo_1', {
+          company: 'Customer IT',
+          name: 'Emma Lewis',
+          position: 'Program Sponsor',
+          mobile: '+44 7700 900101',
+          phone: '+44 20 7000 0001',
+          email: 'emma.lewis@example.com'
+        }),
+        makeRegisterItem('comms_demo_2', {
+          company: 'Carrier One',
+          name: 'Amit Patel',
+          position: 'Service Delivery Lead',
+          mobile: '+44 7700 900102',
+          phone: '+44 20 7000 0002',
+          email: 'amit.patel@example.com'
+        }),
+        makeRegisterItem('comms_demo_3', {
+          company: 'Delivery Partner',
+          name: 'Sara Ahmed',
+          position: 'Project Manager',
+          mobile: '+44 7700 900103',
+          phone: '+44 20 7000 0003',
+          email: 'sara.ahmed@example.com'
+        })
+      ]
+    });
+
+    setTracker([
+      {
+        _id: 'tracker_demo_1',
+        taskId: 9,
+        taskName: 'SD-WAN controller templates and policy objects built',
+        notes: 'Policy package v0.9 ready for customer review.',
+        status: 'In Progress',
+        rag: 'Amber',
+        nextAction: 'Close open app-priority mapping questions.',
+        owner: 'Network Architect',
+        dateAdded: today,
+        lastUpdated: plusDays(1),
+        createdAt: ts,
+        updatedAt: ts
+      },
+      {
+        _id: 'tracker_demo_2',
+        taskId: 15,
+        taskName: 'Site 1 - Ethernet circuit install and light-level test',
+        notes: 'Waiting for carrier final acceptance report.',
+        status: 'On Hold',
+        rag: 'Red',
+        nextAction: 'Carrier escalation on delayed closure note.',
+        owner: 'Carrier Delivery Lead',
+        dateAdded: plusDays(-1),
+        lastUpdated: today,
+        createdAt: ts,
+        updatedAt: ts
+      },
+      {
+        _id: 'tracker_demo_3',
+        taskId: 37,
+        taskName: 'Pilot site cutover and rollback validation',
+        notes: 'Cutover checklist approved by CAB.',
+        status: 'Not Started',
+        rag: 'Green',
+        nextAction: 'Run pre-check 24h before pilot window.',
+        owner: 'Operations Lead',
+        dateAdded: plusDays(1),
+        lastUpdated: plusDays(1),
+        createdAt: ts,
+        updatedAt: ts
+      }
+    ]);
+
+    setStatusReport({
+      ...DEFAULT_STATUS_REPORT,
+      overallRag: 'Amber',
+      overallNarrative: 'Program is on track with active carrier dependency management across remaining circuits.',
+      mainRisks: 'Access permit and carrier RFS variability remain the key schedule risks.',
+      mainIssues: 'One pilot-site hardware mismatch and one firewall policy dependency are being managed.',
+      deliverablesThisPeriod: 'Design sign-off, ordering validation, and first install completions.',
+      deliverablesNextPeriod: 'Complete remaining installs and execute pilot cutover.',
+      additionalNotes: 'Demo dataset loaded for client walkthrough.'
+    });
+
+    setBaselineState(null);
+  }, [loadTemplate]);
+
+  const resetDemoData = useCallback(() => {
+    setProjectData([]);
+    setRegisters({
+      risks: [],
+      issues: [],
+      actions: [],
+      minutes: [],
+      costs: [],
+      changes: [],
+      comms: []
+    });
+    setTracker([]);
+    setStatusReport({ ...DEFAULT_STATUS_REPORT });
+    setBaselineState(null);
+  }, []);
+
   // ==================== REGISTER FUNCTIONS ====================
 
   // Add register item — with timestamps
@@ -653,6 +970,8 @@ export const useProjectData = (projectId, userId = null) => {
     toggleTrackTask,
     updateTrackedActions,
     loadTemplate,
+    loadDemoDataAllTabs,
+    resetDemoData,
     setBaseline,
     clearBaseline,
     addRegisterItem,
