@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-PROJECT_DIR="/Users/doringalben/Downloads/project-manager"
+PROJECT_DIR="/Users/doringalben/project-manager"
 LOG_DIR="$PROJECT_DIR/backups/logs"
 PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
