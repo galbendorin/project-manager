@@ -8,11 +8,23 @@ import { supabase } from '../lib/supabase';
 const now = () => new Date().toISOString();
 const createTodoId = () => `todo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const MANUAL_TODO_SELECT = 'id, project_id, title, due_date, owner_text, assignee_user_id, status, recurrence, created_at, updated_at, completed_at';
+const TODO_RECURRENCE_TYPE_ALIASES = {
+  weekday: 'weekdays',
+  weekdays: 'weekdays',
+  weekly: 'weekly',
+  monthly: 'monthly',
+  yearly: 'yearly',
+  annual: 'yearly'
+};
+const normalizeTodoRecurrenceType = (value) => {
+  const key = String(value || '').trim().toLowerCase();
+  return TODO_RECURRENCE_TYPE_ALIASES[key] || '';
+};
 const normalizeTodoRecurrence = (value) => {
   if (!value) return null;
   const rawType = typeof value === 'string' ? value : value.type;
-  const type = String(rawType || '').toLowerCase();
-  if (!['weekdays', 'weekly', 'monthly', 'yearly'].includes(type)) {
+  const type = normalizeTodoRecurrenceType(rawType);
+  if (!type) {
     return null;
   }
   const intervalRaw = Number(typeof value === 'object' ? value.interval : 1);
@@ -499,14 +511,17 @@ export const useProjectData = (projectId, userId = null) => {
     }
 
     let followUpLocal = null;
+    const nextRecurringDueDate = transitionedToDone && normalizedRecurrence
+      ? getNextRecurringDueDate(localUpdated.dueDate, normalizedRecurrence, getCurrentDate())
+      : '';
     if (transitionedToDone && normalizedRecurrence) {
       followUpLocal = {
         _id: createTodoId(),
-        projectId: todo.projectId || null,
-        title: todo.title || 'New ToDo',
-        dueDate: getNextRecurringDueDate(todo.dueDate, normalizedRecurrence, getCurrentDate()),
-        owner: todo.owner || 'PM',
-        assigneeUserId: todo.assigneeUserId || userId || null,
+        projectId: localUpdated.projectId || null,
+        title: localUpdated.title || 'New ToDo',
+        dueDate: nextRecurringDueDate,
+        owner: localUpdated.owner || 'PM',
+        assigneeUserId: localUpdated.assigneeUserId || userId || null,
         status: 'Open',
         recurrence: normalizedRecurrence,
         createdAt: ts,
@@ -556,7 +571,11 @@ export const useProjectData = (projectId, userId = null) => {
 
     if (updateError || !updatedRow) {
       console.error('Failed to update manual todo:', updateError);
-      setTodos(prev => prev.map(item => item._id === todoId ? localUpdated : item));
+      setTodos(prev => {
+        const next = prev.map(item => item._id === todoId ? localUpdated : item);
+        if (followUpLocal) next.push(followUpLocal);
+        return next;
+      });
       return;
     }
 
@@ -566,11 +585,11 @@ export const useProjectData = (projectId, userId = null) => {
         .from('manual_todos')
         .insert({
           user_id: userId,
-          project_id: todo.projectId || null,
-          title: todo.title || 'New ToDo',
-          due_date: getNextRecurringDueDate(todo.dueDate, normalizedRecurrence, getCurrentDate()) || null,
-          owner_text: todo.owner || 'PM',
-          assignee_user_id: todo.assigneeUserId || userId,
+          project_id: localUpdated.projectId || null,
+          title: localUpdated.title || 'New ToDo',
+          due_date: nextRecurringDueDate || null,
+          owner_text: localUpdated.owner || 'PM',
+          assignee_user_id: localUpdated.assigneeUserId || userId,
           status: 'Open',
           recurrence: normalizedRecurrence,
           completed_at: null
@@ -581,6 +600,9 @@ export const useProjectData = (projectId, userId = null) => {
       if (!insertError && insertedRow) {
         followUpDbRow = insertedRow;
       } else if (insertError) {
+        if (isMissingRelationError(insertError, 'manual_todos')) {
+          supportsManualTodosTableRef.current = false;
+        }
         console.error('Failed to create recurring follow-up todo:', insertError);
       }
     }
@@ -589,6 +611,8 @@ export const useProjectData = (projectId, userId = null) => {
       const next = prev.map(item => item._id === todoId ? mapManualTodoRow(updatedRow) : item);
       if (followUpDbRow) {
         next.push(mapManualTodoRow(followUpDbRow));
+      } else if (followUpLocal) {
+        next.push(followUpLocal);
       }
       return next;
     });

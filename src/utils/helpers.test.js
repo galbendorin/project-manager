@@ -176,9 +176,13 @@ test('bucketByDeadline places todos in expected deadline buckets', () => {
   assert.equal(byKey.later, 2);
 });
 
-test('getNextRecurringDueDate handles weekdays, weekly, monthly, and yearly recurrence', () => {
+test('getNextRecurringDueDate handles recurrence aliases, fallback, and interval edge cases', () => {
   assert.equal(
     getNextRecurringDueDate('2026-03-06', { type: 'weekdays', interval: 1 }), // Friday -> Monday
+    '2026-03-09'
+  );
+  assert.equal(
+    getNextRecurringDueDate('2026-03-07', { type: 'Weekday', interval: 1 }), // Saturday -> Monday
     '2026-03-09'
   );
   assert.equal(
@@ -194,15 +198,31 @@ test('getNextRecurringDueDate handles weekdays, weekly, monthly, and yearly recu
     '2026-03-02'
   );
   assert.equal(
+    getNextRecurringDueDate('not-a-date', { type: 'weekly', interval: 1 }, '2026-02-23'),
+    '2026-03-02'
+  );
+  assert.equal(
     getNextRecurringDueDate('2026-01-31', { type: 'monthly', interval: 1 }),
     '2026-02-28'
+  );
+  assert.equal(
+    getNextRecurringDueDate('2026-03-15', { type: 'monthly', interval: 0 }), // defaults to interval 1
+    '2026-04-15'
   );
   assert.equal(
     getNextRecurringDueDate('2024-02-29', { type: 'yearly', interval: 1 }),
     '2025-02-28'
   );
   assert.equal(
+    getNextRecurringDueDate('2024-02-29', { type: 'ANNUAL', interval: 1 }),
+    '2025-02-28'
+  );
+  assert.equal(
     getNextRecurringDueDate('2026-03-01', null),
+    ''
+  );
+  assert.equal(
+    getNextRecurringDueDate('2026-03-01', { type: 'fortnightly', interval: 1 }),
     ''
   );
 });

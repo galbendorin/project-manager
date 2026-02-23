@@ -584,19 +584,35 @@ const getMondayStart = (value) => {
   return addCalendarDays(dt, offset);
 };
 
+const RECURRENCE_TYPE_ALIASES = {
+  weekday: 'weekdays',
+  weekdays: 'weekdays',
+  weekly: 'weekly',
+  monthly: 'monthly',
+  yearly: 'yearly',
+  annual: 'yearly'
+};
+
+const normalizeRecurrenceType = (value) => {
+  const key = String(value || '').trim().toLowerCase();
+  return RECURRENCE_TYPE_ALIASES[key] || '';
+};
+
 const normalizeRecurrence = (recurrence) => {
   if (!recurrence) return null;
   if (typeof recurrence === 'string') {
+    const type = normalizeRecurrenceType(recurrence);
+    if (!type) return null;
     return {
-      type: recurrence.toLowerCase(),
+      type,
       interval: 1
     };
   }
-  const rawType = String(recurrence.type || '').toLowerCase();
-  if (!rawType) return null;
+  const type = normalizeRecurrenceType(recurrence.type);
+  if (!type) return null;
   const intervalRaw = Number(recurrence.interval);
   const interval = Number.isFinite(intervalRaw) && intervalRaw > 0 ? Math.floor(intervalRaw) : 1;
-  return { type: rawType, interval };
+  return { type, interval };
 };
 
 const addWeekdays = (baseDate, businessDays) => {
@@ -641,19 +657,17 @@ export const getNextRecurringDueDate = (
 ) => {
   const normalized = normalizeRecurrence(recurrence);
   if (!normalized) return '';
-  const baseDate = startOfDay(dueDate || fallbackDate);
+  const baseDate = startOfDay(dueDate) || startOfDay(fallbackDate);
   if (!baseDate) return '';
 
   switch (normalized.type) {
     case 'weekdays':
-    case 'weekday':
       return toISODateString(addWeekdays(baseDate, normalized.interval));
     case 'weekly':
       return toISODateString(addCalendarDays(baseDate, normalized.interval * 7));
     case 'monthly':
       return toISODateString(addMonthsClamped(baseDate, normalized.interval));
     case 'yearly':
-    case 'annual':
       return toISODateString(addYearsClamped(baseDate, normalized.interval));
     default:
       return '';
