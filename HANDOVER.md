@@ -5,13 +5,122 @@ A full-featured **React + Vite** project management web app with Gantt chart, RA
 
 - **Live URL**: https://project-manager-app-tau.vercel.app
 - **GitHub Repo**: User's private repo (auto-deploys to Vercel on push)
-- **Local Path**: `~/Downloads/project-manager/`
+- **Canonical Local Path**: `/Users/doringalben/project-manager/`
+- **Legacy Local Path (older docs only)**: `~/Downloads/project-manager/`
 - **Backend**: Supabase (PostgreSQL + Auth)
 - **Stack**: React 18, Vite, Tailwind CSS, Chart.js, xlsx
 
 ---
 
+## CURRENT STATE SNAPSHOT (2026-02-23) — FOR NEW CHAT OR NEW LLM
+
+This section is the authoritative handoff state for continuing work in a new chat (including Claude or another LLM).
+
+### 1) Repository and deployment state
+- **Repo path**: `/Users/doringalben/project-manager`
+- **Primary branch**: `main`
+- **Current HEAD**: `e324b67` (`Add fast release checklist to handover`)
+- **Remote sync**: `main` is synced to `origin/main` (no local divergence at handoff time)
+- **Deployed flow**: GitHub push to `main` triggers Vercel auto-deploy
+
+### 2) Historical baseline clarification
+- The old implementation plan references baseline commit `5416184`.
+- That baseline is now historical only.
+- **Do not reset to 5416184**. Continue from current HEAD (`e324b67`) unless explicitly instructed otherwise.
+
+### 3) Completed implementation sequence (chronological)
+From `e0f8bc9` to `e324b67`, the following was delivered:
+
+1. `e0f8bc9` — ToDo tab skeleton with manual todos
+2. `eea42c1` — Derived ToDo aggregation and deadline bucket grouping
+3. `93d999c` — Recurrence support expanded: Weekdays, Weekly, Monthly, Yearly
+4. `3adff5f` — Cross-project ToDo filtering + `manual_todos` backend table usage
+5. `17aa74d` — Recurring completion follow-up hardening
+6. `b58edcf` — Legacy `projects.todos` retirement path + safe backfill/drop SQL
+7. `2e17482` — Stability pass:
+   - signup metadata fix
+   - tracked import boolean parsing fix
+   - ToDo write amplification reduction (title/owner save on blur)
+   - dependency model alignment across schedule/critical path/Gantt
+   - shared project-data helper extraction
+8. `4b029e9` — Import/parsing extraction from `App.jsx` to `src/utils/importParsers.js`
+9. `b6484e7` — `useProjectData` internal split into `loadSave`, `todos`, `registers` helper modules
+10. `02f2521` — Transition-focused tests + ESM extension fixes for Node test runner
+11. `ead352c` — SQL preflight checks for `manual_todos` rollout
+12. `e324b67` — Fast release checklist in this handover
+
+### 4) Database migration status (manual run in Supabase SQL Editor)
+Expected migration set in repo:
+- `scripts/sql/2026-02-22_add_is_demo_to_projects.sql`
+- `scripts/sql/2026-02-22_add_todos_to_projects.sql` (legacy step)
+- `scripts/sql/2026-02-23_create_manual_todos.sql`
+- `scripts/sql/2026-02-23_backfill_manual_todos_from_projects.sql`
+- `scripts/sql/2026-02-23_drop_legacy_projects_todos.sql`
+- `scripts/sql/2026-02-23_manual_todos_preflight_checks.sql`
+
+Validation intent:
+- `public.manual_todos` exists with required columns, indexes, and RLS policies
+- legacy `public.projects.todos` column removed
+- recurrence/status data integrity validated
+- final preflight summary reports `PASS`
+
+### 5) Current architecture highlights (post-refactor)
+New/important modules:
+- `src/hooks/projectData/defaults.js`
+- `src/hooks/projectData/manualTodoUtils.js`
+- `src/hooks/projectData/loadSave.js`
+- `src/hooks/projectData/registers.js`
+- `src/hooks/projectData/todos.js`
+- `src/utils/importParsers.js`
+
+Behavior-critical notes:
+- ToDo editing for `title`/`owner` commits on `blur` to reduce backend writes
+- Recurring completion creates follow-up manual todo automatically
+- Dependency normalization (`parent` + `dependencies[]`) is shared across scheduling, critical path, and Gantt dependency drawing
+- Sign-up metadata flow is normalized (`full_name`)
+
+### 6) Test and build state at handoff
+Last local verification run on current `main`:
+- `npm run test` -> **26/26 passing**
+- `npm run build` -> **passing** (Vite production build completes)
+
+Primary test files:
+- `src/utils/helpers.test.js`
+- `src/utils/importParsers.test.js`
+- `src/hooks/manualTodoUtils.test.js`
+- `src/hooks/projectDataFlows.test.js`
+
+### 7) Operational release process
+Use the "RELEASE CHECKLIST (FAST)" section in this file for:
+- local verify (`test` + `build`)
+- commit + push
+- Supabase preflight SQL check
+- post-deploy smoke test
+
+### 8) Recommended next engineering step (low service impact)
+Add higher-level tests around `useProjectData` integration boundaries (mock Supabase calls):
+- missing-table fallback path (`manual_todos` relation missing)
+- recurring follow-up insertion failure fallback
+- conflict/reload flow with version mismatch
+
+### 9) Copy/paste prompt for starting a new chat with another LLM
+Use this exact scaffold:
+
+```text
+Use /Users/doringalben/project-manager/HANDOVER.md (sections "CURRENT STATE SNAPSHOT (2026-02-23)" and "RELEASE CHECKLIST (FAST)") as source of truth.
+Repo: /Users/doringalben/project-manager
+Current branch/commit: main @ e324b67
+Do not roll back to historical baseline commit 5416184; continue from current HEAD.
+Before changing code, summarize current state from HANDOVER and propose the next lowest-risk step.
+After implementing: run npm run test and npm run build, then provide commit/push commands only.
+```
+
+---
+
 ## DEPLOYMENT WORKFLOW (CRITICAL — FOLLOW EXACTLY)
+
+> NOTE (2026-02-23): This section describes a legacy chat-file transfer workflow.
+> For the current local repo workflow, use **RELEASE CHECKLIST (FAST)** above.
 
 The user cannot run code locally from the chat. The workflow is:
 
