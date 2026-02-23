@@ -400,6 +400,7 @@ Run these SQL scripts in order:
 1. `scripts/sql/2026-02-23_create_manual_todos.sql`
 2. `scripts/sql/2026-02-23_backfill_manual_todos_from_projects.sql` (only needed if legacy `projects.todos` data exists)
 3. `scripts/sql/2026-02-23_drop_legacy_projects_todos.sql` (after validation)
+4. `scripts/sql/2026-02-23_manual_todos_preflight_checks.sql` (recommended final verification)
 
 ### Goal C: Rename Schedule tab label to Project Plan
 - Keep tab id as `schedule` (do not change key; avoids regressions)
