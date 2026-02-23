@@ -34,6 +34,40 @@ The user cannot run code locally from the chat. The workflow is:
 
 ---
 
+## RELEASE CHECKLIST (FAST)
+
+Use this sequence for every release to reduce risk:
+
+1. Local verification:
+   ```bash
+   cd /Users/doringalben/project-manager
+   npm run test
+   npm run build
+   ```
+
+2. Commit + push:
+   ```bash
+   cd /Users/doringalben/project-manager
+   git add -A
+   git commit -m "release message"
+   git push origin main
+   ```
+
+3. DB preflight (Supabase SQL Editor):
+   - Run `scripts/sql/2026-02-23_manual_todos_preflight_checks.sql`
+   - Confirm final row shows `overall_status = PASS`
+
+4. Post-deploy smoke test (production):
+   - Open existing project and add/update/delete a manual ToDo
+   - Mark recurring ToDo as Done and verify next instance appears
+   - Import a sample Excel file (Schedule + at least one register)
+   - Export workbook and verify expected sheets are present
+
+5. Record release:
+   - Save commit SHA and deployment timestamp in your notes
+
+---
+
 ## FILE STRUCTURE
 
 ```
