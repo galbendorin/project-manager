@@ -1,18 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { DEFAULT_STATUS_REPORT } from '../utils/constants';
 import { buildDemoProjectPayload } from '../utils/demoProjectBuilder';
-
-const createEmptyRegisters = () => ({
-  risks: [],
-  issues: [],
-  actions: [],
-  minutes: [],
-  costs: [],
-  changes: [],
-  comms: []
-});
+import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
 
 const isMissingColumnError = (error, columnName) => {
   const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
@@ -142,14 +132,11 @@ const ProjectSelector = ({ onSelectProject }) => {
     if (!newProjectName.trim()) return;
     setCreating(true);
 
+    const emptyProjectSnapshot = createEmptyProjectSnapshot();
     const { data, error } = await createProjectRecord({
       user_id: user.id,
       name: newProjectName.trim(),
-      tasks: [],
-      registers: createEmptyRegisters(),
-      tracker: [],
-      status_report: { ...DEFAULT_STATUS_REPORT },
-      baseline: null,
+      ...emptyProjectSnapshot,
       is_demo: false
     });
 

@@ -9,6 +9,7 @@ import {
   getFinishDate,
   calculateParentSummaries,
   calculateSchedule,
+  calculateCriticalPath,
   getVisibleTaskIndices,
   buildVisibleTasks,
   hasDependencies,
@@ -91,6 +92,28 @@ test('calculateSchedule supports ALL and ANY dependency logic', () => {
 
   assert.equal(allTask.start, '2026-01-12');
   assert.equal(anyTask.start, '2026-01-07');
+});
+
+test('calculateCriticalPath respects multi-dependency chains', () => {
+  const tasks = calculateSchedule([
+    { id: 1, name: 'Path A', start: '2026-01-05', dur: 2, parent: null, depType: 'FS', indent: 0 },
+    { id: 2, name: 'Path B', start: '2026-01-05', dur: 4, parent: null, depType: 'FS', indent: 0 },
+    {
+      id: 3,
+      name: 'Merge',
+      start: '2026-01-01',
+      dur: 1,
+      dependencies: [{ parentId: 1, depType: 'FS' }, { parentId: 2, depType: 'FS' }],
+      depLogic: 'ALL',
+      parent: null,
+      depType: 'FS',
+      indent: 0
+    }
+  ]);
+
+  const criticalPath = calculateCriticalPath(tasks);
+  assert.equal(criticalPath.has(2), true);
+  assert.equal(criticalPath.has(3), true);
 });
 
 test('dependency to group row uses group summary timing', () => {

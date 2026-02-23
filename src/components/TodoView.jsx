@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   filterBySearch,
   collectDerivedTodos,
@@ -77,6 +77,68 @@ const TodoView = ({
   const [projectOptions, setProjectOptions] = useState([]);
   const [allProjectsData, setAllProjectsData] = useState([]);
   const [loadingAllProjects, setLoadingAllProjects] = useState(false);
+  const [draftEdits, setDraftEdits] = useState({});
+  const draftEditsRef = useRef({});
+
+  const makeDraftKey = (todoId, field) => `${todoId}::${field}`;
+
+  useEffect(() => {
+    draftEditsRef.current = draftEdits;
+  }, [draftEdits]);
+
+  useEffect(() => {
+    const activeIds = new Set((todos || []).map((item) => item._id));
+    setDraftEdits((prev) => {
+      let changed = false;
+      const next = {};
+      Object.entries(prev).forEach(([key, value]) => {
+        const separatorIdx = key.indexOf('::');
+        const todoId = separatorIdx >= 0 ? key.slice(0, separatorIdx) : '';
+        if (activeIds.has(todoId)) {
+          next[key] = value;
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [todos]);
+
+  const getDraftValue = (todo, field) => {
+    const key = makeDraftKey(todo._id, field);
+    if (Object.prototype.hasOwnProperty.call(draftEdits, key)) {
+      return draftEdits[key];
+    }
+    return todo[field] || '';
+  };
+
+  const setDraftValue = (todoId, field, value) => {
+    const key = makeDraftKey(todoId, field);
+    setDraftEdits((prev) => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  const commitDraftValue = (todo, field) => {
+    const key = makeDraftKey(todo._id, field);
+    if (!Object.prototype.hasOwnProperty.call(draftEditsRef.current, key)) {
+      return;
+    }
+
+    const nextValue = draftEditsRef.current[key];
+    const currentValue = todo[field] || '';
+    if (nextValue !== currentValue) {
+      onUpdateTodo(todo._id, field, nextValue);
+    }
+
+    setDraftEdits((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   useEffect(() => {
     setProjectFilter('all');
@@ -426,8 +488,9 @@ const TodoView = ({
                               {isManualEditable ? (
                                 <input
                                   type="text"
-                                  value={todo.title || ''}
-                                  onChange={(e) => onUpdateTodo(todo._id, 'title', e.target.value)}
+                                  value={getDraftValue(todo, 'title')}
+                                  onChange={(e) => setDraftValue(todo._id, 'title', e.target.value)}
+                                  onBlur={() => commitDraftValue(todo, 'title')}
                                   className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 />
                               ) : (
@@ -468,8 +531,9 @@ const TodoView = ({
                               {isManualEditable ? (
                                 <input
                                   type="text"
-                                  value={todo.owner || ''}
-                                  onChange={(e) => onUpdateTodo(todo._id, 'owner', e.target.value)}
+                                  value={getDraftValue(todo, 'owner')}
+                                  onChange={(e) => setDraftValue(todo._id, 'owner', e.target.value)}
+                                  onBlur={() => commitDraftValue(todo, 'owner')}
                                   className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 />
                               ) : (

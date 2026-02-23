@@ -1,53 +1,19 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { calculateSchedule, getNextId, getCurrentDate, getFinishDate, keyGen, getNextRecurringDueDate } from '../utils/helpers';
-import { DEFAULT_TASK, SCHEMAS, DEFAULT_STATUS_REPORT } from '../utils/constants';
+import { DEFAULT_TASK, SCHEMAS } from '../utils/constants';
 import { buildDemoProjectPayload, buildDemoScheduleTasks } from '../utils/demoProjectBuilder';
 import { supabase } from '../lib/supabase';
+import { createEmptyRegisters, createEmptyStatusReport } from './projectData/defaults';
+import {
+  MANUAL_TODO_SELECT,
+  createManualTodoId,
+  normalizeTodoRecurrence,
+  mapManualTodoRow,
+  isMissingRelationError
+} from './projectData/manualTodoUtils';
 
 // Helper: get ISO timestamp
 const now = () => new Date().toISOString();
-const createTodoId = () => `todo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-const MANUAL_TODO_SELECT = 'id, project_id, title, due_date, owner_text, assignee_user_id, status, recurrence, created_at, updated_at, completed_at';
-const TODO_RECURRENCE_TYPE_ALIASES = {
-  weekday: 'weekdays',
-  weekdays: 'weekdays',
-  weekly: 'weekly',
-  monthly: 'monthly',
-  yearly: 'yearly',
-  annual: 'yearly'
-};
-const normalizeTodoRecurrenceType = (value) => {
-  const key = String(value || '').trim().toLowerCase();
-  return TODO_RECURRENCE_TYPE_ALIASES[key] || '';
-};
-const normalizeTodoRecurrence = (value) => {
-  if (!value) return null;
-  const rawType = typeof value === 'string' ? value : value.type;
-  const type = normalizeTodoRecurrenceType(rawType);
-  if (!type) {
-    return null;
-  }
-  const intervalRaw = Number(typeof value === 'object' ? value.interval : 1);
-  const interval = Number.isFinite(intervalRaw) && intervalRaw > 0 ? Math.floor(intervalRaw) : 1;
-  return { type, interval };
-};
-const mapManualTodoRow = (row) => ({
-  _id: row.id || createTodoId(),
-  projectId: row.project_id || null,
-  title: row.title || '',
-  dueDate: row.due_date || '',
-  owner: row.owner_text || '',
-  assigneeUserId: row.assignee_user_id || null,
-  status: row.status === 'Done' ? 'Done' : 'Open',
-  recurrence: normalizeTodoRecurrence(row.recurrence),
-  createdAt: row.created_at || now(),
-  updatedAt: row.updated_at || now(),
-  completedAt: row.completed_at || ''
-});
-const isMissingRelationError = (error, relationName) => {
-  const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
-  return msg.includes('relation') && msg.includes(relationName.toLowerCase());
-};
 
 /**
  * Custom hook for managing project data (tasks, registers, tracker, status report, and todos)
@@ -55,17 +21,9 @@ const isMissingRelationError = (error, relationName) => {
  */
 export const useProjectData = (projectId, userId = null) => {
   const [projectData, setProjectData] = useState([]);
-  const [registers, setRegisters] = useState({
-    risks: [],
-    issues: [],
-    actions: [],
-    minutes: [],
-    costs: [],
-    changes: [],
-    comms: []
-  });
+  const [registers, setRegisters] = useState(() => createEmptyRegisters());
   const [tracker, setTracker] = useState([]);
-  const [statusReport, setStatusReport] = useState({ ...DEFAULT_STATUS_REPORT });
+  const [statusReport, setStatusReport] = useState(() => createEmptyStatusReport());
   const [todos, setTodos] = useState([]);
   const [baseline, setBaselineState] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -98,7 +56,7 @@ export const useProjectData = (projectId, userId = null) => {
     if (!error && data) {
       // Backfill timestamps on load for any items missing them
       const backfillTimestamps = (items) => {
-        if (!items || !Array.isArray(items)) return items;
+        if (!Array.isArray(items)) return [];
         return items.map(item => ({
           ...item,
           createdAt: item.createdAt || item.dateAdded || now(),
@@ -107,7 +65,7 @@ export const useProjectData = (projectId, userId = null) => {
       };
 
       const backfillTasks = (tasks) => {
-        if (!tasks || !Array.isArray(tasks)) return tasks;
+        if (!Array.isArray(tasks)) return [];
         return tasks.map(t => ({
           ...t,
           createdAt: t.createdAt || now(),
@@ -115,9 +73,9 @@ export const useProjectData = (projectId, userId = null) => {
         }));
       };
 
-      const loadedRegisters = data.registers || {
-        risks: [], issues: [], actions: [],
-        minutes: [], costs: [], changes: [], comms: []
+      const loadedRegisters = {
+        ...createEmptyRegisters(),
+        ...(data.registers || {})
       };
 
       // Backfill all registers
@@ -130,7 +88,7 @@ export const useProjectData = (projectId, userId = null) => {
       setRegisters(backfilledRegisters);
       setBaselineState(data.baseline || null);
       setTracker(backfillTimestamps(data.tracker || []));
-      setStatusReport(data.status_report || { ...DEFAULT_STATUS_REPORT });
+      setStatusReport(data.status_report || createEmptyStatusReport());
 
       if (userId && supportsManualTodosTableRef.current) {
         const { data: todoRows, error: todoError } = await supabase
@@ -436,7 +394,7 @@ export const useProjectData = (projectId, userId = null) => {
       : projectId;
 
     const localTodo = {
-      _id: createTodoId(),
+      _id: createManualTodoId(),
       projectId: nextProjectId || null,
       title: todoData.title || 'New ToDo',
       dueDate: todoData.dueDate || getCurrentDate(),
@@ -516,7 +474,7 @@ export const useProjectData = (projectId, userId = null) => {
       : '';
     if (transitionedToDone && normalizedRecurrence) {
       followUpLocal = {
-        _id: createTodoId(),
+        _id: createManualTodoId(),
         projectId: localUpdated.projectId || null,
         title: localUpdated.title || 'New ToDo',
         dueDate: nextRecurringDueDate,
@@ -655,17 +613,9 @@ export const useProjectData = (projectId, userId = null) => {
 
   const resetDemoData = useCallback(() => {
     setProjectData([]);
-    setRegisters({
-      risks: [],
-      issues: [],
-      actions: [],
-      minutes: [],
-      costs: [],
-      changes: [],
-      comms: []
-    });
+    setRegisters(createEmptyRegisters());
     setTracker([]);
-    setStatusReport({ ...DEFAULT_STATUS_REPORT });
+    setStatusReport(createEmptyStatusReport());
     setBaselineState(null);
   }, []);
 

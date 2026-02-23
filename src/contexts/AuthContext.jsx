@@ -9,6 +9,14 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const normalizeFullName = (value) => {
+    if (typeof value === 'string') return value.trim();
+    if (value && typeof value === 'object' && typeof value.full_name === 'string') {
+      return value.full_name.trim();
+    }
+    return '';
+  };
+
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -26,14 +34,17 @@ export const AuthProvider = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email, password, fullName) => {
-    const { data, error } = await supabase.auth.signUp({
+  const signUp = async (email, password, fullNameInput) => {
+    const fullName = normalizeFullName(fullNameInput);
+    const payload = {
       email,
-      password,
-      options: {
-        data: { full_name: fullName }
-      }
-    });
+      password
+    };
+    if (fullName) {
+      payload.options = { data: { full_name: fullName } };
+    }
+
+    const { data, error } = await supabase.auth.signUp(payload);
     return { data, error };
   };
 

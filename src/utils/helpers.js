@@ -324,6 +324,53 @@ export const buildVisibleTasks = (tasks, collapsedIndices) => {
   });
 };
 
+const VALID_DEP_TYPES = new Set(['FS', 'SS', 'FF', 'SF']);
+
+const normalizeDependencyType = (value) => {
+  const normalized = String(value || 'FS').trim().toUpperCase();
+  return VALID_DEP_TYPES.has(normalized) ? normalized : 'FS';
+};
+
+const normalizeDependencyParentId = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const asNumber = Number(trimmed);
+    return Number.isFinite(asNumber) ? asNumber : trimmed;
+  }
+  return value;
+};
+
+/**
+ * Normalize task dependency references into one consistent array model.
+ * Supports both legacy parent/depType and dependencies[] records.
+ */
+export const getTaskDependencies = (task) => {
+  if (!task) return [];
+
+  if (Array.isArray(task.dependencies) && task.dependencies.length > 0) {
+    return task.dependencies
+      .map((dep) => {
+        const parentId = normalizeDependencyParentId(dep?.parentId);
+        if (parentId === null) return null;
+        return {
+          parentId,
+          depType: normalizeDependencyType(dep?.depType)
+        };
+      })
+      .filter(Boolean);
+  }
+
+  const legacyParentId = normalizeDependencyParentId(task.parent);
+  if (legacyParentId === null) return [];
+  return [{
+    parentId: legacyParentId,
+    depType: normalizeDependencyType(task.depType)
+  }];
+};
+
 /**
  * Schedule calculation — dependency-based start date resolution.
  * Uses business days for finish date calculations.
@@ -347,8 +394,7 @@ export const calculateSchedule = (tasks) => {
   function resolve(task) {
     if (!task || resolved.has(task.id)) return;
     
-    // Handle both old (parent/depType) and new (dependencies array) format
-    const deps = task.dependencies || (task.parent ? [{ parentId: task.parent, depType: task.depType || 'FS' }] : []);
+    const deps = getTaskDependencies(task);
     
     if (deps.length > 0) {
       const depLogic = task.depLogic || 'ALL'; // Default to ALL (wait for all parents)
@@ -420,7 +466,6 @@ export const calculateSchedule = (tasks) => {
 export const calculateCriticalPath = (tasks) => {
   if (!tasks || tasks.length === 0) return new Set();
 
-  const taskMap = new Map(tasks.map(t => [t.id, t]));
   const startTimes = tasks
     .map(t => parseDateValue(t.start))
     .filter(Boolean)
@@ -443,18 +488,22 @@ export const calculateCriticalPath = (tasks) => {
     const calDays = getCalendarSpan(t.start, t.dur) || 0;
     nodes.set(t.id, {
       id: t.id, dur: calDays, es, ef: es + calDays,
-      ls: Infinity, lf: Infinity, float: 0,
-      predecessorId: t.parent || null,
-      depType: t.depType || 'FS'
+      ls: Infinity, lf: Infinity, float: 0
     });
   });
 
+  const depsByTask = new Map();
   const successors = new Map();
-  tasks.forEach(t => {
-    if (t.parent && taskMap.has(t.parent)) {
-      if (!successors.has(t.parent)) successors.set(t.parent, []);
-      successors.get(t.parent).push(t.id);
-    }
+  tasks.forEach((task) => {
+    const deps = getTaskDependencies(task).filter(dep => nodes.has(dep.parentId));
+    depsByTask.set(task.id, deps);
+    deps.forEach((dep) => {
+      if (!successors.has(dep.parentId)) successors.set(dep.parentId, []);
+      successors.get(dep.parentId).push({
+        taskId: task.id,
+        depType: dep.depType
+      });
+    });
   });
 
   nodes.forEach(node => { node.ef = node.es + node.dur; });
@@ -477,10 +526,10 @@ export const calculateCriticalPath = (tasks) => {
       if (successors.has(node.id)) {
         const succs = successors.get(node.id);
         let minConstraint = Infinity;
-        succs.forEach(succId => {
-          const succNode = nodes.get(succId);
+        succs.forEach((succ) => {
+          const succNode = nodes.get(succ.taskId);
           if (!succNode) return;
-          const depType = succNode.depType || 'FS';
+          const depType = succ.depType || 'FS';
           let constraint;
           switch (depType) {
             case 'FS': constraint = succNode.ls; break;
@@ -502,10 +551,15 @@ export const calculateCriticalPath = (tasks) => {
   }
 
   for (let pass = 0; pass < tasks.length; pass++) {
-    nodes.forEach(node => {
-      if (node.predecessorId && nodes.has(node.predecessorId)) {
-        const predNode = nodes.get(node.predecessorId);
-        const depType = node.depType || 'FS';
+    let changed = false;
+    depsByTask.forEach((deps, taskId) => {
+      const node = nodes.get(taskId);
+      if (!node || deps.length === 0) return;
+
+      deps.forEach((dep) => {
+        if (!nodes.has(dep.parentId)) return;
+        const predNode = nodes.get(dep.parentId);
+        const depType = dep.depType || 'FS';
         let predLF;
         switch (depType) {
           case 'FS': predLF = node.ls; break;
@@ -517,9 +571,11 @@ export const calculateCriticalPath = (tasks) => {
         if (predLF < predNode.lf) {
           predNode.lf = predLF;
           predNode.ls = predNode.lf - predNode.dur;
+          changed = true;
         }
-      }
+      });
     });
+    if (!changed) break;
   }
 
   const criticalTaskIds = new Set();
@@ -535,7 +591,19 @@ export const calculateCriticalPath = (tasks) => {
       let current = endTask;
       while (current) {
         criticalTaskIds.add(current.id);
-        current = current.predecessorId ? nodes.get(current.predecessorId) : null;
+        const deps = depsByTask.get(current.id) || [];
+        if (deps.length === 0) {
+          current = null;
+          continue;
+        }
+        let predecessor = null;
+        deps.forEach((dep) => {
+          const candidate = nodes.get(dep.parentId);
+          if (candidate && (!predecessor || candidate.ef > predecessor.ef)) {
+            predecessor = candidate;
+          }
+        });
+        current = predecessor;
       }
     }
   }
@@ -896,18 +964,14 @@ export const sortRegisterItems = (items, sortKey, sortDirection = 'asc') => {
  * Returns string like "1FS, 5SS, 10FF"
  */
 export const formatDependencies = (task) => {
-  if (task.dependencies && task.dependencies.length > 0) {
-    return task.dependencies.map(d => `${d.parentId}${d.depType}`).join(', ');
-  }
-  if (task.parent) {
-    return `${task.parent}${task.depType || 'FS'}`;
-  }
-  return '–';
+  const deps = getTaskDependencies(task);
+  if (deps.length === 0) return '–';
+  return deps.map(dep => `${dep.parentId}${dep.depType}`).join(', ');
 };
 
 /**
  * Check if task has any dependencies
  */
 export const hasDependencies = (task) => {
-  return (task.dependencies && task.dependencies.length > 0) || (task.parent !== null && task.parent !== undefined);
+  return getTaskDependencies(task).length > 0;
 };

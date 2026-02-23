@@ -21,7 +21,7 @@ const AuthPage = () => {
         const { error } = await signIn(email, password);
         if (error) throw error;
       } else {
-        const { error } = await signUp(email, password, { full_name: fullName });
+        const { error } = await signUp(email, password, fullName);
         if (error) throw error;
         alert('Check your email for the confirmation link!');
       }

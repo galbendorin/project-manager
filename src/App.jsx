@@ -111,6 +111,17 @@ function mapRow(row, columnMap) {
   return mapped;
 }
 
+function parseBooleanLike(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (['true', 'yes', 'y', '1', 'x', 'checked'].includes(normalized)) return true;
+  if (['false', 'no', 'n', '0', 'off', 'unchecked'].includes(normalized)) return false;
+  return false;
+}
+
 function parseScheduleSheet(rows) {
   return rows.map((row, idx) => {
     const mapped = mapRow(row, COLUMN_MAP_SCHEDULE);
@@ -124,7 +135,7 @@ function parseScheduleSheet(rows) {
       start: String(mapped.start || new Date().toISOString().split('T')[0]),
       pct: parseInt(mapped.pct) || 0,
       indent: parseInt(mapped.indent) || 0,
-      tracked: !!mapped.tracked
+      tracked: parseBooleanLike(mapped.tracked)
     };
   }).filter(t => t.name && t.name.trim());
 }

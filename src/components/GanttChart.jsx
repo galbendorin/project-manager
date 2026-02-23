@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import Chart from 'chart.js/auto';
 import 'chartjs-adapter-date-fns';
-import { getProjectDateRange, calculateCriticalPath, getCalendarSpan, parseDateValue, formatDateDDMMMyy } from '../utils/helpers';
+import { getProjectDateRange, calculateCriticalPath, getCalendarSpan, parseDateValue, formatDateDDMMMyy, getTaskDependencies } from '../utils/helpers';
 
 // Plugin: Row stripes
 const rowStripesPlugin = {
@@ -163,47 +163,80 @@ const ganttOverlayPlugin = {
 
     // DEPENDENCY LINES
     if (!compact) tasks.forEach((task, taskIndex) => {
-      if (!task.parent) return;
-      const predIndex = taskIndexById.get(task.parent);
-      if (predIndex === undefined) return;
-      const predTask = tasks[predIndex];
-      const predY = yScale.getPixelForValue(predIndex);
-      const succY = yScale.getPixelForValue(taskIndex);
-      if (predY == null || succY == null) return;
-      const depType = task.depType || 'FS';
-      const predCalDays = predTask._calendarDays || getCalendarSpan(predTask.start, predTask.dur) || 0.5;
-      const succCalDays = task._calendarDays || getCalendarSpan(task.start, task.dur) || 0.5;
-      const predStartDate = parseDateValue(predTask.start);
-      const succStartDate = parseDateValue(task.start);
-      if (!predStartDate || !succStartDate) return;
-      const predStart = predStartDate.getTime();
-      const predEnd = predStart + predCalDays * 86400000;
-      const succStart = succStartDate.getTime();
-      const succEnd = succStart + succCalDays * 86400000;
-      let fromX, toX;
-      switch (depType) {
-        case 'FS': fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succStart); break;
-        case 'SS': fromX = xScale.getPixelForValue(predStart); toX = xScale.getPixelForValue(succStart); break;
-        case 'FF': fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succEnd); break;
-        case 'SF': fromX = xScale.getPixelForValue(predStart); toX = xScale.getPixelForValue(succEnd); break;
-        default: fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succStart);
-      }
-      if (fromX == null || toX == null) return;
-      const isCriticalLink = criticalIds.has(task.id) && criticalIds.has(predTask.id);
-      ctx.strokeStyle = isCriticalLink ? '#7C3AED' : '#94a3b8';
-      ctx.lineWidth = isCriticalLink ? 2 : 1; ctx.setLineDash([]);
-      const goingDown = succY > predY;
-      const sX = fromX, sY = goingDown ? predY + halfBar : predY - halfBar;
-      const eX = toX, eY = succY;
-      ctx.beginPath();
-      if (Math.abs(succY - predY) < 2) { ctx.moveTo(fromX + 2, predY); ctx.lineTo(toX - 2, predY); }
-      else if (eX > sX + 10) { ctx.moveTo(sX, sY); ctx.lineTo(sX, eY); ctx.lineTo(eX - 2, eY); }
-      else { const jogX = Math.min(sX, eX) - 15; ctx.moveTo(sX, sY); ctx.lineTo(sX, sY + (goingDown ? 10 : -10)); ctx.lineTo(jogX, sY + (goingDown ? 10 : -10)); ctx.lineTo(jogX, eY); ctx.lineTo(eX - 2, eY); }
-      ctx.stroke();
-      const arrowX = Math.abs(succY - predY) < 2 ? toX - 2 : eX - 2;
-      const arrowY = Math.abs(succY - predY) < 2 ? predY : eY;
-      ctx.fillStyle = isCriticalLink ? '#7C3AED' : '#94a3b8';
-      ctx.beginPath(); ctx.moveTo(arrowX, arrowY); ctx.lineTo(arrowX - 6, arrowY - 3); ctx.lineTo(arrowX - 6, arrowY + 3); ctx.closePath(); ctx.fill();
+      const deps = getTaskDependencies(task);
+      if (deps.length === 0) return;
+
+      deps.forEach((dep) => {
+        const predIndex = taskIndexById.get(dep.parentId);
+        if (predIndex === undefined) return;
+
+        const predTask = tasks[predIndex];
+        const predY = yScale.getPixelForValue(predIndex);
+        const succY = yScale.getPixelForValue(taskIndex);
+        if (predY == null || succY == null) return;
+
+        const depType = dep.depType || 'FS';
+        const predCalDays = predTask._calendarDays || getCalendarSpan(predTask.start, predTask.dur) || 0.5;
+        const succCalDays = task._calendarDays || getCalendarSpan(task.start, task.dur) || 0.5;
+        const predStartDate = parseDateValue(predTask.start);
+        const succStartDate = parseDateValue(task.start);
+        if (!predStartDate || !succStartDate) return;
+
+        const predStart = predStartDate.getTime();
+        const predEnd = predStart + predCalDays * 86400000;
+        const succStart = succStartDate.getTime();
+        const succEnd = succStart + succCalDays * 86400000;
+
+        let fromX;
+        let toX;
+        switch (depType) {
+          case 'FS': fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succStart); break;
+          case 'SS': fromX = xScale.getPixelForValue(predStart); toX = xScale.getPixelForValue(succStart); break;
+          case 'FF': fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succEnd); break;
+          case 'SF': fromX = xScale.getPixelForValue(predStart); toX = xScale.getPixelForValue(succEnd); break;
+          default: fromX = xScale.getPixelForValue(predEnd); toX = xScale.getPixelForValue(succStart);
+        }
+        if (fromX == null || toX == null) return;
+
+        const isCriticalLink = criticalIds.has(task.id) && criticalIds.has(predTask.id);
+        ctx.strokeStyle = isCriticalLink ? '#7C3AED' : '#94a3b8';
+        ctx.lineWidth = isCriticalLink ? 2 : 1;
+        ctx.setLineDash([]);
+
+        const goingDown = succY > predY;
+        const sX = fromX;
+        const sY = goingDown ? predY + halfBar : predY - halfBar;
+        const eX = toX;
+        const eY = succY;
+
+        ctx.beginPath();
+        if (Math.abs(succY - predY) < 2) {
+          ctx.moveTo(fromX + 2, predY);
+          ctx.lineTo(toX - 2, predY);
+        } else if (eX > sX + 10) {
+          ctx.moveTo(sX, sY);
+          ctx.lineTo(sX, eY);
+          ctx.lineTo(eX - 2, eY);
+        } else {
+          const jogX = Math.min(sX, eX) - 15;
+          ctx.moveTo(sX, sY);
+          ctx.lineTo(sX, sY + (goingDown ? 10 : -10));
+          ctx.lineTo(jogX, sY + (goingDown ? 10 : -10));
+          ctx.lineTo(jogX, eY);
+          ctx.lineTo(eX - 2, eY);
+        }
+        ctx.stroke();
+
+        const arrowX = Math.abs(succY - predY) < 2 ? toX - 2 : eX - 2;
+        const arrowY = Math.abs(succY - predY) < 2 ? predY : eY;
+        ctx.fillStyle = isCriticalLink ? '#7C3AED' : '#94a3b8';
+        ctx.beginPath();
+        ctx.moveTo(arrowX, arrowY);
+        ctx.lineTo(arrowX - 6, arrowY - 3);
+        ctx.lineTo(arrowX - 6, arrowY + 3);
+        ctx.closePath();
+        ctx.fill();
+      });
     });
 
     ctx.restore();
