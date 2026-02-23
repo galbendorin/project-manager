@@ -9,6 +9,16 @@ const statusClass = (status) => {
   return 'text-amber-700 bg-amber-50 border border-amber-100';
 };
 
+const recurrenceLabel = (recurrence) => {
+  const type = String(recurrence?.type || '').toLowerCase();
+  if (!type) return 'One-time';
+  if (type === 'weekdays') return 'Weekdays';
+  if (type === 'weekly') return 'Weekly';
+  if (type === 'monthly') return 'Monthly';
+  if (type === 'yearly') return 'Yearly';
+  return 'One-time';
+};
+
 const TodoView = ({
   todos,
   projectData,
@@ -49,7 +59,7 @@ const TodoView = ({
           <div>
             <h2 className="text-lg font-black text-slate-800 tracking-tight">ToDo</h2>
             <p className="text-[11px] text-slate-400 mt-1">
-              One merged action list from manual ToDos, logs, and tracking data.
+              One merged action list from manual ToDos, logs, and tracking data. Recurring manual items auto-generate the next item when marked done.
             </p>
           </div>
           <input
@@ -76,11 +86,12 @@ const TodoView = ({
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-white text-[10px] uppercase font-bold text-slate-400 border-b">
                       <tr>
-                        <th className="px-4 py-3 border-b w-[44%]">Title</th>
-                        <th className="px-4 py-3 border-b w-[16%]">Due Date</th>
-                        <th className="px-4 py-3 border-b w-[18%]">Owner</th>
-                        <th className="px-4 py-3 border-b w-[14%]">Status</th>
-                        <th className="px-4 py-3 border-b w-[8%] text-center">Act</th>
+                        <th className="px-4 py-3 border-b w-[36%]">Title</th>
+                        <th className="px-4 py-3 border-b w-[15%]">Due Date</th>
+                        <th className="px-4 py-3 border-b w-[16%]">Owner</th>
+                        <th className="px-4 py-3 border-b w-[15%]">Recurring</th>
+                        <th className="px-4 py-3 border-b w-[12%]">Status</th>
+                        <th className="px-4 py-3 border-b w-[6%] text-center">Act</th>
                       </tr>
                     </thead>
                     <tbody className="text-xs">
@@ -129,6 +140,27 @@ const TodoView = ({
                                 />
                               ) : (
                                 <span className="text-[12px] text-slate-600">{todo.owner || 'Unassigned'}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 align-top">
+                              {isManualEditable ? (
+                                <select
+                                  value={todo.recurrence?.type || 'none'}
+                                  onChange={(e) => onUpdateTodo(
+                                    todo._id,
+                                    'recurrence',
+                                    e.target.value === 'none' ? null : { type: e.target.value, interval: 1 }
+                                  )}
+                                  className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
+                                >
+                                  <option value="none">One-time</option>
+                                  <option value="weekdays">Weekdays</option>
+                                  <option value="weekly">Weekly</option>
+                                  <option value="monthly">Monthly</option>
+                                  <option value="yearly">Yearly</option>
+                                </select>
+                              ) : (
+                                <span className="text-[12px] text-slate-600">{recurrenceLabel(todo.recurrence)}</span>
                               )}
                             </td>
                             <td className="px-4 py-2.5 align-top">

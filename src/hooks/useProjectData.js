@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { calculateSchedule, getNextId, getCurrentDate, getFinishDate, keyGen } from '../utils/helpers';
+import { calculateSchedule, getNextId, getCurrentDate, getFinishDate, keyGen, getNextRecurringDueDate } from '../utils/helpers';
 import { DEFAULT_TASK, SCHEMAS, DEFAULT_STATUS_REPORT } from '../utils/constants';
 import { buildDemoProjectPayload, buildDemoScheduleTasks } from '../utils/demoProjectBuilder';
 import { supabase } from '../lib/supabase';
@@ -7,6 +7,17 @@ import { supabase } from '../lib/supabase';
 // Helper: get ISO timestamp
 const now = () => new Date().toISOString();
 const createTodoId = () => `todo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const normalizeTodoRecurrence = (value) => {
+  if (!value) return null;
+  const rawType = typeof value === 'string' ? value : value.type;
+  const type = String(rawType || '').toLowerCase();
+  if (!['weekdays', 'weekly', 'monthly', 'yearly'].includes(type)) {
+    return null;
+  }
+  const intervalRaw = Number(typeof value === 'object' ? value.interval : 1);
+  const interval = Number.isFinite(intervalRaw) && intervalRaw > 0 ? Math.floor(intervalRaw) : 1;
+  return { type, interval };
+};
 const isMissingColumnError = (error, columnName) => {
   const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
   return msg.includes(columnName.toLowerCase()) && msg.includes('column');
@@ -102,7 +113,7 @@ export const useProjectData = (projectId, userId = null) => {
           dueDate: todo.dueDate || '',
           owner: todo.owner || '',
           status: todo.status === 'Done' ? 'Done' : 'Open',
-          recurrence: todo.recurrence || null,
+          recurrence: normalizeTodoRecurrence(todo.recurrence),
           createdAt: todo.createdAt || now(),
           updatedAt: todo.updatedAt || now(),
           completedAt: todo.completedAt || ''
@@ -415,7 +426,7 @@ export const useProjectData = (projectId, userId = null) => {
         dueDate: todoData.dueDate || getCurrentDate(),
         owner: todoData.owner || 'PM',
         status: todoData.status === 'Done' ? 'Done' : 'Open',
-        recurrence: todoData.recurrence || null,
+        recurrence: normalizeTodoRecurrence(todoData.recurrence),
         createdAt: ts,
         updatedAt: ts,
         completedAt: todoData.status === 'Done' ? ts : ''
@@ -424,19 +435,57 @@ export const useProjectData = (projectId, userId = null) => {
   }, []);
 
   const updateTodo = useCallback((todoId, key, value) => {
-    setTodos(prev => prev.map(todo => {
-      if (todo._id !== todoId) return todo;
+    setTodos(prev => {
+      const ts = now();
+      const nextTodos = [];
+      let followUpTodo = null;
 
-      const updated = {
-        ...todo,
-        [key]: value,
-        updatedAt: now()
-      };
-      if (key === 'status') {
-        updated.completedAt = value === 'Done' ? (todo.completedAt || now()) : '';
+      prev.forEach(todo => {
+        if (todo._id !== todoId) {
+          nextTodos.push(todo);
+          return;
+        }
+
+        const updated = {
+          ...todo,
+          [key]: value,
+          updatedAt: ts
+        };
+
+        if (key === 'recurrence') {
+          updated.recurrence = normalizeTodoRecurrence(value);
+        }
+
+        if (key === 'status') {
+          updated.completedAt = value === 'Done' ? (todo.completedAt || ts) : '';
+
+          const normalizedRecurrence = normalizeTodoRecurrence(todo.recurrence);
+          const hasRecurringRule = !!normalizedRecurrence;
+          const transitionedToDone = todo.status !== 'Done' && value === 'Done';
+
+          if (hasRecurringRule && transitionedToDone) {
+            followUpTodo = {
+              _id: createTodoId(),
+              title: todo.title || 'New ToDo',
+              dueDate: getNextRecurringDueDate(todo.dueDate, normalizedRecurrence, getCurrentDate()),
+              owner: todo.owner || 'PM',
+              status: 'Open',
+              recurrence: normalizedRecurrence,
+              createdAt: ts,
+              updatedAt: ts,
+              completedAt: ''
+            };
+          }
+        }
+
+        nextTodos.push(updated);
+      });
+
+      if (followUpTodo) {
+        nextTodos.push(followUpTodo);
       }
-      return updated;
-    }));
+      return nextTodos;
+    });
   }, []);
 
   const deleteTodo = useCallback((todoId) => {

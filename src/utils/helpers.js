@@ -584,6 +584,82 @@ const getMondayStart = (value) => {
   return addCalendarDays(dt, offset);
 };
 
+const normalizeRecurrence = (recurrence) => {
+  if (!recurrence) return null;
+  if (typeof recurrence === 'string') {
+    return {
+      type: recurrence.toLowerCase(),
+      interval: 1
+    };
+  }
+  const rawType = String(recurrence.type || '').toLowerCase();
+  if (!rawType) return null;
+  const intervalRaw = Number(recurrence.interval);
+  const interval = Number.isFinite(intervalRaw) && intervalRaw > 0 ? Math.floor(intervalRaw) : 1;
+  return { type: rawType, interval };
+};
+
+const addWeekdays = (baseDate, businessDays) => {
+  const result = new Date(baseDate);
+  let remaining = Math.max(1, parseInt(businessDays, 10) || 1);
+
+  while (remaining > 0) {
+    result.setDate(result.getDate() + 1);
+    const day = result.getDay();
+    if (day !== 0 && day !== 6) {
+      remaining -= 1;
+    }
+  }
+  return result;
+};
+
+const addMonthsClamped = (baseDate, monthCount) => {
+  const year = baseDate.getFullYear();
+  const month = baseDate.getMonth();
+  const day = baseDate.getDate();
+
+  const absoluteMonth = month + monthCount;
+  const targetYear = year + Math.floor(absoluteMonth / 12);
+  const targetMonth = ((absoluteMonth % 12) + 12) % 12;
+  const lastDayOfTarget = new Date(targetYear, targetMonth + 1, 0).getDate();
+
+  return new Date(targetYear, targetMonth, Math.min(day, lastDayOfTarget));
+};
+
+const addYearsClamped = (baseDate, yearCount) => {
+  const targetYear = baseDate.getFullYear() + yearCount;
+  const month = baseDate.getMonth();
+  const day = baseDate.getDate();
+  const lastDayOfTarget = new Date(targetYear, month + 1, 0).getDate();
+  return new Date(targetYear, month, Math.min(day, lastDayOfTarget));
+};
+
+export const getNextRecurringDueDate = (
+  dueDate,
+  recurrence,
+  fallbackDate = toISODateString(new Date())
+) => {
+  const normalized = normalizeRecurrence(recurrence);
+  if (!normalized) return '';
+  const baseDate = startOfDay(dueDate || fallbackDate);
+  if (!baseDate) return '';
+
+  switch (normalized.type) {
+    case 'weekdays':
+    case 'weekday':
+      return toISODateString(addWeekdays(baseDate, normalized.interval));
+    case 'weekly':
+      return toISODateString(addCalendarDays(baseDate, normalized.interval * 7));
+    case 'monthly':
+      return toISODateString(addMonthsClamped(baseDate, normalized.interval));
+    case 'yearly':
+    case 'annual':
+      return toISODateString(addYearsClamped(baseDate, normalized.interval));
+    default:
+      return '';
+  }
+};
+
 const safeDueDate = (value) => {
   const iso = toISODateString(value);
   return iso || '';

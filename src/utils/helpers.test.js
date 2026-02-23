@@ -13,7 +13,8 @@ import {
   buildVisibleTasks,
   hasDependencies,
   collectDerivedTodos,
-  bucketByDeadline
+  bucketByDeadline,
+  getNextRecurringDueDate
 } from './helpers.js';
 
 test('date parsing supports ISO and DD-MMM-YY formats', () => {
@@ -173,4 +174,35 @@ test('bucketByDeadline places todos in expected deadline buckets', () => {
   assert.equal(byKey.in_2_weeks, 1);
   assert.equal(byKey.weeks_3_4, 1);
   assert.equal(byKey.later, 2);
+});
+
+test('getNextRecurringDueDate handles weekdays, weekly, monthly, and yearly recurrence', () => {
+  assert.equal(
+    getNextRecurringDueDate('2026-03-06', { type: 'weekdays', interval: 1 }), // Friday -> Monday
+    '2026-03-09'
+  );
+  assert.equal(
+    getNextRecurringDueDate('2026-03-01', { type: 'weekly', interval: 1 }),
+    '2026-03-08'
+  );
+  assert.equal(
+    getNextRecurringDueDate('2026-03-01', { type: 'weekly', interval: 2 }),
+    '2026-03-15'
+  );
+  assert.equal(
+    getNextRecurringDueDate('', { type: 'weekly', interval: 1 }, '2026-02-23'),
+    '2026-03-02'
+  );
+  assert.equal(
+    getNextRecurringDueDate('2026-01-31', { type: 'monthly', interval: 1 }),
+    '2026-02-28'
+  );
+  assert.equal(
+    getNextRecurringDueDate('2024-02-29', { type: 'yearly', interval: 1 }),
+    '2025-02-28'
+  );
+  assert.equal(
+    getNextRecurringDueDate('2026-03-01', null),
+    ''
+  );
 });
