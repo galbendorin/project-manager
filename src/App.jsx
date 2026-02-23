@@ -579,6 +579,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               projectData={projectData}
               registers={registers}
               tracker={tracker}
+              currentProject={project}
+              currentUserId={currentUserId}
               isExternalView={isExternalView}
               onUpdateTodo={updateTodo}
               onDeleteTodo={deleteTodo}

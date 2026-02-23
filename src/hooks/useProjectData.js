@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 // Helper: get ISO timestamp
 const now = () => new Date().toISOString();
 const createTodoId = () => `todo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const MANUAL_TODO_SELECT = 'id, project_id, title, due_date, owner_text, assignee_user_id, status, recurrence, created_at, updated_at, completed_at';
 const normalizeTodoRecurrence = (value) => {
   if (!value) return null;
   const rawType = typeof value === 'string' ? value : value.type;
@@ -18,9 +19,22 @@ const normalizeTodoRecurrence = (value) => {
   const interval = Number.isFinite(intervalRaw) && intervalRaw > 0 ? Math.floor(intervalRaw) : 1;
   return { type, interval };
 };
-const isMissingColumnError = (error, columnName) => {
+const mapManualTodoRow = (row) => ({
+  _id: row.id || createTodoId(),
+  projectId: row.project_id || null,
+  title: row.title || '',
+  dueDate: row.due_date || '',
+  owner: row.owner_text || '',
+  assigneeUserId: row.assignee_user_id || null,
+  status: row.status === 'Done' ? 'Done' : 'Open',
+  recurrence: normalizeTodoRecurrence(row.recurrence),
+  createdAt: row.created_at || now(),
+  updatedAt: row.updated_at || now(),
+  completedAt: row.completed_at || ''
+});
+const isMissingRelationError = (error, relationName) => {
   const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
-  return msg.includes(columnName.toLowerCase()) && msg.includes('column');
+  return msg.includes('relation') && msg.includes(relationName.toLowerCase());
 };
 
 /**
@@ -51,7 +65,7 @@ export const useProjectData = (projectId, userId = null) => {
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef(null);
   const projectVersionRef = useRef(1);
-  const supportsTodosColumnRef = useRef(true);
+  const supportsManualTodosTableRef = useRef(true);
 
   // Load project data from Supabase
   const loadProject = useCallback(async () => {
@@ -62,28 +76,12 @@ export const useProjectData = (projectId, userId = null) => {
     setSaveConflict(false);
     setSaveError(null);
 
-    const primarySelect = supportsTodosColumnRef.current
-      ? 'tasks, registers, baseline, tracker, status_report, todos, version'
-      : 'tasks, registers, baseline, tracker, status_report, version';
-
     let loadQuery = supabase
       .from('projects')
-      .select(primarySelect)
+      .select('tasks, registers, baseline, tracker, status_report, version')
       .eq('id', projectId);
     if (userId) loadQuery = loadQuery.eq('user_id', userId);
-    let { data, error } = await loadQuery.single();
-
-    if (error && supportsTodosColumnRef.current && isMissingColumnError(error, 'todos')) {
-      supportsTodosColumnRef.current = false;
-      let fallbackQuery = supabase
-        .from('projects')
-        .select('tasks, registers, baseline, tracker, status_report, version')
-        .eq('id', projectId);
-      if (userId) fallbackQuery = fallbackQuery.eq('user_id', userId);
-      const fallback = await fallbackQuery.single();
-      data = fallback.data;
-      error = fallback.error;
-    }
+    const { data, error } = await loadQuery.single();
 
     if (!error && data) {
       // Backfill timestamps on load for any items missing them
@@ -105,21 +103,6 @@ export const useProjectData = (projectId, userId = null) => {
         }));
       };
 
-      const backfillTodos = (items) => {
-        if (!items || !Array.isArray(items)) return [];
-        return items.map((todo, idx) => ({
-          _id: todo._id || `${createTodoId()}_${idx}`,
-          title: todo.title || '',
-          dueDate: todo.dueDate || '',
-          owner: todo.owner || '',
-          status: todo.status === 'Done' ? 'Done' : 'Open',
-          recurrence: normalizeTodoRecurrence(todo.recurrence),
-          createdAt: todo.createdAt || now(),
-          updatedAt: todo.updatedAt || now(),
-          completedAt: todo.completedAt || ''
-        }));
-      };
-
       const loadedRegisters = data.registers || {
         risks: [], issues: [], actions: [],
         minutes: [], costs: [], changes: [], comms: []
@@ -136,7 +119,27 @@ export const useProjectData = (projectId, userId = null) => {
       setBaselineState(data.baseline || null);
       setTracker(backfillTimestamps(data.tracker || []));
       setStatusReport(data.status_report || { ...DEFAULT_STATUS_REPORT });
-      setTodos(backfillTodos(data.todos || []));
+
+      if (userId && supportsManualTodosTableRef.current) {
+        const { data: todoRows, error: todoError } = await supabase
+          .from('manual_todos')
+          .select(MANUAL_TODO_SELECT)
+          .eq('user_id', userId)
+          .order('created_at', { ascending: true });
+
+        if (!todoError) {
+          setTodos((todoRows || []).map(mapManualTodoRow));
+        } else if (isMissingRelationError(todoError, 'manual_todos')) {
+          supportsManualTodosTableRef.current = false;
+          setTodos([]);
+        } else {
+          console.error('Failed to load manual todos:', todoError);
+          setTodos([]);
+        }
+      } else {
+        setTodos([]);
+      }
+
       projectVersionRef.current = Number.isInteger(data.version) ? data.version : 1;
     } else if (error) {
       setSaveError(`Unable to load project: ${error.message}`);
@@ -170,9 +173,6 @@ export const useProjectData = (projectId, userId = null) => {
         status_report: statusReport,
         updated_at: new Date().toISOString()
       };
-      if (supportsTodosColumnRef.current) {
-        updateData.todos = todos;
-      }
       if (baseline !== undefined) {
         updateData.baseline = baseline;
       }
@@ -207,7 +207,7 @@ export const useProjectData = (projectId, userId = null) => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [projectData, registers, tracker, statusReport, todos, baseline, projectId, userId, saveConflict]);
+  }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict]);
 
   const reloadProject = useCallback(async () => {
     await loadProject();
@@ -416,81 +416,203 @@ export const useProjectData = (projectId, userId = null) => {
 
   // ==================== TODO FUNCTIONS ====================
 
-  const addTodo = useCallback((todoData = {}) => {
+  const addTodo = useCallback(async (todoData = {}) => {
     const ts = now();
-    setTodos(prev => ([
-      ...prev,
-      {
+    const normalizedRecurrence = normalizeTodoRecurrence(todoData.recurrence);
+    const nextProjectId = Object.prototype.hasOwnProperty.call(todoData, 'projectId')
+      ? todoData.projectId
+      : projectId;
+
+    const localTodo = {
+      _id: createTodoId(),
+      projectId: nextProjectId || null,
+      title: todoData.title || 'New ToDo',
+      dueDate: todoData.dueDate || getCurrentDate(),
+      owner: todoData.owner || 'PM',
+      assigneeUserId: todoData.assigneeUserId || userId || null,
+      status: todoData.status === 'Done' ? 'Done' : 'Open',
+      recurrence: normalizedRecurrence,
+      createdAt: ts,
+      updatedAt: ts,
+      completedAt: todoData.status === 'Done' ? ts : ''
+    };
+
+    if (!userId || !supportsManualTodosTableRef.current) {
+      setTodos(prev => [...prev, localTodo]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('manual_todos')
+      .insert({
+        user_id: userId,
+        project_id: localTodo.projectId,
+        title: localTodo.title,
+        due_date: localTodo.dueDate || null,
+        owner_text: localTodo.owner,
+        assignee_user_id: localTodo.assigneeUserId,
+        status: localTodo.status,
+        recurrence: localTodo.recurrence,
+        completed_at: localTodo.completedAt || null
+      })
+      .select(MANUAL_TODO_SELECT)
+      .single();
+
+    if (!error && data) {
+      setTodos(prev => [...prev, mapManualTodoRow(data)]);
+      return;
+    }
+
+    if (isMissingRelationError(error, 'manual_todos')) {
+      supportsManualTodosTableRef.current = false;
+    } else if (error) {
+      console.error('Failed to create manual todo:', error);
+    }
+    setTodos(prev => [...prev, localTodo]);
+  }, [projectId, userId]);
+
+  const updateTodo = useCallback(async (todoId, key, value) => {
+    const todo = todos.find(item => item._id === todoId);
+    if (!todo) return;
+
+    const ts = now();
+    const normalizedRecurrence = key === 'recurrence'
+      ? normalizeTodoRecurrence(value)
+      : normalizeTodoRecurrence(todo.recurrence);
+    const nextStatus = key === 'status' ? value : todo.status;
+    const transitionedToDone = todo.status !== 'Done' && nextStatus === 'Done';
+
+    const localUpdated = {
+      ...todo,
+      updatedAt: ts
+    };
+
+    if (key === 'title') localUpdated.title = value;
+    if (key === 'dueDate') localUpdated.dueDate = value;
+    if (key === 'owner') localUpdated.owner = value;
+    if (key === 'projectId') localUpdated.projectId = value || null;
+    if (key === 'assigneeUserId') localUpdated.assigneeUserId = value || null;
+    if (key === 'recurrence') localUpdated.recurrence = normalizedRecurrence;
+    if (key === 'status') {
+      localUpdated.status = value;
+      localUpdated.completedAt = value === 'Done' ? (todo.completedAt || ts) : '';
+    }
+
+    let followUpLocal = null;
+    if (transitionedToDone && normalizedRecurrence) {
+      followUpLocal = {
         _id: createTodoId(),
-        title: todoData.title || 'New ToDo',
-        dueDate: todoData.dueDate || getCurrentDate(),
-        owner: todoData.owner || 'PM',
-        status: todoData.status === 'Done' ? 'Done' : 'Open',
-        recurrence: normalizeTodoRecurrence(todoData.recurrence),
+        projectId: todo.projectId || null,
+        title: todo.title || 'New ToDo',
+        dueDate: getNextRecurringDueDate(todo.dueDate, normalizedRecurrence, getCurrentDate()),
+        owner: todo.owner || 'PM',
+        assigneeUserId: todo.assigneeUserId || userId || null,
+        status: 'Open',
+        recurrence: normalizedRecurrence,
         createdAt: ts,
         updatedAt: ts,
-        completedAt: todoData.status === 'Done' ? ts : ''
-      }
-    ]));
-  }, []);
+        completedAt: ''
+      };
+    }
 
-  const updateTodo = useCallback((todoId, key, value) => {
-    setTodos(prev => {
-      const ts = now();
-      const nextTodos = [];
-      let followUpTodo = null;
-
-      prev.forEach(todo => {
-        if (todo._id !== todoId) {
-          nextTodos.push(todo);
-          return;
-        }
-
-        const updated = {
-          ...todo,
-          [key]: value,
-          updatedAt: ts
-        };
-
-        if (key === 'recurrence') {
-          updated.recurrence = normalizeTodoRecurrence(value);
-        }
-
-        if (key === 'status') {
-          updated.completedAt = value === 'Done' ? (todo.completedAt || ts) : '';
-
-          const normalizedRecurrence = normalizeTodoRecurrence(todo.recurrence);
-          const hasRecurringRule = !!normalizedRecurrence;
-          const transitionedToDone = todo.status !== 'Done' && value === 'Done';
-
-          if (hasRecurringRule && transitionedToDone) {
-            followUpTodo = {
-              _id: createTodoId(),
-              title: todo.title || 'New ToDo',
-              dueDate: getNextRecurringDueDate(todo.dueDate, normalizedRecurrence, getCurrentDate()),
-              owner: todo.owner || 'PM',
-              status: 'Open',
-              recurrence: normalizedRecurrence,
-              createdAt: ts,
-              updatedAt: ts,
-              completedAt: ''
-            };
-          }
-        }
-
-        nextTodos.push(updated);
+    if (!userId || !supportsManualTodosTableRef.current) {
+      setTodos(prev => {
+        const next = prev.map(item => item._id === todoId ? localUpdated : item);
+        if (followUpLocal) next.push(followUpLocal);
+        return next;
       });
+      return;
+    }
 
-      if (followUpTodo) {
-        nextTodos.push(followUpTodo);
+    const patch = { updated_at: ts };
+    if (key === 'title') patch.title = value || '';
+    if (key === 'dueDate') patch.due_date = value || null;
+    if (key === 'owner') patch.owner_text = value || '';
+    if (key === 'projectId') patch.project_id = value || null;
+    if (key === 'assigneeUserId') patch.assignee_user_id = value || null;
+    if (key === 'recurrence') patch.recurrence = normalizedRecurrence;
+    if (key === 'status') {
+      patch.status = nextStatus === 'Done' ? 'Done' : 'Open';
+      patch.completed_at = nextStatus === 'Done' ? (todo.completedAt || ts) : null;
+    }
+
+    const { data: updatedRow, error: updateError } = await supabase
+      .from('manual_todos')
+      .update(patch)
+      .eq('id', todoId)
+      .eq('user_id', userId)
+      .select(MANUAL_TODO_SELECT)
+      .single();
+
+    if (updateError && isMissingRelationError(updateError, 'manual_todos')) {
+      supportsManualTodosTableRef.current = false;
+      setTodos(prev => {
+        const next = prev.map(item => item._id === todoId ? localUpdated : item);
+        if (followUpLocal) next.push(followUpLocal);
+        return next;
+      });
+      return;
+    }
+
+    if (updateError || !updatedRow) {
+      console.error('Failed to update manual todo:', updateError);
+      setTodos(prev => prev.map(item => item._id === todoId ? localUpdated : item));
+      return;
+    }
+
+    let followUpDbRow = null;
+    if (transitionedToDone && normalizedRecurrence) {
+      const { data: insertedRow, error: insertError } = await supabase
+        .from('manual_todos')
+        .insert({
+          user_id: userId,
+          project_id: todo.projectId || null,
+          title: todo.title || 'New ToDo',
+          due_date: getNextRecurringDueDate(todo.dueDate, normalizedRecurrence, getCurrentDate()) || null,
+          owner_text: todo.owner || 'PM',
+          assignee_user_id: todo.assigneeUserId || userId,
+          status: 'Open',
+          recurrence: normalizedRecurrence,
+          completed_at: null
+        })
+        .select(MANUAL_TODO_SELECT)
+        .single();
+
+      if (!insertError && insertedRow) {
+        followUpDbRow = insertedRow;
+      } else if (insertError) {
+        console.error('Failed to create recurring follow-up todo:', insertError);
       }
-      return nextTodos;
-    });
-  }, []);
+    }
 
-  const deleteTodo = useCallback((todoId) => {
+    setTodos(prev => {
+      const next = prev.map(item => item._id === todoId ? mapManualTodoRow(updatedRow) : item);
+      if (followUpDbRow) {
+        next.push(mapManualTodoRow(followUpDbRow));
+      }
+      return next;
+    });
+  }, [todos, userId]);
+
+  const deleteTodo = useCallback(async (todoId) => {
     setTodos(prev => prev.filter(todo => todo._id !== todoId));
-  }, []);
+
+    if (!userId || !supportsManualTodosTableRef.current) return;
+
+    const { error } = await supabase
+      .from('manual_todos')
+      .delete()
+      .eq('id', todoId)
+      .eq('user_id', userId);
+
+    if (error && isMissingRelationError(error, 'manual_todos')) {
+      supportsManualTodosTableRef.current = false;
+      return;
+    }
+    if (error) {
+      console.error('Failed to delete manual todo:', error);
+    }
+  }, [userId]);
 
   // ==================== TEMPLATE ====================
 
@@ -504,7 +626,6 @@ export const useProjectData = (projectId, userId = null) => {
     setRegisters(demoPayload.registers);
     setTracker(demoPayload.tracker);
     setStatusReport(demoPayload.status_report);
-    setTodos([]);
     setBaselineState(demoPayload.baseline);
   }, []);
 
@@ -521,7 +642,6 @@ export const useProjectData = (projectId, userId = null) => {
     });
     setTracker([]);
     setStatusReport({ ...DEFAULT_STATUS_REPORT });
-    setTodos([]);
     setBaselineState(null);
   }, []);
 
