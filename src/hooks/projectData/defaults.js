@@ -1,4 +1,4 @@
-import { DEFAULT_STATUS_REPORT } from '../../utils/constants';
+import { DEFAULT_STATUS_REPORT } from '../../utils/constants.js';
 
 export const createEmptyRegisters = () => ({
   risks: [],

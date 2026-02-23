@@ -1,4 +1,4 @@
-import { createEmptyRegisters, createEmptyStatusReport } from './defaults';
+import { createEmptyRegisters, createEmptyStatusReport } from './defaults.js';
 
 export const backfillTimestampedItems = (items, nowFn) => {
   if (!Array.isArray(items)) return [];

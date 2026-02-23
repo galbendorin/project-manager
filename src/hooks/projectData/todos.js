@@ -1,5 +1,5 @@
-import { getCurrentDate, getNextRecurringDueDate } from '../../utils/helpers';
-import { createManualTodoId, normalizeTodoRecurrence } from './manualTodoUtils';
+import { getCurrentDate, getNextRecurringDueDate } from '../../utils/helpers.js';
+import { createManualTodoId, normalizeTodoRecurrence } from './manualTodoUtils.js';
 
 export const createLocalManualTodo = ({ todoData = {}, projectId, userId, ts }) => {
   const normalizedRecurrence = normalizeTodoRecurrence(todoData.recurrence);

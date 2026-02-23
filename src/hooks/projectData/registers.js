@@ -1,5 +1,5 @@
-import { SCHEMAS } from '../../utils/constants';
-import { keyGen, getCurrentDate, getFinishDate } from '../../utils/helpers';
+import { SCHEMAS } from '../../utils/constants.js';
+import { keyGen, getCurrentDate, getFinishDate } from '../../utils/helpers.js';
 
 export const getTrackedActionId = (taskId) => `track_${taskId}`;
 
