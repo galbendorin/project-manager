@@ -556,6 +556,238 @@ export const filterBySearch = (items, searchQuery) => {
   );
 };
 
+const TODO_DONE_TERMS = ['done', 'complete', 'closed', 'resolved', 'implemented', 'cancelled', 'canceled'];
+
+const normalizeTodoStatus = (statusValue) => {
+  const value = String(statusValue || '').trim().toLowerCase();
+  if (!value) return 'Open';
+  return TODO_DONE_TERMS.some(term => value.includes(term)) ? 'Done' : 'Open';
+};
+
+const startOfDay = (value) => {
+  const dt = parseDateValue(value);
+  if (!dt) return null;
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+};
+
+const addCalendarDays = (value, days) => {
+  const dt = new Date(value);
+  dt.setDate(dt.getDate() + days);
+  return dt;
+};
+
+const getMondayStart = (value) => {
+  const dt = startOfDay(value);
+  if (!dt) return null;
+  const day = dt.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  return addCalendarDays(dt, offset);
+};
+
+const safeDueDate = (value) => {
+  const iso = toISODateString(value);
+  return iso || '';
+};
+
+const makeDerivedTodo = ({
+  id,
+  source,
+  title,
+  owner,
+  dueDate,
+  status,
+  createdAt,
+  updatedAt,
+  completedAt,
+  publicValue = true
+}) => ({
+  _id: id,
+  title: title || 'Untitled',
+  dueDate: safeDueDate(dueDate),
+  owner: owner || '',
+  status: normalizeTodoStatus(status),
+  recurrence: null,
+  createdAt: createdAt || new Date().toISOString(),
+  updatedAt: updatedAt || new Date().toISOString(),
+  completedAt: completedAt || '',
+  isDerived: true,
+  source,
+  public: publicValue !== false
+});
+
+/**
+ * Build derived ToDo items from registers and tracking data.
+ * These entries are computed at runtime and are not stored in project.todos.
+ */
+export const collectDerivedTodos = (projectData = [], registers = {}, tracker = []) => {
+  const actions = Array.isArray(registers.actions) ? registers.actions : [];
+  const issues = Array.isArray(registers.issues) ? registers.issues : [];
+  const changes = Array.isArray(registers.changes) ? registers.changes : [];
+  const trackerItems = Array.isArray(tracker) ? tracker : [];
+  const tasks = Array.isArray(projectData) ? projectData : [];
+
+  const actionTodos = actions
+    .filter(item => item && (item.description || item.currentstatus || item.target))
+    .map((item, idx) => makeDerivedTodo({
+      id: `action_${item._id || idx}`,
+      source: 'Action Log',
+      title: item.description || item.currentstatus || `Action ${idx + 1}`,
+      owner: item.actionassignedto,
+      dueDate: item.target,
+      status: item.status || item.currentstatus,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt || item.update,
+      completedAt: item.completed,
+      publicValue: item.public
+    }));
+
+  const issueTodos = issues
+    .filter(item => item && (item.description || item.currentstatus || item.target))
+    .map((item, idx) => makeDerivedTodo({
+      id: `issue_${item._id || idx}`,
+      source: 'Issue Log',
+      title: item.description || item.currentstatus || `Issue ${idx + 1}`,
+      owner: item.issueassignedto,
+      dueDate: item.target,
+      status: item.status || item.currentstatus,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt || item.update,
+      completedAt: item.completed,
+      publicValue: item.public
+    }));
+
+  const changeTodos = changes
+    .filter(item => item && (item.description || item.impactstatus || item.target))
+    .map((item, idx) => makeDerivedTodo({
+      id: `change_${item._id || idx}`,
+      source: 'Change Log',
+      title: item.description || item.impactstatus || `Change ${idx + 1}`,
+      owner: item.assignedto,
+      dueDate: item.target,
+      status: item.status || item.impactstatus,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt || item.updated,
+      completedAt: item.complete,
+      publicValue: item.public
+    }));
+
+  const taskById = new Map(tasks.map(task => [task.id, task]));
+  const trackerTaskIds = new Set();
+
+  const trackerTodos = trackerItems
+    .filter(item => item && item.taskName)
+    .map((item, idx) => {
+      if (item.taskId !== undefined && item.taskId !== null) {
+        trackerTaskIds.add(item.taskId);
+      }
+      const linkedTask = taskById.get(item.taskId);
+      const dueDate = linkedTask
+        ? getFinishDate(linkedTask.start, linkedTask.dur || 0)
+        : '';
+
+      return makeDerivedTodo({
+        id: `tracker_${item._id || idx}`,
+        source: 'Master Tracker',
+        title: item.taskName,
+        owner: item.owner,
+        dueDate,
+        status: item.status,
+        createdAt: item.createdAt || item.dateAdded,
+        updatedAt: item.updatedAt || item.lastUpdated,
+        completedAt: item.status === 'Completed' ? (item.updatedAt || item.lastUpdated || '') : '',
+        publicValue: item.public
+      });
+    });
+
+  // Optional schedule-derived todos: tracked tasks with due dates not already represented in tracker.
+  const scheduleTodos = tasks
+    .filter(task => task && task.tracked && !trackerTaskIds.has(task.id))
+    .map((task, idx) => makeDerivedTodo({
+      id: `schedule_${task.id || idx}`,
+      source: 'Project Plan',
+      title: task.name || `Tracked task ${idx + 1}`,
+      owner: '',
+      dueDate: getFinishDate(task.start, task.dur || 0),
+      status: Number(task.pct) >= 100 ? 'Done' : 'Open',
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      completedAt: Number(task.pct) >= 100 ? (task.updatedAt || '') : '',
+      publicValue: true
+    }));
+
+  return [
+    ...actionTodos,
+    ...issueTodos,
+    ...changeTodos,
+    ...trackerTodos,
+    ...scheduleTodos
+  ];
+};
+
+export const TODO_BUCKETS = [
+  { key: 'overdue', label: 'Passed deadline' },
+  { key: 'this_week', label: 'This week' },
+  { key: 'next_week', label: 'Next week' },
+  { key: 'in_2_weeks', label: 'In 2 weeks' },
+  { key: 'weeks_3_4', label: 'Weeks 3-4' },
+  { key: 'later', label: 'Later / no deadline' }
+];
+
+/**
+ * Group todo-like items into time buckets relative to `today`.
+ */
+export const bucketByDeadline = (items = [], today = getCurrentDate()) => {
+  const todayDate = startOfDay(today) || startOfDay(new Date());
+  const thisWeekStart = getMondayStart(todayDate);
+  const thisWeekEnd = addCalendarDays(thisWeekStart, 6);
+  const nextWeekStart = addCalendarDays(thisWeekEnd, 1);
+  const nextWeekEnd = addCalendarDays(nextWeekStart, 6);
+  const inTwoWeeksStart = addCalendarDays(nextWeekEnd, 1);
+  const inTwoWeeksEnd = addCalendarDays(inTwoWeeksStart, 6);
+  const weeksThreeToFourStart = addCalendarDays(inTwoWeeksEnd, 1);
+  const weeksThreeToFourEnd = addCalendarDays(weeksThreeToFourStart, 13);
+
+  const getBucketKey = (dueDateValue) => {
+    const dueDate = startOfDay(dueDateValue);
+    if (!dueDate) return 'later';
+    if (dueDate < todayDate) return 'overdue';
+    if (dueDate >= thisWeekStart && dueDate <= thisWeekEnd) return 'this_week';
+    if (dueDate >= nextWeekStart && dueDate <= nextWeekEnd) return 'next_week';
+    if (dueDate >= inTwoWeeksStart && dueDate <= inTwoWeeksEnd) return 'in_2_weeks';
+    if (dueDate >= weeksThreeToFourStart && dueDate <= weeksThreeToFourEnd) return 'weeks_3_4';
+    return 'later';
+  };
+
+  const compareItems = (a, b) => {
+    if (a.status !== b.status) {
+      return a.status === 'Open' ? -1 : 1;
+    }
+    if (a.dueDate && b.dueDate) {
+      return a.dueDate.localeCompare(b.dueDate);
+    }
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+    return String(a.title || '').localeCompare(String(b.title || ''));
+  };
+
+  const bucketMap = new Map(TODO_BUCKETS.map(bucket => [bucket.key, []]));
+
+  items.forEach(item => {
+    const bucketKey = getBucketKey(item?.dueDate);
+    const withDefaults = {
+      ...item,
+      status: normalizeTodoStatus(item?.status),
+      dueDate: safeDueDate(item?.dueDate)
+    };
+    bucketMap.get(bucketKey).push(withDefaults);
+  });
+
+  return TODO_BUCKETS.map(bucket => ({
+    ...bucket,
+    items: bucketMap.get(bucket.key).sort(compareItems)
+  }));
+};
+
 export const sortRegisterItems = (items, sortKey, sortDirection = 'asc') => {
   if (!sortKey || !items || items.length === 0) return items;
   return [...items].sort((a, b) => {

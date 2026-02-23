@@ -11,7 +11,9 @@ import {
   calculateSchedule,
   getVisibleTaskIndices,
   buildVisibleTasks,
-  hasDependencies
+  hasDependencies,
+  collectDerivedTodos,
+  bucketByDeadline
 } from './helpers.js';
 
 test('date parsing supports ISO and DD-MMM-YY formats', () => {
@@ -128,4 +130,47 @@ test('hasDependencies handles null and undefined parent safely', () => {
   assert.equal(hasDependencies({ parent: 7 }), true);
   assert.equal(hasDependencies({ parent: null, dependencies: null }), false);
   assert.equal(hasDependencies({ parent: undefined, dependencies: [] }), false);
+});
+
+test('collectDerivedTodos merges action, issue, change, tracker, and tracked schedule sources', () => {
+  const projectData = [
+    { id: 1, name: 'Tracked Site Cutover', start: '2026-02-23', dur: 2, tracked: true, pct: 0 }
+  ];
+  const registers = {
+    actions: [{ _id: 'a1', description: 'Send status update', actionassignedto: 'PM', target: '2026-02-24', status: 'Open' }],
+    issues: [{ _id: 'i1', description: 'Resolve firewall rule', issueassignedto: 'SecOps', target: '2026-02-25', status: 'In Progress' }],
+    changes: [{ _id: 'c1', description: 'Approve maintenance window', assignedto: 'CAB', target: '2026-02-26', status: 'Approved' }]
+  };
+  const tracker = [];
+
+  const derived = collectDerivedTodos(projectData, registers, tracker);
+  const sources = new Set(derived.map(item => item.source));
+
+  assert.equal(derived.length, 4);
+  assert.equal(sources.has('Action Log'), true);
+  assert.equal(sources.has('Issue Log'), true);
+  assert.equal(sources.has('Change Log'), true);
+  assert.equal(sources.has('Project Plan'), true);
+});
+
+test('bucketByDeadline places todos in expected deadline buckets', () => {
+  const items = [
+    { _id: '1', title: 'Late', dueDate: '2026-02-22', status: 'Open' },       // Sunday before today
+    { _id: '2', title: 'This Week', dueDate: '2026-02-27', status: 'Open' },  // Friday
+    { _id: '3', title: 'Next Week', dueDate: '2026-03-03', status: 'Open' },  // Tuesday next week
+    { _id: '4', title: 'In 2 Weeks', dueDate: '2026-03-10', status: 'Open' }, // Tuesday week+2
+    { _id: '5', title: 'Weeks 3-4', dueDate: '2026-03-20', status: 'Open' },  // Week 3-4 window
+    { _id: '6', title: 'Later', dueDate: '2026-04-10', status: 'Open' },
+    { _id: '7', title: 'No date', dueDate: '', status: 'Open' }
+  ];
+
+  const buckets = bucketByDeadline(items, '2026-02-23'); // Monday
+  const byKey = Object.fromEntries(buckets.map(bucket => [bucket.key, bucket.items.length]));
+
+  assert.equal(byKey.overdue, 1);
+  assert.equal(byKey.this_week, 1);
+  assert.equal(byKey.next_week, 1);
+  assert.equal(byKey.in_2_weeks, 1);
+  assert.equal(byKey.weeks_3_4, 1);
+  assert.equal(byKey.later, 2);
 });

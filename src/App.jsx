@@ -576,6 +576,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
           ) : activeTab === 'todo' ? (
             <TodoView
               todos={todos}
+              projectData={projectData}
+              registers={registers}
+              tracker={tracker}
               isExternalView={isExternalView}
               onUpdateTodo={updateTodo}
               onDeleteTodo={deleteTodo}
