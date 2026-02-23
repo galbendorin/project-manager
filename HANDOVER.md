@@ -344,21 +344,29 @@ create unique index if not exists uq_projects_one_demo_per_user
   - `Weeks 3-4`
   - `Later / no deadline` (recommended for edge cases)
 - Users can add manual ToDo items (not part of Action Log)
-- Manual ToDo supports recurring weekly reminders (v1)
+- Manual ToDo supports recurring reminders:
+  - `Weekdays`
+  - `Weekly`
+  - `Monthly`
+  - `Yearly`
 
 #### Data model (lean)
-- New top-level project json payload: `todos` array
-- Store only manual todos.
+- Manual todos are stored in `public.manual_todos` (not in `public.projects`).
 - Aggregated register/schedule items are computed in memory at render time.
 - Proposed manual todo shape:
 ```js
 {
   _id: "todo_...",
+  projectId: "uuid | null", // null => Other
   title: "Send weekly report",
   dueDate: "YYYY-MM-DD",
   owner: "PM",
+  assigneeUserId: "uuid | null",
   status: "Open" | "Done",
-  recurrence: null | { type: "weekly", interval: 1 },
+  recurrence: null | {
+    type: "weekdays" | "weekly" | "monthly" | "yearly",
+    interval: 1
+  },
   createdAt: "...",
   updatedAt: "...",
   completedAt: "..." // optional
@@ -366,7 +374,7 @@ create unique index if not exists uq_projects_one_demo_per_user
 ```
 
 #### Implementation blocks
-1. Add `todos` to project load/save state in `useProjectData.js`
+1. Create `manual_todos` table + RLS + indexes
 2. Add helper functions:
    - `collectDerivedTodos(projectData, registers, tracker)`
    - `bucketByDeadline(items, today)`
@@ -374,14 +382,24 @@ create unique index if not exists uq_projects_one_demo_per_user
    - `src/components/TodoView.jsx`
 4. Add tab entry in `src/utils/constants.js`
 5. Route tab in `src/App.jsx`
-6. Recurring logic (v1):
-   - when recurring todo marked done, create next due item automatically (+7d)
+6. Recurring logic:
+   - when recurring todo marked done, create next due item automatically
+   - supports `Weekdays`, `Weekly`, `Monthly`, `Yearly`
+7. Optional legacy backfill + cleanup:
+   - backfill from `projects.todos` to `manual_todos`
+   - drop `projects.todos` after validation
 
 #### Testing focus
 - New unit tests in `src/utils/helpers.test.js`:
   - bucket boundaries for all groups
   - overdue behavior
-  - recurring weekly next date generation
+  - recurring next date generation (`Weekdays`, `Weekly`, `Monthly`, `Yearly`)
+
+#### Legacy migration note (safe sequence)
+Run these SQL scripts in order:
+1. `scripts/sql/2026-02-23_create_manual_todos.sql`
+2. `scripts/sql/2026-02-23_backfill_manual_todos_from_projects.sql` (only needed if legacy `projects.todos` data exists)
+3. `scripts/sql/2026-02-23_drop_legacy_projects_todos.sql` (after validation)
 
 ### Goal C: Rename Schedule tab label to Project Plan
 - Keep tab id as `schedule` (do not change key; avoids regressions)

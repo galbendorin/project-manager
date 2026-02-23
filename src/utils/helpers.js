@@ -707,7 +707,7 @@ const makeDerivedTodo = ({
 
 /**
  * Build derived ToDo items from registers and tracking data.
- * These entries are computed at runtime and are not stored in project.todos.
+ * These entries are computed at runtime and are not stored in public.manual_todos.
  */
 export const collectDerivedTodos = (projectData = [], registers = {}, tracker = []) => {
   const actions = Array.isArray(registers.actions) ? registers.actions : [];

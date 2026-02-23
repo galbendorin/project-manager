@@ -1,4 +1,5 @@
--- Step 4 migration: add manual ToDo storage to projects.
-
-alter table public.projects
-  add column if not exists todos jsonb not null default '[]'::jsonb;
+-- Deprecated (kept for history only).
+-- Manual ToDos are now stored in public.manual_todos (see 2026-02-23_create_manual_todos.sql).
+-- Legacy projects.todos should be migrated and then dropped:
+--   1) 2026-02-23_backfill_manual_todos_from_projects.sql
+--   2) 2026-02-23_drop_legacy_projects_todos.sql
