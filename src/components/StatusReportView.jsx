@@ -68,6 +68,8 @@ const StatusReportView = ({
   const [aiExporting, setAiExporting] = useState(false);
   const [showAiHelp, setShowAiHelp] = useState(false);
   const [copyPromptState, setCopyPromptState] = useState('Copy Prompt');
+  const [showAiNotesModal, setShowAiNotesModal] = useState(false);
+  const [aiUserNotes, setAiUserNotes] = useState('');
 
   const handlePreset = (preset) => {
     setDateFrom(preset.from());
@@ -202,14 +204,32 @@ const StatusReportView = ({
   const ragStyle = RAG_STYLES[statusReport.overallRag] || RAG_STYLES.Green;
   const handleFieldChange = (key, value) => onUpdateStatusReport(key, value);
 
-  const handleExportAiFile = async () => {
+  const handleExportAiFile = async (notes = '') => {
     if (!onExportAiReport || aiExporting) return;
     setAiExporting(true);
-    const result = await onExportAiReport({ dateFrom, dateTo });
+    const result = await onExportAiReport({ dateFrom, dateTo, userNotes: notes });
     setAiExporting(false);
     if (result?.ok) {
       setShowAiHelp(true);
+      setAiUserNotes('');
     }
+  };
+
+  const handleOpenAiNotesModal = () => {
+    if (aiExporting) return;
+    setShowAiNotesModal(true);
+  };
+
+  const handleCancelAiNotesModal = () => {
+    if (aiExporting) return;
+    setShowAiNotesModal(false);
+    setAiUserNotes('');
+  };
+
+  const handleConfirmAiNotesModal = async () => {
+    const notes = aiUserNotes.trim();
+    setShowAiNotesModal(false);
+    await handleExportAiFile(notes);
   };
 
   const handleCopyPrompt = async () => {
@@ -291,7 +311,7 @@ const StatusReportView = ({
                 className="text-[11px] border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-indigo-300"
               />
               <button
-                onClick={handleExportAiFile}
+                onClick={handleOpenAiNotesModal}
                 disabled={aiExporting}
                 className={`text-[11px] font-medium px-2.5 py-1.5 rounded-md border transition-all ${
                   aiExporting
@@ -338,6 +358,43 @@ const StatusReportView = ({
               >
                 Close
               </button>
+            </div>
+          </div>
+        )}
+
+        {showAiNotesModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center px-4">
+            <div className="w-full max-w-lg bg-white border border-slate-200 rounded-xl shadow-xl p-5">
+              <div className="text-[12px] font-bold text-slate-700 uppercase tracking-widest mb-2">
+                AI Export Notes (Optional)
+              </div>
+              <p className="text-[12px] text-slate-500 mb-3">
+                Add short context for this report period. This note is included in the export file.
+              </p>
+              <textarea
+                value={aiUserNotes}
+                onChange={(e) => setAiUserNotes(e.target.value)}
+                maxLength={600}
+                placeholder="Example: Highlight vendor dependency risk and focus next period on UAT closure."
+                className="w-full h-28 border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-indigo-300 resize-none"
+              />
+              <div className="mt-3 flex items-center justify-between">
+                <span className="text-[11px] text-slate-400">{aiUserNotes.length}/600</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCancelAiNotesModal}
+                    className="text-[11px] font-medium text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmAiNotesModal}
+                    className="text-[11px] font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-2.5 py-1.5 rounded-md transition-all"
+                  >
+                    Continue Download
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -105,6 +105,7 @@ export const buildAiReportExportData = ({
   tracker = [],
   statusReport = {},
   todos = [],
+  userNotes = '',
   dateFrom,
   dateTo,
   timezone,
@@ -290,7 +291,8 @@ export const buildAiReportExportData = ({
     { Section: 'Key Deliverables This Period', Value: normalizeText(statusReport?.deliverablesThisPeriod) },
     { Section: 'Key Deliverables Next Period', Value: normalizeText(statusReport?.deliverablesNextPeriod) },
     { Section: 'Main Risks and Issues', Value: normalizeText(`${normalizeText(statusReport?.mainRisks)}\n${normalizeText(statusReport?.mainIssues)}`).trim() },
-    { Section: 'Additional Notes', Value: normalizeText(statusReport?.additionalNotes) }
+    { Section: 'Additional Notes', Value: normalizeText(statusReport?.additionalNotes) },
+    { Section: 'User Export Notes', Value: normalizeText(userNotes) }
   ]
 
   const outputTemplateRows = [

@@ -353,7 +353,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     }
   };
 
-  const handleExportAiReport = useCallback(async ({ dateFrom, dateTo }) => {
+  const handleExportAiReport = useCallback(async ({ dateFrom, dateTo, userNotes }) => {
     try {
       setImportStatus('Exporting AI report...');
       const XLSX = await loadXLSX();
@@ -364,6 +364,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         tracker,
         statusReport,
         todos,
+        userNotes,
         dateFrom,
         dateTo
       });

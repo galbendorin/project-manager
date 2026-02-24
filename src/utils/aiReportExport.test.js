@@ -39,6 +39,7 @@ test('buildAiReportExportData includes project-scoped completed todos and requir
       { _id: 'todo_next', projectId: 'project_1', title: 'Prep handover', status: 'Open', owner: 'PM', dueDate: '2026-02-18', updatedAt: '2026-02-11T09:00:00.000Z' },
       { _id: 'todo_overdue', projectId: 'project_1', title: 'Missed dependency call', status: 'Open', owner: 'Ops', dueDate: '2026-02-04', updatedAt: '2026-02-11T09:00:00.000Z' }
     ],
+    userNotes: 'Please emphasize UAT completion risk and vendor follow-up.',
     dateFrom: '2026-02-01',
     dateTo: '2026-02-14',
     timezone: 'America/New_York',
@@ -68,6 +69,9 @@ test('buildAiReportExportData includes project-scoped completed todos and requir
 
   const templateKeys = Object.keys(exportData.outputTemplateRows[0])
   assert.deepEqual(templateKeys, AI_REPORT_SECTION_NAMES)
+
+  const userNotesRow = exportData.additionalNotesRows.find((row) => row.Section === 'User Export Notes')
+  assert.equal(userNotesRow?.Value, 'Please emphasize UAT completion risk and vendor follow-up.')
 })
 
 test('buildAiReportExportData adds fallback rows when period has no records', () => {
