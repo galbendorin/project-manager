@@ -12,24 +12,26 @@ A full-featured **React + Vite** project management web app with Gantt chart, RA
 
 ---
 
-## CURRENT STATE SNAPSHOT (2026-02-23) — FOR NEW CHAT OR NEW LLM
+## CURRENT STATE SNAPSHOT (2026-02-24) — FOR NEW CHAT OR NEW LLM (CLAUDE-READY)
 
 This section is the authoritative handoff state for continuing work in a new chat (including Claude or another LLM).
 
 ### 1) Repository and deployment state
 - **Repo path**: `/Users/doringalben/project-manager`
 - **Primary branch**: `main`
-- **Current HEAD**: `e324b67` (`Add fast release checklist to handover`)
-- **Remote sync**: `main` is synced to `origin/main` (no local divergence at handoff time)
+- **Current HEAD**: `8fb7617` (`Add optional notes popup before AI report export`)
+- **Previous release commit**: `ae29b62` (`Add easy-mode AI report export workbook`)
+- **Remote sync**: `main` is synced to `origin/main`
 - **Deployed flow**: GitHub push to `main` triggers Vercel auto-deploy
+- **Live status**: AI export updates were pushed live from `main` and verified by user
 
 ### 2) Historical baseline clarification
 - The old implementation plan references baseline commit `5416184`.
-- That baseline is now historical only.
-- **Do not reset to 5416184**. Continue from current HEAD (`e324b67`) unless explicitly instructed otherwise.
+- That baseline is historical only.
+- **Do not reset to `5416184`**. Continue from current HEAD (`8fb7617`) unless explicitly instructed otherwise.
 
 ### 3) Completed implementation sequence (chronological)
-From `e0f8bc9` to `e324b67`, the following was delivered:
+From `e0f8bc9` to `8fb7617`, the following has been delivered:
 
 1. `e0f8bc9` — ToDo tab skeleton with manual todos
 2. `eea42c1` — Derived ToDo aggregation and deadline bucket grouping
@@ -37,20 +39,109 @@ From `e0f8bc9` to `e324b67`, the following was delivered:
 4. `3adff5f` — Cross-project ToDo filtering + `manual_todos` backend table usage
 5. `17aa74d` — Recurring completion follow-up hardening
 6. `b58edcf` — Legacy `projects.todos` retirement path + safe backfill/drop SQL
-7. `2e17482` — Stability pass:
-   - signup metadata fix
-   - tracked import boolean parsing fix
-   - ToDo write amplification reduction (title/owner save on blur)
-   - dependency model alignment across schedule/critical path/Gantt
-   - shared project-data helper extraction
+7. `2e17482` — Stability pass (signup metadata fix, import boolean parsing fix, ToDo blur-save reduction, dependency model alignment, helper extraction)
 8. `4b029e9` — Import/parsing extraction from `App.jsx` to `src/utils/importParsers.js`
-9. `b6484e7` — `useProjectData` internal split into `loadSave`, `todos`, `registers` helper modules
+9. `b6484e7` — `useProjectData` split into `loadSave`, `todos`, `registers` helper modules
 10. `02f2521` — Transition-focused tests + ESM extension fixes for Node test runner
 11. `ead352c` — SQL preflight checks for `manual_todos` rollout
-12. `e324b67` — Fast release checklist in this handover
+12. `e324b67` — Fast release checklist in handover
+13. `3b18f6a` — Detailed 2026-02-23 handoff snapshot for new LLM chats
+14. `ae29b62` — Easy-mode single-file AI report export workflow
+15. `8fb7617` — Optional notes modal before AI export + pass-through into workbook
 
-### 4) Database migration status (manual run in Supabase SQL Editor)
-Expected migration set in repo:
+### 4) NEW: AI report export capability (Option 1, policy-safe local workflow)
+Implemented for strict LLM policy environments (no model API calls from app).
+
+#### User flow
+1. Open **Status Report** tab.
+2. Select reporting range (Last 7/14/30 days or custom From/To).
+3. Click **Download AI Report File**.
+4. Optional modal appears:
+   - user can enter short context notes
+   - click **Continue Download**
+5. Upload downloaded `.xlsx` into company-approved LLM workspace.
+6. If prompt is needed, use: `Generate report from attached file.`
+
+#### Export output
+- Single workbook generated locally (browser-side):  
+  `{{project_name}}_project_report_input_YYYY-MM-DD.xlsx`
+- Sheets:
+  - `00_INSTRUCTIONS`
+  - `01_METADATA`
+  - `02_THIS_PERIOD_COMPLETED`
+  - `03_NEXT_PERIOD_OPEN`
+  - `04_RISK_SIGNALS`
+  - `05_ADDITIONAL_NOTES`
+  - `06_OUTPUT_TEMPLATE`
+
+### 5) AI export data logic (important for Claude continuity)
+
+#### Reporting windows
+- `window_start` = selected `dateFrom`
+- `window_end` = selected `dateTo`
+- `window_days` = inclusive day count
+- `next_period_start` = `window_end + 1 day`
+- `next_period_end` = `next_period_start + (window_days - 1)`
+
+#### 02_THIS_PERIOD_COMPLETED
+Composed from:
+- **Project-scoped manual ToDos** marked done with `completedAt`/`updatedAt` in selected window
+- **Action Log** items marked done/completed/closed with completion in selected window
+- **Project Plan tasks** with `pct = 100` and `updatedAt` in selected window
+
+#### 03_NEXT_PERIOD_OPEN
+Composed from:
+- Open project-scoped manual ToDos with `dueDate` in next period
+- Open Action Log items with target date in next period
+- Open Project Plan tasks whose calculated finish date falls in next period
+
+#### 04_RISK_SIGNALS
+Composed from:
+- Overdue project-scoped manual ToDos (open, due before window end)
+- Open Risk Log entries
+- Open Issue Log entries
+- Master Tracker items where `rag = Red` or `status = On Hold`
+
+#### 05_ADDITIONAL_NOTES
+Includes rows for:
+- Overall Status Narrative
+- Key Deliverables This Period
+- Key Deliverables Next Period
+- Main Risks and Issues (combined risks/issues narrative text)
+- Additional Notes
+- **User Export Notes** (from optional pre-download modal)
+
+#### 06_OUTPUT_TEMPLATE
+Fixed section headers expected from LLM output:
+- Overall Status Narrative
+- Key Deliverables This Period
+- Key Deliverables Next Period
+- Main Risks and Issues
+- Additional Notes
+
+### 6) Files added/changed for AI export feature
+- `src/utils/aiReportExport.js` (new)
+  - `buildAiReportExportData(...)`
+  - section constants and prompt constant
+  - deterministic workbook datasets for all required sheets
+- `src/utils/aiReportExport.test.js` (new)
+  - project-scoped completed ToDo inclusion test
+  - next-period/risk-signal generation assertions
+  - fallback row assertions
+  - user-notes propagation assertion
+- `src/App.jsx`
+  - added `handleExportAiReport(...)`
+  - writes AI workbook sheets via `xlsx`
+  - injects selected date window + optional user notes
+- `src/components/StatusReportView.jsx`
+  - added **Download AI Report File** button
+  - added optional **AI Export Notes** modal
+  - added post-export helper panel with one-click prompt copy
+
+### 7) Database migration status (manual run in Supabase SQL Editor)
+No new SQL migration required for AI export feature (all local/UI/export logic).
+
+Current expected migration set remains:
 - `scripts/sql/2026-02-22_add_is_demo_to_projects.sql`
 - `scripts/sql/2026-02-22_add_todos_to_projects.sql` (legacy step)
 - `scripts/sql/2026-02-23_create_manual_todos.sql`
@@ -64,7 +155,7 @@ Validation intent:
 - recurrence/status data integrity validated
 - final preflight summary reports `PASS`
 
-### 5) Current architecture highlights (post-refactor)
+### 8) Current architecture highlights (post-refactor + AI export)
 New/important modules:
 - `src/hooks/projectData/defaults.js`
 - `src/hooks/projectData/manualTodoUtils.js`
@@ -72,16 +163,18 @@ New/important modules:
 - `src/hooks/projectData/registers.js`
 - `src/hooks/projectData/todos.js`
 - `src/utils/importParsers.js`
+- `src/utils/aiReportExport.js`
 
 Behavior-critical notes:
 - ToDo editing for `title`/`owner` commits on `blur` to reduce backend writes
 - Recurring completion creates follow-up manual todo automatically
-- Dependency normalization (`parent` + `dependencies[]`) is shared across scheduling, critical path, and Gantt dependency drawing
+- Dependency normalization (`parent` + `dependencies[]`) is shared across schedule, critical path, and Gantt dependency drawing
 - Sign-up metadata flow is normalized (`full_name`)
+- AI export is local-only; **no external LLM API call is made by the app**
 
-### 6) Test and build state at handoff
-Last local verification run on current `main`:
-- `npm run test` -> **26/26 passing**
+### 9) Test and build state at handoff
+Latest local verification on `8fb7617`:
+- `npm run test` -> **28/28 passing**
 - `npm run build` -> **passing** (Vite production build completes)
 
 Primary test files:
@@ -89,29 +182,33 @@ Primary test files:
 - `src/utils/importParsers.test.js`
 - `src/hooks/manualTodoUtils.test.js`
 - `src/hooks/projectDataFlows.test.js`
+- `src/utils/aiReportExport.test.js`
 
-### 7) Operational release process
-Use the "RELEASE CHECKLIST (FAST)" section in this file for:
+### 10) Operational release process
+Use the **RELEASE CHECKLIST (FAST)** section in this file for:
 - local verify (`test` + `build`)
 - commit + push
 - Supabase preflight SQL check
 - post-deploy smoke test
 
-### 8) Recommended next engineering step (low service impact)
-Add higher-level tests around `useProjectData` integration boundaries (mock Supabase calls):
+### 11) Recommended next engineering step (low service impact)
+Add higher-level integration tests around `useProjectData` + AI export boundary behaviors:
 - missing-table fallback path (`manual_todos` relation missing)
 - recurring follow-up insertion failure fallback
 - conflict/reload flow with version mismatch
+- AI export correctness for custom date windows with sparse data
+- large workbook export performance (>2k rows)
 
-### 9) Copy/paste prompt for starting a new chat with another LLM
+### 12) Copy/paste prompt for starting a new chat with Claude
 Use this exact scaffold:
 
 ```text
-Use /Users/doringalben/project-manager/HANDOVER.md (sections "CURRENT STATE SNAPSHOT (2026-02-23)" and "RELEASE CHECKLIST (FAST)") as source of truth.
+Use /Users/doringalben/project-manager/HANDOVER.md (sections "CURRENT STATE SNAPSHOT (2026-02-24)" and "RELEASE CHECKLIST (FAST)") as source of truth.
 Repo: /Users/doringalben/project-manager
-Current branch/commit: main @ e324b67
+Current branch/commit: main @ 8fb7617
 Do not roll back to historical baseline commit 5416184; continue from current HEAD.
-Before changing code, summarize current state from HANDOVER and propose the next lowest-risk step.
+Respect existing AI export behavior (single-file local workbook + optional export notes modal) and avoid service-impacting backend changes unless explicitly requested.
+Before changing code, summarize current state from HANDOVER and propose the lowest-risk next step.
 After implementing: run npm run test and npm run build, then provide commit/push commands only.
 ```
 
@@ -195,16 +292,25 @@ src/
 │   ├── TaskModal.jsx          # Add/edit task modal
 │   ├── RegisterView.jsx       # Generic RAID register table (risks, issues, actions, etc.)
 │   ├── TrackerView.jsx        # Master Tracker tab (tracked tasks with RAG, notes, status)
-│   └── StatusReportView.jsx   # Status Report tab (RAG, completion gauge, date filtering, milestones)
+│   ├── StatusReportView.jsx   # Status Report tab (RAG, completion gauge, date filtering, milestones, AI export trigger)
+│   └── TodoView.jsx           # Cross-project ToDo view (manual + derived, filters, recurring controls)
 ├── hooks/
-│   └── useProjectData.js      # Core data hook: all CRUD, Supabase sync, timestamps
+│   ├── useProjectData.js      # Core data hook: all CRUD, Supabase sync, timestamps
+│   └── projectData/
+│       ├── defaults.js        # Empty state builders
+│       ├── loadSave.js        # Load normalization + project payload builder
+│       ├── manualTodoUtils.js # ToDo mapping + recurrence normalization helpers
+│       ├── registers.js       # Register state transforms + tracked action helpers
+│       └── todos.js           # Manual ToDo local/db transition logic
 ├── contexts/
 │   └── AuthContext.jsx        # Supabase auth context provider
 ├── lib/
 │   └── supabase.js            # Supabase client init
 └── utils/
     ├── constants.js            # SCHEMAS, TABS, TRACKER_COLS, DEFAULT_TASK, DEFAULT_STATUS_REPORT, ICONS
-    └── helpers.js              # Date math (business days), schedule calc, critical path, hierarchy
+    ├── helpers.js              # Date math (business days), schedule calc, critical path, hierarchy, todo bucketing
+    ├── importParsers.js        # Excel import parser helpers and sheet maps
+    └── aiReportExport.js       # Easy-mode AI report workbook dataset builder
 ```
 
 ---
@@ -302,6 +408,9 @@ Long text in registers and tracker uses CSS-only approach:
 - Narrative sections: Overall Status, Additional Notes, Deliverables This/Next Period
 - Top 5 open risks and issues auto-pulled from registers
 - Milestone comparison table: baseline vs actual with variance (days early/late)
+- **Download AI Report File** action for single-file local workbook export
+- Optional pre-download notes modal (captured as `User Export Notes` in workbook)
+- Post-export helper panel with copyable prompt text (`Generate report from attached file.`)
 
 ### Register Tabs (7 registers)
 - Risks, Issues, Actions, Minutes, Costs, Changes, Comms Plan
@@ -315,6 +424,7 @@ Long text in registers and tracker uses CSS-only approach:
 ### Import/Export
 - Excel export: creates multi-sheet .xlsx (Schedule + all registers + Status Report)
 - Excel import: reads Schedule and register sheets, maps column names via COLUMN_MAP objects in App.jsx
+- AI export (Status Report): creates a single AI-ready workbook with instruction/metadata/data/template sheets
 
 ---
 
@@ -337,6 +447,8 @@ Long text in registers and tracker uses CSS-only approach:
 | Text clamp + hover tooltips | ✅ Complete |
 | Weekend shading on Gantt | ✅ Complete |
 | Row alignment (grid ↔ Gantt) | ✅ Fixed (split header architecture) |
+| ToDo tab (manual + derived + cross-project + recurring) | ✅ Complete |
+| AI easy-mode report export (single workbook + notes modal) | ✅ Complete |
 
 ---
 
@@ -345,7 +457,7 @@ Long text in registers and tracker uses CSS-only approach:
 | Feature | Priority | Notes |
 |---------|----------|-------|
 | **8d: Code optimization** | Medium | Bundle size, lazy loading, memoization review |
-| **8f: AI auto-generated reports** | High | Send date-filtered data to Claude API, auto-generate narrative fields in Status Report |
+| **8f: AI report automation (phase 2)** | High | Phase 1 complete (local single-file export). Next: optional BYOK API mode + optional in-app generation flow. |
 | **Gantt row alignment fine-tuning** | Medium | May need pixel-level adjustment if still slightly off after last fix |
 | **Task reordering persistence** | Low | Drag-and-drop works but order may not persist perfectly |
 | **Dashboard/home page** | Low | Cross-project overview |
@@ -365,6 +477,10 @@ Long text in registers and tracker uses CSS-only approach:
 5. **Status Report date filtering**: Uses `isInRange()` which compares date strings (YYYY-MM-DD). It handles both ISO timestamps and date-only strings.
 
 6. **Supabase columns**: If adding new top-level data, you need to run an `ALTER TABLE` migration in Supabase SQL Editor before deploying code that references the new column.
+
+7. **AI export scope**: `02_THIS_PERIOD_COMPLETED` uses project-scoped manual todos (`todo.projectId === currentProject.id`). `Other` todos are intentionally excluded from project-specific report exports.
+
+8. **AI export is local-only**: Current implementation does not call external model APIs. If introducing BYOK/API mode later, keep it feature-flagged and preserve local export as default policy-safe mode.
 
 ---
 
@@ -397,6 +513,15 @@ Long text in registers and tracker uses CSS-only approach:
 3. Import in App.jsx
 4. Add routing in the main render conditional chain in App.jsx
 5. Add to Excel export if needed
+
+**Changing AI report export content:**
+1. Update sheet logic in `src/utils/aiReportExport.js` (`buildAiReportExportData`)
+2. If adding a new sheet, append it in `handleExportAiReport` inside `src/App.jsx`
+3. If changing user interaction, update `src/components/StatusReportView.jsx` (button/modal/help panel)
+4. Add or update assertions in `src/utils/aiReportExport.test.js`
+5. Run:
+   - `npm run test`
+   - `npm run build`
 
 **Modifying Gantt visuals:**
 - Plugins are in GanttChart.jsx: `rowStripesPlugin`, `todayLinePlugin`, `weekendShadingPlugin`, `ganttOverlayPlugin`
