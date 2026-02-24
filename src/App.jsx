@@ -16,6 +16,7 @@ import {
   REGISTER_IMPORT_COLUMN_MAPS,
   REGISTER_IMPORT_SHEET_CANDIDATES
 } from './utils/importParsers';
+import { buildAiReportExportData } from './utils/aiReportExport';
 
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
@@ -352,6 +353,43 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     }
   };
 
+  const handleExportAiReport = useCallback(async ({ dateFrom, dateTo }) => {
+    try {
+      setImportStatus('Exporting AI report...');
+      const XLSX = await loadXLSX();
+      const reportData = buildAiReportExportData({
+        project,
+        tasks: projectData,
+        registers,
+        tracker,
+        statusReport,
+        todos,
+        dateFrom,
+        dateTo
+      });
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(reportData.instructionsRows), '00_INSTRUCTIONS');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.metadataRows), '01_METADATA');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.thisPeriodCompletedRows), '02_THIS_PERIOD_COMPLETED');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.keyDeliverablesNextPeriodRows), '03_NEXT_PERIOD_OPEN');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.mainRisksAndIssuesRows), '04_RISK_SIGNALS');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.additionalNotesRows), '05_ADDITIONAL_NOTES');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.outputTemplateRows), '06_OUTPUT_TEMPLATE');
+
+      const fileName = `${reportData.fileNameBase}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      setImportStatus(`✓ Exported: ${fileName}`);
+      setTimeout(() => setImportStatus(null), 4000);
+      return { ok: true, fileName };
+    } catch (err) {
+      console.error('AI report export error:', err);
+      setImportStatus('AI report export failed');
+      setTimeout(() => setImportStatus(null), 4000);
+      return { ok: false, error: err?.message || 'Unknown export error' };
+    }
+  }, [project, projectData, registers, tracker, statusReport, todos]);
+
   if (loadingData) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -486,6 +524,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               tracker={tracker}
               statusReport={statusReport}
               onUpdateStatusReport={updateStatusReport}
+              onExportAiReport={handleExportAiReport}
             />
           ) : activeTab === 'todo' ? (
             <TodoView

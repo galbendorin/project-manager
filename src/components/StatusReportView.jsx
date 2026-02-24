@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { getFinishDate, getCurrentDate, countBusinessDays, parseDateValue, formatDateDDMMMyy } from '../utils/helpers';
+import { AI_REPORT_TRIGGER_PROMPT } from '../utils/aiReportExport';
 
 // Track which detail sections are expanded
 
@@ -56,13 +57,17 @@ const StatusReportView = ({
   registers,
   tracker,
   statusReport,
-  onUpdateStatusReport
+  onUpdateStatusReport,
+  onExportAiReport
 }) => {
   // Date range state
   const [dateFrom, setDateFrom] = useState(daysAgo(14));
   const [dateTo, setDateTo] = useState(getCurrentDate());
   const [activePreset, setActivePreset] = useState('Last 14 days');
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [aiExporting, setAiExporting] = useState(false);
+  const [showAiHelp, setShowAiHelp] = useState(false);
+  const [copyPromptState, setCopyPromptState] = useState('Copy Prompt');
 
   const handlePreset = (preset) => {
     setDateFrom(preset.from());
@@ -197,6 +202,27 @@ const StatusReportView = ({
   const ragStyle = RAG_STYLES[statusReport.overallRag] || RAG_STYLES.Green;
   const handleFieldChange = (key, value) => onUpdateStatusReport(key, value);
 
+  const handleExportAiFile = async () => {
+    if (!onExportAiReport || aiExporting) return;
+    setAiExporting(true);
+    const result = await onExportAiReport({ dateFrom, dateTo });
+    setAiExporting(false);
+    if (result?.ok) {
+      setShowAiHelp(true);
+    }
+  };
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(AI_REPORT_TRIGGER_PROMPT);
+      setCopyPromptState('Copied');
+      setTimeout(() => setCopyPromptState('Copy Prompt'), 1600);
+    } catch {
+      setCopyPromptState('Copy failed');
+      setTimeout(() => setCopyPromptState('Copy Prompt'), 1600);
+    }
+  };
+
   // Activity row component
   const ActivityRow = ({ label, newItems, updatedItems, icon, color }) => {
     const newCount = newItems?.length || 0;
@@ -249,7 +275,7 @@ const StatusReportView = ({
                 ))}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] text-slate-400 font-medium">From</span>
               <input
                 type="date"
@@ -264,9 +290,57 @@ const StatusReportView = ({
                 onChange={(e) => handleCustomTo(e.target.value)}
                 className="text-[11px] border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-indigo-300"
               />
+              <button
+                onClick={handleExportAiFile}
+                disabled={aiExporting}
+                className={`text-[11px] font-medium px-2.5 py-1.5 rounded-md border transition-all ${
+                  aiExporting
+                    ? 'text-slate-300 border-slate-200 bg-slate-50 cursor-not-allowed'
+                    : 'text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100'
+                }`}
+                title="Download one AI-ready Excel file for your company LLM workspace"
+              >
+                {aiExporting ? 'Preparing file...' : 'Download AI Report File'}
+              </button>
             </div>
           </div>
         </div>
+
+        {showAiHelp && (
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-bold text-indigo-700 uppercase tracking-widest mb-2">AI Upload Steps</div>
+                <div className="text-[12px] text-indigo-900 leading-relaxed">
+                  1. Open your company-approved LLM workspace.
+                  <br />
+                  2. Upload the downloaded file.
+                  <br />
+                  3. If the tool asks for a prompt, paste the line below.
+                </div>
+                <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                  <input
+                    readOnly
+                    value={AI_REPORT_TRIGGER_PROMPT}
+                    className="flex-1 min-w-0 bg-white border border-indigo-200 rounded-md px-3 py-2 text-[12px] text-indigo-900"
+                  />
+                  <button
+                    onClick={handleCopyPrompt}
+                    className="text-[11px] font-medium text-indigo-700 border border-indigo-200 bg-white hover:bg-indigo-100 px-2.5 py-1.5 rounded-md transition-all"
+                  >
+                    {copyPromptState}
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAiHelp(false)}
+                className="text-[11px] font-medium text-indigo-500 hover:text-indigo-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Header Row: RAG + Completion + Task Stats */}
         <div className="grid grid-cols-12 gap-4">
