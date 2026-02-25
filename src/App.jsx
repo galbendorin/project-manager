@@ -20,7 +20,7 @@ import { buildAiReportExportData } from './utils/aiReportExport';
 import { calculateSchedule } from './utils/helpers';
 import { loadAiSettings, isAiConfigured } from './utils/aiSettings';
 import { generateAiContent } from './utils/aiClient';
-import { buildReportPrompt, getReportSystemPrompt, buildPlanPrompt, getPlanSystemPrompt, buildEditPrompt, getEditSystemPrompt } from './utils/aiPrompts';
+import { buildReportPrompt, getReportSystemPrompt } from './utils/aiPrompts';
 
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
