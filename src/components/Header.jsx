@@ -94,6 +94,31 @@ const Header = ({
             External
           </button>
 
+          {/* Demo buttons — always visible when demo project */}
+          {isDemoProject && (
+            <>
+              <button
+                onClick={onShowDemoBenefits}
+                className="text-[11px] font-semibold text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition-all hidden sm:block"
+              >
+                Free Benefits
+              </button>
+              <button
+                onClick={onLoadTemplate}
+                className="text-[11px] font-semibold text-emerald-600 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg transition-all hidden sm:block"
+              >
+                SD-WAN Demo
+              </button>
+              <button
+                onClick={onResetDemoData}
+                className="text-[11px] font-semibold text-rose-600 border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg transition-all hidden md:block"
+              >
+                Reset Demo
+              </button>
+              <div className="h-5 w-px bg-slate-200 mx-0.5 hidden sm:block" />
+            </>
+          )}
+
           {activeTab === 'schedule' ? (
             <>
               {/* Import */}
@@ -228,26 +253,26 @@ const Header = ({
                   </>
                 )}
 
-                {/* Demo actions */}
+                {/* Demo actions - mobile only (visible in header on desktop) */}
                 {isDemoProject && (
                   <>
-                    <div className="border-t border-slate-100 my-1" />
-                    <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Demo</div>
+                    <div className="border-t border-slate-100 my-1 sm:hidden" />
+                    <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider sm:hidden">Demo</div>
                     <button
                       onClick={() => { onShowDemoBenefits(); setShowMoreMenu(false); }}
-                      className="w-full text-left px-3 py-2 text-[11px] font-medium text-indigo-600 hover:bg-indigo-50 transition-colors"
+                      className="w-full text-left px-3 py-2 text-[11px] font-medium text-indigo-600 hover:bg-indigo-50 transition-colors sm:hidden"
                     >
                       Free Benefits
                     </button>
                     <button
                       onClick={() => { onLoadTemplate(); setShowMoreMenu(false); }}
-                      className="w-full text-left px-3 py-2 text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 transition-colors"
+                      className="w-full text-left px-3 py-2 text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 transition-colors sm:hidden"
                     >
                       Load SD-WAN Demo
                     </button>
                     <button
                       onClick={() => { onResetDemoData(); setShowMoreMenu(false); }}
-                      className="w-full text-left px-3 py-2 text-[11px] font-medium text-rose-600 hover:bg-rose-50 transition-colors"
+                      className="w-full text-left px-3 py-2 text-[11px] font-medium text-rose-600 hover:bg-rose-50 transition-colors md:hidden"
                     >
                       Reset Demo Data
                     </button>
