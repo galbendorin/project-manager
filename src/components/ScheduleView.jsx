@@ -133,17 +133,29 @@ const ScheduleView = ({
     return { height: '100%' };
   }, [isCompactLayout]);
 
+  const [showLegend, setShowLegend] = useState(false);
+
   return (
     <div className="h-full w-full bg-white flex flex-col overflow-hidden">
-      <div className="flex-none px-2 py-1 bg-slate-50 border-b border-slate-200 text-[10px] text-slate-600 flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-slate-700">Demo Guide</span>
-        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-200 border border-red-300" /> Red</span>
-        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-200 border border-amber-300" /> Amber</span>
-        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-700 border border-amber-800" /> Brown</span>
-        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-200 border border-emerald-300" /> Complete</span>
-        <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-indigo-300 text-indigo-700 bg-indigo-50 text-[9px] font-semibold">MT+</span> Move task to Master Tracker</span>
-        <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-emerald-300 text-emerald-700 bg-emerald-50 text-[9px] font-semibold">AL+</span> Move task to Action Log</span>
-      </div>
+      {showLegend && (
+        <div className="flex-none px-2 py-1 bg-slate-50 border-b border-slate-200 text-[10px] text-slate-600 flex flex-wrap items-center gap-2">
+          <span className="font-semibold text-slate-700">Legend</span>
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-200 border border-red-300" /> Red</span>
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-200 border border-amber-300" /> Amber</span>
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-700 border border-amber-800" /> Brown</span>
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-200 border border-emerald-300" /> Complete</span>
+          <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-indigo-300 text-indigo-700 bg-indigo-50 text-[9px] font-semibold">MT+</span> Master Tracker</span>
+          <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-emerald-300 text-emerald-700 bg-emerald-50 text-[9px] font-semibold">AL+</span> Action Log</span>
+          <button onClick={() => setShowLegend(false)} className="ml-auto text-slate-400 hover:text-slate-600 text-[10px]">✕</button>
+        </div>
+      )}
+      {!showLegend && (
+        <div className="flex-none px-2 py-0.5 bg-slate-50 border-b border-slate-200 flex justify-end">
+          <button onClick={() => setShowLegend(true)} className="text-[10px] text-slate-400 hover:text-indigo-600 transition-colors">
+            Show legend
+          </button>
+        </div>
+      )}
 
       <div className={`flex-grow min-h-0 flex overflow-hidden ${isCompactLayout ? 'flex-col' : 'flex-row'}`}>
         <div

@@ -531,61 +531,67 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
   if (loadingData) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-gray-400 text-lg">Loading project...</div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 flex items-center justify-center">
+        <div className="flex items-center gap-2.5 text-slate-400 text-sm">
+          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Loading project...
+        </div>
       </div>
     );
   }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      {/* Save Status Bar */}
-      <div className="bg-gray-800 border-b border-gray-700 px-3 sm:px-4 py-1.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 text-xs">
+      {/* Top Bar */}
+      <div className="bg-white border-b border-slate-200 px-3 sm:px-4 py-2 flex items-center justify-between text-xs">
         <div className="flex items-center gap-2.5 min-w-0">
           <button
             onClick={onBackToProjects}
-            className="text-gray-400 hover:text-white transition-colors flex items-center gap-1"
+            className="text-slate-400 hover:text-indigo-600 transition-colors flex items-center gap-1 text-[12px]"
           >
             ← Projects
           </button>
-          <span className="text-gray-600">|</span>
-          <span className="text-white font-medium truncate">{project.name}</span>
+          <span className="text-slate-200">|</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-lg flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0">P</div>
+            <span className="text-slate-800 font-semibold truncate text-[13px]">{project.name}</span>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={cleanupDuplicateDescriptions}
-            className="text-xs px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
-            title="One-time cleanup of duplicate text in Action Log"
-          >
-            Clean Action Log
-          </button>
+        <div className="flex items-center gap-2">
           {importStatus ? (
-            <span className={`flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' ? 'text-blue-400' : 'text-amber-400'}`}>
+            <span className={`flex items-center gap-1 text-[12px] ${importStatus.startsWith('✓') ? 'text-emerald-500' : importStatus === 'Importing...' ? 'text-blue-500' : 'text-amber-500'}`}>
               {importStatus}
             </span>
           ) : saveConflict ? (
             <div className="flex items-center gap-2">
-              <span className="text-rose-400">Save conflict detected</span>
+              <span className="text-rose-500 text-[12px]">Save conflict</span>
               <button
                 onClick={reloadProject}
-                className="px-2 py-1 text-[11px] bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors"
-                title="Reload server version to resolve conflict"
+                className="px-2 py-1 text-[11px] bg-rose-500 hover:bg-rose-600 text-white rounded-md transition-colors"
               >
-                Reload Latest
+                Reload
               </button>
             </div>
           ) : saveError ? (
-            <span className="text-rose-400" title={saveError}>Save failed</span>
+            <span className="text-rose-500 text-[12px]" title={saveError}>Save failed</span>
           ) : saving ? (
-            <span className="text-yellow-400 flex items-center gap-1">
-              <span className="animate-pulse">●</span> Saving...
+            <span className="text-amber-500 text-[12px] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Saving
             </span>
           ) : lastSaved ? (
-            <span className="text-green-400 flex items-center gap-1">
-              ✓ Saved {lastSaved.toLocaleTimeString()}
+            <span className="text-emerald-500 text-[12px] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Saved {lastSaved.toLocaleTimeString()}
             </span>
           ) : (
-            <span className="text-gray-500">Ready</span>
+            <span className="text-slate-400 text-[12px] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+              Ready
+            </span>
           )}
         </div>
       </div>
