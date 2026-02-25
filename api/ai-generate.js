@@ -35,6 +35,8 @@ export default async function handler(req, res) {
       return await handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res)
     } else if (provider === 'openai') {
       return await handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res)
+    } else if (provider === 'gemini') {
+      return await handleGemini({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res)
     } else {
       return res.status(400).json({ error: `Unsupported provider: ${provider}` })
     }
@@ -208,5 +210,86 @@ async function handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxToken
   // Non-streaming
   const data = await response.json()
   const text = data.choices?.[0]?.message?.content || ''
+  return res.status(200).json({ text })
+}
+
+async function handleGemini({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res) {
+  const geminiModel = model || 'gemini-2.0-flash'
+  const endpoint = stream ? 'streamGenerateContent' : 'generateContent'
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:${endpoint}?key=${apiKey}`
+
+  const contents = []
+  if (systemPrompt) {
+    contents.push({ role: 'user', parts: [{ text: systemPrompt }] })
+    contents.push({ role: 'model', parts: [{ text: 'Understood. I will follow these instructions.' }] })
+  }
+  contents.push({ role: 'user', parts: [{ text: userMessage }] })
+
+  const body = {
+    contents,
+    generationConfig: {
+      maxOutputTokens: maxTokens
+    }
+  }
+
+  const fetchUrl = stream ? `${url}&alt=sse` : url
+
+  const response = await fetch(fetchUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    const errText = await response.text()
+    let errMsg
+    try {
+      const errJson = JSON.parse(errText)
+      errMsg = errJson.error?.message || errJson.error?.status || errText
+    } catch {
+      errMsg = errText
+    }
+    return res.status(response.status).json({ error: `Gemini: ${errMsg}` })
+  }
+
+  if (stream) {
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+
+        const lines = chunk.split('\n')
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6))
+              const text = event.candidates?.[0]?.content?.parts?.[0]?.text
+              if (text) {
+                res.write(`data: ${JSON.stringify({ text })}\n\n`)
+              }
+            } catch {
+              // Skip malformed lines
+            }
+          }
+        }
+      }
+      res.write('data: [DONE]\n\n')
+    } finally {
+      res.end()
+    }
+    return
+  }
+
+  // Non-streaming
+  const data = await response.json()
+  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || ''
   return res.status(200).json({ text })
 }
