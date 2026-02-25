@@ -35,11 +35,13 @@ const PROVIDERS = {
   gemini: {
     id: 'gemini',
     label: 'Google (Gemini)',
-    defaultModel: 'gemini-2.0-flash',
+    defaultModel: 'gemini-2.5-flash',
     models: [
+      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
       { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
       { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
-      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' }
+      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' }
     ],
     keyPrefix: 'AI',
     keyPlaceholder: 'AIza...',

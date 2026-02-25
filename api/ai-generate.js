@@ -214,9 +214,9 @@ async function handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxToken
 }
 
 async function handleGemini({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res) {
-  const geminiModel = model || 'gemini-2.0-flash'
+  const geminiModel = model || 'gemini-2.5-flash'
   const endpoint = stream ? 'streamGenerateContent' : 'generateContent'
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:${endpoint}?key=${apiKey}`
+  const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:${endpoint}`
 
   const contents = []
   if (systemPrompt) {
@@ -232,11 +232,14 @@ async function handleGemini({ apiKey, model, systemPrompt, userMessage, maxToken
     }
   }
 
-  const fetchUrl = stream ? `${url}&alt=sse` : url
+  const fetchUrl = stream ? `${baseUrl}?alt=sse` : baseUrl
 
   const response = await fetch(fetchUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey
+    },
     body: JSON.stringify(body)
   })
 
