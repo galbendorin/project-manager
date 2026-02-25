@@ -21,10 +21,17 @@ const ScheduleView = ({
 }) => {
   const resizerRef = useRef(null);
   const scrollSourceRef = useRef(null);
-  const [isCompactLayout, setIsCompactLayout] = useState(() => (
-    typeof window !== 'undefined' ? window.innerWidth < 1200 : false
-  ));
+  const [layoutMode, setLayoutMode] = useState(() => {
+    if (typeof window === 'undefined') return 'desktop';
+    if (window.innerWidth < 768) return 'mobile';
+    if (window.innerWidth < 1200) return 'tablet';
+    return 'desktop';
+  });
+  const [showGanttMobile, setShowGanttMobile] = useState(false);
   const [leftPaneWidthPct, setLeftPaneWidthPct] = useState(55);
+
+  const isCompactLayout = layoutMode !== 'desktop';
+  const isMobile = layoutMode === 'mobile';
 
   // Collapsed state lives here so both grid + Gantt stay in sync
   const [collapsedIndices, setCollapsedIndices] = useState(new Set());
@@ -49,7 +56,10 @@ const ScheduleView = ({
 
   useEffect(() => {
     const handleResize = () => {
-      setIsCompactLayout(window.innerWidth < 1200);
+      const w = window.innerWidth;
+      if (w < 768) setLayoutMode('mobile');
+      else if (w < 1200) setLayoutMode('tablet');
+      else setLayoutMode('desktop');
     };
     handleResize();
     window.addEventListener('resize', handleResize, { passive: true });
@@ -120,18 +130,24 @@ const ScheduleView = ({
   }, [visibleTasks]);
 
   const leftPaneStyle = useMemo(() => {
+    if (isMobile) {
+      return { width: '100%', minWidth: '0', height: showGanttMobile ? '50%' : '100%' };
+    }
     if (isCompactLayout) {
       return { width: '100%', minWidth: '0', height: '52%' };
     }
     return { width: `${leftPaneWidthPct}%`, minWidth: '460px', height: '100%' };
-  }, [isCompactLayout, leftPaneWidthPct]);
+  }, [isMobile, isCompactLayout, leftPaneWidthPct, showGanttMobile]);
 
   const rightPaneStyle = useMemo(() => {
+    if (isMobile) {
+      return { height: '50%' };
+    }
     if (isCompactLayout) {
       return { height: '48%' };
     }
     return { height: '100%' };
-  }, [isCompactLayout]);
+  }, [isMobile, isCompactLayout]);
 
   const [showLegend, setShowLegend] = useState(false);
 
@@ -183,6 +199,25 @@ const ScheduleView = ({
           />
         </div>
 
+        {/* Mobile: toggle button to show/hide Gantt */}
+        {isMobile && (
+          <button
+            onClick={() => setShowGanttMobile(!showGanttMobile)}
+            className="flex-none flex items-center justify-center gap-1.5 py-1.5 bg-slate-50 border-b border-slate-200 text-[11px] font-medium text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="4" /><rect x="14" y="3" width="7" height="4" />
+              <rect x="3" y="10" width="11" height="4" /><rect x="3" y="17" width="5" height="4" />
+            </svg>
+            {showGanttMobile ? 'Hide Gantt Chart' : 'Show Gantt Chart'}
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+              className={`transition-transform ${showGanttMobile ? 'rotate-180' : ''}`}
+            >
+              <path d="M4 6l4 4 4-4" />
+            </svg>
+          </button>
+        )}
+
         {!isCompactLayout && (
           <div
             ref={resizerRef}
@@ -190,12 +225,15 @@ const ScheduleView = ({
           />
         )}
 
-        <div
-          className={`flex flex-col overflow-hidden min-h-0 ${isCompactLayout ? 'flex-none' : 'flex-grow min-w-0'}`}
-          style={rightPaneStyle}
-        >
-          <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
-        </div>
+        {/* Gantt: hidden on mobile unless toggled */}
+        {(!isMobile || showGanttMobile) && (
+          <div
+            className={`flex flex-col overflow-hidden min-h-0 ${isCompactLayout ? 'flex-none' : 'flex-grow min-w-0'}`}
+            style={rightPaneStyle}
+          >
+            <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
+          </div>
+        )}
       </div>
     </div>
   );
