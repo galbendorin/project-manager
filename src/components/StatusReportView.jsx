@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { getFinishDate, getCurrentDate, countBusinessDays, parseDateValue, formatDateDDMMMyy } from '../utils/helpers';
 import { AI_REPORT_TRIGGER_PROMPT } from '../utils/aiReportExport';
+import AiReportPanel from './AiReportPanel';
+import AiSettingsModal from './AiSettingsModal';
 
 // Track which detail sections are expanded
 
@@ -58,7 +60,10 @@ const StatusReportView = ({
   tracker,
   statusReport,
   onUpdateStatusReport,
-  onExportAiReport
+  onExportAiReport,
+  onGenerateAiReport,
+  aiConfigured,
+  onAiSettingsChange
 }) => {
   // Date range state
   const [dateFrom, setDateFrom] = useState(daysAgo(14));
@@ -70,6 +75,7 @@ const StatusReportView = ({
   const [copyPromptState, setCopyPromptState] = useState('Copy Prompt');
   const [showAiNotesModal, setShowAiNotesModal] = useState(false);
   const [aiUserNotes, setAiUserNotes] = useState('');
+  const [showAiSettings, setShowAiSettings] = useState(false);
 
   const handlePreset = (preset) => {
     setDateFrom(preset.from());
@@ -397,6 +403,22 @@ const StatusReportView = ({
               </div>
             </div>
           </div>
+        )}
+
+        {/* AI Report Generator Panel */}
+        <AiReportPanel
+          isConfigured={aiConfigured}
+          onOpenSettings={() => setShowAiSettings(true)}
+          onGenerate={onGenerateAiReport}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+        />
+
+        {showAiSettings && (
+          <AiSettingsModal
+            onClose={() => setShowAiSettings(false)}
+            onSettingsChange={onAiSettingsChange}
+          />
         )}
 
         {/* Header Row: RAG + Completion + Task Stats */}

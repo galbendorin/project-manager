@@ -17,6 +17,9 @@ import {
   REGISTER_IMPORT_SHEET_CANDIDATES
 } from './utils/importParsers';
 import { buildAiReportExportData } from './utils/aiReportExport';
+import { loadAiSettings, isAiConfigured } from './utils/aiSettings';
+import { generateAiContent } from './utils/aiClient';
+import { buildReportPrompt, getReportSystemPrompt } from './utils/aiPrompts';
 
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
@@ -62,6 +65,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [insertAfterId, setInsertAfterId] = useState(null);
   const [importStatus, setImportStatus] = useState(null);
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
+  const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
 
   const {
     projectData,
@@ -391,6 +395,45 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     }
   }, [project, projectData, registers, tracker, statusReport, todos]);
 
+  const handleGenerateAiReport = useCallback(async ({ dateFrom, dateTo, userNotes, signal, onChunk }) => {
+    if (!isAiConfigured(aiSettings)) {
+      return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
+    }
+
+    try {
+      const userMessage = buildReportPrompt({
+        project,
+        tasks: projectData,
+        registers,
+        tracker,
+        statusReport,
+        todos,
+        userNotes,
+        dateFrom,
+        dateTo
+      });
+
+      const result = await generateAiContent({
+        provider: aiSettings.provider,
+        apiKey: aiSettings.apiKey,
+        model: aiSettings.model,
+        systemPrompt: getReportSystemPrompt(),
+        userMessage,
+        maxTokens: 4096,
+        onChunk,
+        signal
+      });
+
+      return result;
+    } catch (err) {
+      return { ok: false, error: err?.message || 'AI generation failed' };
+    }
+  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings]);
+
+  const handleAiSettingsChange = useCallback((newSettings) => {
+    setAiSettings(newSettings);
+  }, []);
+
   if (loadingData) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -526,6 +569,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               statusReport={statusReport}
               onUpdateStatusReport={updateStatusReport}
               onExportAiReport={handleExportAiReport}
+              onGenerateAiReport={handleGenerateAiReport}
+              aiConfigured={isAiConfigured(aiSettings)}
+              onAiSettingsChange={handleAiSettingsChange}
             />
           ) : activeTab === 'todo' ? (
             <TodoView
