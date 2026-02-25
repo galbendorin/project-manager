@@ -17,15 +17,18 @@ import {
   REGISTER_IMPORT_SHEET_CANDIDATES
 } from './utils/importParsers';
 import { buildAiReportExportData } from './utils/aiReportExport';
+import { calculateSchedule } from './utils/helpers';
 import { loadAiSettings, isAiConfigured } from './utils/aiSettings';
 import { generateAiContent } from './utils/aiClient';
-import { buildReportPrompt, getReportSystemPrompt } from './utils/aiPrompts';
+import { buildReportPrompt, getReportSystemPrompt, buildPlanPrompt, getPlanSystemPrompt, buildEditPrompt, getEditSystemPrompt } from './utils/aiPrompts';
 
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
 const TrackerView = lazy(() => import('./components/TrackerView'));
 const StatusReportView = lazy(() => import('./components/StatusReportView'));
 const TodoView = lazy(() => import('./components/TodoView'));
+const AiAssistantPanel = lazy(() => import('./components/AiAssistantPanel'));
+const AiSettingsModal = lazy(() => import('./components/AiSettingsModal'));
 
 function App() {
   const { user, loading: authLoading } = useAuth();
@@ -66,6 +69,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [importStatus, setImportStatus] = useState(null);
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
   const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
+  const [showAiSettingsModal, setShowAiSettingsModal] = useState(false);
+  const [showAiAssistant, setShowAiAssistant] = useState(false);
 
   const {
     projectData,
@@ -434,6 +439,62 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     setAiSettings(newSettings);
   }, []);
 
+  const handleAiAssistant = useCallback(async ({ instruction, currentTasks, signal, onChunk }) => {
+    if (!isAiConfigured(aiSettings)) {
+      return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
+    }
+
+    try {
+      const hasExistingPlan = currentTasks && currentTasks.length > 0;
+      const systemPrompt = hasExistingPlan ? getEditSystemPrompt() : getPlanSystemPrompt();
+      const userMessage = hasExistingPlan
+        ? buildEditPrompt(currentTasks, instruction)
+        : buildPlanPrompt(instruction);
+
+      const result = await generateAiContent({
+        provider: aiSettings.provider,
+        apiKey: aiSettings.apiKey,
+        model: aiSettings.model,
+        systemPrompt,
+        userMessage,
+        maxTokens: 8192,
+        onChunk,
+        signal
+      });
+
+      return result;
+    } catch (err) {
+      return { ok: false, error: err?.message || 'AI assistant failed' };
+    }
+  }, [aiSettings]);
+
+  const handleApplyAiTasks = useCallback((aiTasks) => {
+    if (!aiTasks || !Array.isArray(aiTasks)) return;
+
+    const now = new Date().toISOString();
+    const today = now.slice(0, 10);
+
+    // Map AI output to proper task objects with required fields
+    const normalizedTasks = aiTasks.map((task, idx) => ({
+      id: task.id ?? idx + 1,
+      name: task.name || 'Untitled',
+      type: task.type || 'Task',
+      indent: task.indent || 0,
+      dur: task.dur ?? (task.type === 'Milestone' ? 0 : 1),
+      start: task.start || today,
+      parent: task.parent ?? null,
+      depType: task.depType || 'FS',
+      pct: task.pct || 0,
+      owner: task.owner || '',
+      tracked: false,
+      dependencies: Array.isArray(task.dependencies) ? task.dependencies : [],
+      createdAt: now,
+      updatedAt: now
+    }));
+
+    setProjectData(calculateSchedule(normalizedTasks));
+  }, [setProjectData]);
+
   if (loadingData) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -610,6 +671,37 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         task={editingTask}
         insertAfterId={insertAfterId}
       />
+
+      {/* AI Assistant floating button — visible on Project Plan tab */}
+      {activeTab === 'schedule' && !showAiAssistant && (
+        <button
+          onClick={() => setShowAiAssistant(true)}
+          className="fixed bottom-6 right-6 z-30 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full w-12 h-12 shadow-lg flex items-center justify-center transition-all hover:scale-105"
+          title="AI Plan Assistant"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+          </svg>
+        </button>
+      )}
+
+      {/* AI Assistant slide-out panel */}
+      <Suspense fallback={null}>
+        <AiAssistantPanel
+          isOpen={showAiAssistant}
+          onClose={() => setShowAiAssistant(false)}
+          aiSettings={aiSettings}
+          currentTasks={projectData}
+          onApplyTasks={handleApplyAiTasks}
+          onOpenSettings={() => setShowAiSettingsModal(true)}
+        />
+        {showAiSettingsModal && (
+          <AiSettingsModal
+            onClose={() => setShowAiSettingsModal(false)}
+            onSettingsChange={handleAiSettingsChange}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }
