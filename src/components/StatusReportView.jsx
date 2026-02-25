@@ -3,6 +3,7 @@ import { getFinishDate, getCurrentDate, countBusinessDays, parseDateValue, forma
 import { AI_REPORT_TRIGGER_PROMPT } from '../utils/aiReportExport';
 import AiReportPanel from './AiReportPanel';
 import AiSettingsModal from './AiSettingsModal';
+import EmailDigestModal from './EmailDigestModal';
 
 // Track which detail sections are expanded
 
@@ -62,8 +63,10 @@ const StatusReportView = ({
   onUpdateStatusReport,
   onExportAiReport,
   onGenerateAiReport,
+  onGenerateEmailDigest,
   aiConfigured,
-  onAiSettingsChange
+  onAiSettingsChange,
+  projectName
 }) => {
   // Date range state
   const [dateFrom, setDateFrom] = useState(daysAgo(14));
@@ -76,6 +79,7 @@ const StatusReportView = ({
   const [showAiNotesModal, setShowAiNotesModal] = useState(false);
   const [aiUserNotes, setAiUserNotes] = useState('');
   const [showAiSettings, setShowAiSettings] = useState(false);
+  const [showEmailDigest, setShowEmailDigest] = useState(false);
 
   const handlePreset = (preset) => {
     setDateFrom(preset.from());
@@ -328,6 +332,15 @@ const StatusReportView = ({
               >
                 {aiExporting ? 'Preparing file...' : 'Download AI Report File'}
               </button>
+              {aiConfigured && (
+                <button
+                  onClick={() => setShowEmailDigest(true)}
+                  className="text-[11px] font-medium px-2.5 py-1.5 rounded-md border transition-all text-emerald-600 border-emerald-200 bg-emerald-50 hover:bg-emerald-100"
+                  title="Generate a concise status email for senior leadership"
+                >
+                  📧 Email Digest
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -418,6 +431,14 @@ const StatusReportView = ({
           <AiSettingsModal
             onClose={() => setShowAiSettings(false)}
             onSettingsChange={onAiSettingsChange}
+          />
+        )}
+
+        {showEmailDigest && (
+          <EmailDigestModal
+            onClose={() => setShowEmailDigest(false)}
+            onGenerate={onGenerateEmailDigest}
+            projectName={projectName}
           />
         )}
 
