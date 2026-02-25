@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { SCHEMAS, ICONS } from '../utils/constants';
+import { SCHEMAS } from '../utils/constants';
 import { keyGen, filterBySearch } from '../utils/helpers';
+import { IconEyeOpen, IconEyeClosed, IconTrash } from './Icons';
 
 // Columns that are short/fixed — don't need clamp/tooltip
 const SHORT_COLS = ['visible', 'number', 'status', 'level', 'raised', 'target', 'completed', 'date', 'updated', 'complete', 'cost', 'billing', 'mobile', 'phone'];
@@ -55,10 +56,9 @@ const RegisterView = ({
           <button
             onClick={() => onTogglePublic(registerType, item._id)}
             className="hover:text-indigo-600"
-            dangerouslySetInnerHTML={{ 
-              __html: item.public ? ICONS.eyeOpen : ICONS.eyeClosed 
-            }}
-          />
+          >
+            {item.public ? <IconEyeOpen /> : <IconEyeClosed />}
+          </button>
         </td>
       );
     }
@@ -171,7 +171,7 @@ const RegisterView = ({
                     className={`px-8 py-4 border-b ${col === 'Visible' ? 'w-10' : ''}`}
                   >
                     {col === 'Visible' ? (
-                      <div dangerouslySetInnerHTML={{ __html: ICONS.eyeOpen }} />
+                      <IconEyeOpen />
                     ) : (
                       col
                     )}
@@ -195,8 +195,9 @@ const RegisterView = ({
                     <button
                       onClick={() => onDeleteItem(registerType, item._id)}
                       className="text-slate-300 hover:text-rose-500"
-                      dangerouslySetInnerHTML={{ __html: ICONS.trash }}
-                    />
+                    >
+                      <IconTrash />
+                    </button>
                   </td>
                 </tr>
               ))}

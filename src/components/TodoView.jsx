@@ -6,7 +6,7 @@ import {
   formatDate,
   TODO_BUCKETS
 } from '../utils/helpers';
-import { ICONS } from '../utils/constants';
+import { IconTrash } from './Icons';
 import { supabase } from '../lib/supabase';
 
 const STATUS_OPTIONS = ['Open', 'Done'];
@@ -587,8 +587,9 @@ const TodoView = ({
                                   onClick={() => onDeleteTodo(todo._id)}
                                   className="text-slate-300 hover:text-rose-500"
                                   title="Delete ToDo"
-                                  dangerouslySetInnerHTML={{ __html: ICONS.trash }}
-                                />
+                                >
+                                  <IconTrash />
+                                </button>
                               )}
                             </td>
                           </tr>

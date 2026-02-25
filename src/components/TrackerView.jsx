@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { TRACKER_COLS, ICONS } from '../utils/constants';
+import { TRACKER_COLS } from '../utils/constants';
 import { filterBySearch } from '../utils/helpers';
+import { IconTrash } from './Icons';
 
 const RAG_COLORS = {
   Green: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
@@ -317,9 +318,10 @@ const TrackerView = ({
                       <button
                         onClick={() => onRemoveItem(item._id)}
                         className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
-                        dangerouslySetInnerHTML={{ __html: ICONS.trash }}
                         title="Remove from tracker"
-                      />
+                      >
+                        <IconTrash />
+                      </button>
                     </td>
                   </tr>
                 ))}

@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ICONS } from '../utils/constants';
 
 const Header = ({ 
   taskCount, 
