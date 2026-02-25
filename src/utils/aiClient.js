@@ -34,10 +34,12 @@ export const generateAiContent = async ({
   try {
     const response = await fetch(API_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': apiKey
+      },
       body: JSON.stringify({
         provider,
-        apiKey,
         model,
         systemPrompt,
         userMessage,

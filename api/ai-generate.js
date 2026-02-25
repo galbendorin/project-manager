@@ -1,7 +1,7 @@
 /**
  * /api/ai-generate — Vercel serverless proxy for LLM calls
  * 
- * Receives the user's API key in the request body, forwards to the
+ * Receives the user's API key via X-Api-Key header, forwards to the
  * selected provider, and returns (or streams) the response.
  * 
  * The key is only in-transit; it is never logged or stored.
@@ -10,11 +10,26 @@
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 const OPENAI_API = 'https://api.openai.com/v1/chat/completions'
 
+// Allowed origins — add your production domain(s) here
+const ALLOWED_ORIGINS = [
+  'https://project-manager-app-tau.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:3002',
+  'http://localhost:5173'
+]
+
+// Max request body size (200KB — generous for prompts)
+const MAX_BODY_SIZE = 200_000
+
 export default async function handler(req, res) {
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  // CORS — restrict to known origins
+  const origin = req.headers.origin || ''
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  }
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Api-Key')
+  res.setHeader('Vary', 'Origin')
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
@@ -24,25 +39,36 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { provider, apiKey, model, systemPrompt, userMessage, maxTokens = 4096, stream = false } = req.body || {}
+  // Reject oversized payloads
+  const bodyStr = JSON.stringify(req.body || {})
+  if (bodyStr.length > MAX_BODY_SIZE) {
+    return res.status(413).json({ error: 'Request body too large' })
+  }
+
+  // Accept API key from header (preferred) or body (backward compat)
+  const apiKey = req.headers['x-api-key'] || req.body?.apiKey
+  const { provider, model, systemPrompt, userMessage, maxTokens = 4096, stream = false } = req.body || {}
 
   if (!provider || !apiKey || !userMessage) {
     return res.status(400).json({ error: 'Missing required fields: provider, apiKey, userMessage' })
   }
 
+  // Clamp maxTokens to prevent abuse
+  const safeMaxTokens = Math.min(Math.max(parseInt(maxTokens) || 4096, 256), 16384)
+
   try {
     if (provider === 'anthropic') {
-      return await handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res)
+      return await handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
     } else if (provider === 'openai') {
-      return await handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res)
+      return await handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
     } else if (provider === 'gemini') {
-      return await handleGemini({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res)
+      return await handleGemini({ apiKey, model, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
     } else {
       return res.status(400).json({ error: `Unsupported provider: ${provider}` })
     }
   } catch (err) {
-    console.error('AI proxy error:', err)
-    return res.status(500).json({ error: err.message || 'Internal proxy error' })
+    console.error('AI proxy error:', err.message)
+    return res.status(500).json({ error: 'Internal proxy error' })
   }
 }
 

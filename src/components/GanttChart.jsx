@@ -455,4 +455,4 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
   );
 };
 
-export default GanttChart;
+export default React.memo(GanttChart);

@@ -672,4 +672,4 @@ const ScheduleGrid = ({
   );
 };
 
-export default ScheduleGrid;
+export default React.memo(ScheduleGrid);

@@ -214,4 +214,4 @@ const RegisterView = ({
   );
 };
 
-export default RegisterView;
+export default React.memo(RegisterView);

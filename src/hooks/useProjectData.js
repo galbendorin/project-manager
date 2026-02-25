@@ -162,6 +162,18 @@ export const useProjectData = (projectId, userId = null) => {
     };
   }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict]);
 
+  // Warn user if they close the tab with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (saveTimeoutRef.current) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   const reloadProject = useCallback(async () => {
     await loadProject();
   }, [loadProject]);

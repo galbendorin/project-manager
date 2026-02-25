@@ -348,4 +348,4 @@ const TrackerView = ({
   );
 };
 
-export default TrackerView;
+export default React.memo(TrackerView);

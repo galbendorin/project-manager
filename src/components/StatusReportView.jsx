@@ -844,4 +844,4 @@ const StatusReportView = ({
   );
 };
 
-export default StatusReportView;
+export default React.memo(StatusReportView);
