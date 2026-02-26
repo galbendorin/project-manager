@@ -8,6 +8,8 @@ import Navigation from './components/Navigation';
 import TaskModal from './components/TaskModal';
 import DemoBenefitsModal from './components/DemoBenefitsModal';
 import { useProjectData } from './hooks/useProjectData';
+import { useMobile } from './hooks/useMobile';
+import MobileLayout from './components/mobile/MobileLayout';
 import {
   loadXLSX,
   parseScheduleSheet,
@@ -60,6 +62,7 @@ function App() {
 }
 
 function MainApp({ project, currentUserId, onBackToProjects }) {
+  const isMobile = useMobile();
   const [activeTab, setActiveTab] = useState('schedule');
   const [viewMode, setViewMode] = useState('week');
   const [isExternalView, setIsExternalView] = useState(false);
@@ -540,6 +543,62 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
           Loading project...
         </div>
       </div>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileLayout
+          project={project}
+          projectData={projectData}
+          registers={registers}
+          tracker={tracker}
+          statusReport={statusReport}
+          todos={todos}
+          baseline={baseline}
+          saving={saving}
+          lastSaved={lastSaved}
+          saveConflict={saveConflict}
+          updateTask={updateTask}
+          deleteTask={deleteTask}
+          addRegisterItem={addRegisterItem}
+          updateRegisterItem={updateRegisterItem}
+          deleteRegisterItem={deleteRegisterItem}
+          toggleItemPublic={toggleItemPublic}
+          sendToTracker={sendToTracker}
+          toggleTrackTask={toggleTrackTask}
+          removeFromTracker={removeFromTracker}
+          updateTrackerItem={updateTrackerItem}
+          isInTracker={isInTracker}
+          updateStatusReport={updateStatusReport}
+          addTodo={addTodo}
+          updateTodo={updateTodo}
+          deleteTodo={deleteTodo}
+          onBackToProjects={onBackToProjects}
+          onExport={handleExport}
+          onImport={handleImport}
+          onLoadTemplate={handleLoadDemoData}
+          onResetDemoData={handleResetDemoData}
+          onSetBaseline={setBaseline}
+          onClearBaseline={clearBaseline}
+          onShowDemoBenefits={() => setIsBenefitsOpen(true)}
+          onOpenAiSettings={() => setShowAiSettingsModal(true)}
+          onNewTask={() => handleOpenModal()}
+          onExportAiReport={handleExportAiReport}
+          onGenerateAiReport={handleGenerateAiReport}
+          onGenerateEmailDigest={handleGenerateEmailDigest}
+          aiConfigured={isAiConfigured(aiSettings)}
+          onAiSettingsChange={handleAiSettingsChange}
+          currentUserId={currentUserId}
+          isExternalView={isExternalView}
+        />
+        <DemoBenefitsModal isOpen={isBenefitsOpen} onClose={() => setIsBenefitsOpen(false)} />
+        <TaskModal isOpen={isModalOpen} onClose={handleCloseModal} onSave={handleSaveTask} task={editingTask} insertAfterId={insertAfterId} />
+        <Suspense fallback={null}>
+          {showAiSettingsModal && <AiSettingsModal onClose={() => setShowAiSettingsModal(false)} onSettingsChange={handleAiSettingsChange} />}
+        </Suspense>
+      </>
     );
   }
 
