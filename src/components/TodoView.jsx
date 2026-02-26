@@ -360,12 +360,12 @@ const TodoView = ({
   }, [scope, projectOptions, currentProject?.id, currentProject?.name]);
 
   return (
-    <div className="w-full h-full bg-slate-50 p-6 overflow-auto">
-      <div className="max-w-[1480px] mx-auto bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col min-h-[500px]">
-        <div className="px-6 py-5 border-b border-slate-200 rounded-t-xl space-y-3">
+    <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
+      <div className="max-w-[1480px] mx-auto bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-h-[500px]">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 rounded-t-xl space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="text-lg font-black text-slate-800 tracking-tight">ToDo</h2>
+              <h2 className="text-base font-bold text-slate-800 tracking-tight">ToDo</h2>
               <p className="text-[11px] text-slate-400 mt-1">
                 Scope-aware ToDo view with manual + derived items, project filters, and recurring rules.
               </p>
@@ -375,7 +375,7 @@ const TodoView = ({
               placeholder="Search todos..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="px-4 py-2 text-sm border border-slate-200 rounded-xl w-full sm:w-72 outline-none"
+              className="px-3 py-1.5 text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
             />
           </div>
 

@@ -1,7 +1,55 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { TRACKER_COLS } from '../utils/constants';
 import { filterBySearch } from '../utils/helpers';
 import { IconTrash } from './Icons';
+
+// ── Viewport-aware popover (shared pattern) ────────────────────────
+
+const CellPopover = ({ text, anchorRef, onClose }) => {
+  const popRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!anchorRef?.current || !popRef.current) return;
+    const anchor = anchorRef.current.getBoundingClientRect();
+    const pop = popRef.current.getBoundingClientRect();
+    const pad = 8;
+    let top = anchor.bottom + 4;
+    let left = anchor.left;
+    if (top + pop.height > window.innerHeight - pad) top = anchor.top - pop.height - 4;
+    if (top < pad) top = pad;
+    if (left + pop.width > window.innerWidth - pad) left = window.innerWidth - pop.width - pad;
+    if (left < pad) left = pad;
+    setPos({ top, left });
+  }, [anchorRef]);
+
+  useEffect(() => {
+    const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    const handleClick = (e) => {
+      if (popRef.current && !popRef.current.contains(e.target)) onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    document.addEventListener('mousedown', handleClick);
+    return () => {
+      document.removeEventListener('keydown', handleEsc);
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={popRef}
+      className="fixed z-[9999] bg-slate-800 text-white text-[12px] leading-relaxed rounded-lg shadow-2xl p-3.5"
+      style={{
+        top: pos.top, left: pos.left,
+        maxWidth: 420, minWidth: 200, maxHeight: 300,
+        overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+      }}
+    >
+      {text}
+    </div>
+  );
+};
 
 const RAG_COLORS = {
   Green: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
@@ -27,6 +75,9 @@ const TrackerView = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [editingCell, setEditingCell] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [expandedCell, setExpandedCell] = useState(null);
+  const expandAnchorRef = useRef(null);
+  const closePopover = useCallback(() => setExpandedCell(null), []);
 
   // Filter items
   const filteredItems = useMemo(() => {
@@ -189,35 +240,46 @@ const TrackerView = ({
     }
 
     if (isLongField) {
+      const cellRef = React.createRef();
+      const thisCellId = cellId;
+      const handleExpand = (e) => {
+        e.stopPropagation();
+        expandAnchorRef.current = cellRef.current;
+        setExpandedCell(expandedCell === thisCellId ? null : thisCellId);
+      };
       return (
         <td
-          className={`px-4 py-3 ${col.editable ? 'editable cursor-pointer' : ''} text-[12.5px] text-slate-600 relative group/cell`}
+          ref={cellRef}
+          className={`px-3 py-2.5 ${col.editable ? 'editable cursor-pointer' : ''} text-[12px] text-slate-600 relative`}
           onClick={() => col.editable && setEditingCell(cellId)}
         >
-          <div 
-            className="overflow-hidden text-ellipsis"
-            style={{
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              lineHeight: '1.4em',
-              maxHeight: '2.8em'
-            }}
-          >
-            {value || <span className="text-slate-300">...</span>}
-          </div>
-          {hasContent && (
+          <div className="flex items-start gap-1.5">
             <div 
-              className="absolute invisible group-hover/cell:visible hover:visible left-0 top-full mt-1 z-[9999] bg-slate-800 text-white text-xs rounded-lg shadow-xl p-3 min-w-[200px] max-w-[500px] overflow-y-auto cursor-text"
-              style={{ 
-                whiteSpace: 'normal', 
-                wordWrap: 'break-word', 
-                maxHeight: '400px',
-                lineHeight: '1.5'
+              className="overflow-hidden text-ellipsis flex-1 min-w-0"
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                lineHeight: '1.4em',
+                maxHeight: '2.8em'
               }}
             >
-              {value}
+              {value || <span className="text-slate-300">...</span>}
             </div>
+            {hasContent && (
+              <button
+                onClick={handleExpand}
+                className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors mt-0.5"
+                title="Expand"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M6 4l4 4-4 4" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {expandedCell === thisCellId && (
+            <CellPopover text={value} anchorRef={{ current: cellRef.current }} onClose={closePopover} />
           )}
         </td>
       );
@@ -234,7 +296,7 @@ const TrackerView = ({
   };
 
   return (
-    <div className="w-full h-full bg-slate-50 p-6 overflow-auto">
+    <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
       <div className="max-w-[1650px] mx-auto">
         {/* Summary Cards */}
         <div className="grid grid-cols-5 gap-3 mb-5">
@@ -261,9 +323,9 @@ const TrackerView = ({
         </div>
 
         {/* Main Table */}
-        <div className="bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col min-h-[400px]">
-          <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center rounded-t-xl">
-            <h2 className="text-lg font-black text-slate-800 tracking-tight">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-h-[400px]">
+          <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex justify-between items-center rounded-t-xl">
+            <h2 className="text-base font-bold text-slate-800 tracking-tight">
               Project Master Tracker
             </h2>
             <div className="flex items-center gap-3">
@@ -284,7 +346,7 @@ const TrackerView = ({
                 placeholder="Search tracker..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="px-4 py-2 text-sm border border-slate-200 rounded-xl w-64 outline-none focus:border-indigo-300 transition-colors"
+                className="px-3 py-1.5 text-[12px] border border-slate-200 rounded-lg w-48 sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
               />
             </div>
           </div>
