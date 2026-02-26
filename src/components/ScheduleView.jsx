@@ -21,10 +21,6 @@ const ScheduleView = ({
 }) => {
   const resizerRef = useRef(null);
   const scrollSourceRef = useRef(null);
-  const [isCompactLayout, setIsCompactLayout] = useState(() => (
-    typeof window !== 'undefined' ? window.innerWidth < 900 : false
-  ));
-  const [showGanttCompact, setShowGanttCompact] = useState(true);
   const [leftPaneWidthPct, setLeftPaneWidthPct] = useState(55);
 
   // Collapsed state lives here so both grid + Gantt stay in sync
@@ -48,18 +44,8 @@ const ScheduleView = ({
     [tasks, collapsedIndices]
   );
 
-  useEffect(() => {
-    const handleResize = () => {
-      setIsCompactLayout(window.innerWidth < 900);
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize, { passive: true });
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
   // Panel resizing
   useEffect(() => {
-    if (isCompactLayout) return;
     const resizer = resizerRef.current;
     if (!resizer) return;
 
@@ -91,7 +77,7 @@ const ScheduleView = ({
 
     resizer.addEventListener('mousedown', onMouseDown);
     return () => resizer.removeEventListener('mousedown', onMouseDown);
-  }, [isCompactLayout, leftPaneWidthPct]);
+  }, [leftPaneWidthPct]);
 
   // Sync scroll between grid and chart
   useEffect(() => {
@@ -125,20 +111,6 @@ const ScheduleView = ({
     };
   }, [visibleTasks]);
 
-  const leftPaneStyle = useMemo(() => {
-    if (isCompactLayout) {
-      return { width: '100%', minWidth: '0', height: showGanttCompact ? '52%' : '100%' };
-    }
-    return { width: `${leftPaneWidthPct}%`, minWidth: '380px', height: '100%' };
-  }, [isCompactLayout, leftPaneWidthPct, showGanttCompact]);
-
-  const rightPaneStyle = useMemo(() => {
-    if (isCompactLayout) {
-      return { height: '48%' };
-    }
-    return { height: '100%' };
-  }, [isCompactLayout]);
-
   const [showLegend, setShowLegend] = useState(false);
 
   return (
@@ -163,12 +135,11 @@ const ScheduleView = ({
         </div>
       )}
 
-      <div className={`flex-grow min-h-0 flex overflow-hidden ${isCompactLayout ? 'flex-col' : 'flex-row'}`}>
+      {/* Always side-by-side — scrolls horizontally on narrow screens */}
+      <div className="flex-grow min-h-0 flex flex-row overflow-x-auto overflow-y-hidden">
         <div
-          className={`flex-none bg-white flex flex-col overflow-hidden z-20 ${
-            isCompactLayout ? 'border-b border-slate-200' : 'border-r border-slate-200'
-          }`}
-          style={leftPaneStyle}
+          className="flex-none bg-white flex flex-col overflow-hidden z-20 border-r border-slate-200"
+          style={{ width: `${leftPaneWidthPct}%`, minWidth: '480px', height: '100%' }}
         >
           <ScheduleGrid
             allTasks={tasks}
@@ -189,30 +160,17 @@ const ScheduleView = ({
           />
         </div>
 
-        {!isCompactLayout && (
-          <div
-            ref={resizerRef}
-            className="w-1 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
-          />
-        )}
+        <div
+          ref={resizerRef}
+          className="w-1 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
+        />
 
-        {isCompactLayout && (
-          <button
-            onClick={() => setShowGanttCompact(!showGanttCompact)}
-            className="flex-none flex items-center justify-center gap-1.5 py-1 bg-slate-100 border-b border-slate-200 text-[11px] font-medium text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-          >
-            {showGanttCompact ? '▾ Hide Gantt' : '▸ Show Gantt Chart'}
-          </button>
-        )}
-
-        {(!isCompactLayout || showGanttCompact) && (
-          <div
-            className={`flex flex-col overflow-hidden min-h-0 ${isCompactLayout ? 'flex-none' : 'flex-grow min-w-0'}`}
-            style={rightPaneStyle}
-          >
-            <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
-          </div>
-        )}
+        <div
+          className="flex flex-col overflow-hidden min-h-0 flex-grow"
+          style={{ minWidth: '300px', height: '100%' }}
+        >
+          <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
+        </div>
       </div>
     </div>
   );
