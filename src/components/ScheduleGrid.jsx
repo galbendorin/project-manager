@@ -348,7 +348,7 @@ const ScheduleGrid = ({
   const [editingDependencies, setEditingDependencies] = useState([]);
   const [editingDepLogic, setEditingDepLogic] = useState('ALL');
   const [columnWidths, setColumnWidths] = useState({
-    drag: 28, id: 40, name: 220, parent: 50, dep: 50, type: 70,
+    drag: 28, id: 40, name: 280, parent: 50, dep: 60, type: 70,
     dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 150
   });
   const [resizing, setResizing] = useState(null);

@@ -106,6 +106,12 @@ html, body, #root {
   background: white;
   padding: 0 16px;
   overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.nav-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-tab {
