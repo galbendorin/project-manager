@@ -30,7 +30,7 @@ const TABS = [
 
 const BottomNav = ({ activeTab, onTabChange }) => {
   return (
-    <nav className="flex-none bg-white border-t border-slate-200 flex justify-around items-start pt-1.5 pb-5 px-1 safe-area-bottom">
+    <nav className="flex-none bg-white border-t border-slate-200 flex justify-around items-start pt-1.5 pb-1 px-1 safe-area-bottom">
       {TABS.map(t => {
         const active = activeTab === t.id;
         return (

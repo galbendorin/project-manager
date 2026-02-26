@@ -28,20 +28,25 @@ const levelColor = (l) => {
   return 'bg-slate-100 text-slate-600';
 };
 
+const SKIP_FOR_TITLE = new Set(['Visible', 'Number', 'Status', 'Current Status', 'Level', 'Category', 'Raised', 'Target', 'Update', 'Completed', 'Complete', 'Updated', 'Date', 'Date Raised', 'Billing']);
+const OWNER_COLS = ['Owner', 'Action Assigned to', 'Issue Assigned to', 'Assigned to', 'Company', 'Name'];
+
 const RegisterItemCard = ({ item, schema, onTap }) => {
   const cols = schema.cols;
-  // First substantive text column as title (skip Visible, Number)
-  const titleCol = cols.find(c => c !== 'Visible' && c !== 'Number' && c !== 'Status' && c !== 'Level');
-  const title = item[titleCol] || item[cols[2]] || item[cols[3]] || 'Untitled';
+  // Find the first column with actual content that's a substantive text field
+  const titleCol = cols.find(c => !SKIP_FOR_TITLE.has(c) && item[c] && String(item[c]).trim().length > 0)
+    || cols.find(c => c !== 'Visible' && c !== 'Number' && item[c] && String(item[c]).trim().length > 0);
+  const title = (titleCol ? item[titleCol] : null) || 'Untitled';
   const number = item['Number'] || item.number || '';
   const status = item['Status'] || item['Current Status'] || '';
   const level = item['Level'] || '';
-  const owner = item['Owner'] || item['Action Assigned to'] || item['Issue Assigned to'] || item['Assigned to'] || '';
+  const owner = OWNER_COLS.reduce((found, col) => found || item[col], '') || '';
 
-  // Find a secondary detail field
+  // Find a secondary detail field (different from the title)
   const detailCol = cols.find(c =>
-    c !== 'Visible' && c !== 'Number' && c !== titleCol && c !== 'Status' && c !== 'Level' &&
-    c !== 'Current Status' && c !== 'Owner' && item[c]
+    c !== 'Visible' && c !== 'Number' && c !== titleCol && !OWNER_COLS.includes(c) &&
+    c !== 'Status' && c !== 'Current Status' && c !== 'Level' &&
+    item[c] && String(item[c]).trim().length > 0
   );
   const detail = detailCol ? item[detailCol] : '';
 
