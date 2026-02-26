@@ -22,8 +22,9 @@ const ScheduleView = ({
   const resizerRef = useRef(null);
   const scrollSourceRef = useRef(null);
   const [isCompactLayout, setIsCompactLayout] = useState(() => (
-    typeof window !== 'undefined' ? window.innerWidth < 1200 : false
+    typeof window !== 'undefined' ? window.innerWidth < 900 : false
   ));
+  const [showGanttCompact, setShowGanttCompact] = useState(true);
   const [leftPaneWidthPct, setLeftPaneWidthPct] = useState(55);
 
   // Collapsed state lives here so both grid + Gantt stay in sync
@@ -49,7 +50,7 @@ const ScheduleView = ({
 
   useEffect(() => {
     const handleResize = () => {
-      setIsCompactLayout(window.innerWidth < 1200);
+      setIsCompactLayout(window.innerWidth < 900);
     };
     handleResize();
     window.addEventListener('resize', handleResize, { passive: true });
@@ -126,10 +127,10 @@ const ScheduleView = ({
 
   const leftPaneStyle = useMemo(() => {
     if (isCompactLayout) {
-      return { width: '100%', minWidth: '0', height: '52%' };
+      return { width: '100%', minWidth: '0', height: showGanttCompact ? '52%' : '100%' };
     }
-    return { width: `${leftPaneWidthPct}%`, minWidth: '460px', height: '100%' };
-  }, [isCompactLayout, leftPaneWidthPct]);
+    return { width: `${leftPaneWidthPct}%`, minWidth: '380px', height: '100%' };
+  }, [isCompactLayout, leftPaneWidthPct, showGanttCompact]);
 
   const rightPaneStyle = useMemo(() => {
     if (isCompactLayout) {
@@ -195,12 +196,23 @@ const ScheduleView = ({
           />
         )}
 
-        <div
-          className={`flex flex-col overflow-hidden min-h-0 ${isCompactLayout ? 'flex-none' : 'flex-grow min-w-0'}`}
-          style={rightPaneStyle}
-        >
-          <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
-        </div>
+        {isCompactLayout && (
+          <button
+            onClick={() => setShowGanttCompact(!showGanttCompact)}
+            className="flex-none flex items-center justify-center gap-1.5 py-1 bg-slate-100 border-b border-slate-200 text-[11px] font-medium text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+          >
+            {showGanttCompact ? '▾ Hide Gantt' : '▸ Show Gantt Chart'}
+          </button>
+        )}
+
+        {(!isCompactLayout || showGanttCompact) && (
+          <div
+            className={`flex flex-col overflow-hidden min-h-0 ${isCompactLayout ? 'flex-none' : 'flex-grow min-w-0'}`}
+            style={rightPaneStyle}
+          >
+            <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
+          </div>
+        )}
       </div>
     </div>
   );
