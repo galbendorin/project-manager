@@ -12,7 +12,7 @@ A full-featured **React + Vite** project management web app with Gantt chart, RA
 
 ---
 
-## CURRENT STATE SNAPSHOT (2026-02-26) — FOR NEW CHAT OR NEW LLM
+## CURRENT STATE SNAPSHOT (2026-02-28) — FOR NEW CHAT OR NEW LLM
 
 This section is the authoritative handoff state for continuing work in a new chat.
 
@@ -20,89 +20,52 @@ This section is the authoritative handoff state for continuing work in a new cha
 - **Repo path**: `/Users/doringalben/project-manager`
 - **Primary branch**: `main`
 - **Deployed flow**: GitHub push to `main` triggers Vercel auto-deploy
-- **Live status**: UI redesign + mobile implementation deployed and verified
+- **Live status**: UI redesign + mobile implementation deployed. Monetisation files created but NOT yet deployed.
 
-### 2) Session history (2026-02-25 to 2026-02-26)
-The following work was completed across multiple sessions:
+### 2) BUGS — STATUS (discovered 2026-02-28)
 
-#### Session 1: AI Integration — BYOK Setup (2026-02-25)
-- Added Bring Your Own Key (BYOK) AI integration
-- Files: `src/utils/aiClient.js`, `src/utils/aiPrompts.js`, `src/utils/aiSettings.js`
-- Components: `src/components/AiSettingsModal.jsx`, `src/components/AiReportPanel.jsx`
-- Supports Anthropic (Claude) and OpenAI APIs
-- AI-powered status report generation from project data
+#### Bug A: Mobile — Cannot type new project name (CRASH) — ✅ FIXED
+- **Fix applied**: Wrapped input in `<form>` element (mobile keyboard "Go" works), stabilised onChange with `useCallback`, added `autoComplete="off"`, `autoCorrect="off"`, `spellCheck="false"`, `enterKeyHint="go"`. Added `inputRef` for focus recovery on error.
+- **File**: `ProjectSelector.jsx` (replaced entirely)
 
-#### Session 2: AI Plan Assistant + Voice (2026-02-25)
-- Conversational AI assistant for project plan creation/editing
-- Files: `src/utils/aiPlanAssistant.js`, `src/components/AiAssistantPanel.jsx`
-- Speech recognition integration for voice input
-- Chat-based interface for natural language plan editing
+#### Bug B: Supabase cold start causes "No projects" on first load — ✅ FIXED
+- **Fix applied**: Auto-retry with 3s delay when first fetch fails. Progressive loading: "Loading projects..." → "Waking up the database..." → "Setting up your workspace...". Animated spinner instead of plain text.
+- **File**: `ProjectSelector.jsx` (replaced entirely)
 
-#### Session 3: Security & Performance Audit (2026-02-25)
-Completed 8-item security audit:
-1. ✅ CORS lockdown (Supabase dashboard setting)
-2. ✅ API key migration (moved from query params to headers)
-3. ✅ React.memo optimization on heavy components
-4. ✅ XSS elimination (removed dangerouslySetInnerHTML)
-5. ✅ beforeunload guard for unsaved changes
-6. ✅ Input sanitization on user-facing fields
-7. ✅ Supabase RLS policies verified
-8. ✅ Email digest modal + AI plan assistant patch-mode fix
+#### Bug C: New signups don't receive email verification — ⚠️ NOT FIXED (dashboard config)
+- **Root cause**: Supabase built-in email = ~3 emails/hour, unreliable
+- **Fix needed**: Set up **Resend** (free: 100/day) or **Brevo** (300/day free) as SMTP
+- **How**: Supabase Dashboard → Authentication → Settings → SMTP → enter credentials
+- **Workaround**: Manually confirm users in Dashboard → Authentication → Users → Confirm
+- **Resend setup**: https://resend.com → Get API key → Add domain → Configure in Supabase SMTP settings
 
-#### Session 4: Backup Strategy (2026-02-26)
-- Created weekly backup script at `/Users/doringalben/project-manager/scripts/weekly-backup.sh`
-- Backs up: Git bundle, Supabase data export, .env files
-- Retention: 4 weekly backups
+#### Bug D: Demo project not seeded for new accounts — ✅ FIXED
+- **Fix applied**: `seedDemoProject()` retries up to 2 times with 3s delays. Combined with Bug B cold start retry, new accounts reliably get demo project.
+- **File**: `ProjectSelector.jsx` (replaced entirely)
 
-#### Session 5: UI/UX Redesign (2026-02-26)
-Complete visual overhaul based on screenshot audit:
-- **Phase 1**: Light theme throughout, cleaner toolbar, project health cards
-- **Phase 2**: Mobile-first bottom navigation (reverted — done properly in Session 7)
-- **Phase 3**: Register tooltips, navigation scroll indicators, wider columns
-- Files modified: `Header.jsx`, `Navigation.jsx`, `AuthPage.jsx`, `ProjectSelector.jsx`, `StatusReportView.jsx`, `ScheduleGrid.jsx`, `RegisterView.jsx`, `TrackerView.jsx`, `TodoView.jsx`, `styles/index.css`, `index.css`
+### 3) MONETISATION LAYER — PARTIALLY APPLIED
 
-#### Session 6: Mobile UX Research + Design Spec (2026-02-26)
-- Competitive analysis of Asana, Monday, Smartsheet, ClickUp, Jira mobile approaches
-- Created comprehensive mobile design spec with progressive disclosure pattern
-- Built interactive React prototype (mobile-prototype.jsx)
-- Architecture assessment: mobile adds ~855 lines (~8% increase), shares 100% of data logic
+#### Files ready to deploy (all in monetisation-step1-complete.zip):
+- `src/contexts/PlanContext.jsx` — plan state, limits, gating functions ✅
+- `src/components/UpgradeBanner.jsx` — trial banner, limit banners, plan badge ✅
+- `src/main.jsx` — updated entry point (wraps with PlanProvider) ✅
+- `src/App.jsx` — TrialBanner + export/AI/baseline gating ✅ APPLIED
+- `src/components/Header.jsx` — PlanBadge added ✅ APPLIED
+- `src/components/ProjectSelector.jsx` — Bug fixes + light theme ✅ APPLIED
 
-#### Session 7: Mobile UI Implementation (2026-02-26)
-- 11 new mobile components (1,458 lines total)
-- Delivered as `mobile-implementation.zip` then `mobile-fix-1.zip` (bug fixes)
-- Bottom navigation, card-based layouts, slide-up detail sheets
-- Shared data architecture — mobile calls same `useProjectData` hook as desktop
-- Key files added to `src/components/mobile/`:
-  - `MobileLayout.jsx`, `BottomNav.jsx`, `MobileHeader.jsx`
-  - `MobileHome.jsx`, `MobilePlan.jsx`, `MobileTodo.jsx`
-  - `MobileLogs.jsx`, `MobileMore.jsx`
-  - `TaskCard.jsx`, `TaskDetailSheet.jsx`, `RegisterCard.jsx`
-- Bug fixes: Bottom nav height (safe area), "Untitled" cards in logs
+#### Still TODO (SQL migration only):
 
-#### Session 8: Market Research + Monetisation Strategy (2026-02-26)
-- Comprehensive PM software market research (2025-2026 data)
-- Competitive pricing analysis (Smartsheet, Monday, Asana, Trello, Teamwork)
-- SaaS conversion benchmarks (freemium vs free trial data)
-- Indie/micro-SaaS revenue metrics and timelines
-- Delivered as `monetisation-plan.docx` (22KB, 8 sections)
-- **Recommended model**: 30-day free trial (not freemium) — 10-25% conversion vs 2-5%
-- **Pricing**: Pro £8/user/mo (3 projects, 100 tasks, 5 AI/mo), Team £15/user/mo (unlimited)
+**SQL Migration** — Run in Supabase SQL Editor:
+- File: `supabase-migration.sql` (in the monetisation-step1.zip or can be recreated)
+- Creates `user_profiles` table with plan, trial_start, trial_ends, ai_reports_used
+- Adds trigger to auto-create profile on signup
+- Backfills existing users
+- Adds RLS policies
 
-#### Session 9: Monetisation Implementation — Step 1 (2026-02-26, current)
-- User enabled Supabase email confirmation (Confirm sign up toggle)
-- Created monetisation code layer:
-  - `supabase-migration.sql` — user_profiles table + trigger + RLS
-  - `src/contexts/PlanContext.jsx` — plan state, limits, gating functions
-  - `src/components/UpgradeBanner.jsx` — trial banner, limit banners, plan badge
-  - `src/main.jsx` — updated to wrap with PlanProvider
-  - `INTEGRATION-GUIDE.md` — step-by-step apply instructions
-- **Status**: Files created, NOT YET DEPLOYED. User needs to:
-  1. Run SQL migration in Supabase
-  2. Copy new files into project
-  3. Apply 4 small edits to App.jsx, ProjectSelector.jsx, Header.jsx
-  4. Commit and push
+**All code edits have been applied** in the files inside `monetisation-step1-complete.zip`.
+Just copy the files and deploy.
 
-### 3) Monetisation layer — plan limits
+#### Plan limits (for reference):
 
 | Feature           | Trial (30 days) | Pro (£8/mo) | Team (£15/mo) | Expired |
 |-------------------|-----------------|-------------|----------------|---------|
@@ -140,7 +103,7 @@ Complete visual overhaul based on screenshot audit:
 | recurrence | jsonb | Nullable, type + interval |
 | created_at / updated_at / completed_at | timestamptz | Timestamps |
 
-#### Table: `user_profiles` (NEW — from monetisation migration)
+#### Table: `user_profiles` (NEW — not yet created, needs SQL migration)
 | Column | Type | Description |
 |--------|------|-------------|
 | id | uuid | PK, references auth.users |
@@ -149,42 +112,76 @@ Complete visual overhaul based on screenshot audit:
 | trial_ends | timestamptz | trial_start + 30 days |
 | ai_reports_used | integer | Counter, resets monthly for paid |
 | ai_reports_reset_at | timestamptz | Last reset date |
-| stripe_customer_id | text | Nullable, for Stripe integration |
-| stripe_subscription_id | text | Nullable, for Stripe integration |
+| stripe_customer_id | text | Nullable, for future Stripe |
+| stripe_subscription_id | text | Nullable, for future Stripe |
 | created_at / updated_at | timestamptz | Auto |
 
 **RLS**: All tables have row-level security. Users see only their own data.
-**Trigger**: `on_auth_user_created` auto-creates a `user_profiles` row on signup.
+**Auth**: Supabase Auth with email/password. "Confirm sign up" is now enabled.
 
-### 5) File structure (current)
+### 5) Session history (2026-02-25 to 2026-02-26)
+
+#### Session 1: AI Integration — BYOK Setup (2026-02-25)
+- BYOK AI integration (Anthropic + OpenAI)
+- Files: aiClient.js, aiPrompts.js, aiSettings.js, AiSettingsModal.jsx, AiReportPanel.jsx
+
+#### Session 2: AI Plan Assistant + Voice (2026-02-25)
+- Conversational AI plan creation with speech recognition
+- Files: aiPlanAssistant.js, AiAssistantPanel.jsx
+
+#### Session 3: Security & Performance Audit (2026-02-25)
+- 8-item audit: CORS, API key headers, React.memo, XSS fix, beforeunload, sanitisation, RLS, email digest
+
+#### Session 4: Backup Strategy (2026-02-26)
+- Weekly backup script at scripts/weekly-backup.sh
+
+#### Session 5: UI/UX Redesign (2026-02-26)
+- Light theme, cleaner toolbar, project health cards, register tooltips, navigation scroll indicators
+
+#### Session 6: Mobile UX Research + Design Spec (2026-02-26)
+- Competitive analysis, design spec, interactive prototype
+
+#### Session 7: Mobile UI Implementation (2026-02-26)
+- 11 components in src/components/mobile/ (1,458 lines)
+- Shared data architecture with desktop
+
+#### Session 8: Market Research + Monetisation Strategy (2026-02-26)
+- Full market research, pricing strategy, go-to-market plan
+- Delivered as monetisation-plan.docx
+
+#### Session 9: Monetisation Step 1 (2026-02-28)
+- Created PlanContext, UpgradeBanner, migration SQL
+- Discovered bugs B/C/D (cold start, SMTP, demo seed)
+- Files copied but not deployed. Edits not yet applied.
+
+### 6) File structure
 
 ```
 src/
 ├── App.jsx                    # Main app: routing, import/export, tab switching
-├── main.jsx                   # Entry point (wraps AuthProvider + PlanProvider)
-├── index.css                  # Global styles
+├── main.jsx                   # Entry point (PlanProvider added but not deployed)
 ├── styles/index.css           # Tailwind + component styles
 ├── components/
 │   ├── AuthPage.jsx           # Login/signup
-│   ├── ProjectSelector.jsx    # Multi-project dashboard
-│   ├── Header.jsx             # Top bar: actions, baseline, export/import
+│   ├── ProjectSelector.jsx    # Multi-project dashboard (HAS MOBILE BUG)
+│   ├── Header.jsx             # Top bar
 │   ├── Navigation.jsx         # Tab bar
 │   ├── ScheduleView.jsx       # Split-pane: grid + Gantt
 │   ├── ScheduleGrid.jsx       # Editable task table
-│   ├── GanttChart.jsx         # Chart.js Gantt with plugins
+│   ├── GanttChart.jsx         # Chart.js Gantt
 │   ├── TaskModal.jsx          # Add/edit task modal
 │   ├── RegisterView.jsx       # RAID register table
-│   ├── TrackerView.jsx        # Master Tracker tab
-│   ├── StatusReportView.jsx   # Status Report + AI export trigger
-│   ├── TodoView.jsx           # Cross-project ToDo view
+│   ├── TrackerView.jsx        # Master Tracker
+│   ├── StatusReportView.jsx   # Status Report + AI export
+│   ├── TodoView.jsx           # Cross-project ToDo
 │   ├── DemoBenefitsModal.jsx  # Demo benefits modal
-│   ├── AiReportPanel.jsx      # AI report generation panel
-│   ├── AiAssistantPanel.jsx   # Conversational AI plan assistant
-│   ├── AiSettingsModal.jsx    # BYOK API key settings
-│   ├── EmailDigestModal.jsx   # Email digest composer
-│   ├── Icons.jsx              # SVG icon components
-│   ├── UpgradeBanner.jsx      # NEW: Trial/limit banners, PlanBadge
-│   └── mobile/                # NEW: Mobile responsive components
+│   ├── AiReportPanel.jsx      # AI report generation
+│   ├── AiAssistantPanel.jsx   # AI plan assistant
+│   ├── AiSettingsModal.jsx    # BYOK settings
+│   ├── EmailDigestModal.jsx   # Email digest
+│   ├── Icons.jsx              # SVG icons
+│   ├── UpgradeBanner.jsx      # NEW (copied, not deployed)
+│   └── mobile/
 │       ├── MobileLayout.jsx
 │       ├── BottomNav.jsx
 │       ├── MobileHeader.jsx
@@ -197,7 +194,7 @@ src/
 │       ├── TaskDetailSheet.jsx
 │       └── RegisterCard.jsx
 ├── hooks/
-│   ├── useProjectData.js      # Core data hook: all CRUD, Supabase sync
+│   ├── useProjectData.js
 │   └── projectData/
 │       ├── defaults.js
 │       ├── loadSave.js
@@ -205,28 +202,32 @@ src/
 │       ├── registers.js
 │       └── todos.js
 ├── contexts/
-│   ├── AuthContext.jsx         # Supabase auth context
-│   └── PlanContext.jsx         # NEW: Plan state, limits, gating
+│   ├── AuthContext.jsx
+│   └── PlanContext.jsx         # NEW (copied, not deployed)
 ├── lib/
-│   └── supabase.js            # Supabase client
+│   └── supabase.js
 └── utils/
-    ├── constants.js            # Schemas, tabs, column configs
-    ├── helpers.js              # Date math, schedule calc, hierarchy
-    ├── importParsers.js        # Excel import helpers
-    ├── demoProjectBuilder.js   # Demo data generator
-    ├── aiClient.js             # BYOK AI API client
-    ├── aiPrompts.js            # AI prompt templates
-    ├── aiSettings.js           # AI settings persistence
-    ├── aiPlanAssistant.js      # Conversational plan editing logic
-    └── aiReportExport.js       # AI report workbook builder
+    ├── constants.js
+    ├── helpers.js
+    ├── importParsers.js
+    ├── demoProjectBuilder.js
+    ├── aiClient.js
+    ├── aiPrompts.js
+    ├── aiSettings.js
+    ├── aiPlanAssistant.js
+    └── aiReportExport.js
 ```
 
-### 6) Test and build state
-- `npm run test` → **28/28 passing** (as of last verified build)
-- `npm run build` → **passing**
-- Primary test files: helpers.test.js, importParsers.test.js, manualTodoUtils.test.js, projectDataFlows.test.js, aiReportExport.test.js
+### 7) PRIORITY ORDER FOR NEXT SESSION
 
-### 7) Copy/paste prompt for starting a new chat
+1. **Run SQL migration** — Create user_profiles table (paste supabase-migration.sql into SQL Editor)
+2. **Copy all files from zip** — Replace ProjectSelector.jsx, App.jsx, Header.jsx, main.jsx + add PlanContext.jsx, UpgradeBanner.jsx
+3. **Commit + deploy** — `git add -A && git commit -m "Bug fixes + monetisation layer" && git push`
+4. **Set up Resend SMTP** — Fix email verification (Bug C) — 15 min in Supabase dashboard
+5. **Test** — New signup flow end-to-end (phone + desktop)
+6. **Next feature**: Stripe Checkout integration for paid plans
+
+### 8) Copy/paste prompt for starting a new chat
 
 ```text
 Use /Users/doringalben/project-manager/HANDOVER.md as source of truth.
@@ -234,60 +235,39 @@ Repo: /Users/doringalben/project-manager
 Branch: main
 Stack: React 18, Vite, Tailwind CSS, Supabase (PostgreSQL + Auth + RLS)
 
-Key context:
-- App has desktop + mobile responsive views (shared data layer)
-- Monetisation layer in progress: PlanContext + UpgradeBanner + user_profiles table
-- AI features: BYOK report generation + conversational plan assistant
-- 7 RAID registers, Gantt chart, master tracker, status reports, todos
+Recent changes (just deployed or about to deploy):
+- Bug fixes: mobile input crash, cold start retry, demo seed retry (all in ProjectSelector.jsx)
+- Monetisation layer: PlanContext, UpgradeBanner, gating in App.jsx/Header.jsx
+- SQL migration for user_profiles table may still need to be run in Supabase
 
-Before changing code, read HANDOVER.md and summarise current state.
-After implementing: run npm run test and npm run build, then provide commit/push commands.
+Next priorities:
+1. Set up Resend SMTP for email verification
+2. Stripe Checkout integration for paid plans
+3. Landing page with pricing
+
+Please read the codebase from my uploaded src.zip before making changes.
 ```
 
----
-
-## RELEASE CHECKLIST (FAST)
-
-1. Local verification:
-   ```bash
-   cd /Users/doringalben/project-manager
-   npm run test
-   npm run build
-   ```
-
-2. Commit + push:
-   ```bash
-   git add -A
-   git commit -m "release message"
-   git push origin main
-   ```
-
-3. Post-deploy smoke test (production):
-   - Open existing project, check desktop + mobile views
-   - Verify trial banner shows for trial users
-   - Test AI report generation (check counter increments)
-   - Test export (should work during trial)
-
----
-
-## REMAINING ROADMAP
+### 9) REMAINING ROADMAP
 
 | Feature | Priority | Status |
 |---------|----------|--------|
-| **Monetisation: Stripe integration** | HIGH | Next — pricing page + Checkout + webhooks |
-| **Monetisation: Task count gating** | HIGH | Limit defined (100 Pro), needs wiring into addTask |
-| **Monetisation: Trial expiry emails** | MEDIUM | Needs Supabase Edge Functions + Resend/SMTP |
-| **Monetisation: Landing page** | MEDIUM | Public-facing pricing + feature comparison |
-| **Monetisation: Template library** | LOW | Paid add-ons (£15-30 each) for Phase 4 |
-| **AI report automation (Phase 2)** | MEDIUM | Optional in-app generation (BYOK mode exists) |
-| **Code optimization** | LOW | Bundle size, lazy loading review |
+| **Fix mobile bugs (A, B)** | CRITICAL | ✅ Fixed in zip |
+| **SMTP setup (Resend)** | CRITICAL | Not started (dashboard config) |
+| **Monetisation edits + SQL** | HIGH | ✅ Code done, SQL migration pending |
+| **Stripe integration** | HIGH | Not started — pricing page + Checkout + webhooks |
+| **Trial expiry emails** | MEDIUM | Needs Edge Functions + SMTP |
+| **Landing page** | MEDIUM | Public-facing pricing page |
+| **Cron ping to keep DB warm** | LOW | cron-job.org free, 5 min setup |
+| **Loading skeleton** | LOW | Branded spinner instead of blank screen |
 
-### Go-to-market timeline (from monetisation plan)
-- **Weeks 1-2**: Apply monetisation code + Stripe integration
-- **Weeks 3-4**: Landing page + Product Hunt listing prep
-- **Week 5**: LAUNCH (Product Hunt + LinkedIn + Reddit)
-- **Months 2-4**: First revenue target £100+ MRR
-- **Month 12**: Target 50+ paying customers, £500+ MRR
+### 10) OPERATIONAL NOTES
+
+- **Supabase free tier**: DB pauses after ~10 min inactivity. Causes cold start delays.
+- **SMTP limit**: Built-in email = ~3/hour. Must set up Resend/Brevo before launch.
+- **Stripe not integrated**: `window.open('/pricing')` calls in UpgradeBanner are placeholders.
+- **Task count gating**: Limit defined in PlanContext (100 for Pro) but not enforced in addTask yet.
+- **Weekly backup**: Run `/Users/doringalben/project-manager/scripts/weekly-backup.sh`
 
 ---
 
@@ -297,35 +277,37 @@ After implementing: run npm run test and npm run build, then provide commit/push
 `useProjectData.js` watches all state and auto-saves to Supabase after 1.5s of inactivity.
 
 ### Business Days
-All scheduling uses Mon-Fri business days. Key functions in `helpers.js`: `addBusinessDays`, `countBusinessDays`, `getFinishDate`, `calculateSchedule`.
+All scheduling uses Mon-Fri business days. Key functions in `helpers.js`.
 
 ### Mobile Architecture
-Mobile components in `src/components/mobile/` are **alternative renderers** of the same data. They receive the same props and call the same `useProjectData` functions as desktop components. Detection: `useMediaQuery('(max-width: 768px)')` in App.jsx.
+Mobile components in `src/components/mobile/` are alternative renderers of the same data. Detection: `useMediaQuery('(max-width: 768px)')` in App.jsx. Desktop components are NOT modified.
 
 ### Plan Gating
-`PlanContext.jsx` provides `usePlan()` hook with gating booleans: `canCreateProject`, `canUseAiReport`, `canExport`, `canBaseline`, `getTaskLimit()`. Components check these before allowing actions. The `TrialBanner` component shows countdown and upgrade prompts.
+`PlanContext.jsx` provides `usePlan()` hook with gating booleans: `canCreateProject`, `canUseAiReport`, `canExport`, `canBaseline`. Components check these before allowing actions.
 
 ### Gantt Chart
-Two Chart.js instances (axis header + scrollable body). Custom plugins: rowStripes, todayLine, weekendShading, ganttOverlay (draws summary bars, baselines, dependency arrows).
+Two Chart.js instances (axis header + scrollable body). Custom plugins: rowStripes, todayLine, weekendShading, ganttOverlay.
 
 ---
 
 ## STYLE CONVENTIONS
 
-- **Tailwind CSS** for all styling (utility-first)
+- **Tailwind CSS** utility-first
 - Font sizes: `text-[10px]` labels, `text-[11px]` small data, `text-[12.5px]` body
 - Colors: Indigo primary, Emerald success, Amber warnings, Rose errors
-- RAG: Green `bg-emerald-500`, Amber `bg-amber-500`, Red `bg-rose-500`
-- Cards: `bg-white rounded-xl border border-slate-200 shadow-sm p-5`
 - All components are functional with hooks (no class components)
 
 ---
 
-## KNOWN ISSUES / THINGS TO WATCH
+## RELEASE CHECKLIST (FAST)
 
-1. **Gantt ↔ Grid row alignment**: Both use `HEADER_HEIGHT = 34`. Must match.
-2. **SMTP rate limit**: Supabase built-in email = ~3/hour. Set up Resend/Brevo before launch.
-3. **Monetisation not yet deployed**: Files created but need manual apply + SQL migration.
-4. **Stripe not yet integrated**: `window.open('/pricing')` calls are placeholders.
-5. **Task count gating**: Limit defined in PlanContext but not yet enforced in addTask flow.
-6. **AI export is local-only by default**: BYOK mode exists but is optional.
+```bash
+cd /Users/doringalben/project-manager
+npm run test
+npm run build
+git add -A
+git commit -m "release message"
+git push origin main
+```
+
+Post-deploy: check desktop + mobile, verify trial banner, test new signup flow.

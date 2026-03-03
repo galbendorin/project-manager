@@ -1,15 +1,15 @@
 import React, { useState, useCallback, lazy, Suspense } from 'react';
 import { SCHEMAS } from './utils/constants';
 import { useAuth } from './contexts/AuthContext';
+import { usePlan } from './contexts/PlanContext';
 import AuthPage from './components/AuthPage';
 import ProjectSelector from './components/ProjectSelector';
 import Header from './components/Header';
 import Navigation from './components/Navigation';
 import TaskModal from './components/TaskModal';
 import DemoBenefitsModal from './components/DemoBenefitsModal';
+import { TrialBanner } from './components/UpgradeBanner';
 import { useProjectData } from './hooks/useProjectData';
-import { useMobile } from './hooks/useMobile';
-import MobileLayout from './components/mobile/MobileLayout';
 import {
   loadXLSX,
   parseScheduleSheet,
@@ -19,18 +19,12 @@ import {
   REGISTER_IMPORT_SHEET_CANDIDATES
 } from './utils/importParsers';
 import { buildAiReportExportData } from './utils/aiReportExport';
-import { calculateSchedule } from './utils/helpers';
-import { loadAiSettings, isAiConfigured } from './utils/aiSettings';
-import { generateAiContent } from './utils/aiClient';
-import { buildReportPrompt, getReportSystemPrompt, buildPlanPrompt, getPlanSystemPrompt, buildEditPrompt, getEditSystemPrompt, buildEmailDigestPrompt, getEmailDigestSystemPrompt } from './utils/aiPrompts';
 
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
 const TrackerView = lazy(() => import('./components/TrackerView'));
 const StatusReportView = lazy(() => import('./components/StatusReportView'));
 const TodoView = lazy(() => import('./components/TodoView'));
-const AiAssistantPanel = lazy(() => import('./components/AiAssistantPanel'));
-const AiSettingsModal = lazy(() => import('./components/AiSettingsModal'));
 
 function App() {
   const { user, loading: authLoading } = useAuth();
@@ -38,8 +32,8 @@ function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-gray-400 text-lg">Loading...</div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-slate-400 text-lg">Loading...</div>
       </div>
     );
   }
@@ -62,7 +56,6 @@ function App() {
 }
 
 function MainApp({ project, currentUserId, onBackToProjects }) {
-  const isMobile = useMobile();
   const [activeTab, setActiveTab] = useState('schedule');
   const [viewMode, setViewMode] = useState('week');
   const [isExternalView, setIsExternalView] = useState(false);
@@ -71,9 +64,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [insertAfterId, setInsertAfterId] = useState(null);
   const [importStatus, setImportStatus] = useState(null);
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
-  const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
-  const [showAiSettingsModal, setShowAiSettingsModal] = useState(false);
-  const [showAiAssistant, setShowAiAssistant] = useState(false);
+
+  // Monetisation gating
+  const { canExport, canUseAiReport, canBaseline, incrementAiReports } = usePlan();
 
   const {
     projectData,
@@ -149,11 +142,10 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     setRegisters(prev => {
       const cleanedActions = prev.actions.map(action => {
         if (action.description) {
-          // Remove duplicate text patterns like "Text\nText" or "Text Text"
           const cleaned = action.description
             .trim()
-            .replace(/(.+)\n\1/g, '$1')  // Remove newline duplicates
-            .replace(/^(.+?)\s+\1$/g, '$1');  // Remove space duplicates
+            .replace(/(.+)\n\1/g, '$1')
+            .replace(/^(.+?)\s+\1$/g, '$1');
           
           return {
             ...action,
@@ -306,8 +298,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     }
   };
 
-  // Export to Excel (includes tracker + status report)
+  // Export to Excel — gated by plan
   const handleExport = async () => {
+    if (!canExport) {
+      alert('Export is available on the Team plan. Upgrade to export your projects to Excel.');
+      return;
+    }
+
     try {
       setImportStatus('Exporting...');
       const XLSX = await loadXLSX();
@@ -365,7 +362,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     }
   };
 
+  // AI Report export — gated by plan
   const handleExportAiReport = useCallback(async ({ dateFrom, dateTo, userNotes }) => {
+    if (!canUseAiReport) {
+      alert('You\'ve used all your AI reports for this period. Upgrade for more.');
+      return { ok: false, error: 'limit_reached' };
+    }
+
     try {
       setImportStatus('Exporting AI report...');
       const XLSX = await loadXLSX();
@@ -392,6 +395,10 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
       const fileName = `${reportData.fileNameBase}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, fileName);
+
+      // Increment AI report counter
+      await incrementAiReports();
+
       setImportStatus(`✓ Exported: ${fileName}`);
       setTimeout(() => setImportStatus(null), 4000);
       return { ok: true, fileName };
@@ -401,256 +408,77 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       setTimeout(() => setImportStatus(null), 4000);
       return { ok: false, error: err?.message || 'Unknown export error' };
     }
-  }, [project, projectData, registers, tracker, statusReport, todos]);
+  }, [project, projectData, registers, tracker, statusReport, todos, canUseAiReport, incrementAiReports]);
 
-  const handleGenerateAiReport = useCallback(async ({ dateFrom, dateTo, userNotes, signal, onChunk }) => {
-    if (!isAiConfigured(aiSettings)) {
-      return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
+  // Baseline — gated by plan
+  const handleSetBaseline = useCallback(() => {
+    if (!canBaseline) {
+      alert('Baseline tracking is available on the Team plan. Upgrade to compare planned vs actual progress.');
+      return;
     }
-
-    try {
-      const userMessage = buildReportPrompt({
-        project,
-        tasks: projectData,
-        registers,
-        tracker,
-        statusReport,
-        todos,
-        userNotes,
-        dateFrom,
-        dateTo
-      });
-
-      const result = await generateAiContent({
-        provider: aiSettings.provider,
-        apiKey: aiSettings.apiKey,
-        model: aiSettings.model,
-        systemPrompt: getReportSystemPrompt(),
-        userMessage,
-        maxTokens: 4096,
-        onChunk,
-        signal
-      });
-
-      return result;
-    } catch (err) {
-      return { ok: false, error: err?.message || 'AI generation failed' };
-    }
-  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings]);
-
-  const handleGenerateEmailDigest = useCallback(async ({ signal, onChunk }) => {
-    if (!isAiConfigured(aiSettings)) {
-      return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
-    }
-
-    try {
-      const userMessage = buildEmailDigestPrompt({
-        project,
-        tasks: projectData,
-        registers,
-        tracker,
-        statusReport,
-        todos,
-        dateFrom: null,
-        dateTo: null
-      });
-
-      const result = await generateAiContent({
-        provider: aiSettings.provider,
-        apiKey: aiSettings.apiKey,
-        model: aiSettings.model,
-        systemPrompt: getEmailDigestSystemPrompt(),
-        userMessage,
-        maxTokens: 2048,
-        onChunk,
-        signal
-      });
-
-      return result;
-    } catch (err) {
-      return { ok: false, error: err?.message || 'Email digest generation failed' };
-    }
-  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings]);
-
-  const handleAiSettingsChange = useCallback((newSettings) => {
-    setAiSettings(newSettings);
-  }, []);
-
-  const handleAiAssistant = useCallback(async ({ instruction, currentTasks, signal, onChunk }) => {
-    if (!isAiConfigured(aiSettings)) {
-      return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
-    }
-
-    try {
-      const hasExistingPlan = currentTasks && currentTasks.length > 0;
-      const systemPrompt = hasExistingPlan ? getEditSystemPrompt() : getPlanSystemPrompt();
-      const userMessage = hasExistingPlan
-        ? buildEditPrompt(currentTasks, instruction)
-        : buildPlanPrompt(instruction);
-
-      const result = await generateAiContent({
-        provider: aiSettings.provider,
-        apiKey: aiSettings.apiKey,
-        model: aiSettings.model,
-        systemPrompt,
-        userMessage,
-        maxTokens: 8192,
-        onChunk,
-        signal
-      });
-
-      return result;
-    } catch (err) {
-      return { ok: false, error: err?.message || 'AI assistant failed' };
-    }
-  }, [aiSettings]);
-
-  const handleApplyAiTasks = useCallback((aiTasks) => {
-    if (!aiTasks || !Array.isArray(aiTasks)) return;
-
-    const now = new Date().toISOString();
-    const today = now.slice(0, 10);
-
-    // Map AI output to proper task objects with required fields
-    const normalizedTasks = aiTasks.map((task, idx) => ({
-      id: task.id ?? idx + 1,
-      name: task.name || 'Untitled',
-      type: task.type || 'Task',
-      indent: task.indent || 0,
-      dur: task.dur ?? (task.type === 'Milestone' ? 0 : 1),
-      start: task.start || today,
-      parent: task.parent ?? null,
-      depType: task.depType || 'FS',
-      pct: task.pct || 0,
-      owner: task.owner || '',
-      tracked: false,
-      dependencies: Array.isArray(task.dependencies) ? task.dependencies : [],
-      createdAt: now,
-      updatedAt: now
-    }));
-
-    setProjectData(calculateSchedule(normalizedTasks));
-  }, [setProjectData]);
+    setBaseline(projectData);
+  }, [canBaseline, setBaseline, projectData]);
 
   if (loadingData) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 flex items-center justify-center">
-        <div className="flex items-center gap-2.5 text-slate-400 text-sm">
-          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          Loading project...
-        </div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-slate-400 text-lg">Loading project...</div>
       </div>
-    );
-  }
-
-  if (isMobile) {
-    return (
-      <>
-        <MobileLayout
-          project={project}
-          projectData={projectData}
-          registers={registers}
-          tracker={tracker}
-          statusReport={statusReport}
-          todos={todos}
-          baseline={baseline}
-          saving={saving}
-          lastSaved={lastSaved}
-          saveConflict={saveConflict}
-          updateTask={updateTask}
-          deleteTask={deleteTask}
-          addRegisterItem={addRegisterItem}
-          updateRegisterItem={updateRegisterItem}
-          deleteRegisterItem={deleteRegisterItem}
-          toggleItemPublic={toggleItemPublic}
-          sendToTracker={sendToTracker}
-          toggleTrackTask={toggleTrackTask}
-          removeFromTracker={removeFromTracker}
-          updateTrackerItem={updateTrackerItem}
-          isInTracker={isInTracker}
-          updateStatusReport={updateStatusReport}
-          addTodo={addTodo}
-          updateTodo={updateTodo}
-          deleteTodo={deleteTodo}
-          onBackToProjects={onBackToProjects}
-          onExport={handleExport}
-          onImport={handleImport}
-          onLoadTemplate={handleLoadDemoData}
-          onResetDemoData={handleResetDemoData}
-          onSetBaseline={setBaseline}
-          onClearBaseline={clearBaseline}
-          onShowDemoBenefits={() => setIsBenefitsOpen(true)}
-          onOpenAiSettings={() => setShowAiSettingsModal(true)}
-          onNewTask={() => handleOpenModal()}
-          onExportAiReport={handleExportAiReport}
-          onGenerateAiReport={handleGenerateAiReport}
-          onGenerateEmailDigest={handleGenerateEmailDigest}
-          aiConfigured={isAiConfigured(aiSettings)}
-          onAiSettingsChange={handleAiSettingsChange}
-          currentUserId={currentUserId}
-          isExternalView={isExternalView}
-        />
-        <DemoBenefitsModal isOpen={isBenefitsOpen} onClose={() => setIsBenefitsOpen(false)} />
-        <TaskModal isOpen={isModalOpen} onClose={handleCloseModal} onSave={handleSaveTask} task={editingTask} insertAfterId={insertAfterId} />
-        <Suspense fallback={null}>
-          {showAiSettingsModal && <AiSettingsModal onClose={() => setShowAiSettingsModal(false)} onSettingsChange={handleAiSettingsChange} />}
-        </Suspense>
-      </>
     );
   }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      {/* Top Bar */}
-      <div className="bg-white border-b border-slate-200 px-3 sm:px-4 py-2 flex items-center justify-between text-xs">
+      {/* Trial/Upgrade Banner */}
+      <TrialBanner />
+
+      {/* Save Status Bar */}
+      <div className="bg-gray-800 border-b border-gray-700 px-3 sm:px-4 py-1.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 text-xs">
         <div className="flex items-center gap-2.5 min-w-0">
           <button
             onClick={onBackToProjects}
-            className="text-slate-400 hover:text-indigo-600 transition-colors flex items-center gap-1 text-[12px]"
+            className="text-gray-400 hover:text-white transition-colors flex items-center gap-1"
           >
             ← Projects
           </button>
-          <span className="text-slate-200">|</span>
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-6 h-6 bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-lg flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0">P</div>
-            <span className="text-slate-800 font-semibold truncate text-[13px]">{project.name}</span>
-          </div>
+          <span className="text-gray-600">|</span>
+          <span className="text-white font-medium truncate">{project.name}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={cleanupDuplicateDescriptions}
+            className="text-xs px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
+            title="One-time cleanup of duplicate text in Action Log"
+          >
+            Clean Action Log
+          </button>
           {importStatus ? (
-            <span className={`flex items-center gap-1 text-[12px] ${importStatus.startsWith('✓') ? 'text-emerald-500' : importStatus === 'Importing...' ? 'text-blue-500' : 'text-amber-500'}`}>
+            <span className={`flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' ? 'text-blue-400' : 'text-amber-400'}`}>
               {importStatus}
             </span>
           ) : saveConflict ? (
             <div className="flex items-center gap-2">
-              <span className="text-rose-500 text-[12px]">Save conflict</span>
+              <span className="text-rose-400">Save conflict detected</span>
               <button
                 onClick={reloadProject}
-                className="px-2 py-1 text-[11px] bg-rose-500 hover:bg-rose-600 text-white rounded-md transition-colors"
+                className="px-2 py-1 text-[11px] bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors"
+                title="Reload server version to resolve conflict"
               >
-                Reload
+                Reload Latest
               </button>
             </div>
           ) : saveError ? (
-            <span className="text-rose-500 text-[12px]" title={saveError}>Save failed</span>
+            <span className="text-rose-400" title={saveError}>Save failed</span>
           ) : saving ? (
-            <span className="text-amber-500 text-[12px] flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-              Saving
+            <span className="text-yellow-400 flex items-center gap-1">
+              <span className="animate-pulse">●</span> Saving...
             </span>
           ) : lastSaved ? (
-            <span className="text-emerald-500 text-[12px] flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              Saved {lastSaved.toLocaleTimeString()}
+            <span className="text-green-400 flex items-center gap-1">
+              ✓ Saved {lastSaved.toLocaleTimeString()}
             </span>
           ) : (
-            <span className="text-slate-400 text-[12px] flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-              Ready
-            </span>
+            <span className="text-gray-500">Ready</span>
           )}
         </div>
       </div>
@@ -673,7 +501,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
           addRegisterItem(activeTab);
         }}
         addEntryLabel={activeTab === 'todo' ? 'Add ToDo' : 'Add Entry'}
-        onSetBaseline={setBaseline}
+        onSetBaseline={handleSetBaseline}
         onClearBaseline={clearBaseline}
         hasBaseline={!!baseline}
         activeTab={activeTab}
@@ -729,11 +557,6 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               statusReport={statusReport}
               onUpdateStatusReport={updateStatusReport}
               onExportAiReport={handleExportAiReport}
-              onGenerateAiReport={handleGenerateAiReport}
-              onGenerateEmailDigest={handleGenerateEmailDigest}
-              aiConfigured={isAiConfigured(aiSettings)}
-              onAiSettingsChange={handleAiSettingsChange}
-              projectName={project.name}
             />
           ) : activeTab === 'todo' ? (
             <TodoView
@@ -772,37 +595,6 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         task={editingTask}
         insertAfterId={insertAfterId}
       />
-
-      {/* AI Assistant floating button — visible on Project Plan tab */}
-      {activeTab === 'schedule' && !showAiAssistant && (
-        <button
-          onClick={() => setShowAiAssistant(true)}
-          className="fixed bottom-6 right-6 z-30 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full w-12 h-12 shadow-lg flex items-center justify-center transition-all hover:scale-105"
-          title="AI Plan Assistant"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-          </svg>
-        </button>
-      )}
-
-      {/* AI Assistant slide-out panel */}
-      <Suspense fallback={null}>
-        <AiAssistantPanel
-          isOpen={showAiAssistant}
-          onClose={() => setShowAiAssistant(false)}
-          aiSettings={aiSettings}
-          currentTasks={projectData}
-          onApplyTasks={handleApplyAiTasks}
-          onOpenSettings={() => setShowAiSettingsModal(true)}
-        />
-        {showAiSettingsModal && (
-          <AiSettingsModal
-            onClose={() => setShowAiSettingsModal(false)}
-            onSettingsChange={handleAiSettingsChange}
-          />
-        )}
-      </Suspense>
     </div>
   );
 }
