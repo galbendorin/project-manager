@@ -19,6 +19,14 @@ import {
   REGISTER_IMPORT_SHEET_CANDIDATES
 } from './utils/importParsers';
 import { buildAiReportExportData } from './utils/aiReportExport';
+import { loadAiSettings, isAiConfigured } from './utils/aiSettings';
+import { generateAiContent } from './utils/aiClient';
+import {
+  buildReportPrompt,
+  getReportSystemPrompt,
+  buildEmailDigestPrompt,
+  getEmailDigestSystemPrompt
+} from './utils/aiPrompts';
 
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
@@ -66,6 +74,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [insertAfterId, setInsertAfterId] = useState(null);
   const [importStatus, setImportStatus] = useState(null);
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
+  const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
 
   const {
     projectData,
@@ -395,6 +404,75 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     }
   }, [project, projectData, registers, tracker, statusReport, todos]);
 
+  const handleGenerateAiReport = useCallback(async ({ dateFrom, dateTo, userNotes, signal, onChunk }) => {
+    if (!isAiConfigured(aiSettings)) {
+      return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
+    }
+
+    try {
+      const userMessage = buildReportPrompt({
+        project,
+        tasks: projectData,
+        registers,
+        tracker,
+        statusReport,
+        todos,
+        userNotes,
+        dateFrom,
+        dateTo
+      });
+
+      return await generateAiContent({
+        provider: aiSettings.provider,
+        apiKey: aiSettings.apiKey,
+        model: aiSettings.model,
+        systemPrompt: getReportSystemPrompt(),
+        userMessage,
+        maxTokens: 4096,
+        onChunk,
+        signal
+      });
+    } catch (err) {
+      return { ok: false, error: err?.message || 'AI generation failed' };
+    }
+  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings]);
+
+  const handleGenerateEmailDigest = useCallback(async ({ signal, onChunk }) => {
+    if (!isAiConfigured(aiSettings)) {
+      return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
+    }
+
+    try {
+      const userMessage = buildEmailDigestPrompt({
+        project,
+        tasks: projectData,
+        registers,
+        tracker,
+        statusReport,
+        todos,
+        dateFrom: null,
+        dateTo: null
+      });
+
+      return await generateAiContent({
+        provider: aiSettings.provider,
+        apiKey: aiSettings.apiKey,
+        model: aiSettings.model,
+        systemPrompt: getEmailDigestSystemPrompt(),
+        userMessage,
+        maxTokens: 2048,
+        onChunk,
+        signal
+      });
+    } catch (err) {
+      return { ok: false, error: err?.message || 'Email digest generation failed' };
+    }
+  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings]);
+
+  const handleAiSettingsChange = useCallback((newSettings) => {
+    setAiSettings(newSettings);
+  }, []);
+
   if (loadingData) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -470,6 +548,10 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         onImport={handleImport}
         onExport={handleExport}
         onExportAiReport={handleExportAiReport}
+        onGenerateAiReport={handleGenerateAiReport}
+        onGenerateEmailDigest={handleGenerateEmailDigest}
+        aiConfigured={isAiConfigured(aiSettings)}
+        onAiSettingsChange={handleAiSettingsChange}
         importStatus={importStatus}
 
         /* ── misc ── */
@@ -614,6 +696,11 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               statusReport={statusReport}
               onUpdateStatusReport={updateStatusReport}
               onExportAiReport={handleExportAiReport}
+              onGenerateAiReport={handleGenerateAiReport}
+              onGenerateEmailDigest={handleGenerateEmailDigest}
+              aiConfigured={isAiConfigured(aiSettings)}
+              onAiSettingsChange={handleAiSettingsChange}
+              projectName={project.name}
             />
           ) : activeTab === 'todo' ? (
             <TodoView
