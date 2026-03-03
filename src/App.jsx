@@ -1,15 +1,15 @@
 import React, { useState, useCallback, lazy, Suspense } from 'react';
 import { SCHEMAS } from './utils/constants';
 import { useAuth } from './contexts/AuthContext';
-import { usePlan } from './contexts/PlanContext';
 import AuthPage from './components/AuthPage';
 import ProjectSelector from './components/ProjectSelector';
 import Header from './components/Header';
 import Navigation from './components/Navigation';
 import TaskModal from './components/TaskModal';
 import DemoBenefitsModal from './components/DemoBenefitsModal';
-import { TrialBanner } from './components/UpgradeBanner';
 import { useProjectData } from './hooks/useProjectData';
+import { useMediaQuery } from './hooks/useMediaQuery';
+import MobileLayout from './components/mobile/MobileLayout';
 import {
   loadXLSX,
   parseScheduleSheet,
@@ -32,8 +32,8 @@ function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-slate-400 text-lg">Loading...</div>
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-gray-400 text-lg">Loading...</div>
       </div>
     );
   }
@@ -56,6 +56,8 @@ function App() {
 }
 
 function MainApp({ project, currentUserId, onBackToProjects }) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+
   const [activeTab, setActiveTab] = useState('schedule');
   const [viewMode, setViewMode] = useState('week');
   const [isExternalView, setIsExternalView] = useState(false);
@@ -64,9 +66,6 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [insertAfterId, setInsertAfterId] = useState(null);
   const [importStatus, setImportStatus] = useState(null);
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
-
-  // Monetisation gating
-  const { canExport, canUseAiReport, canBaseline, incrementAiReports } = usePlan();
 
   const {
     projectData,
@@ -142,10 +141,11 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     setRegisters(prev => {
       const cleanedActions = prev.actions.map(action => {
         if (action.description) {
+          // Remove duplicate text patterns like "Text\nText" or "Text Text"
           const cleaned = action.description
             .trim()
-            .replace(/(.+)\n\1/g, '$1')
-            .replace(/^(.+?)\s+\1$/g, '$1');
+            .replace(/(.+)\n\1/g, '$1')  // Remove newline duplicates
+            .replace(/^(.+?)\s+\1$/g, '$1');  // Remove space duplicates
           
           return {
             ...action,
@@ -298,13 +298,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     }
   };
 
-  // Export to Excel — gated by plan
+  // Export to Excel (includes tracker + status report)
   const handleExport = async () => {
-    if (!canExport) {
-      alert('Export is available on the Team plan. Upgrade to export your projects to Excel.');
-      return;
-    }
-
     try {
       setImportStatus('Exporting...');
       const XLSX = await loadXLSX();
@@ -362,13 +357,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     }
   };
 
-  // AI Report export — gated by plan
   const handleExportAiReport = useCallback(async ({ dateFrom, dateTo, userNotes }) => {
-    if (!canUseAiReport) {
-      alert('You\'ve used all your AI reports for this period. Upgrade for more.');
-      return { ok: false, error: 'limit_reached' };
-    }
-
     try {
       setImportStatus('Exporting AI report...');
       const XLSX = await loadXLSX();
@@ -395,10 +384,6 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
       const fileName = `${reportData.fileNameBase}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, fileName);
-
-      // Increment AI report counter
-      await incrementAiReports();
-
       setImportStatus(`✓ Exported: ${fileName}`);
       setTimeout(() => setImportStatus(null), 4000);
       return { ok: true, fileName };
@@ -408,30 +393,102 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       setTimeout(() => setImportStatus(null), 4000);
       return { ok: false, error: err?.message || 'Unknown export error' };
     }
-  }, [project, projectData, registers, tracker, statusReport, todos, canUseAiReport, incrementAiReports]);
-
-  // Baseline — gated by plan
-  const handleSetBaseline = useCallback(() => {
-    if (!canBaseline) {
-      alert('Baseline tracking is available on the Team plan. Upgrade to compare planned vs actual progress.');
-      return;
-    }
-    setBaseline(projectData);
-  }, [canBaseline, setBaseline, projectData]);
+  }, [project, projectData, registers, tracker, statusReport, todos]);
 
   if (loadingData) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-slate-400 text-lg">Loading project...</div>
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-gray-400 text-lg">Loading project...</div>
       </div>
     );
   }
 
+  /* ───────────────────────────────────────────────
+   * MOBILE LAYOUT — same data, alternative renderer
+   * ─────────────────────────────────────────────── */
+  if (isMobile) {
+    return (
+      <MobileLayout
+        /* ── project context ── */
+        project={project}
+        currentUserId={currentUserId}
+        onBackToProjects={onBackToProjects}
+
+        /* ── data from useProjectData ── */
+        projectData={projectData}
+        registers={registers}
+        tracker={tracker}
+        statusReport={statusReport}
+        todos={todos}
+        baseline={baseline}
+
+        /* ── save state ── */
+        saving={saving}
+        lastSaved={lastSaved}
+        saveConflict={saveConflict}
+        saveError={saveError}
+
+        /* ── task CRUD ── */
+        addTask={addTask}
+        updateTask={updateTask}
+        deleteTask={deleteTask}
+        modifyHierarchy={modifyHierarchy}
+        toggleTrackTask={toggleTrackTask}
+
+        /* ── register CRUD ── */
+        addRegisterItem={addRegisterItem}
+        updateRegisterItem={updateRegisterItem}
+        deleteRegisterItem={deleteRegisterItem}
+        toggleItemPublic={toggleItemPublic}
+
+        /* ── tracker ── */
+        sendToTracker={sendToTracker}
+        removeFromTracker={removeFromTracker}
+        updateTrackerItem={updateTrackerItem}
+        isInTracker={isInTracker}
+        handleRemoveFromTracker={handleRemoveFromTracker}
+
+        /* ── action log ── */
+        handleSendToActionLog={handleSendToActionLog}
+        handleRemoveFromActionLog={handleRemoveFromActionLog}
+
+        /* ── status report ── */
+        updateStatusReport={updateStatusReport}
+
+        /* ── todos ── */
+        addTodo={addTodo}
+        updateTodo={updateTodo}
+        deleteTodo={deleteTodo}
+
+        /* ── baseline ── */
+        setBaseline={setBaseline}
+        clearBaseline={clearBaseline}
+
+        /* ── demo / import-export ── */
+        loadDemoDataAllTabs={handleLoadDemoData}
+        resetDemoData={handleResetDemoData}
+        onImport={handleImport}
+        onExport={handleExport}
+        onExportAiReport={handleExportAiReport}
+        importStatus={importStatus}
+
+        /* ── misc ── */
+        isExternalView={isExternalView}
+        onToggleExternalView={() => setIsExternalView(!isExternalView)}
+        reloadProject={reloadProject}
+        handleNavigateToSchedule={handleNavigateToSchedule}
+        handleReorderTask={handleReorderTask}
+        setProjectData={setProjectData}
+        setRegisters={setRegisters}
+      />
+    );
+  }
+
+  /* ───────────────────────────────────────────────
+   * DESKTOP LAYOUT — unchanged
+   * ─────────────────────────────────────────────── */
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      {/* Trial/Upgrade Banner */}
-      <TrialBanner />
-
       {/* Save Status Bar */}
       <div className="bg-gray-800 border-b border-gray-700 px-3 sm:px-4 py-1.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 text-xs">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -501,7 +558,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
           addRegisterItem(activeTab);
         }}
         addEntryLabel={activeTab === 'todo' ? 'Add ToDo' : 'Add Entry'}
-        onSetBaseline={handleSetBaseline}
+        onSetBaseline={setBaseline}
         onClearBaseline={clearBaseline}
         hasBaseline={!!baseline}
         activeTab={activeTab}
