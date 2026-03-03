@@ -97,6 +97,8 @@ const AiReportPanel = ({
     setErrorMsg('');
   };
 
+  const showPayloadHint = /request too large|payload|body too large/i.test(errorMsg || '');
+
   // Not configured — show setup prompt
   if (!isConfigured) {
     return (
@@ -152,6 +154,11 @@ const AiReportPanel = ({
           {status === 'error' && (
             <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
               {errorMsg}
+            </div>
+          )}
+          {status === 'error' && showPayloadHint && (
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Tip: reduce the reporting date range and keep notes shorter, then retry.
             </div>
           )}
           <button
