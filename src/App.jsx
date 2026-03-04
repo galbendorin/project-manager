@@ -9,6 +9,7 @@ import TaskModal from './components/TaskModal';
 import DemoBenefitsModal from './components/DemoBenefitsModal';
 import { useProjectData } from './hooks/useProjectData';
 import { useMediaQuery } from './hooks/useMediaQuery';
+import { usePlan } from './contexts/PlanContext';
 import MobileLayout from './components/mobile/MobileLayout';
 import {
   loadXLSX,
@@ -65,6 +66,7 @@ function App() {
 
 function MainApp({ project, currentUserId, onBackToProjects }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const { canUseAiReport, aiReportsRemaining, incrementAiReports, limits, effectivePlan } = usePlan();
 
   const [activeTab, setActiveTab] = useState('schedule');
   const [viewMode, setViewMode] = useState('week');
@@ -409,6 +411,10 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
     }
 
+    if (!canUseAiReport) {
+      return { ok: false, error: `You\u2019ve reached your AI report limit (${limits.aiReportsPerMonth}/month) for your ${effectivePlan} plan. Upgrade for more reports.` };
+    }
+
     try {
       const userMessage = buildReportPrompt({
         project,
@@ -422,7 +428,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         dateTo
       });
 
-      return await generateAiContent({
+      const result = await generateAiContent({
         provider: aiSettings.provider,
         apiKey: aiSettings.apiKey,
         model: aiSettings.model,
@@ -432,14 +438,24 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         onChunk,
         signal
       });
+
+      if (result?.ok) {
+        await incrementAiReports();
+      }
+
+      return result;
     } catch (err) {
       return { ok: false, error: err?.message || 'AI generation failed' };
     }
-  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings]);
+  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings, canUseAiReport, incrementAiReports, limits, effectivePlan]);
 
   const handleGenerateEmailDigest = useCallback(async ({ signal, onChunk }) => {
     if (!isAiConfigured(aiSettings)) {
       return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
+    }
+
+    if (!canUseAiReport) {
+      return { ok: false, error: `You\u2019ve reached your AI report limit (${limits.aiReportsPerMonth}/month) for your ${effectivePlan} plan. Upgrade for more reports.` };
     }
 
     try {
@@ -454,7 +470,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         dateTo: null
       });
 
-      return await generateAiContent({
+      const result = await generateAiContent({
         provider: aiSettings.provider,
         apiKey: aiSettings.apiKey,
         model: aiSettings.model,
@@ -464,10 +480,16 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         onChunk,
         signal
       });
+
+      if (result?.ok) {
+        await incrementAiReports();
+      }
+
+      return result;
     } catch (err) {
       return { ok: false, error: err?.message || 'Email digest generation failed' };
     }
-  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings]);
+  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings, canUseAiReport, incrementAiReports, limits, effectivePlan]);
 
   const handleAiSettingsChange = useCallback((newSettings) => {
     setAiSettings(newSettings);
@@ -552,6 +574,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         onGenerateEmailDigest={handleGenerateEmailDigest}
         aiConfigured={isAiConfigured(aiSettings)}
         onAiSettingsChange={handleAiSettingsChange}
+        canUseAiReport={canUseAiReport}
+        aiReportsRemaining={aiReportsRemaining}
+        aiReportsLimit={limits.aiReportsPerMonth}
         importStatus={importStatus}
 
         /* ── misc ── */
@@ -701,6 +726,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               aiConfigured={isAiConfigured(aiSettings)}
               onAiSettingsChange={handleAiSettingsChange}
               projectName={project.name}
+              canUseAiReport={canUseAiReport}
+              aiReportsRemaining={aiReportsRemaining}
+              aiReportsLimit={limits.aiReportsPerMonth}
             />
           ) : activeTab === 'todo' ? (
             <TodoView

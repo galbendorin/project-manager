@@ -66,7 +66,10 @@ const StatusReportView = ({
   onGenerateEmailDigest,
   aiConfigured,
   onAiSettingsChange,
-  projectName
+  projectName,
+  canUseAiReport,
+  aiReportsRemaining,
+  aiReportsLimit
 }) => {
   // Date range state
   const [dateFrom, setDateFrom] = useState(daysAgo(14));
@@ -425,6 +428,9 @@ const StatusReportView = ({
           onGenerate={onGenerateAiReport}
           dateFrom={dateFrom}
           dateTo={dateTo}
+          canUseAiReport={canUseAiReport}
+          aiReportsRemaining={aiReportsRemaining}
+          aiReportsLimit={aiReportsLimit}
         />
 
         {showAiSettings && (

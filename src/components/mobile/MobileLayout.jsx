@@ -57,6 +57,9 @@ const MobileLayout = ({
   onGenerateEmailDigest,
   aiConfigured,
   onAiSettingsChange,
+  canUseAiReport,
+  aiReportsRemaining,
+  aiReportsLimit,
   // Other
   currentUserId,
   isExternalView,
@@ -151,6 +154,9 @@ const MobileLayout = ({
                 aiConfigured={aiConfigured}
                 onAiSettingsChange={onAiSettingsChange}
                 projectName={project.name}
+                canUseAiReport={canUseAiReport}
+                aiReportsRemaining={aiReportsRemaining}
+                aiReportsLimit={aiReportsLimit}
               />
             </Suspense>
           </div>

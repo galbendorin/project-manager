@@ -36,7 +36,10 @@ const AiReportPanel = ({
   onOpenSettings,
   onGenerate,
   dateFrom,
-  dateTo
+  dateTo,
+  canUseAiReport = true,
+  aiReportsRemaining = null,
+  aiReportsLimit = null
 }) => {
   const [status, setStatus] = useState('idle'); // idle | generating | done | error
   const [streamText, setStreamText] = useState('');
@@ -139,6 +142,26 @@ const AiReportPanel = ({
       {/* Input area — show when idle or error */}
       {(status === 'idle' || status === 'error') && (
         <div className="space-y-3">
+          {/* AI usage badge */}
+          {aiReportsLimit != null && (
+            <div className={`flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-lg border ${
+              canUseAiReport
+                ? aiReportsRemaining <= 2
+                  ? 'text-amber-700 bg-amber-50 border-amber-200'
+                  : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                : 'text-rose-700 bg-rose-50 border-rose-200'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                canUseAiReport
+                  ? aiReportsRemaining <= 2 ? 'bg-amber-500' : 'bg-emerald-500'
+                  : 'bg-rose-500'
+              }`} />
+              {aiReportsLimit >= 999
+                ? <span>AI Reports: <strong>Unlimited</strong></span>
+                : <span>AI Reports: <strong>{aiReportsRemaining}</strong> of {aiReportsLimit} remaining this month</span>
+              }
+            </div>
+          )}
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
               Context Notes (Optional)
@@ -163,9 +186,14 @@ const AiReportPanel = ({
           )}
           <button
             onClick={handleGenerate}
-            className="text-[11px] font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-md transition-all"
+            disabled={!canUseAiReport}
+            className={`text-[11px] font-medium px-4 py-2 rounded-md transition-all ${
+              canUseAiReport
+                ? 'text-white bg-indigo-600 hover:bg-indigo-700'
+                : 'text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed'
+            }`}
           >
-            Generate Report
+            {canUseAiReport ? 'Generate Report' : 'Report Limit Reached'}
           </button>
         </div>
       )}
