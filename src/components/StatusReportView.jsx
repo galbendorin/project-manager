@@ -203,7 +203,7 @@ const StatusReportView = ({
   // Top open risks
   const topRisks = useMemo(() => {
     if (!registers?.risks) return [];
-    return registers.risks.filter(r => r.level && r.level.toString().toLowerCase() !== 'closed').slice(0, 5);
+    return registers.risks.filter(r => r.level && r.level.toString().toLowerCase() !== 'closed');
   }, [registers]);
 
   // Top open issues
@@ -212,7 +212,7 @@ const StatusReportView = ({
     return registers.issues.filter(i => {
       const status = (i.status || '').toLowerCase();
       return status !== 'closed' && status !== 'completed';
-    }).slice(0, 5);
+    });
   }, [registers]);
 
   const ragStyle = RAG_STYLES[statusReport.overallRag] || RAG_STYLES.Green;
