@@ -131,32 +131,33 @@ const ScheduleView = ({
           <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-200 border border-emerald-300" /> Complete</span>
           <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-indigo-300 text-indigo-700 bg-indigo-50 text-[9px] font-semibold">MT+</span> Master Tracker</span>
           <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-emerald-300 text-emerald-700 bg-emerald-50 text-[9px] font-semibold">AL+</span> Action Log</span>
-          <button
-            onClick={() => setShowAiPanel(true)}
-            className="ml-auto text-[10px] text-indigo-500 hover:text-indigo-700 font-medium transition-colors flex items-center gap-1"
-          >
-            AI Assistant
-          </button>
-          <button onClick={() => setShowLegend(false)} className="text-slate-400 hover:text-slate-600 text-[10px]">✕</button>
+          <button onClick={() => setShowLegend(false)} className="ml-auto text-slate-400 hover:text-slate-600 text-[10px]">✕</button>
         </div>
       )}
-      {!showLegend && (
-        <div className="flex-none px-2 py-0.5 bg-slate-50 border-b border-slate-200 flex justify-end gap-2">
+
+      {/* AI Assistant banner — always visible */}
+      <div className="flex-none px-3 py-2 bg-gradient-to-r from-indigo-50 to-violet-50 border-b border-indigo-100 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => setShowAiPanel(true)}
-            className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium transition-colors flex items-center gap-1"
+            className="flex-none flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-semibold rounded-lg shadow-sm transition-all"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
               <circle cx="10" cy="15" r="1" /><circle cx="14" cy="15" r="1" />
             </svg>
-            AI Assistant
+            AI Plan Assistant
           </button>
-          <button onClick={() => setShowLegend(true)} className="text-[10px] text-slate-400 hover:text-indigo-600 transition-colors">
+          <span className="text-[11px] text-slate-500 leading-snug">
+            Create or edit your plan using text or voice — <em>"Add a 2-week testing phase"</em>, <em>"Extend task 5 by 3 days"</em>, <em>"Build me a 6-month product launch plan"</em>
+          </span>
+        </div>
+        {!showLegend && (
+          <button onClick={() => setShowLegend(true)} className="flex-none text-[10px] text-slate-400 hover:text-indigo-600 transition-colors whitespace-nowrap">
             Show legend
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* AI Assistant Panel (slide-over drawer) */}
       <AiAssistantPanel

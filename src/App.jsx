@@ -66,7 +66,7 @@ function App() {
 
 function MainApp({ project, currentUserId, onBackToProjects }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const { canUseAiReport, aiReportsRemaining, incrementAiReports, limits, effectivePlan, isTrialActive } = usePlan();
+  const { canUseAiReport, aiReportsRemaining, incrementAiReports, limits, effectivePlan, isTrialActive, isAdmin } = usePlan();
 
   const [activeTab, setActiveTab] = useState('schedule');
   const [viewMode, setViewMode] = useState('week');
@@ -78,9 +78,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
   const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
 
-  // Trial users without their own key use the server-side platform key
+  // Trial users and admins without their own key use the server-side platform key
   const hasByok = isAiConfigured(aiSettings);
-  const usePlatformKey = isTrialActive && !hasByok;
+  const usePlatformKey = (isTrialActive || isAdmin) && !hasByok;
   const aiReady = hasByok || usePlatformKey;
 
   const {

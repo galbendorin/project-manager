@@ -6,6 +6,11 @@ const PlanContext = createContext({});
 
 export const usePlan = () => useContext(PlanContext);
 
+// ── Admin / owner accounts — always get team-level access ────────────
+const ADMIN_EMAILS = [
+  'galben.dorin@yahoo.com'
+];
+
 // ── Plan limits ──────────────────────────────────────────────
 const PLAN_LIMITS = {
   trial: {
@@ -131,7 +136,14 @@ export const PlanProvider = ({ children }) => {
   }, [loadProfile, loadProjectCount]);
 
   // ── Derived state ───────────────────────────────────────────
+  const isAdmin = useMemo(() => {
+    return user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
+  }, [user]);
+
   const effectivePlan = useMemo(() => {
+    // Admin override — always team
+    if (isAdmin) return 'team';
+
     if (!profile) return 'trial';
 
     if (profile.plan === 'trial') {
@@ -141,7 +153,7 @@ export const PlanProvider = ({ children }) => {
       }
     }
     return profile.plan;
-  }, [profile]);
+  }, [profile, isAdmin]);
 
   const limits = useMemo(() => PLAN_LIMITS[effectivePlan] || PLAN_LIMITS.expired, [effectivePlan]);
 
@@ -221,6 +233,7 @@ export const PlanProvider = ({ children }) => {
     isTrialExpired,
     isPaid,
     trialDaysLeft,
+    isAdmin,
 
     // Gating booleans
     canCreateProject,
@@ -236,7 +249,7 @@ export const PlanProvider = ({ children }) => {
     refreshProfile,
   }), [
     profile, loading, effectivePlan, limits, projectCount,
-    isTrialActive, isTrialExpired, isPaid, trialDaysLeft,
+    isTrialActive, isTrialExpired, isPaid, trialDaysLeft, isAdmin,
     canCreateProject, canUseAiReport, canExport, canBaseline,
     aiReportsRemaining, getTaskLimit,
     incrementAiReports, refreshProjectCount, refreshProfile,
