@@ -287,6 +287,22 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         );
       }
 
+      const minutesSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.minutes);
+      if (minutesSheet) {
+        newRegisters.minutes = parseRegisterSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[minutesSheet], { raw: false }),
+          REGISTER_IMPORT_COLUMN_MAPS.minutes
+        );
+      }
+
+      const costsSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.costs);
+      if (costsSheet) {
+        newRegisters.costs = parseRegisterSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[costsSheet], { raw: false }),
+          REGISTER_IMPORT_COLUMN_MAPS.costs
+        );
+      }
+
       setProjectData(tasks);
       setRegisters(prev => ({
         ...prev,
@@ -302,6 +318,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         newRegisters.actions.length > 0 ? `${newRegisters.actions.length} actions` : null,
         newRegisters.changes.length > 0 ? `${newRegisters.changes.length} changes` : null,
         newRegisters.comms.length > 0 ? `${newRegisters.comms.length} comms` : null,
+        newRegisters.minutes.length > 0 ? `${newRegisters.minutes.length} minutes` : null,
+        newRegisters.costs.length > 0 ? `${newRegisters.costs.length} costs` : null,
       ].filter(Boolean).join(', ');
 
       setImportStatus(`✓ Imported: ${summary}`);

@@ -136,27 +136,27 @@ const ScheduleView = ({
       )}
 
       {/* AI Assistant banner — always visible */}
-      <div className="flex-none px-3 py-2 bg-gradient-to-r from-indigo-50 to-violet-50 border-b border-indigo-100 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex-none px-4 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 border-b border-indigo-700 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
           <button
             onClick={() => setShowAiPanel(true)}
-            className="flex-none flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-semibold rounded-lg shadow-sm transition-all"
+            className="flex-none flex items-center gap-2.5 px-5 py-2.5 bg-white hover:bg-indigo-50 text-indigo-700 text-[13px] font-bold rounded-lg shadow-md hover:shadow-lg transition-all"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
-              <circle cx="10" cy="15" r="1" /><circle cx="14" cy="15" r="1" />
-            </svg>
+            <span className="text-[16px]">🤖</span>
             AI Plan Assistant
+            <span className="text-[10px] font-medium bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">NEW</span>
           </button>
-          <span className="text-[11px] text-slate-500 leading-snug">
-            Create or edit your plan using text or voice — <em>"Add a 2-week testing phase"</em>, <em>"Extend task 5 by 3 days"</em>, <em>"Build me a 6-month product launch plan"</em>
+          <span className="text-[12px] text-indigo-100 leading-snug hidden sm:inline">
+            Build &amp; edit your project plan with text or voice — try <em className="text-white font-medium">"Add a 2-week testing phase"</em> or <em className="text-white font-medium">"Build me a product launch plan"</em>
           </span>
         </div>
-        {!showLegend && (
-          <button onClick={() => setShowLegend(true)} className="flex-none text-[10px] text-slate-400 hover:text-indigo-600 transition-colors whitespace-nowrap">
-            Show legend
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!showLegend && (
+            <button onClick={() => setShowLegend(true)} className="flex-none text-[10px] text-indigo-200 hover:text-white transition-colors whitespace-nowrap">
+              Legend
+            </button>
+          )}
+        </div>
       </div>
 
       {/* AI Assistant Panel (slide-over drawer) */}

@@ -43,13 +43,49 @@ const COLUMN_MAP_ACTIONS = {
 };
 
 const COLUMN_MAP_CHANGES = {
-  ID: 'number', Description: 'description', 'Raised By': 'raisedby',
-  Cost: 'cost', 'Time Impact': 'timeimpact', Status: 'status', Internal: '_internal'
+  Number: 'number', ID: 'number',
+  Category: 'category',
+  'Assigned to': 'assignedto',
+  Description: 'description',
+  'Impact/Status': 'impactstatus',
+  Status: 'status',
+  Raised: 'raised',
+  Target: 'target',
+  Updated: 'updated',
+  Complete: 'complete',
+  Internal: '_internal'
 };
 
 const COLUMN_MAP_COMMS = {
-  ID: 'number', Stakeholder: 'stakeholder', 'Info Required': 'inforequired',
-  Frequency: 'frequency', Method: 'method', Provider: 'provider', Internal: '_internal'
+  Number: 'number', ID: 'number',
+  Company: 'company',
+  Name: 'name',
+  Position: 'position',
+  Mobile: 'mobile',
+  Phone: 'phone',
+  Email: 'email',
+  Internal: '_internal'
+};
+
+const COLUMN_MAP_MINUTES = {
+  Number: 'number', ID: 'number',
+  'Date Raised': 'dateraised',
+  'Minute Description': 'minutedescription',
+  Status: 'status',
+  Internal: '_internal'
+};
+
+const COLUMN_MAP_COSTS = {
+  Number: 'number', ID: 'number',
+  'Cost Description': 'costdescription',
+  'Date Raised': 'dateraised',
+  'Site Name': 'sitename',
+  Cost: 'cost',
+  'To be charged to': 'tobechargedto',
+  'Accepted by': 'acceptedby',
+  Date: 'date',
+  Billing: 'billing',
+  Internal: '_internal'
 };
 
 export const REGISTER_IMPORT_COLUMN_MAPS = {
@@ -57,7 +93,9 @@ export const REGISTER_IMPORT_COLUMN_MAPS = {
   issues: COLUMN_MAP_ISSUES,
   actions: COLUMN_MAP_ACTIONS,
   changes: COLUMN_MAP_CHANGES,
-  comms: COLUMN_MAP_COMMS
+  comms: COLUMN_MAP_COMMS,
+  minutes: COLUMN_MAP_MINUTES,
+  costs: COLUMN_MAP_COSTS
 };
 
 export const REGISTER_IMPORT_SHEET_CANDIDATES = {
@@ -65,7 +103,9 @@ export const REGISTER_IMPORT_SHEET_CANDIDATES = {
   issues: ['Issues', 'Issue Log', 'Issue Register'],
   actions: ['Actions', 'Action Log', 'Action Register'],
   changes: ['Changes', 'Change Log', 'Change Register'],
-  comms: ['Comms', 'Comms Plan', 'Communications']
+  comms: ['Comms', 'Comms Plan', 'Communications'],
+  minutes: ['Minutes', 'Minutes Log', 'Meeting Minutes'],
+  costs: ['Costs', 'Cost Register', 'Cost Log']
 };
 
 function mapRow(row, columnMap) {
