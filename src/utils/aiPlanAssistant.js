@@ -220,7 +220,8 @@ export const createPlan = async ({ description, settings, onChunk, signal }) => 
       fullText = full
       onChunk(chunk, full)
     } : undefined,
-    signal
+    signal,
+    usePlatformKey: settings.usePlatformKey || false
   })
 
   if (!result.ok) return { ok: false, error: result.error }
@@ -251,7 +252,8 @@ export const editPlan = async ({ tasks, userRequest, settings, onChunk, signal }
       fullText = full
       onChunk(chunk, full)
     } : undefined,
-    signal
+    signal,
+    usePlatformKey: settings.usePlatformKey || false
   })
 
   if (!result.ok) return { ok: false, error: result.error }

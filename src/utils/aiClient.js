@@ -39,14 +39,15 @@ const normalizeAiError = (message = '', status) => {
  * Generate AI content via the proxy
  * 
  * @param {Object} params
- * @param {string} params.provider - 'anthropic' or 'openai'
- * @param {string} params.apiKey - User's API key
+ * @param {string} params.provider - 'anthropic', 'openai', or 'gemini'
+ * @param {string} [params.apiKey] - User's API key (optional if usePlatformKey)
  * @param {string} params.model - Model identifier
  * @param {string} params.systemPrompt - System prompt
  * @param {string} params.userMessage - User message content
  * @param {number} [params.maxTokens=4096] - Max tokens in response
  * @param {function} [params.onChunk] - Streaming callback (text chunk) — optional
  * @param {AbortSignal} [params.signal] - AbortController signal for cancellation
+ * @param {boolean} [params.usePlatformKey=false] - Use server-side platform key (trial users)
  * @returns {Promise<{ok: boolean, text?: string, error?: string}>}
  */
 export const generateAiContent = async ({
@@ -57,25 +58,29 @@ export const generateAiContent = async ({
   userMessage,
   maxTokens = 4096,
   onChunk,
-  signal
+  signal,
+  usePlatformKey = false
 }) => {
   try {
     const safeUserMessage = truncatePrompt(userMessage)
     const safeSystemPrompt = truncatePrompt(systemPrompt, 20_000)
 
+    const headers = { 'Content-Type': 'application/json' }
+    if (apiKey && !usePlatformKey) {
+      headers['X-Api-Key'] = apiKey
+    }
+
     const response = await fetch(API_ENDPOINT, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Key': apiKey
-      },
+      headers,
       body: JSON.stringify({
         provider,
         model,
         systemPrompt: safeSystemPrompt,
         userMessage: safeUserMessage,
         maxTokens,
-        stream: !!onChunk
+        stream: !!onChunk,
+        ...(usePlatformKey ? { usePlatformKey: true } : {})
       }),
       signal
     })

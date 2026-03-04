@@ -72,7 +72,7 @@ const ChatMessage = ({ msg }) => {
 
 // ── Main component ───────────────────────────────────────────────────
 
-const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTasks, onOpenSettings }) => {
+const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTasks, onOpenSettings, usePlatformKey = false }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -104,8 +104,13 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
     };
   }, []);
 
-  const configured = isAiConfigured(aiSettings);
+  const configured = isAiConfigured(aiSettings) || usePlatformKey;
   const hasTasks = currentTasks && currentTasks.length > 0;
+
+  // Build effective settings for AI calls (platform key mode uses server defaults)
+  const effectiveSettings = usePlatformKey && !isAiConfigured(aiSettings)
+    ? { provider: 'gemini', apiKey: '', model: 'gemini-2.0-flash-lite', usePlatformKey: true }
+    : { ...aiSettings, usePlatformKey: false };
 
   const addMessage = useCallback((msg) => {
     setMessages(prev => [...prev, { ...msg, id: Date.now() + Math.random() }]);
@@ -181,14 +186,14 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
         result = await editPlan({
           tasks: currentTasks,
           userRequest: text,
-          settings: aiSettings,
+          settings: effectiveSettings,
           signal: controller.signal
         });
       } else {
         // Create mode — generate new plan from description
         result = await createPlan({
           description: text,
-          settings: aiSettings,
+          settings: effectiveSettings,
           signal: controller.signal
         });
       }
@@ -227,7 +232,7 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
 
     abortRef.current = null;
     setIsProcessing(false);
-  }, [input, isProcessing, hasTasks, currentTasks, aiSettings, addMessage]);
+  }, [input, isProcessing, hasTasks, currentTasks, effectiveSettings, addMessage]);
 
   const handleApply = useCallback((tasks) => {
     onApplyTasks(tasks);
@@ -271,7 +276,14 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
         {/* Header */}
         <div className="flex-none px-4 py-3 border-b border-slate-200 flex items-center justify-between">
           <div>
-            <h2 className="text-[13px] font-bold text-slate-800">AI Plan Assistant</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[13px] font-bold text-slate-800">AI Plan Assistant</h2>
+              {usePlatformKey && !isAiConfigured(aiSettings) && (
+                <span className="text-[9px] font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
+                  Trial
+                </span>
+              )}
+            </div>
             <p className="text-[10px] text-slate-400 mt-0.5">
               {hasTasks ? 'Describe changes to your plan' : 'Describe your project to generate a plan'}
             </p>

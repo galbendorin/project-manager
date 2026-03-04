@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import ScheduleGrid from './ScheduleGrid';
 import GanttChart from './GanttChart';
+import AiAssistantPanel from './AiAssistantPanel';
 import { buildVisibleTasks } from '../utils/helpers';
 
 const ScheduleView = ({ 
@@ -17,11 +18,17 @@ const ScheduleView = ({
   onSendToActionLog,
   onRemoveFromActionLog,
   onRemoveFromTracker,
-  isInTracker
+  isInTracker,
+  aiSettings,
+  onAiSettingsChange,
+  onApplyAiTasks,
+  usePlatformKey
 }) => {
   const resizerRef = useRef(null);
   const scrollSourceRef = useRef(null);
   const [leftPaneWidthPct, setLeftPaneWidthPct] = useState(55);
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [showAiSettings, setShowAiSettings] = useState(false);
 
   // Collapsed state lives here so both grid + Gantt stay in sync
   const [collapsedIndices, setCollapsedIndices] = useState(new Set());
@@ -124,16 +131,43 @@ const ScheduleView = ({
           <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-200 border border-emerald-300" /> Complete</span>
           <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-indigo-300 text-indigo-700 bg-indigo-50 text-[9px] font-semibold">MT+</span> Master Tracker</span>
           <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-emerald-300 text-emerald-700 bg-emerald-50 text-[9px] font-semibold">AL+</span> Action Log</span>
-          <button onClick={() => setShowLegend(false)} className="ml-auto text-slate-400 hover:text-slate-600 text-[10px]">✕</button>
+          <button
+            onClick={() => setShowAiPanel(true)}
+            className="ml-auto text-[10px] text-indigo-500 hover:text-indigo-700 font-medium transition-colors flex items-center gap-1"
+          >
+            AI Assistant
+          </button>
+          <button onClick={() => setShowLegend(false)} className="text-slate-400 hover:text-slate-600 text-[10px]">✕</button>
         </div>
       )}
       {!showLegend && (
-        <div className="flex-none px-2 py-0.5 bg-slate-50 border-b border-slate-200 flex justify-end">
+        <div className="flex-none px-2 py-0.5 bg-slate-50 border-b border-slate-200 flex justify-end gap-2">
+          <button
+            onClick={() => setShowAiPanel(true)}
+            className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium transition-colors flex items-center gap-1"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
+              <circle cx="10" cy="15" r="1" /><circle cx="14" cy="15" r="1" />
+            </svg>
+            AI Assistant
+          </button>
           <button onClick={() => setShowLegend(true)} className="text-[10px] text-slate-400 hover:text-indigo-600 transition-colors">
             Show legend
           </button>
         </div>
       )}
+
+      {/* AI Assistant Panel (slide-over drawer) */}
+      <AiAssistantPanel
+        isOpen={showAiPanel}
+        onClose={() => setShowAiPanel(false)}
+        aiSettings={aiSettings}
+        currentTasks={tasks}
+        onApplyTasks={onApplyAiTasks}
+        onOpenSettings={() => { setShowAiPanel(false); setShowAiSettings(true); }}
+        usePlatformKey={usePlatformKey}
+      />
 
       {/* Always side-by-side — scrolls horizontally on narrow screens */}
       <div className="flex-grow min-h-0 flex flex-row overflow-x-auto overflow-y-hidden">

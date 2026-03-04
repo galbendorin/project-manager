@@ -60,6 +60,7 @@ const MobileLayout = ({
   canUseAiReport,
   aiReportsRemaining,
   aiReportsLimit,
+  usePlatformKey,
   // Other
   currentUserId,
   isExternalView,
@@ -157,6 +158,7 @@ const MobileLayout = ({
                 canUseAiReport={canUseAiReport}
                 aiReportsRemaining={aiReportsRemaining}
                 aiReportsLimit={aiReportsLimit}
+                usePlatformKey={usePlatformKey}
               />
             </Suspense>
           </div>

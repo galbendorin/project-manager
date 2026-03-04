@@ -66,7 +66,7 @@ function App() {
 
 function MainApp({ project, currentUserId, onBackToProjects }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const { canUseAiReport, aiReportsRemaining, incrementAiReports, limits, effectivePlan } = usePlan();
+  const { canUseAiReport, aiReportsRemaining, incrementAiReports, limits, effectivePlan, isTrialActive } = usePlan();
 
   const [activeTab, setActiveTab] = useState('schedule');
   const [viewMode, setViewMode] = useState('week');
@@ -77,6 +77,11 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [importStatus, setImportStatus] = useState(null);
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
   const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
+
+  // Trial users without their own key use the server-side platform key
+  const hasByok = isAiConfigured(aiSettings);
+  const usePlatformKey = isTrialActive && !hasByok;
+  const aiReady = hasByok || usePlatformKey;
 
   const {
     projectData,
@@ -407,7 +412,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   }, [project, projectData, registers, tracker, statusReport, todos]);
 
   const handleGenerateAiReport = useCallback(async ({ dateFrom, dateTo, userNotes, signal, onChunk }) => {
-    if (!isAiConfigured(aiSettings)) {
+    if (!aiReady) {
       return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
     }
 
@@ -436,7 +441,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         userMessage,
         maxTokens: 4096,
         onChunk,
-        signal
+        signal,
+        usePlatformKey
       });
 
       if (result?.ok) {
@@ -447,10 +453,10 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     } catch (err) {
       return { ok: false, error: err?.message || 'AI generation failed' };
     }
-  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings, canUseAiReport, incrementAiReports, limits, effectivePlan]);
+  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings, canUseAiReport, incrementAiReports, limits, effectivePlan, aiReady, usePlatformKey]);
 
   const handleGenerateEmailDigest = useCallback(async ({ signal, onChunk }) => {
-    if (!isAiConfigured(aiSettings)) {
+    if (!aiReady) {
       return { ok: false, error: 'AI not configured. Please add your API key in settings.' };
     }
 
@@ -478,7 +484,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         userMessage,
         maxTokens: 2048,
         onChunk,
-        signal
+        signal,
+        usePlatformKey
       });
 
       if (result?.ok) {
@@ -489,7 +496,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     } catch (err) {
       return { ok: false, error: err?.message || 'Email digest generation failed' };
     }
-  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings, canUseAiReport, incrementAiReports, limits, effectivePlan]);
+  }, [project, projectData, registers, tracker, statusReport, todos, aiSettings, canUseAiReport, incrementAiReports, limits, effectivePlan, aiReady, usePlatformKey]);
 
   const handleAiSettingsChange = useCallback((newSettings) => {
     setAiSettings(newSettings);
@@ -572,11 +579,12 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         onExportAiReport={handleExportAiReport}
         onGenerateAiReport={handleGenerateAiReport}
         onGenerateEmailDigest={handleGenerateEmailDigest}
-        aiConfigured={isAiConfigured(aiSettings)}
+        aiConfigured={aiReady}
         onAiSettingsChange={handleAiSettingsChange}
         canUseAiReport={canUseAiReport}
         aiReportsRemaining={aiReportsRemaining}
         aiReportsLimit={limits.aiReportsPerMonth}
+        usePlatformKey={usePlatformKey}
         importStatus={importStatus}
 
         /* ── misc ── */
@@ -703,6 +711,10 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               onRemoveFromActionLog={handleRemoveFromActionLog}
               onRemoveFromTracker={handleRemoveFromTracker}
               isInTracker={isInTracker}
+              aiSettings={aiSettings}
+              onAiSettingsChange={handleAiSettingsChange}
+              onApplyAiTasks={setProjectData}
+              usePlatformKey={usePlatformKey}
             />
           ) : activeTab === 'tracker' ? (
             <TrackerView
@@ -723,12 +735,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               onExportAiReport={handleExportAiReport}
               onGenerateAiReport={handleGenerateAiReport}
               onGenerateEmailDigest={handleGenerateEmailDigest}
-              aiConfigured={isAiConfigured(aiSettings)}
+              aiConfigured={aiReady}
               onAiSettingsChange={handleAiSettingsChange}
               projectName={project.name}
               canUseAiReport={canUseAiReport}
               aiReportsRemaining={aiReportsRemaining}
               aiReportsLimit={limits.aiReportsPerMonth}
+              usePlatformKey={usePlatformKey}
             />
           ) : activeTab === 'todo' ? (
             <TodoView

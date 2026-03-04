@@ -39,7 +39,8 @@ const AiReportPanel = ({
   dateTo,
   canUseAiReport = true,
   aiReportsRemaining = null,
-  aiReportsLimit = null
+  aiReportsLimit = null,
+  usePlatformKey = false
 }) => {
   const [status, setStatus] = useState('idle'); // idle | generating | done | error
   const [streamText, setStreamText] = useState('');
@@ -128,14 +129,21 @@ const AiReportPanel = ({
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-          AI Report Generation
+        <div className="flex items-center gap-2">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            AI Report Generation
+          </div>
+          {usePlatformKey && (
+            <span className="text-[9px] font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
+              Trial — Powered by Gemini
+            </span>
+          )}
         </div>
         <button
           onClick={onOpenSettings}
           className="text-[10px] text-slate-400 hover:text-indigo-600 font-medium transition-colors"
         >
-          Settings
+          {usePlatformKey ? 'Use Your Own Key' : 'Settings'}
         </button>
       </div>
 

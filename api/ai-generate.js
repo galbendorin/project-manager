@@ -46,10 +46,25 @@ export default async function handler(req, res) {
   }
 
   // Accept API key from header (preferred) or body (backward compat)
-  const apiKey = req.headers['x-api-key'] || req.body?.apiKey
-  const { provider, model, systemPrompt, userMessage, maxTokens = 4096, stream = false } = req.body || {}
+  const userApiKey = req.headers['x-api-key'] || req.body?.apiKey
+  const { provider, model, systemPrompt, userMessage, maxTokens = 4096, stream = false, usePlatformKey = false } = req.body || {}
 
-  if (!provider || !apiKey || !userMessage) {
+  // Platform key mode: trial users use the server-side Anthropic key
+  let apiKey = userApiKey
+  let resolvedProvider = provider
+  let resolvedModel = model
+
+  if (usePlatformKey && !userApiKey) {
+    const platformKey = process.env.PLATFORM_AI_KEY
+    if (!platformKey) {
+      return res.status(503).json({ error: 'Platform AI is temporarily unavailable. Please configure your own API key in AI Settings.' })
+    }
+    apiKey = platformKey
+    resolvedProvider = 'gemini'
+    resolvedModel = 'gemini-2.0-flash-lite' // Cost-efficient model for trial users
+  }
+
+  if (!resolvedProvider || !apiKey || !userMessage) {
     return res.status(400).json({ error: 'Missing required fields: provider, apiKey, userMessage' })
   }
 
@@ -57,14 +72,14 @@ export default async function handler(req, res) {
   const safeMaxTokens = Math.min(Math.max(parseInt(maxTokens) || 4096, 256), 16384)
 
   try {
-    if (provider === 'anthropic') {
-      return await handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
-    } else if (provider === 'openai') {
-      return await handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
-    } else if (provider === 'gemini') {
-      return await handleGemini({ apiKey, model, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
+    if (resolvedProvider === 'anthropic') {
+      return await handleAnthropic({ apiKey, model: resolvedModel, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
+    } else if (resolvedProvider === 'openai') {
+      return await handleOpenAI({ apiKey, model: resolvedModel, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
+    } else if (resolvedProvider === 'gemini') {
+      return await handleGemini({ apiKey, model: resolvedModel, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
     } else {
-      return res.status(400).json({ error: `Unsupported provider: ${provider}` })
+      return res.status(400).json({ error: `Unsupported provider: ${resolvedProvider}` })
     }
   } catch (err) {
     console.error('AI proxy error:', err.message)

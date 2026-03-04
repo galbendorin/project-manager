@@ -69,7 +69,8 @@ const StatusReportView = ({
   projectName,
   canUseAiReport,
   aiReportsRemaining,
-  aiReportsLimit
+  aiReportsLimit,
+  usePlatformKey
 }) => {
   // Date range state
   const [dateFrom, setDateFrom] = useState(daysAgo(14));
@@ -431,6 +432,7 @@ const StatusReportView = ({
           canUseAiReport={canUseAiReport}
           aiReportsRemaining={aiReportsRemaining}
           aiReportsLimit={aiReportsLimit}
+          usePlatformKey={usePlatformKey}
         />
 
         {showAiSettings && (
