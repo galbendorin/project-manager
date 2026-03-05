@@ -110,10 +110,10 @@ const Header = ({
 
                 <button
                   onClick={onLoadTemplate}
-                  title="Load SD-WAN demo plan with all sample tab data"
+                  title="Load network transformation demo plan with all sample tab data"
                   className="text-[11px] font-medium text-emerald-600 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-md transition-all"
                 >
-                  SD-WAN Demo
+                  Demo Project
                 </button>
 
                 <button

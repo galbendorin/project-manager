@@ -4,6 +4,28 @@ import { useAuth } from '../contexts/AuthContext';
 import { buildDemoProjectPayload } from '../utils/demoProjectBuilder';
 import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
 
+const DEMO_SEED_FLAG = 'default_demo_seed_v1';
+
+const getLocalDemoSeedKey = (userId) => `pm_demo_seeded_${userId || 'anonymous'}`;
+
+const readLocalDemoSeedFlag = (userId) => {
+  if (!userId || typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(getLocalDemoSeedKey(userId)) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const writeLocalDemoSeedFlag = (userId) => {
+  if (!userId || typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(getLocalDemoSeedKey(userId), '1');
+  } catch {
+    // Ignore localStorage write failures.
+  }
+};
+
 const isMissingColumnError = (error, columnName) => {
   const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
   return msg.includes(columnName.toLowerCase()) && msg.includes('column');
@@ -32,7 +54,14 @@ const ProjectSelector = ({ onSelectProject }) => {
   const [createError, setCreateError] = useState('');
   const supportsIsDemoRef = useRef(true);
   const isSeedingDemoRef = useRef(false);
+  const demoSeededRef = useRef(
+    Boolean(user?.user_metadata?.[DEMO_SEED_FLAG]) || readLocalDemoSeedFlag(user?.id)
+  );
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    demoSeededRef.current = Boolean(user?.user_metadata?.[DEMO_SEED_FLAG]) || readLocalDemoSeedFlag(user?.id);
+  }, [user?.id, user?.user_metadata]);
 
   const normalizeProject = useCallback((project) => ({
     ...project,
@@ -92,11 +121,34 @@ const ProjectSelector = ({ onSelectProject }) => {
     return { data: normalizeProject(data), error: null };
   }, [normalizeProject]);
 
+  const markDemoSeeded = useCallback(async () => {
+    if (!user?.id || demoSeededRef.current) return;
+
+    demoSeededRef.current = true;
+    writeLocalDemoSeedFlag(user.id);
+
+    const userMetadata = (user?.user_metadata && typeof user.user_metadata === 'object')
+      ? user.user_metadata
+      : {};
+    if (userMetadata[DEMO_SEED_FLAG]) return;
+
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        ...userMetadata,
+        [DEMO_SEED_FLAG]: true
+      }
+    });
+
+    if (error) {
+      console.warn('Failed to persist demo-seeded flag in auth metadata:', error);
+    }
+  }, [user?.id, user?.user_metadata]);
+
   const seedDemoProject = useCallback(async (retriesLeft = 2) => {
     const demoPayload = buildDemoProjectPayload();
     const { data, error } = await createProjectRecord({
       user_id: user.id,
-      name: 'SD-WAN Demo',
+      name: 'Network Transformation Demo',
       tasks: demoPayload.tasks,
       registers: demoPayload.registers,
       tracker: demoPayload.tracker,
@@ -114,8 +166,9 @@ const ProjectSelector = ({ onSelectProject }) => {
       }
       return null;
     }
+    await markDemoSeeded();
     return data;
-  }, [createProjectRecord, user.id]);
+  }, [createProjectRecord, markDemoSeeded, user.id]);
 
   const queryProjects = useCallback(async () => {
     const primarySelect = supportsIsDemoRef.current
@@ -171,7 +224,11 @@ const ProjectSelector = ({ onSelectProject }) => {
 
     let nextProjects = (data || []).map(normalizeProject);
 
-    if (nextProjects.length === 0 && !isSeedingDemoRef.current) {
+    if (nextProjects.length > 0 && !demoSeededRef.current) {
+      markDemoSeeded();
+    }
+
+    if (nextProjects.length === 0 && !isSeedingDemoRef.current && !demoSeededRef.current) {
       isSeedingDemoRef.current = true;
       setLoadingMessage('Setting up your workspace...');
       const seeded = await seedDemoProject();
@@ -183,7 +240,7 @@ const ProjectSelector = ({ onSelectProject }) => {
 
     setProjects(nextProjects);
     setLoading(false);
-  }, [normalizeProject, queryProjects, seedDemoProject, user?.id]);
+  }, [markDemoSeeded, normalizeProject, queryProjects, seedDemoProject, user?.id]);
 
   useEffect(() => {
     if (user?.id) {
@@ -217,6 +274,7 @@ const ProjectSelector = ({ onSelectProject }) => {
 
     if (!error && data) {
       setNewProjectName('');
+      markDemoSeeded();
       onSelectProject(data);
     } else {
       // If create failed, keep the name and re-focus input
@@ -226,7 +284,7 @@ const ProjectSelector = ({ onSelectProject }) => {
       }
     }
     setCreating(false);
-  }, [newProjectName, creating, createProjectRecord, user?.id, onSelectProject]);
+  }, [newProjectName, creating, createProjectRecord, markDemoSeeded, user?.id, onSelectProject]);
 
   const deleteProject = async (projectId, e) => {
     e.stopPropagation();

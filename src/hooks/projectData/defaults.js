@@ -11,7 +11,8 @@ export const createEmptyRegisters = () => ({
   commsplan: [],
   assumptions: [],
   decisions: [],
-  lessons: []
+  lessons: [],
+  _raci: []
 });
 
 export const createEmptyStatusReport = () => ({ ...DEFAULT_STATUS_REPORT });

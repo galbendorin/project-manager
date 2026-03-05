@@ -4,7 +4,7 @@ const BENEFIT_SECTIONS = [
   {
     title: 'Program Delivery Control',
     points: [
-      'End-to-end SD-WAN and Ethernet delivery plan in one timeline.',
+      'End-to-end network transformation and connectivity delivery plan in one timeline.',
       'Dependency logic (FS/SS/FF/SF and multi-dependency gates) for realistic sequencing.',
       'Milestones and parent roll-ups to explain critical path decisions.'
     ]
@@ -41,7 +41,7 @@ const DemoBenefitsModal = ({ isOpen, onClose }) => {
       >
         <div className="px-5 py-4 border-b border-slate-200 flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-lg font-bold text-slate-800">SD-WAN Demo Benefits</h3>
+            <h3 className="text-lg font-bold text-slate-800">Demo Project Benefits</h3>
             <p className="text-sm text-slate-500 mt-1">
               Quick client-facing value summary for this delivery management workspace.
             </p>

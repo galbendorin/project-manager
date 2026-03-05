@@ -4,6 +4,7 @@ import {
   parseBooleanLike,
   parseScheduleSheet,
   parseRegisterSheet,
+  parseRaciSheet,
   findSheet,
   REGISTER_IMPORT_COLUMN_MAPS
 } from './importParsers.js';
@@ -60,6 +61,37 @@ test('parseRegisterSheet respects Internal visibility mapping', () => {
   assert.equal(parsed[0].description, 'Fix API');
   assert.equal(parsed[0].public, false);
   assert.equal(parsed[0].visible, true);
+});
+
+test('parseRegisterSheet treats spreadsheet FALSE as external-visible', () => {
+  const parsed = parseRegisterSheet(
+    [{ ID: '2', Description: 'Client note', Internal: 'FALSE' }],
+    REGISTER_IMPORT_COLUMN_MAPS.actions
+  );
+
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].number, '2');
+  assert.equal(parsed[0].public, true);
+});
+
+test('parseRaciSheet maps activity rows and role assignments', () => {
+  const parsed = parseRaciSheet([
+    { Activity: 'Project plan', 'Project Manager': 'R/A', Sponsor: 'A' },
+    { Activity: 'Steering update', 'Project Manager': 'A', Sponsor: 'I' }
+  ]);
+
+  assert.ok(parsed);
+  assert.deepEqual(parsed.roles, ['Project Manager', 'Sponsor']);
+  assert.deepEqual(parsed.assignments._customTasks, ['Project plan', 'Steering update']);
+  assert.equal(parsed.assignments['custom-0::Project Manager'], 'R/A');
+  assert.equal(parsed.assignments['custom-0::Sponsor'], 'A');
+  assert.equal(parsed.assignments['custom-1::Project Manager'], 'A');
+  assert.equal(parsed.assignments['custom-1::Sponsor'], 'I');
+});
+
+test('parseRaciSheet returns null when role columns are missing', () => {
+  const parsed = parseRaciSheet([{ Activity: 'Only activity column' }]);
+  assert.equal(parsed, null);
 });
 
 test('findSheet resolves sheet names case-insensitively', () => {

@@ -32,14 +32,14 @@ const COLUMN_MAP_ISSUES = {
   ID: 'number', Category: 'category', 'Issue Assigned to': 'issueassignedto',
   Description: 'description', 'Current Status': 'currentstatus',
   Status: 'status', Raised: 'raised', Target: 'target',
-  Updated: 'updated', Completed: 'completed', Internal: '_internal'
+  Updated: 'update', Completed: 'completed', Internal: '_internal'
 };
 
 const COLUMN_MAP_ACTIONS = {
   ID: 'number', Description: 'description', Owner: 'actionassignedto',
   'Due Date': 'target', Status: 'status', Internal: '_internal',
   'Action Assigned to': 'actionassignedto', 'Current Status': 'currentstatus',
-  Raised: 'raised', Target: 'target', Completed: 'completed'
+  Raised: 'raised', Target: 'target', Updated: 'update', Completed: 'completed'
 };
 
 const COLUMN_MAP_CHANGES = {
@@ -182,6 +182,24 @@ export const REGISTER_IMPORT_SHEET_CANDIDATES = {
   lessons: ['Lessons Learned', 'Lessons', 'Lessons Log']
 };
 
+export const RACI_IMPORT_SHEET_CANDIDATES = ['RACI', 'RACI Matrix'];
+
+const RACI_ACTIVITY_COLUMN_CANDIDATES = [
+  'Activity',
+  'Activity / Deliverable',
+  'Task',
+  'Task Name',
+  'Deliverable'
+];
+
+const RACI_IMPORT_KEYS = ['R', 'A', 'C', 'I'];
+
+const normalizeRaciValue = (value) => {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  const selected = RACI_IMPORT_KEYS.filter((key) => normalized.includes(key));
+  return selected.join('/');
+};
+
 function mapRow(row, columnMap) {
   const mapped = {};
   Object.entries(row).forEach(([key, value]) => {
@@ -225,7 +243,7 @@ export function parseScheduleSheet(rows) {
 export function parseRegisterSheet(rows, columnMap) {
   return rows.map((row, idx) => {
     const mapped = mapRow(row, columnMap);
-    const isInternal = mapped._internal;
+    const isInternal = parseBooleanLike(mapped._internal);
     delete mapped._internal;
     return {
       _id: String(mapped.number || Date.now() + idx),
@@ -235,6 +253,54 @@ export function parseRegisterSheet(rows, columnMap) {
       ...mapped
     };
   });
+}
+
+export function parseRaciSheet(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  const firstRow = rows.find((row) => row && typeof row === 'object');
+  if (!firstRow) return null;
+
+  const headers = Object.keys(firstRow);
+  if (headers.length === 0) return null;
+
+  const activityHeader = headers.find((header) => {
+    const normalized = String(header || '').trim().toLowerCase();
+    return RACI_ACTIVITY_COLUMN_CANDIDATES.some((candidate) => candidate.toLowerCase() === normalized);
+  }) || headers[0];
+
+  const roles = headers
+    .filter((header) => header !== activityHeader)
+    .map((header) => String(header || '').trim())
+    .filter(Boolean);
+
+  if (roles.length === 0) return null;
+
+  const customTasks = [];
+  const assignments = {};
+
+  rows.forEach((row) => {
+    const rawTask = row?.[activityHeader];
+    const taskName = String(rawTask ?? '').trim();
+    if (!taskName) return;
+
+    const taskId = `custom-${customTasks.length}`;
+    customTasks.push(taskName);
+
+    roles.forEach((role) => {
+      const value = normalizeRaciValue(row?.[role]);
+      if (value) assignments[`${taskId}::${role}`] = value;
+    });
+  });
+
+  if (customTasks.length === 0) return null;
+
+  assignments._customTasks = customTasks;
+
+  return {
+    roles,
+    assignments
+  };
 }
 
 export function findSheet(sheetNames, candidates) {

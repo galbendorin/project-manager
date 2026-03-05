@@ -15,9 +15,11 @@ import {
   loadXLSX,
   parseScheduleSheet,
   parseRegisterSheet,
+  parseRaciSheet,
   findSheet,
   REGISTER_IMPORT_COLUMN_MAPS,
-  REGISTER_IMPORT_SHEET_CANDIDATES
+  REGISTER_IMPORT_SHEET_CANDIDATES,
+  RACI_IMPORT_SHEET_CANDIDATES
 } from './utils/importParsers';
 import { buildAiReportExportData } from './utils/aiReportExport';
 import { loadAiSettings, isAiConfigured } from './utils/aiSettings';
@@ -186,7 +188,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
   const handleLoadDemoData = useCallback(() => {
     const proceed = window.confirm(
-      'Load SD-WAN demo plan and fill all tabs with sample content? This will replace current demo content in this project.'
+      'Load the Network Transformation demo plan and fill all tabs with sample content? This will replace current demo content in this project.'
     );
     if (!proceed) return;
     loadDemoDataAllTabs();
@@ -250,7 +252,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         risks: [], issues: [], actions: [],
         minutes: [], costs: [], changes: [],
         stakeholders: [], commsplan: [], assumptions: [],
-        decisions: [], lessons: []
+        decisions: [], lessons: [], _raci: []
       };
 
       const risksSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.risks);
@@ -352,6 +354,19 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         );
       }
 
+      const raciSheet = findSheet(sheetNames, RACI_IMPORT_SHEET_CANDIDATES);
+      if (raciSheet) {
+        const parsedRaci = parseRaciSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[raciSheet], { raw: false })
+        );
+        if (parsedRaci) {
+          newRegisters._raci = [{
+            ...parsedRaci,
+            updatedAt: new Date().toISOString()
+          }];
+        }
+      }
+
       setProjectData(tasks);
       setRegisters(prev => ({
         ...prev,
@@ -373,6 +388,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         newRegisters.assumptions?.length > 0 ? `${newRegisters.assumptions.length} assumptions` : null,
         newRegisters.decisions?.length > 0 ? `${newRegisters.decisions.length} decisions` : null,
         newRegisters.lessons?.length > 0 ? `${newRegisters.lessons.length} lessons` : null,
+        newRegisters._raci?.[0]?.assignments?._customTasks?.length > 0
+          ? `${newRegisters._raci[0].assignments._customTasks.length} RACI activities`
+          : null,
       ].filter(Boolean).join(', ');
 
       setImportStatus(`✓ Imported: ${summary}`);
@@ -422,6 +440,25 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         'Additional Notes': statusReport.additionalNotes
       }];
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(srExport), "Status Report");
+    }
+
+    const raciData = registers?._raci?.[0];
+    const raciRoles = Array.isArray(raciData?.roles)
+      ? raciData.roles.map((role) => String(role || '').trim()).filter(Boolean)
+      : [];
+    const raciTasks = Array.isArray(raciData?.assignments?._customTasks)
+      ? raciData.assignments._customTasks
+      : [];
+
+    if (raciRoles.length > 0 && raciTasks.length > 0) {
+      const raciExport = raciTasks.map((taskName, idx) => {
+        const row = { Activity: taskName };
+        raciRoles.forEach((role) => {
+          row[role] = raciData.assignments?.[`custom-${idx}::${role}`] || '';
+        });
+        return row;
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(raciExport), 'RACI');
     }
 
     Object.keys(registers).forEach(key => {

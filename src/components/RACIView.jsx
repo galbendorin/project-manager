@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 
-const RACI_VALUES = ['', 'R', 'A', 'C', 'I'];
+const RACI_KEYS = ['R', 'A', 'C', 'I'];
 const RACI_COLORS = {
   'R': 'bg-indigo-100 text-indigo-800 border-indigo-200',
   'A': 'bg-rose-100 text-rose-800 border-rose-200',
@@ -15,9 +15,30 @@ const RACI_LABELS = {
   'I': 'Informed — kept in the loop'
 };
 
+const normalizeRaciValue = (value) => {
+  const raw = String(value ?? '').toUpperCase();
+  const selected = RACI_KEYS.filter((key) => raw.includes(key));
+  return selected.join('/');
+};
+
+const splitRaciValue = (value) => normalizeRaciValue(value).split('/').filter(Boolean);
+
+const getRaciColorClass = (value) => {
+  const selected = splitRaciValue(value);
+  if (selected.length === 0) return RACI_COLORS[''];
+  if (selected.length === 1) return RACI_COLORS[selected[0]];
+  return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+};
+
+const getRaciTitle = (value) => {
+  const selected = splitRaciValue(value);
+  if (selected.length === 0) return 'Click to assign';
+  return selected.map((key) => `${key}: ${RACI_LABELS[key]}`).join(' | ');
+};
+
 const DEFAULT_ROLES = [
   'Programme Manager', 'Network Architect', 'Security Lead',
-  'Deployment Lead', 'Test Manager', 'Service Manager'
+  'Deployment Lead', 'Test Manager', 'Project Manager'
 ];
 
 const RACIView = ({ projectData, registers, setRegisters }) => {
@@ -35,6 +56,7 @@ const RACIView = ({ projectData, registers, setRegisters }) => {
   const [newTaskName, setNewTaskName] = useState('');
   const [editingRoleIndex, setEditingRoleIndex] = useState(null);
   const [editingRoleValue, setEditingRoleValue] = useState('');
+  const [activeCell, setActiveCell] = useState(null);
 
   const raciTasks = useMemo(() => {
     const customTasks = (raciData.assignments?._customTasks || [])
@@ -52,14 +74,26 @@ const RACIView = ({ projectData, registers, setRegisters }) => {
   }, [setRegisters]);
 
   const getKey = (taskId, role) => `${taskId}::${role}`;
-  const getValue = (taskId, role) => assignments[getKey(taskId, role)] || '';
+  const getValue = (taskId, role) => normalizeRaciValue(assignments[getKey(taskId, role)] || '');
 
-  const cycleValue = useCallback((taskId, role) => {
+  const toggleValue = useCallback((taskId, role, valueKey) => {
     const key = getKey(taskId, role);
-    const current = assignments[key] || '';
-    const next = RACI_VALUES[(RACI_VALUES.indexOf(current) + 1) % RACI_VALUES.length];
+    const selected = new Set(splitRaciValue(assignments[key]));
+    if (selected.has(valueKey)) {
+      selected.delete(valueKey);
+    } else {
+      selected.add(valueKey);
+    }
+    const next = RACI_KEYS.filter((item) => selected.has(item)).join('/');
     const updated = { ...assignments };
     if (next) { updated[key] = next; } else { delete updated[key]; }
+    saveRaci(updated, roles);
+  }, [assignments, roles, saveRaci]);
+
+  const clearCell = useCallback((taskId, role) => {
+    const key = getKey(taskId, role);
+    const updated = { ...assignments };
+    delete updated[key];
     saveRaci(updated, roles);
   }, [assignments, roles, saveRaci]);
 
@@ -143,6 +177,23 @@ const RACIView = ({ projectData, registers, setRegisters }) => {
     saveRaci(updated, roles);
   };
 
+  React.useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') setActiveCell(null);
+    };
+    const handleOutside = (e) => {
+      if (!e.target.closest('[data-raci-editor="true"]')) {
+        setActiveCell(null);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+    document.addEventListener('mousedown', handleOutside);
+    return () => {
+      document.removeEventListener('keydown', handleEsc);
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, []);
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-white">
       <div className="flex-none px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
@@ -185,7 +236,7 @@ const RACIView = ({ projectData, registers, setRegisters }) => {
             <span className="text-[10px] text-slate-500">{desc}</span>
           </span>
         ))}
-        <span className="text-[10px] text-slate-400 ml-auto">Click cells to cycle R → A → C → I → blank</span>
+        <span className="text-[10px] text-slate-400 ml-auto">Click a cell to pick one or more values (R, A, C, I)</span>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto">
@@ -254,13 +305,52 @@ const RACIView = ({ projectData, registers, setRegisters }) => {
                     </td>
                     {roles.map(role => {
                       const val = getValue(task.id, role);
+                      const cellKey = `${task.id}::${role}`;
+                      const selectedValues = splitRaciValue(val);
+                      const isActive = activeCell === cellKey;
                       return (
-                        <td key={role} className="px-1 py-2 text-center">
-                          <button onClick={() => cycleValue(task.id, role)}
-                            className={`w-9 h-7 rounded border text-[11px] font-black transition-all cursor-pointer ${RACI_COLORS[val]}`}
-                            title={val ? RACI_LABELS[val] : 'Click to assign'}>
-                            {val || '·'}
-                          </button>
+                        <td key={role} className="px-1 py-2 text-center relative">
+                          <div data-raci-editor="true" className="inline-flex flex-col items-center">
+                            <button
+                              onClick={() => setActiveCell(isActive ? null : cellKey)}
+                              className={`w-11 h-7 rounded border text-[11px] font-black transition-all cursor-pointer ${getRaciColorClass(val)}`}
+                              title={getRaciTitle(val)}
+                            >
+                              {val || '·'}
+                            </button>
+                            {isActive && (
+                              <div className="absolute top-full mt-1 z-20 bg-white border border-slate-200 rounded-md shadow-lg p-1.5 flex items-center gap-1">
+                                {RACI_KEYS.map((valueKey) => {
+                                  const selected = selectedValues.includes(valueKey);
+                                  return (
+                                    <button
+                                      key={valueKey}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleValue(task.id, role, valueKey);
+                                      }}
+                                      className={`w-7 h-6 rounded border text-[10px] font-black transition-all ${
+                                        selected ? RACI_COLORS[valueKey] : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
+                                      }`}
+                                      title={RACI_LABELS[valueKey]}
+                                    >
+                                      {valueKey}
+                                    </button>
+                                  );
+                                })}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    clearCell(task.id, role);
+                                  }}
+                                  className="px-1.5 h-6 rounded border border-slate-200 text-[10px] font-semibold text-slate-500 hover:text-slate-700 hover:border-slate-300"
+                                  title="Clear values"
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </td>
                       );
                     })}
