@@ -187,7 +187,7 @@ const TodoView = ({
 
       if (cancelled) return;
       if (error) {
-        console.error('Failed to load all-project ToDo data:', error);
+        console.error('Failed to load all-project task data:', error);
         setAllProjectsData([]);
       } else {
         setAllProjectsData(data || []);
@@ -365,14 +365,14 @@ const TodoView = ({
         <div className="px-4 sm:px-6 py-4 border-b border-slate-200 rounded-t-xl space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="text-base font-bold text-slate-800 tracking-tight">ToDo</h2>
+              <h2 className="text-base font-bold text-slate-800 tracking-tight">Tasks</h2>
               <p className="text-[11px] text-slate-400 mt-1">
-                Scope-aware ToDo view with manual + derived items, project filters, and recurring rules.
+                Scope-aware task view with manual + derived items, project filters, and recurring rules.
               </p>
             </div>
             <input
               type="text"
-              placeholder="Search todos..."
+              placeholder="Search tasks..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="px-3 py-1.5 text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
@@ -450,7 +450,7 @@ const TodoView = ({
           </div>
 
           {scope === 'all' && loadingAllProjects && (
-            <div className="text-[11px] text-slate-400">Loading all-project derived ToDos...</div>
+            <div className="text-[11px] text-slate-400">Loading all-project derived tasks...</div>
           )}
         </div>
 
@@ -586,7 +586,7 @@ const TodoView = ({
                                 <button
                                   onClick={() => onDeleteTodo(todo._id)}
                                   className="text-slate-300 hover:text-rose-500"
-                                  title="Delete ToDo"
+                                  title="Delete Task"
                                 >
                                   <IconTrash />
                                 </button>
@@ -604,7 +604,7 @@ const TodoView = ({
 
           {filteredTodos.length === 0 && (
             <div className="text-center py-10 text-slate-400 text-sm">
-              No open ToDo items found
+              No open tasks found
             </div>
           )}
         </div>

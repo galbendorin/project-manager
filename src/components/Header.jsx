@@ -203,7 +203,7 @@ const Header = ({
               New Task
             </button>
           </div>
-        ) : (
+        ) : addEntryLabel ? (
           <button
             onClick={onAddRegisterItem}
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
@@ -211,7 +211,7 @@ const Header = ({
             <span className="text-[13px] leading-none">+</span>
             {addEntryLabel}
           </button>
-        )}
+        ) : null}
 
         <button
           onClick={onExport}

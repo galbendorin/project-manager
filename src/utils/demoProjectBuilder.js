@@ -427,30 +427,71 @@ export const buildDemoProjectPayload = ({ timestamp = nowIso(), today = getCurre
         complete: today
       }, timestamp)
     ],
-    comms: [
-      makeRegisterItem('comms_demo_1', {
-        company: 'Customer IT',
+    stakeholders: [
+      makeRegisterItem('stakeholder_demo_1', {
+        number: 1,
         name: 'Emma Lewis',
-        position: 'Program Sponsor',
-        mobile: '+44 7700 900101',
+        organisation: 'Customer IT',
+        role: 'Program Sponsor',
+        email: 'emma.lewis@example.com',
         phone: '+44 20 7000 0001',
-        email: 'emma.lewis@example.com'
+        mobile: '+44 7700 900101',
+        escalationlevel: 'Executive'
       }, timestamp),
-      makeRegisterItem('comms_demo_2', {
-        company: 'Carrier One',
+      makeRegisterItem('stakeholder_demo_2', {
+        number: 2,
         name: 'Amit Patel',
-        position: 'Service Delivery Lead',
-        mobile: '+44 7700 900102',
+        organisation: 'Carrier One',
+        role: 'Service Delivery Lead',
+        email: 'amit.patel@example.com',
         phone: '+44 20 7000 0002',
-        email: 'amit.patel@example.com'
+        mobile: '+44 7700 900102',
+        escalationlevel: 'Operational'
       }, timestamp),
-      makeRegisterItem('comms_demo_3', {
-        company: 'Delivery Partner',
+      makeRegisterItem('stakeholder_demo_3', {
+        number: 3,
         name: 'Sara Ahmed',
-        position: 'Project Manager',
-        mobile: '+44 7700 900103',
+        organisation: 'Delivery Partner',
+        role: 'Project Manager',
+        email: 'sara.ahmed@example.com',
         phone: '+44 20 7000 0003',
-        email: 'sara.ahmed@example.com'
+        mobile: '+44 7700 900103',
+        escalationlevel: 'Delivery'
+      }, timestamp)
+    ],
+    commsplan: [
+      makeRegisterItem('commsplan_demo_1', {
+        number: 1,
+        audience: 'Steering Committee',
+        meetingtype: 'SteerCo',
+        informationrequired: 'Overall RAG, milestone progress, top risks/issues',
+        frequency: 'Weekly',
+        daytime: 'Tuesday 10:00',
+        method: 'Video Call + Slide Pack',
+        owner: 'Project Manager',
+        template: 'SteerCo-Status-v2'
+      }, timestamp),
+      makeRegisterItem('commsplan_demo_2', {
+        number: 2,
+        audience: 'Site Managers',
+        meetingtype: 'Cutover Briefing',
+        informationrequired: 'Cutover window, contacts, rollback steps',
+        frequency: 'Per wave',
+        daytime: '24h pre-cutover',
+        method: 'Email + Teams',
+        owner: 'Deployment Lead',
+        template: 'Cutover-Comms-Checklist'
+      }, timestamp),
+      makeRegisterItem('commsplan_demo_3', {
+        number: 3,
+        audience: 'Operations',
+        meetingtype: 'Handover',
+        informationrequired: 'Known errors, support model, BAU ownership',
+        frequency: 'At transition',
+        daytime: 'End of hypercare',
+        method: 'Workshop',
+        owner: 'Service Manager',
+        template: 'Service-Handover-Pack'
       }, timestamp)
     ]
   };

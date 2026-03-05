@@ -9,6 +9,17 @@ const isMissingColumnError = (error, columnName) => {
   return msg.includes(columnName.toLowerCase()) && msg.includes('column');
 };
 
+const extractMissingColumnName = (error) => {
+  const msg = `${error?.message || ''} ${error?.details || ''}`;
+  const schemaCacheMatch = msg.match(/could not find the '([^']+)' column/i);
+  if (schemaCacheMatch?.[1]) return schemaCacheMatch[1];
+
+  const relationMatch = msg.match(/column ["']?([a-zA-Z0-9_]+)["']?[^.]*does not exist/i);
+  if (relationMatch?.[1]) return relationMatch[1];
+
+  return null;
+};
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const ProjectSelector = ({ onSelectProject }) => {
@@ -18,6 +29,7 @@ const ProjectSelector = ({ onSelectProject }) => {
   const [loadingMessage, setLoadingMessage] = useState('Loading projects...');
   const [newProjectName, setNewProjectName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
   const supportsIsDemoRef = useRef(true);
   const isSeedingDemoRef = useRef(false);
   const inputRef = useRef(null);
@@ -51,6 +63,27 @@ const ProjectSelector = ({ onSelectProject }) => {
         .single();
       data = retry.data;
       error = retry.error;
+    }
+
+    if (error) {
+      const missingColumn = extractMissingColumnName(error);
+      const canRetryWithoutColumn =
+        missingColumn &&
+        missingColumn !== 'is_demo' &&
+        Object.prototype.hasOwnProperty.call(insertPayload, missingColumn);
+
+      if (canRetryWithoutColumn) {
+        const retryPayload = Object.fromEntries(
+          Object.entries(insertPayload).filter(([key]) => key !== missingColumn)
+        );
+        const retry = await supabase
+          .from('projects')
+          .insert(retryPayload)
+          .select(selectCols)
+          .single();
+        data = retry.data;
+        error = retry.error;
+      }
     }
 
     if (error || !data) {
@@ -160,8 +193,9 @@ const ProjectSelector = ({ onSelectProject }) => {
 
   // Bug A fix: use a separate handler that doesn't trigger re-renders during typing
   const handleNameChange = useCallback((e) => {
+    if (createError) setCreateError('');
     setNewProjectName(e.target.value);
-  }, []);
+  }, [createError]);
 
   const handleCreateSubmit = useCallback(async (e) => {
     // Prevent form submission default (avoids page reload on mobile)
@@ -170,6 +204,7 @@ const ProjectSelector = ({ onSelectProject }) => {
     const name = newProjectName.trim();
     if (!name || creating) return;
 
+    setCreateError('');
     setCreating(true);
 
     const emptyProjectSnapshot = createEmptyProjectSnapshot();
@@ -185,7 +220,7 @@ const ProjectSelector = ({ onSelectProject }) => {
       onSelectProject(data);
     } else {
       // If create failed, keep the name and re-focus input
-      setCreating(false);
+      setCreateError(error?.message || 'Unable to create project. Please try again.');
       if (inputRef.current) {
         inputRef.current.focus();
       }
@@ -259,6 +294,9 @@ const ProjectSelector = ({ onSelectProject }) => {
               {creating ? '...' : '+ Create'}
             </button>
           </div>
+          {createError && (
+            <p className="mt-2 text-xs text-rose-600">{createError}</p>
+          )}
         </form>
 
         <div className="space-y-2">

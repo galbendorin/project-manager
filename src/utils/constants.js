@@ -17,7 +17,7 @@ export const SCHEMAS = {
     cols: ["Visible", "Number", "Category", "Action Assigned to", "Description", "Current Status", "Status", "Raised", "Target", "Update", "Completed"]
   },
   minutes: {
-    title: "Minutes Log",
+    title: "Meeting Log",
     cols: ["Visible", "Number", "Date Raised", "Minute Description", "Status"]
   },
   costs: {
@@ -28,9 +28,25 @@ export const SCHEMAS = {
     title: "Change Control",
     cols: ["Visible", "Number", "Category", "Assigned to", "Description", "Impact/Status", "Status", "Raised", "Target", "Updated", "Complete"]
   },
-  comms: {
+  stakeholders: {
+    title: "Stakeholder Register",
+    cols: ["Visible", "Number", "Name", "Organisation", "Role", "Email", "Phone", "Mobile", "Escalation Level"]
+  },
+  commsplan: {
     title: "Communication Plan",
-    cols: ["Visible", "Company", "Name", "Position", "Mobile", "Phone", "Email"]
+    cols: ["Visible", "Number", "Audience", "Meeting Type", "Information Required", "Frequency", "Day/Time", "Method", "Owner", "Template"]
+  },
+  assumptions: {
+    title: "Assumptions & Dependencies",
+    cols: ["Visible", "Number", "Type", "Description", "Raised By", "Date Raised", "Impact", "Status", "Validation/Notes", "Owner"]
+  },
+  decisions: {
+    title: "Decision Log",
+    cols: ["Visible", "Number", "Decision", "Decided By", "Date Raised", "Date Decided", "Rationale", "Impact", "Status"]
+  },
+  lessons: {
+    title: "Lessons Learned",
+    cols: ["Visible", "Number", "Date", "Phase", "Category", "Description", "Recommendation", "Owner", "Status"]
   }
 };
 
@@ -108,12 +124,13 @@ export const TABS = [
   { id: 'statusreport', label: 'Status Report' },
   { id: 'schedule', label: 'Project Plan' },
   { id: 'tracker', label: 'Master Tracker' },
-  { id: 'todo', label: 'ToDo' },
+  { id: 'todo', label: 'Tasks' },
   { id: 'risks', label: 'Risk Log' },
   { id: 'issues', label: 'Issue Log' },
   { id: 'actions', label: 'Action Log' },
-  { id: 'minutes', label: 'Minutes' },
-  { id: 'costs', label: 'Costs' },
-  { id: 'changes', label: 'Changes' },
-  { id: 'comms', label: 'Comms Plan' }
+  { id: 'minutes', label: 'Meeting Log' },
+  { id: 'financials', label: 'Project Controls' },
+  { id: 'stakeholdersmgmt', label: 'Stakeholders' },
+  { id: 'lessons', label: 'Lessons Learned' },
+  { id: 'raci', label: 'RACI' }
 ];

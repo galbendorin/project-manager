@@ -7,7 +7,11 @@ export const createEmptyRegisters = () => ({
   minutes: [],
   costs: [],
   changes: [],
-  comms: []
+  stakeholders: [],
+  commsplan: [],
+  assumptions: [],
+  decisions: [],
+  lessons: []
 });
 
 export const createEmptyStatusReport = () => ({ ...DEFAULT_STATUS_REPORT });

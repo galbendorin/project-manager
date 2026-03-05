@@ -10,7 +10,7 @@ export const createLocalManualTodo = ({ todoData = {}, projectId, userId, ts }) 
   return {
     _id: createManualTodoId(),
     projectId: nextProjectId || null,
-    title: todoData.title || 'New ToDo',
+    title: todoData.title || 'New Task',
     dueDate: todoData.dueDate || getCurrentDate(),
     owner: todoData.owner || 'PM',
     assigneeUserId: todoData.assigneeUserId || userId || null,
@@ -54,7 +54,7 @@ export const buildLocalTodoUpdate = ({ todo, key, value, userId, ts }) => {
     followUpLocal = {
       _id: createManualTodoId(),
       projectId: localUpdated.projectId || null,
-      title: localUpdated.title || 'New ToDo',
+      title: localUpdated.title || 'New Task',
       dueDate: nextRecurringDueDate,
       owner: localUpdated.owner || 'PM',
       assigneeUserId: localUpdated.assigneeUserId || userId || null,
@@ -107,7 +107,7 @@ export const buildRecurringFollowUpInsert = ({
 }) => ({
   user_id: userId,
   project_id: localUpdated.projectId || null,
-  title: localUpdated.title || 'New ToDo',
+  title: localUpdated.title || 'New Task',
   due_date: nextRecurringDueDate || null,
   owner_text: localUpdated.owner || 'PM',
   assignee_user_id: localUpdated.assigneeUserId || userId,

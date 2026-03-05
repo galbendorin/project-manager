@@ -88,6 +88,70 @@ const COLUMN_MAP_COSTS = {
   Internal: '_internal'
 };
 
+const COLUMN_MAP_STAKEHOLDERS = {
+  Number: 'number', ID: 'number',
+  Name: 'name',
+  Organisation: 'organisation',
+  Role: 'role',
+  Email: 'email',
+  Phone: 'phone',
+  Mobile: 'mobile',
+  'Escalation Level': 'escalationlevel',
+  Internal: '_internal'
+};
+
+const COLUMN_MAP_COMMSPLAN = {
+  Number: 'number', ID: 'number',
+  Audience: 'audience',
+  'Meeting Type': 'meetingtype',
+  'Information Required': 'informationrequired',
+  Frequency: 'frequency',
+  'Day/Time': 'daytime',
+  Method: 'method',
+  Owner: 'owner',
+  Template: 'template',
+  Internal: '_internal'
+};
+
+const COLUMN_MAP_ASSUMPTIONS = {
+  Number: 'number', ID: 'number',
+  Type: 'type',
+  Description: 'description',
+  'Raised By': 'raisedby',
+  'Date Raised': 'dateraised',
+  Impact: 'impact',
+  Status: 'status',
+  'Validation Notes': 'validationnotes',
+  Owner: 'owner',
+  Internal: '_internal'
+};
+
+const COLUMN_MAP_DECISIONS = {
+  Number: 'number', ID: 'number',
+  Decision: 'decision',
+  'Decided By': 'decidedby',
+  'Date Raised': 'dateraised',
+  'Date Decided': 'datedecided',
+  Rationale: 'rationale',
+  Impact: 'impact',
+  Status: 'status',
+  Internal: '_internal'
+};
+
+const COLUMN_MAP_LESSONS = {
+  Number: 'number', ID: 'number',
+  Date: 'date',
+  Phase: 'phase',
+  Category: 'category',
+  Description: 'description',
+  'What Went Well': 'whatwentwell',
+  'What Could Improve': 'whatcouldimprove',
+  Recommendation: 'recommendation',
+  Owner: 'owner',
+  Status: 'status',
+  Internal: '_internal'
+};
+
 export const REGISTER_IMPORT_COLUMN_MAPS = {
   risks: COLUMN_MAP_RISKS,
   issues: COLUMN_MAP_ISSUES,
@@ -95,7 +159,12 @@ export const REGISTER_IMPORT_COLUMN_MAPS = {
   changes: COLUMN_MAP_CHANGES,
   comms: COLUMN_MAP_COMMS,
   minutes: COLUMN_MAP_MINUTES,
-  costs: COLUMN_MAP_COSTS
+  costs: COLUMN_MAP_COSTS,
+  stakeholders: COLUMN_MAP_STAKEHOLDERS,
+  commsplan: COLUMN_MAP_COMMSPLAN,
+  assumptions: COLUMN_MAP_ASSUMPTIONS,
+  decisions: COLUMN_MAP_DECISIONS,
+  lessons: COLUMN_MAP_LESSONS
 };
 
 export const REGISTER_IMPORT_SHEET_CANDIDATES = {
@@ -105,7 +174,12 @@ export const REGISTER_IMPORT_SHEET_CANDIDATES = {
   changes: ['Changes', 'Change Log', 'Change Register'],
   comms: ['Comms', 'Comms Plan', 'Communications'],
   minutes: ['Minutes', 'Minutes Log', 'Meeting Minutes'],
-  costs: ['Costs', 'Cost Register', 'Cost Log']
+  costs: ['Costs', 'Cost Register', 'Cost Log'],
+  stakeholders: ['Stakeholders', 'Stakeholder Register', 'Stakeholder Log'],
+  commsplan: ['Comms Plan', 'Communication Plan', 'Communications Plan'],
+  assumptions: ['Assumptions', 'Assumptions Log', 'Assumptions & Dependencies'],
+  decisions: ['Decisions', 'Decision Log', 'Decision Register'],
+  lessons: ['Lessons Learned', 'Lessons', 'Lessons Log']
 };
 
 function mapRow(row, columnMap) {

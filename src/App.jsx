@@ -34,6 +34,9 @@ const RegisterView = lazy(() => import('./components/RegisterView'));
 const TrackerView = lazy(() => import('./components/TrackerView'));
 const StatusReportView = lazy(() => import('./components/StatusReportView'));
 const TodoView = lazy(() => import('./components/TodoView'));
+const StakeholdersView = lazy(() => import('./components/StakeholdersView'));
+const FinancialsView = lazy(() => import('./components/FinancialsView'));
+const RACIView = lazy(() => import('./components/RACIView'));
 
 function App() {
   const { user, loading: authLoading } = useAuth();
@@ -69,6 +72,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const { canUseAiReport, aiReportsRemaining, incrementAiReports, limits, effectivePlan, isTrialActive, isAdmin } = usePlan();
 
   const [activeTab, setActiveTab] = useState('schedule');
+  const [activeSubView, setActiveSubView] = useState(null);
   const [viewMode, setViewMode] = useState('week');
   const [isExternalView, setIsExternalView] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -244,7 +248,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
       const newRegisters = {
         risks: [], issues: [], actions: [],
-        minutes: [], costs: [], changes: [], comms: []
+        minutes: [], costs: [], changes: [],
+        stakeholders: [], commsplan: [], assumptions: [],
+        decisions: [], lessons: []
       };
 
       const risksSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.risks);
@@ -281,10 +287,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
       const commsSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.comms);
       if (commsSheet) {
-        newRegisters.comms = parseRegisterSheet(
+        const parsedLegacyComms = parseRegisterSheet(
           XLSX.utils.sheet_to_json(workbook.Sheets[commsSheet], { raw: false }),
           REGISTER_IMPORT_COLUMN_MAPS.comms
         );
+        if (newRegisters.commsplan.length === 0) {
+          newRegisters.commsplan = parsedLegacyComms;
+        }
       }
 
       const minutesSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.minutes);
@@ -303,6 +312,46 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         );
       }
 
+      const stakeholdersSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.stakeholders);
+      if (stakeholdersSheet) {
+        newRegisters.stakeholders = parseRegisterSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[stakeholdersSheet], { raw: false }),
+          REGISTER_IMPORT_COLUMN_MAPS.stakeholders
+        );
+      }
+
+      const commsplanSheet = findSheet(sheetNames, ['Comms Plan', 'Communication Plan', 'Communications Plan']);
+      if (commsplanSheet) {
+        newRegisters.commsplan = parseRegisterSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[commsplanSheet], { raw: false }),
+          REGISTER_IMPORT_COLUMN_MAPS.commsplan
+        );
+      }
+
+      const assumptionsSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.assumptions);
+      if (assumptionsSheet) {
+        newRegisters.assumptions = parseRegisterSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[assumptionsSheet], { raw: false }),
+          REGISTER_IMPORT_COLUMN_MAPS.assumptions
+        );
+      }
+
+      const decisionsSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.decisions);
+      if (decisionsSheet) {
+        newRegisters.decisions = parseRegisterSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[decisionsSheet], { raw: false }),
+          REGISTER_IMPORT_COLUMN_MAPS.decisions
+        );
+      }
+
+      const lessonsSheet = findSheet(sheetNames, REGISTER_IMPORT_SHEET_CANDIDATES.lessons);
+      if (lessonsSheet) {
+        newRegisters.lessons = parseRegisterSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[lessonsSheet], { raw: false }),
+          REGISTER_IMPORT_COLUMN_MAPS.lessons
+        );
+      }
+
       setProjectData(tasks);
       setRegisters(prev => ({
         ...prev,
@@ -317,9 +366,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         newRegisters.issues.length > 0 ? `${newRegisters.issues.length} issues` : null,
         newRegisters.actions.length > 0 ? `${newRegisters.actions.length} actions` : null,
         newRegisters.changes.length > 0 ? `${newRegisters.changes.length} changes` : null,
-        newRegisters.comms.length > 0 ? `${newRegisters.comms.length} comms` : null,
-        newRegisters.minutes.length > 0 ? `${newRegisters.minutes.length} minutes` : null,
+        newRegisters.minutes.length > 0 ? `${newRegisters.minutes.length} meeting log items` : null,
         newRegisters.costs.length > 0 ? `${newRegisters.costs.length} costs` : null,
+        newRegisters.stakeholders?.length > 0 ? `${newRegisters.stakeholders.length} stakeholders` : null,
+        newRegisters.commsplan?.length > 0 ? `${newRegisters.commsplan.length} comms items` : null,
+        newRegisters.assumptions?.length > 0 ? `${newRegisters.assumptions.length} assumptions` : null,
+        newRegisters.decisions?.length > 0 ? `${newRegisters.decisions.length} decisions` : null,
+        newRegisters.lessons?.length > 0 ? `${newRegisters.lessons.length} lessons` : null,
       ].filter(Boolean).join(', ');
 
       setImportStatus(`✓ Imported: ${summary}`);
@@ -688,9 +741,12 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
             addTodo();
             return;
           }
-          addRegisterItem(activeTab);
+          if (activeTab === 'raci') return; // RACI has its own add role button
+          // Use the active sub-view for composite tabs, or the tab itself
+          const target = activeSubView || activeTab;
+          addRegisterItem(target);
         }}
-        addEntryLabel={activeTab === 'todo' ? 'Add ToDo' : 'Add Entry'}
+        addEntryLabel={activeTab === 'todo' ? 'Add Task' : activeTab === 'raci' ? '' : 'Add Entry'}
         onSetBaseline={setBaseline}
         onClearBaseline={clearBaseline}
         hasBaseline={!!baseline}
@@ -702,7 +758,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
       <Navigation
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          // Clear sub-view for non-composite tabs so Add Entry targets the tab itself
+          if (tab !== 'financials' && tab !== 'stakeholdersmgmt') {
+            setActiveSubView(null);
+          }
+        }}
       />
 
       <main className="flex-grow overflow-hidden relative">
@@ -772,6 +834,30 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               isExternalView={isExternalView}
               onUpdateTodo={updateTodo}
               onDeleteTodo={deleteTodo}
+            />
+          ) : activeTab === 'stakeholdersmgmt' ? (
+            <StakeholdersView
+              registers={registers}
+              isExternalView={isExternalView}
+              onUpdateItem={updateRegisterItem}
+              onDeleteItem={deleteRegisterItem}
+              onTogglePublic={toggleItemPublic}
+              onSubViewChange={setActiveSubView}
+            />
+          ) : activeTab === 'financials' ? (
+            <FinancialsView
+              registers={registers}
+              isExternalView={isExternalView}
+              onUpdateItem={updateRegisterItem}
+              onDeleteItem={deleteRegisterItem}
+              onTogglePublic={toggleItemPublic}
+              onSubViewChange={setActiveSubView}
+            />
+          ) : activeTab === 'raci' ? (
+            <RACIView
+              projectData={projectData}
+              registers={registers}
+              setRegisters={setRegisters}
             />
           ) : (
             <RegisterView

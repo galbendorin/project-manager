@@ -1,14 +1,14 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { SCHEMAS } from '../../utils/constants';
 
 const LOG_TYPES = [
   { id: 'risks', label: 'Risks' },
   { id: 'issues', label: 'Issues' },
   { id: 'actions', label: 'Actions' },
-  { id: 'minutes', label: 'Minutes' },
+  { id: 'minutes', label: 'Meeting Log' },
   { id: 'costs', label: 'Costs' },
   { id: 'changes', label: 'Changes' },
-  { id: 'comms', label: 'Comms' },
+  { id: 'commsplan', label: 'Comms Plan' },
 ];
 
 const statusColor = (s) => {
@@ -167,7 +167,9 @@ const MobileLogs = ({ registers, isExternalView, onUpdateItem, onDeleteItem, onT
   const [selectedItem, setSelectedItem] = useState(null);
 
   const schema = SCHEMAS[activeLog];
-  const items = registers[activeLog] || [];
+  const items = activeLog === 'commsplan'
+    ? ((registers.commsplan && registers.commsplan.length > 0) ? registers.commsplan : (registers.comms || []))
+    : (registers[activeLog] || []);
   const visibleItems = items.filter(item => item['Visible'] !== false || !isExternalView);
 
   const handleUpdate = useCallback((itemId, col, value) => {
@@ -179,6 +181,15 @@ const MobileLogs = ({ registers, isExternalView, onUpdateItem, onDeleteItem, onT
   const handleDelete = useCallback((itemId) => {
     onDeleteItem(activeLog, itemId);
   }, [activeLog, onDeleteItem]);
+
+  const getLogCount = useCallback((logId) => {
+    if (logId === 'commsplan') {
+      const commsPlanCount = (registers.commsplan || []).length;
+      if (commsPlanCount > 0) return commsPlanCount;
+      return (registers.comms || []).length;
+    }
+    return (registers[logId] || []).length;
+  }, [registers]);
 
   return (
     <div className="flex flex-col h-full">
@@ -195,8 +206,8 @@ const MobileLogs = ({ registers, isExternalView, onUpdateItem, onDeleteItem, onT
             }`}
           >
             {l.label}
-            {(registers[l.id] || []).length > 0 && (
-              <span className="ml-1 opacity-70">({(registers[l.id] || []).length})</span>
+            {getLogCount(l.id) > 0 && (
+              <span className="ml-1 opacity-70">({getLogCount(l.id)})</span>
             )}
           </button>
         ))}
