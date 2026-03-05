@@ -37,8 +37,11 @@ const getRaciTitle = (value) => {
 };
 
 const DEFAULT_ROLES = [
-  'Programme Manager', 'Network Architect', 'Security Lead',
-  'Deployment Lead', 'Test Manager', 'Project Manager'
+  'Project Manager',
+  'Technical Architect',
+  'Delivery Lead',
+  'PMO Lead',
+  'Business Sponsor'
 ];
 
 const RACIView = ({ projectData, registers, setRegisters }) => {

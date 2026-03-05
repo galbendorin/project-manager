@@ -1559,13 +1559,18 @@ export const DEMO_SEED_PAYLOAD = {
     "_raci": [
       {
         "roles": [
-          "Project Manager"
+          "Project Manager",
+          "Technical Architect",
+          "Delivery Lead",
+          "PMO Lead",
+          "Business Sponsor"
         ],
         "assignments": {
           "_customTasks": [
             "Project plan"
           ],
-          "custom-0::Project Manager": "R"
+          "custom-0::Project Manager": "R",
+          "custom-0::Technical Architect": "C"
         },
         "updatedAt": "2026-03-05T00:00:00.000Z"
       }
