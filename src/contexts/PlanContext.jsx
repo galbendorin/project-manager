@@ -11,6 +11,10 @@ const ADMIN_EMAILS = [
   'galben.dorin@yahoo.com'
 ];
 
+const isAdminEmail = (email) => Boolean(
+  email && ADMIN_EMAILS.includes(String(email).toLowerCase())
+);
+
 // ── Plan limits ──────────────────────────────────────────────
 const PLAN_LIMITS = {
   trial: {
@@ -92,11 +96,13 @@ export const PlanProvider = ({ children }) => {
         }
       } else {
         // Check if AI counter needs monthly reset
-        const resetAt = new Date(data.ai_reports_reset_at);
+        const resetAt = data.ai_reports_reset_at ? new Date(data.ai_reports_reset_at) : new Date(0);
         const now = new Date();
         const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const shouldUseMonthlyReset = isAdminEmail(user?.email) || data.plan !== 'trial';
+        const hasValidResetAt = !Number.isNaN(resetAt.getTime());
 
-        if (resetAt < currentMonthStart && data.plan !== 'trial') {
+        if (shouldUseMonthlyReset && (!hasValidResetAt || resetAt < currentMonthStart)) {
           // Reset counter for new month
           const { data: updated } = await supabase
             .from('user_profiles')
@@ -137,7 +143,7 @@ export const PlanProvider = ({ children }) => {
 
   // ── Derived state ───────────────────────────────────────────
   const isAdmin = useMemo(() => {
-    return user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
+    return isAdminEmail(user?.email);
   }, [user]);
 
   const effectivePlan = useMemo(() => {
