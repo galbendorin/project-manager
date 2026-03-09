@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { usePlan } from '../contexts/PlanContext';
 import { buildDemoProjectPayload } from '../utils/demoProjectBuilder';
 import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
 
@@ -46,6 +47,7 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const ProjectSelector = ({ onSelectProject }) => {
   const { user, signOut } = useAuth();
+  const { canCreateProject, limits, projectCount, effectivePlan, isReadOnly, refreshProjectCount } = usePlan();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Loading projects...');
@@ -261,6 +263,12 @@ const ProjectSelector = ({ onSelectProject }) => {
     const name = newProjectName.trim();
     if (!name || creating) return;
 
+    // Check project limit
+    if (!canCreateProject) {
+      setCreateError(`Your ${limits.label} plan allows ${limits.maxProjects} project${limits.maxProjects !== 1 ? 's' : ''}. Upgrade to Pro for more.`);
+      return;
+    }
+
     setCreateError('');
     setCreating(true);
 
@@ -275,6 +283,7 @@ const ProjectSelector = ({ onSelectProject }) => {
     if (!error && data) {
       setNewProjectName('');
       markDemoSeeded();
+      refreshProjectCount();
       onSelectProject(data);
     } else {
       // If create failed, keep the name and re-focus input
@@ -284,13 +293,14 @@ const ProjectSelector = ({ onSelectProject }) => {
       }
     }
     setCreating(false);
-  }, [newProjectName, creating, createProjectRecord, markDemoSeeded, user?.id, onSelectProject]);
+  }, [newProjectName, creating, createProjectRecord, markDemoSeeded, user?.id, onSelectProject, canCreateProject, limits, refreshProjectCount]);
 
   const deleteProject = async (projectId, e) => {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this project? This cannot be undone.')) return;
 
     await supabase.from('projects').delete().eq('id', projectId).eq('user_id', user.id);
+    refreshProjectCount();
     fetchProjects();
   };
 
@@ -326,6 +336,40 @@ const ProjectSelector = ({ onSelectProject }) => {
           </button>
         </div>
 
+        {/* Project count and plan info */}
+        <div className="flex items-center justify-between mb-3 px-1">
+          <span className="text-xs text-slate-500">
+            {projects.length} of {limits.maxProjects === 999 ? '∞' : limits.maxProjects} projects
+            <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-slate-100 text-slate-500 border-slate-200">
+              {limits.label}
+            </span>
+          </span>
+          {!canCreateProject && (
+            <button
+              onClick={() => window.open('/pricing', '_blank')}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+            >
+              Upgrade to Pro →
+            </button>
+          )}
+        </div>
+
+        {/* Read-only warning for downgraded users */}
+        {isReadOnly && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-center">
+            <p className="text-sm font-medium text-amber-800 mb-1">⚠️ Read-only mode</p>
+            <p className="text-xs text-amber-600 mb-3">
+              Your {limits.label} plan allows {limits.maxProjects} project{limits.maxProjects !== 1 ? 's' : ''}. Delete extra projects to regain edit access, or upgrade.
+            </p>
+            <button
+              onClick={() => window.open('/pricing', '_blank')}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors"
+            >
+              Upgrade to Pro — £7.99/mo
+            </button>
+          </div>
+        )}
+
         {/* Bug A fix: Wrap input in a <form> so mobile keyboard "Go" button works properly */}
         <form
           onSubmit={handleCreateSubmit}
@@ -346,10 +390,10 @@ const ProjectSelector = ({ onSelectProject }) => {
             />
             <button
               type="submit"
-              disabled={creating || !newProjectName.trim()}
+              disabled={creating || !newProjectName.trim() || !canCreateProject}
               className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-medium rounded-lg transition-colors whitespace-nowrap text-sm"
             >
-              {creating ? '...' : '+ Create'}
+              {!canCreateProject ? 'Limit reached' : creating ? '...' : '+ Create'}
             </button>
           </div>
           {createError && (

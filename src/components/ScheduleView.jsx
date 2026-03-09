@@ -3,11 +3,13 @@ import ScheduleGrid from './ScheduleGrid';
 import GanttChart from './GanttChart';
 import AiAssistantPanel from './AiAssistantPanel';
 import { buildVisibleTasks } from '../utils/helpers';
+import { usePlan } from '../contexts/PlanContext';
 
 const ScheduleView = ({ 
   tasks,
   viewMode,
   baseline,
+  isMobile = false,
   onUpdateTask,
   onDeleteTask,
   onModifyHierarchy,
@@ -24,6 +26,7 @@ const ScheduleView = ({
   onApplyAiTasks,
   usePlatformKey
 }) => {
+  const { canUseAiAssistant } = usePlan();
   const resizerRef = useRef(null);
   const scrollSourceRef = useRef(null);
   const [leftPaneWidthPct, setLeftPaneWidthPct] = useState(55);
@@ -135,29 +138,31 @@ const ScheduleView = ({
         </div>
       )}
 
-      {/* AI Assistant banner — always visible */}
-      <div className="flex-none px-4 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 border-b border-indigo-700 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 min-w-0">
-          <button
-            onClick={() => setShowAiPanel(true)}
-            className="flex-none flex items-center gap-2.5 px-5 py-2.5 bg-white hover:bg-indigo-50 text-indigo-700 text-[13px] font-bold rounded-lg shadow-md hover:shadow-lg transition-all"
-          >
-            <span className="text-[16px]">🤖</span>
-            AI Plan Assistant
-            <span className="text-[10px] font-medium bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">NEW</span>
-          </button>
-          <span className="text-[12px] text-indigo-100 leading-snug hidden sm:inline">
-            Build &amp; edit your project plan with text or voice — try <em className="text-white font-medium">"Add a 2-week testing phase"</em> or <em className="text-white font-medium">"Build me a product launch plan"</em>
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {!showLegend && (
-            <button onClick={() => setShowLegend(true)} className="flex-none text-[10px] text-indigo-200 hover:text-white transition-colors whitespace-nowrap">
-              Legend
+      {/* AI Assistant banner — only for plans with AI access */}
+      {canUseAiAssistant && (
+        <div className="flex-none px-4 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 border-b border-indigo-700 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <button
+              onClick={() => setShowAiPanel(true)}
+              className="flex-none flex items-center gap-2.5 px-5 py-2.5 bg-white hover:bg-indigo-50 text-indigo-700 text-[13px] font-bold rounded-lg shadow-md hover:shadow-lg transition-all"
+            >
+              <span className="text-[16px]">🤖</span>
+              AI Plan Assistant
+              <span className="text-[10px] font-medium bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">NEW</span>
             </button>
-          )}
+            <span className="text-[12px] text-indigo-100 leading-snug hidden sm:inline">
+              Build &amp; edit your project plan with text or voice — try <em className="text-white font-medium">"Add a 2-week testing phase"</em> or <em className="text-white font-medium">"Build me a product launch plan"</em>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {!showLegend && (
+              <button onClick={() => setShowLegend(true)} className="flex-none text-[10px] text-indigo-200 hover:text-white transition-colors whitespace-nowrap">
+                Legend
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* AI Assistant Panel (slide-over drawer) */}
       <AiAssistantPanel
@@ -170,11 +175,15 @@ const ScheduleView = ({
         usePlatformKey={usePlatformKey}
       />
 
-      {/* Always side-by-side — scrolls horizontally on narrow screens */}
+      {/* Always side-by-side on desktop; grid-only on mobile */}
       <div className="flex-grow min-h-0 flex flex-row overflow-x-auto overflow-y-hidden">
         <div
           className="flex-none bg-white flex flex-col overflow-hidden z-20 border-r border-slate-200"
-          style={{ width: `${leftPaneWidthPct}%`, minWidth: '480px', height: '100%' }}
+          style={{
+            width: isMobile ? '100%' : `${leftPaneWidthPct}%`,
+            minWidth: isMobile ? 'auto' : '480px',
+            height: '100%'
+          }}
         >
           <ScheduleGrid
             allTasks={tasks}
@@ -195,17 +204,21 @@ const ScheduleView = ({
           />
         </div>
 
-        <div
-          ref={resizerRef}
-          className="w-1 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
-        />
+        {!isMobile && (
+          <>
+            <div
+              ref={resizerRef}
+              className="w-1 bg-slate-200 hover:bg-indigo-400 cursor-col-resize z-30 transition-colors flex-none"
+            />
 
-        <div
-          className="flex flex-col overflow-hidden min-h-0 flex-grow"
-          style={{ minWidth: '300px', height: '100%' }}
-        >
-          <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
-        </div>
+            <div
+              className="flex flex-col overflow-hidden min-h-0 flex-grow"
+              style={{ minWidth: '300px', height: '100%' }}
+            >
+              <GanttChart tasks={visibleTasks} viewMode={viewMode} baseline={baseline} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
