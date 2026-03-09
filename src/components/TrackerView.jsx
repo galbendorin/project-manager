@@ -70,6 +70,7 @@ const TrackerView = ({
   tasks,
   onUpdateItem,
   onRemoveItem,
+  onAddManualItem,
   onNavigateToSchedule
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,19 +118,47 @@ const TrackerView = ({
     const isEditing = editingCell === cellId;
     const value = item[col.key] || '';
 
-    // Non-editable: Task Name (link to Project Plan)
+    // Non-editable: Task Name (link to Project Plan) — unless it's a manual item
     if (!col.editable) {
       if (col.key === 'taskName') {
+        const isManual = !item.taskId;
         const hasLongName = value && value.length > 30;
+
+        // Manual items: taskName is editable inline
+        if (isManual && isEditing) {
+          return (
+            <td className="px-4 py-3">
+              <input
+                autoFocus
+                type="text"
+                defaultValue={value === 'New Item' ? '' : value}
+                onBlur={(e) => handleCellEdit(item._id, 'taskName', e.target.value || 'New Item')}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                className="editing-input text-[12px] font-medium"
+                placeholder="Item name..."
+              />
+            </td>
+          );
+        }
+
         return (
-          <td className={`px-4 py-3 ${hasLongName ? 'cell-with-tooltip' : ''}`}>
-            <button
-              onClick={() => onNavigateToSchedule && onNavigateToSchedule(item.taskId)}
-              className="text-left text-indigo-600 hover:text-indigo-800 font-medium text-[12.5px] hover:underline block max-w-full"
-              title="Go to task in Project Plan"
-            >
-              <span className="cell-clamp">{value}</span>
-            </button>
+          <td className={`px-4 py-3 ${hasLongName ? 'cell-with-tooltip' : ''} ${isManual ? 'editable cursor-pointer' : ''}`}
+            onClick={isManual ? () => setEditingCell(cellId) : undefined}
+          >
+            {isManual ? (
+              <span className="text-slate-800 font-medium text-[12.5px] block max-w-full">
+                <span className="cell-clamp">{value}</span>
+                <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded border border-slate-200 text-slate-400 font-semibold">Manual</span>
+              </span>
+            ) : (
+              <button
+                onClick={() => onNavigateToSchedule && onNavigateToSchedule(item.taskId)}
+                className="text-left text-indigo-600 hover:text-indigo-800 font-medium text-[12.5px] hover:underline block max-w-full"
+                title="Go to task in Project Plan"
+              >
+                <span className="cell-clamp">{value}</span>
+              </button>
+            )}
             {getTaskProgress(item.taskId) !== null && (
               <div className="flex items-center gap-1.5 mt-1">
                 <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
@@ -329,6 +358,13 @@ const TrackerView = ({
               Project Master Tracker
             </h2>
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => onAddManualItem && onAddManualItem()}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
+              >
+                <span className="text-[13px] leading-none">+</span>
+                Add Item
+              </button>
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}

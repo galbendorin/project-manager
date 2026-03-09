@@ -313,6 +313,23 @@ export const useProjectData = (projectId, userId = null) => {
     });
   }, [projectData]);
 
+  const addManualTrackerItem = useCallback((name = 'New Item') => {
+    setTracker(prev => [...prev, {
+      _id: `tracker_manual_${Date.now()}`,
+      taskId: null,
+      taskName: name,
+      notes: '',
+      status: 'Not Started',
+      rag: 'Green',
+      nextAction: '',
+      owner: '',
+      dateAdded: getCurrentDate(),
+      lastUpdated: getCurrentDate(),
+      createdAt: now(),
+      updatedAt: now()
+    }]);
+  }, []);
+
   const removeFromTracker = useCallback((trackerId) => {
     setTracker(prev => prev.filter(t => t._id !== trackerId));
   }, []);
@@ -548,6 +565,7 @@ export const useProjectData = (projectId, userId = null) => {
     deleteRegisterItem,
     toggleItemPublic,
     sendToTracker,
+    addManualTrackerItem,
     removeFromTracker,
     updateTrackerItem,
     isInTracker,

@@ -123,6 +123,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     deleteRegisterItem,
     toggleItemPublic,
     sendToTracker,
+    addManualTrackerItem,
     removeFromTracker,
     updateTrackerItem,
     isInTracker,
@@ -231,6 +232,22 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     if (editingTask) {
       updateTask(editingTask.id, taskData);
     } else {
+      // Enforce task limit on Starter
+      const currentCount = projectData.length;
+      const hardLimit = getTaskHardLimit();
+
+      if (currentCount >= hardLimit) {
+        alert(`Task limit reached (${hardLimit}). Upgrade to Pro for more tasks per project.`);
+        return;
+      }
+
+      if (isInTaskGrace(currentCount)) {
+        // Still allowed but warn
+        const soft = limits.maxTasksPerProject;
+        const remaining = hardLimit - currentCount;
+        alert(`You're over the ${soft}-task limit. ${remaining} task${remaining !== 1 ? 's' : ''} remaining before the hard cap. Upgrade to Pro for more.`);
+      }
+
       addTask(taskData, insertAfterId);
     }
   };
@@ -726,7 +743,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
           const target = activeSubView || activeTab;
           addRegisterItem(target);
         }}
-        addEntryLabel={activeTab === 'todo' ? 'Add Task' : activeTab === 'raci' ? '' : 'Add Entry'}
+        addEntryLabel={activeTab === 'todo' ? 'Add Task' : activeTab === 'raci' || activeTab === 'tracker' ? '' : 'Add Entry'}
         onSetBaseline={setBaseline}
         onClearBaseline={clearBaseline}
         hasBaseline={!!baseline}
@@ -783,6 +800,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               tasks={projectData}
               onUpdateItem={updateTrackerItem}
               onRemoveItem={removeFromTracker}
+              onAddManualItem={addManualTrackerItem}
               onNavigateToSchedule={handleNavigateToSchedule}
             />
           ) : activeTab === 'statusreport' ? (
