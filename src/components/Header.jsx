@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ICONS } from '../utils/constants';
 import { PlanBadge } from './UpgradeBanner';
+import { usePlan } from '../contexts/PlanContext';
 
 const Header = ({ 
   taskCount, 
@@ -25,6 +26,7 @@ const Header = ({
   const [showBaselineMenu, setShowBaselineMenu] = useState(false);
   const menuRef = useRef(null);
   const fileInputRef = useRef(null);
+  const { canBaseline, canExport, canImport, hasTabAccess } = usePlan();
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -39,6 +41,10 @@ const Header = ({
   }, [showBaselineMenu]);
 
   const handleSetBaseline = () => {
+    if (!canBaseline) {
+      // TODO: show upgrade prompt
+      return;
+    }
     if (hasBaseline) {
       setShowBaselineMenu(!showBaselineMenu);
     } else {
@@ -67,6 +73,9 @@ const Header = ({
       e.target.value = '';
     }
   };
+
+  // Don't show Add Entry for blurred/locked tabs
+  const canAddEntry = hasTabAccess(activeTab);
 
   return (
     <header className="flex-none bg-white border-b border-slate-200 px-3 sm:px-4 py-2 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-2 z-30">
@@ -127,42 +136,57 @@ const Header = ({
             )}
 
             {/* Import button */}
-            <button
-              onClick={handleImportClick}
-              className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
-              title="Import from Excel (.xlsx)"
-            >
-              ↑ Import
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              onChange={handleFileChange}
-              className="hidden"
-            />
+            {canImport && (
+              <>
+                <button
+                  onClick={handleImportClick}
+                  className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+                  title="Import from Excel (.xlsx)"
+                >
+                  ↑ Import
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </>
+            )}
 
             {/* Baseline button with dropdown */}
             <div className="relative" ref={menuRef}>
               <button
                 onClick={handleSetBaseline}
                 className={`text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 border ${
-                  hasBaseline 
-                    ? 'text-purple-600 border-purple-200 bg-purple-50 hover:bg-purple-100' 
-                    : 'text-slate-500 border-slate-200 hover:border-purple-300 hover:text-purple-600 hover:bg-purple-50'
+                  !canBaseline
+                    ? 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-60'
+                    : hasBaseline 
+                      ? 'text-purple-600 border-purple-200 bg-purple-50 hover:bg-purple-100' 
+                      : 'text-slate-500 border-slate-200 hover:border-purple-300 hover:text-purple-600 hover:bg-purple-50'
                 }`}
-                title={hasBaseline ? 'Baseline is set — click for options' : 'Set baseline snapshot'}
+                title={
+                  !canBaseline ? 'Baseline — Pro feature'
+                  : hasBaseline ? 'Baseline is set — click for options'
+                  : 'Set baseline snapshot'
+                }
               >
-                {hasBaseline && (
+                {!canBaseline && (
+                  <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                )}
+                {canBaseline && hasBaseline && (
                   <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
                 )}
                 Baseline
-                {hasBaseline && (
+                {canBaseline && hasBaseline && (
                   <span className="text-[9px] ml-0.5">▾</span>
                 )}
               </button>
 
-              {showBaselineMenu && (
+              {showBaselineMenu && canBaseline && (
                 <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50 w-48">
                   <button
                     onClick={handleRebaseline}
@@ -203,7 +227,7 @@ const Header = ({
               New Task
             </button>
           </div>
-        ) : addEntryLabel ? (
+        ) : canAddEntry && addEntryLabel ? (
           <button
             onClick={onAddRegisterItem}
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
@@ -213,12 +237,14 @@ const Header = ({
           </button>
         ) : null}
 
-        <button
-          onClick={onExport}
-          className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
-        >
-          Export
-        </button>
+        {canExport && (
+          <button
+            onClick={onExport}
+            className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
+          >
+            Export
+          </button>
+        )}
       </div>
     </header>
   );

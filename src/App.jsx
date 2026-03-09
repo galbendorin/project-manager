@@ -7,10 +7,11 @@ import Header from './components/Header';
 import Navigation from './components/Navigation';
 import TaskModal from './components/TaskModal';
 import DemoBenefitsModal from './components/DemoBenefitsModal';
+import BlurOverlay from './components/BlurOverlay';
+import { TrialBanner, CancellationBanner, ReadOnlyBanner } from './components/UpgradeBanner';
 import { useProjectData } from './hooks/useProjectData';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { usePlan } from './contexts/PlanContext';
-import MobileLayout from './components/mobile/MobileLayout';
 import {
   loadXLSX,
   parseScheduleSheet,
@@ -71,7 +72,13 @@ function App() {
 
 function MainApp({ project, currentUserId, onBackToProjects }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const { canUseAiReport, aiReportsRemaining, incrementAiReports, limits, effectivePlan, isTrialActive, isAdmin } = usePlan();
+  const {
+    canUseAiReport, aiReportsRemaining, incrementAiReports,
+    limits, effectivePlan, isAdmin, isTrialActive,
+    canUseAi, canUseAiAssistant, canExportAiReport, canBaseline,
+    hasTabAccess, isReadOnly, isInTaskGrace, getTaskHardLimit,
+    simulatedPlan, setSimulatedPlan, simulatorOptions,
+  } = usePlan();
 
   const [activeTab, setActiveTab] = useState('schedule');
   const [activeSubView, setActiveSubView] = useState(null);
@@ -84,10 +91,11 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
   const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
 
-  // Trial users and admins without their own key use the server-side platform key
+  // AI is available to trial, pro, team, and admin users
+  // Starter users have no AI access at all
   const hasByok = isAiConfigured(aiSettings);
-  const usePlatformKey = (isTrialActive || isAdmin) && !hasByok;
-  const aiReady = hasByok || usePlatformKey;
+  const usePlatformKey = canUseAi && !hasByok;
+  const aiReady = canUseAi && (hasByok || usePlatformKey);
 
   const {
     projectData,
@@ -619,99 +627,16 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   }
 
   /* ───────────────────────────────────────────────
-   * MOBILE LAYOUT — same data, alternative renderer
-   * ─────────────────────────────────────────────── */
-  if (isMobile) {
-    return (
-      <MobileLayout
-        /* ── project context ── */
-        project={project}
-        currentUserId={currentUserId}
-        onBackToProjects={onBackToProjects}
-
-        /* ── data from useProjectData ── */
-        projectData={projectData}
-        registers={registers}
-        tracker={tracker}
-        statusReport={statusReport}
-        todos={todos}
-        baseline={baseline}
-
-        /* ── save state ── */
-        saving={saving}
-        lastSaved={lastSaved}
-        saveConflict={saveConflict}
-        saveError={saveError}
-
-        /* ── task CRUD ── */
-        addTask={addTask}
-        updateTask={updateTask}
-        deleteTask={deleteTask}
-        modifyHierarchy={modifyHierarchy}
-        toggleTrackTask={toggleTrackTask}
-
-        /* ── register CRUD ── */
-        addRegisterItem={addRegisterItem}
-        updateRegisterItem={updateRegisterItem}
-        deleteRegisterItem={deleteRegisterItem}
-        toggleItemPublic={toggleItemPublic}
-
-        /* ── tracker ── */
-        sendToTracker={sendToTracker}
-        removeFromTracker={removeFromTracker}
-        updateTrackerItem={updateTrackerItem}
-        isInTracker={isInTracker}
-        handleRemoveFromTracker={handleRemoveFromTracker}
-
-        /* ── action log ── */
-        handleSendToActionLog={handleSendToActionLog}
-        handleRemoveFromActionLog={handleRemoveFromActionLog}
-
-        /* ── status report ── */
-        updateStatusReport={updateStatusReport}
-
-        /* ── todos ── */
-        addTodo={addTodo}
-        updateTodo={updateTodo}
-        deleteTodo={deleteTodo}
-
-        /* ── baseline ── */
-        setBaseline={setBaseline}
-        clearBaseline={clearBaseline}
-
-        /* ── demo / import-export ── */
-        loadDemoDataAllTabs={handleLoadDemoData}
-        resetDemoData={handleResetDemoData}
-        onImport={handleImport}
-        onExport={handleExport}
-        onExportAiReport={handleExportAiReport}
-        onGenerateAiReport={handleGenerateAiReport}
-        onGenerateEmailDigest={handleGenerateEmailDigest}
-        aiConfigured={aiReady}
-        onAiSettingsChange={handleAiSettingsChange}
-        canUseAiReport={canUseAiReport}
-        aiReportsRemaining={aiReportsRemaining}
-        aiReportsLimit={limits.aiReportsPerMonth}
-        usePlatformKey={usePlatformKey}
-        importStatus={importStatus}
-
-        /* ── misc ── */
-        isExternalView={isExternalView}
-        onToggleExternalView={() => setIsExternalView(!isExternalView)}
-        reloadProject={reloadProject}
-        handleNavigateToSchedule={handleNavigateToSchedule}
-        handleReorderTask={handleReorderTask}
-        setProjectData={setProjectData}
-        setRegisters={setRegisters}
-      />
-    );
-  }
-
-  /* ───────────────────────────────────────────────
-   * DESKTOP LAYOUT — unchanged
+   * SINGLE RESPONSIVE LAYOUT (desktop + mobile)
+   * On mobile: same layout, ScheduleView hides Gantt
    * ─────────────────────────────────────────────── */
   return (
     <div className="h-screen flex flex-col overflow-hidden">
+      {/* Plan banners */}
+      <TrialBanner />
+      <CancellationBanner />
+      <ReadOnlyBanner />
+
       {/* Save Status Bar */}
       <div className="bg-gray-800 border-b border-gray-700 px-3 sm:px-4 py-1.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 text-xs">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -725,6 +650,24 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
           <span className="text-white font-medium truncate">{project.name}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Plan Simulator — admin only */}
+          {isAdmin && simulatorOptions.length > 0 && (
+            <select
+              value={simulatedPlan || ''}
+              onChange={(e) => setSimulatedPlan(e.target.value || null)}
+              className="text-[11px] px-1.5 py-0.5 bg-purple-900/60 border border-purple-500/50 text-purple-200 rounded cursor-pointer"
+              title="Plan Simulator (admin only)"
+            >
+              {simulatorOptions.map(opt => (
+                <option key={opt.value || 'real'} value={opt.value || ''}>{opt.label}</option>
+              ))}
+            </select>
+          )}
+          {simulatedPlan && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-purple-600 text-white rounded-full font-medium animate-pulse">
+              SIM: {simulatorOptions.find(o => o.value === simulatedPlan)?.label}
+            </span>
+          )}
           <button
             onClick={cleanupDuplicateDescriptions}
             className="text-xs px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
@@ -817,6 +760,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               tasks={projectData}
               viewMode={viewMode}
               baseline={baseline}
+              isMobile={isMobile}
               onUpdateTask={updateTask}
               onDeleteTask={deleteTask}
               onModifyHierarchy={modifyHierarchy}
@@ -842,69 +786,81 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               onNavigateToSchedule={handleNavigateToSchedule}
             />
           ) : activeTab === 'statusreport' ? (
-            <StatusReportView
-              tasks={projectData}
-              baseline={baseline}
-              registers={registers}
-              tracker={tracker}
-              statusReport={statusReport}
-              onUpdateStatusReport={updateStatusReport}
-              onExportAiReport={handleExportAiReport}
-              onGenerateAiReport={handleGenerateAiReport}
-              onGenerateEmailDigest={handleGenerateEmailDigest}
-              aiConfigured={aiReady}
-              onAiSettingsChange={handleAiSettingsChange}
-              projectName={project.name}
-              canUseAiReport={canUseAiReport}
-              aiReportsRemaining={aiReportsRemaining}
-              aiReportsLimit={limits.aiReportsPerMonth}
-              usePlatformKey={usePlatformKey}
-            />
+            <BlurOverlay tabId="statusreport">
+              <StatusReportView
+                tasks={projectData}
+                baseline={baseline}
+                registers={registers}
+                tracker={tracker}
+                statusReport={statusReport}
+                onUpdateStatusReport={updateStatusReport}
+                onExportAiReport={handleExportAiReport}
+                onGenerateAiReport={handleGenerateAiReport}
+                onGenerateEmailDigest={handleGenerateEmailDigest}
+                aiConfigured={aiReady}
+                onAiSettingsChange={handleAiSettingsChange}
+                projectName={project.name}
+                canUseAiReport={canUseAiReport}
+                aiReportsRemaining={aiReportsRemaining}
+                aiReportsLimit={limits.aiReportsPerMonth}
+                usePlatformKey={usePlatformKey}
+              />
+            </BlurOverlay>
           ) : activeTab === 'todo' ? (
-            <TodoView
-              todos={todos}
-              projectData={projectData}
-              registers={registers}
-              tracker={tracker}
-              currentProject={project}
-              currentUserId={currentUserId}
-              isExternalView={isExternalView}
-              onUpdateTodo={updateTodo}
-              onDeleteTodo={deleteTodo}
-            />
+            <BlurOverlay tabId="todo">
+              <TodoView
+                todos={todos}
+                projectData={projectData}
+                registers={registers}
+                tracker={tracker}
+                currentProject={project}
+                currentUserId={currentUserId}
+                isExternalView={isExternalView}
+                onUpdateTodo={updateTodo}
+                onDeleteTodo={deleteTodo}
+              />
+            </BlurOverlay>
           ) : activeTab === 'stakeholdersmgmt' ? (
-            <StakeholdersView
-              registers={registers}
-              isExternalView={isExternalView}
-              onUpdateItem={updateRegisterItem}
-              onDeleteItem={deleteRegisterItem}
-              onTogglePublic={toggleItemPublic}
-              onSubViewChange={setActiveSubView}
-            />
+            <BlurOverlay tabId="stakeholdersmgmt">
+              <StakeholdersView
+                registers={registers}
+                isExternalView={isExternalView}
+                onUpdateItem={updateRegisterItem}
+                onDeleteItem={deleteRegisterItem}
+                onTogglePublic={toggleItemPublic}
+                onSubViewChange={setActiveSubView}
+              />
+            </BlurOverlay>
           ) : activeTab === 'financials' ? (
-            <FinancialsView
-              registers={registers}
-              isExternalView={isExternalView}
-              onUpdateItem={updateRegisterItem}
-              onDeleteItem={deleteRegisterItem}
-              onTogglePublic={toggleItemPublic}
-              onSubViewChange={setActiveSubView}
-            />
+            <BlurOverlay tabId="financials">
+              <FinancialsView
+                registers={registers}
+                isExternalView={isExternalView}
+                onUpdateItem={updateRegisterItem}
+                onDeleteItem={deleteRegisterItem}
+                onTogglePublic={toggleItemPublic}
+                onSubViewChange={setActiveSubView}
+              />
+            </BlurOverlay>
           ) : activeTab === 'raci' ? (
-            <RACIView
-              projectData={projectData}
-              registers={registers}
-              setRegisters={setRegisters}
-            />
+            <BlurOverlay tabId="raci">
+              <RACIView
+                projectData={projectData}
+                registers={registers}
+                setRegisters={setRegisters}
+              />
+            </BlurOverlay>
           ) : (
-            <RegisterView
-              registerType={activeTab}
-              items={registers[activeTab] || []}
-              isExternalView={isExternalView}
-              onUpdateItem={updateRegisterItem}
-              onDeleteItem={deleteRegisterItem}
-              onTogglePublic={toggleItemPublic}
-            />
+            <BlurOverlay tabId={activeTab}>
+              <RegisterView
+                registerType={activeTab}
+                items={registers[activeTab] || []}
+                isExternalView={isExternalView}
+                onUpdateItem={updateRegisterItem}
+                onDeleteItem={deleteRegisterItem}
+                onTogglePublic={toggleItemPublic}
+              />
+            </BlurOverlay>
           )}
         </Suspense>
       </main>
