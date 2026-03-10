@@ -12,7 +12,7 @@ import PricingPage from './components/PricingPage';
 import BillingScreen from './components/BillingScreen';
 import { TrialBanner, CancellationBanner, ReadOnlyBanner } from './components/UpgradeBanner';
 import { useProjectData } from './hooks/useProjectData';
-import { useCheckoutStatus, CheckoutToast } from './hooks/useCheckoutStatus';
+import { useCheckoutStatus, CheckoutToast } from './hooks/useCheckoutStatus.jsx';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { usePlan } from './contexts/PlanContext';
 import {
