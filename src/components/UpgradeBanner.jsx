@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { usePlan } from '../contexts/PlanContext';
 
 // ── Trial Banner (shown at top of app during trial / after expiry) ───
-export const TrialBanner = () => {
+export const TrialBanner = ({ onUpgrade }) => {
   const { isTrialActive, isTrialExpired, trialDaysLeft, isStarter, effectivePlan } = usePlan();
   const [dismissed, setDismissed] = useState(false);
 
@@ -15,8 +15,7 @@ export const TrialBanner = () => {
         <span>You're on the <strong>Starter</strong> plan. Upgrade to Pro to unlock all features.</span>
         <button
           onClick={() => {
-            // TODO: Wire to Stripe checkout
-            window.open('/pricing', '_blank');
+            if (onUpgrade) onUpgrade();
           }}
           className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-1 rounded-full text-xs font-bold transition-colors"
         >
@@ -44,8 +43,7 @@ export const TrialBanner = () => {
         </span>
         <button
           onClick={() => {
-            // TODO: Wire to Stripe checkout
-            window.open('/pricing', '_blank');
+            if (onUpgrade) onUpgrade();
           }}
           className="bg-white text-amber-700 px-3 py-1 rounded-full text-xs font-bold hover:bg-amber-50 transition-colors"
         >
@@ -66,7 +64,7 @@ export const TrialBanner = () => {
 };
 
 // ── Cancellation Banner (Pro user who will cancel at period end) ──────
-export const CancellationBanner = () => {
+export const CancellationBanner = ({ onUpgrade }) => {
   const { willCancel, subscriptionEndsAt, isPro } = usePlan();
 
   if (!willCancel || !isPro) return null;
@@ -80,8 +78,7 @@ export const CancellationBanner = () => {
       <span>Your Pro plan will cancel on <strong>{endDate}</strong>. You'll move to Starter after that.</span>
       <button
         onClick={() => {
-          // TODO: Wire to Stripe customer portal to reactivate
-          window.open('/billing', '_blank');
+          if (onUpgrade) onUpgrade();
         }}
         className="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1 rounded-full text-xs font-bold transition-colors"
       >
@@ -92,7 +89,7 @@ export const CancellationBanner = () => {
 };
 
 // ── Limit Hit Banner (shown inline when a specific limit is reached) ─
-export const LimitBanner = ({ type, currentTaskCount, className = '' }) => {
+export const LimitBanner = ({ type, currentTaskCount, className = '', onUpgrade }) => {
   const {
     effectivePlan,
     isStarter,
@@ -166,8 +163,7 @@ export const LimitBanner = ({ type, currentTaskCount, className = '' }) => {
         </div>
         <button
           onClick={() => {
-            // TODO: Wire to Stripe checkout
-            window.open('/pricing', '_blank');
+            if (onUpgrade) onUpgrade();
           }}
           className={`shrink-0 ${
             isWarning ? 'bg-amber-500 hover:bg-amber-600' : 'bg-indigo-600 hover:bg-indigo-700'
@@ -244,7 +240,7 @@ export const PlanBadge = () => {
 };
 
 // ── Read-Only Banner (shown when downgraded user has too many projects) ──
-export const ReadOnlyBanner = () => {
+export const ReadOnlyBanner = ({ onUpgrade }) => {
   const { isReadOnly, limits } = usePlan();
 
   if (!isReadOnly) return null;
@@ -257,8 +253,7 @@ export const ReadOnlyBanner = () => {
       </span>
       <button
         onClick={() => {
-          // TODO: Wire to Stripe checkout
-          window.open('/pricing', '_blank');
+          if (onUpgrade) onUpgrade();
         }}
         className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-full text-xs font-bold transition-colors"
       >

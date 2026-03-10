@@ -10,7 +10,7 @@ import { usePlan } from '../contexts/PlanContext';
  *     <RegisterView ... />
  *   </BlurOverlay>
  */
-const BlurOverlay = ({ tabId, children }) => {
+const BlurOverlay = ({ tabId, children, onUpgrade }) => {
   const { hasTabAccess, effectivePlan, isTrialActive, trialDaysLeft } = usePlan();
 
   if (hasTabAccess(tabId)) {
@@ -44,8 +44,7 @@ const BlurOverlay = ({ tabId, children }) => {
 
           <button
             onClick={() => {
-              // TODO: Wire to Stripe checkout or pricing page
-              window.open('/pricing', '_blank');
+              if (onUpgrade) onUpgrade();
             }}
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-2.5 px-6 rounded-lg transition-colors shadow-sm"
           >

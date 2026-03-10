@@ -21,7 +21,9 @@ const Header = ({
   activeTab,
   isDemoProject = false,
   viewMode,
-  onViewModeChange
+  onViewModeChange,
+  onOpenPricing,
+  onOpenBilling
 }) => {
   const [showBaselineMenu, setShowBaselineMenu] = useState(false);
   const menuRef = useRef(null);
@@ -42,7 +44,7 @@ const Header = ({
 
   const handleSetBaseline = () => {
     if (!canBaseline) {
-      // TODO: show upgrade prompt
+      if (onOpenPricing) onOpenPricing();
       return;
     }
     if (hasBaseline) {
@@ -243,6 +245,17 @@ const Header = ({
             className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
           >
             Export
+          </button>
+        )}
+
+        {/* Billing / Upgrade button */}
+        {onOpenBilling && (
+          <button
+            onClick={onOpenBilling}
+            className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
+            title="Billing & plan"
+          >
+            Billing
           </button>
         )}
       </div>

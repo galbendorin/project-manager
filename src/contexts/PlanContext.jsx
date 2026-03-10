@@ -366,6 +366,7 @@ export const PlanProvider = ({ children }) => {
   const value = useMemo(() => ({
     // State
     profile,
+    userProfile: profile,   // Alias — used by PricingPage & BillingScreen for Stripe fields
     loading,
     effectivePlan,
     limits,

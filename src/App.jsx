@@ -8,8 +8,11 @@ import Navigation from './components/Navigation';
 import TaskModal from './components/TaskModal';
 import DemoBenefitsModal from './components/DemoBenefitsModal';
 import BlurOverlay from './components/BlurOverlay';
+import PricingPage from './components/PricingPage';
+import BillingScreen from './components/BillingScreen';
 import { TrialBanner, CancellationBanner, ReadOnlyBanner } from './components/UpgradeBanner';
 import { useProjectData } from './hooks/useProjectData';
+import { useCheckoutStatus, CheckoutToast } from './hooks/useCheckoutStatus';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { usePlan } from './contexts/PlanContext';
 import {
@@ -89,6 +92,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [insertAfterId, setInsertAfterId] = useState(null);
   const [importStatus, setImportStatus] = useState(null);
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
+  const [showPricing, setShowPricing] = useState(false);
+  const [showBilling, setShowBilling] = useState(false);
+  const checkoutStatus = useCheckoutStatus();
   const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
 
   // AI is available to trial, pro, team, and admin users
@@ -238,6 +244,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
       if (currentCount >= hardLimit) {
         alert(`Task limit reached (${hardLimit}). Upgrade to Pro for more tasks per project.`);
+        handleOpenPricing();
         return;
       }
 
@@ -245,7 +252,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         // Still allowed but warn
         const soft = limits.maxTasksPerProject;
         const remaining = hardLimit - currentCount;
-        alert(`You're over the ${soft}-task limit. ${remaining} task${remaining !== 1 ? 's' : ''} remaining before the hard cap. Upgrade to Pro for more.`);
+        alert(`You're over the ${soft}-task limit. ${remaining} task${remaining !== 1 ? 's' : ''} remaining before the hard cap.`);
       }
 
       addTask(taskData, insertAfterId);
@@ -635,6 +642,16 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     setAiSettings(newSettings);
   }, []);
 
+  const handleOpenPricing = useCallback(() => {
+    setShowBilling(false);
+    setShowPricing(true);
+  }, []);
+
+  const handleOpenBilling = useCallback(() => {
+    setShowPricing(false);
+    setShowBilling(true);
+  }, []);
+
   if (loadingData) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -650,9 +667,9 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Plan banners */}
-      <TrialBanner />
-      <CancellationBanner />
-      <ReadOnlyBanner />
+      <TrialBanner onUpgrade={handleOpenPricing} />
+      <CancellationBanner onUpgrade={handleOpenPricing} />
+      <ReadOnlyBanner onUpgrade={handleOpenPricing} />
 
       {/* Save Status Bar */}
       <div className="bg-gray-800 border-b border-gray-700 px-3 sm:px-4 py-1.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 text-xs">
@@ -733,6 +750,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         onExport={handleExport}
         onImport={handleImport}
         onNewTask={() => handleOpenModal()}
+        onOpenPricing={handleOpenPricing}
+        onOpenBilling={handleOpenBilling}
         onAddRegisterItem={() => {
           if (activeTab === 'todo') {
             addTodo();
@@ -804,7 +823,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               onNavigateToSchedule={handleNavigateToSchedule}
             />
           ) : activeTab === 'statusreport' ? (
-            <BlurOverlay tabId="statusreport">
+            <BlurOverlay tabId="statusreport" onUpgrade={handleOpenPricing}>
               <StatusReportView
                 tasks={projectData}
                 baseline={baseline}
@@ -825,7 +844,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               />
             </BlurOverlay>
           ) : activeTab === 'todo' ? (
-            <BlurOverlay tabId="todo">
+            <BlurOverlay tabId="todo" onUpgrade={handleOpenPricing}>
               <TodoView
                 todos={todos}
                 projectData={projectData}
@@ -839,7 +858,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               />
             </BlurOverlay>
           ) : activeTab === 'stakeholdersmgmt' ? (
-            <BlurOverlay tabId="stakeholdersmgmt">
+            <BlurOverlay tabId="stakeholdersmgmt" onUpgrade={handleOpenPricing}>
               <StakeholdersView
                 registers={registers}
                 isExternalView={isExternalView}
@@ -850,7 +869,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               />
             </BlurOverlay>
           ) : activeTab === 'financials' ? (
-            <BlurOverlay tabId="financials">
+            <BlurOverlay tabId="financials" onUpgrade={handleOpenPricing}>
               <FinancialsView
                 registers={registers}
                 isExternalView={isExternalView}
@@ -861,7 +880,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               />
             </BlurOverlay>
           ) : activeTab === 'raci' ? (
-            <BlurOverlay tabId="raci">
+            <BlurOverlay tabId="raci" onUpgrade={handleOpenPricing}>
               <RACIView
                 projectData={projectData}
                 registers={registers}
@@ -869,7 +888,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               />
             </BlurOverlay>
           ) : (
-            <BlurOverlay tabId={activeTab}>
+            <BlurOverlay tabId={activeTab} onUpgrade={handleOpenPricing}>
               <RegisterView
                 registerType={activeTab}
                 items={registers[activeTab] || []}
@@ -895,6 +914,17 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         task={editingTask}
         insertAfterId={insertAfterId}
       />
+
+      {showPricing && (
+        <PricingPage onClose={() => setShowPricing(false)} />
+      )}
+      {showBilling && (
+        <BillingScreen
+          onClose={() => setShowBilling(false)}
+          onOpenPricing={handleOpenPricing}
+        />
+      )}
+      <CheckoutToast status={checkoutStatus} />
     </div>
   );
 }
