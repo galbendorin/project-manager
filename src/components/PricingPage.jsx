@@ -11,12 +11,14 @@ export default function PricingPage({ onClose }) {
   const [billingCycle, setBillingCycle] = useState('annual');
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
-  const { userProfile, effectivePlan, isAdmin } = usePlan();
+  const { userProfile, effectivePlan, isAdmin, simulatedPlan } = usePlan();
 
   const isCurrentlyPro = effectivePlan === 'pro' || effectivePlan === 'team';
+  // Allow admin to test checkout when plan simulator is active
+  const blockUpgrade = isCurrentlyPro || (isAdmin && !simulatedPlan);
 
   const handleUpgrade = async (plan) => {
-    if (isAdmin || isCurrentlyPro) return;
+    if (blockUpgrade) return;
 
     setLoading(true);
     try {
@@ -191,16 +193,16 @@ export default function PricingPage({ onClose }) {
 
             <button
               onClick={() => handleUpgrade(billingCycle)}
-              disabled={loading || isCurrentlyPro}
+              disabled={loading || blockUpgrade}
               className={`mt-6 w-full py-3 rounded-lg font-medium text-sm transition-all ${
-                isCurrentlyPro
+                blockUpgrade
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                   : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-lg shadow-blue-600/25'
               }`}
             >
               {loading
                 ? 'Redirecting to checkout...'
-                : isCurrentlyPro
+                : blockUpgrade
                   ? 'You\'re on Pro'
                   : `Upgrade to Pro — ${billingCycle === 'monthly' ? '£7.99/mo' : '£67/yr'}`
               }
