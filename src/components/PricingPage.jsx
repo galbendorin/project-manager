@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { usePlan } from '../contexts/PlanContext';
 import { useAuth } from '../contexts/AuthContext';
+import { markBillingSyncPending } from '../utils/billingSync';
 
 const PRICE_IDS = {
   monthly: 'price_1T9YcZGmvS2YZ5sJKGD1NtYT',
@@ -10,6 +11,7 @@ const PRICE_IDS = {
 export default function PricingPage({ onClose }) {
   const [billingCycle, setBillingCycle] = useState('annual');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const { user } = useAuth();
   const { userProfile, effectivePlan, isAdmin, simulatedPlan } = usePlan();
 
@@ -21,6 +23,7 @@ export default function PricingPage({ onClose }) {
     if (blockUpgrade) return;
 
     setLoading(true);
+    setError('');
     try {
       const res = await fetch('/api/create-checkout-session', {
         method: 'POST',
@@ -33,15 +36,17 @@ export default function PricingPage({ onClose }) {
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || 'Unable to start checkout right now.');
+      }
+
       if (data.url) {
+        markBillingSyncPending('checkout');
         window.location.href = data.url;
-      } else {
-        alert('Something went wrong. Please try again.');
-        console.error('Checkout error:', data.error);
       }
     } catch (err) {
-      alert('Failed to start checkout. Please try again.');
+      setError(getCheckoutErrorMessage(err));
       console.error('Checkout fetch error:', err);
     } finally {
       setLoading(false);
@@ -207,6 +212,18 @@ export default function PricingPage({ onClose }) {
                   : `Upgrade to Pro — ${billingCycle === 'monthly' ? '£7.99/mo' : '£67/yr'}`
               }
             </button>
+
+            {error && (
+              <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {error}
+              </div>
+            )}
+
+            {!error && (
+              <p className="mt-4 text-xs text-gray-500">
+                You will be redirected to secure Stripe checkout to complete the upgrade.
+              </p>
+            )}
           </div>
         </div>
 
@@ -219,4 +236,22 @@ export default function PricingPage({ onClose }) {
       </div>
     </div>
   );
+}
+
+function getCheckoutErrorMessage(error) {
+  const message = error instanceof Error ? error.message : String(error || '');
+
+  if (!message) {
+    return 'Unable to start checkout right now. Please try again in a moment.';
+  }
+
+  if (message.includes('Missing required fields') || message.includes('Invalid plan')) {
+    return 'Checkout could not be prepared. Refresh the page and try again.';
+  }
+
+  if (message.toLowerCase().includes('network')) {
+    return 'Network error while connecting to Stripe. Check your connection and try again.';
+  }
+
+  return 'Unable to start checkout right now. Please try again in a moment.';
 }

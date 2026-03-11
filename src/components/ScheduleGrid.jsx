@@ -328,6 +328,7 @@ TaskRow.displayName = 'TaskRow';
 const ScheduleGrid = ({
   allTasks,
   visibleTasks,
+  isMobile = false,
   collapsedIndices,
   onToggleCollapse,
   onUpdateTask,
@@ -356,10 +357,34 @@ const ScheduleGrid = ({
   const startWidth = useRef(0);
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  const headerScrollRef = useRef(null);
   const gridBodyRef = useRef(null);
   const scrollRafRef = useRef(null);
+  const horizontalSyncRef = useRef(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(640);
+
+  useEffect(() => {
+    setColumnWidths(prev => {
+      if (isMobile) {
+        return {
+          ...prev,
+          name: 220,
+          start: 88,
+          finish: 88,
+          actions: 132,
+        };
+      }
+
+      return {
+        ...prev,
+        name: 280,
+        start: 100,
+        finish: 100,
+        actions: 150,
+      };
+    });
+  }, [isMobile]);
 
   const criticalPathIds = useMemo(() => {
     if ((allTasks?.length || 0) > 250) return new Set();
@@ -453,9 +478,34 @@ const ScheduleGrid = ({
 
   const handleGridScroll = useCallback((e) => {
     const nextTop = e.currentTarget.scrollTop;
+    const headerEl = headerScrollRef.current;
+
+    if (headerEl && horizontalSyncRef.current !== headerEl) {
+      horizontalSyncRef.current = e.currentTarget;
+      headerEl.scrollLeft = e.currentTarget.scrollLeft;
+      requestAnimationFrame(() => {
+        if (horizontalSyncRef.current === e.currentTarget) {
+          horizontalSyncRef.current = null;
+        }
+      });
+    }
+
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(() => {
       setScrollTop(nextTop);
+    });
+  }, []);
+
+  const handleHeaderScroll = useCallback((e) => {
+    const bodyEl = gridBodyRef.current;
+    if (!bodyEl || horizontalSyncRef.current === bodyEl) return;
+
+    horizontalSyncRef.current = e.currentTarget;
+    bodyEl.scrollLeft = e.currentTarget.scrollLeft;
+    requestAnimationFrame(() => {
+      if (horizontalSyncRef.current === e.currentTarget) {
+        horizontalSyncRef.current = null;
+      }
     });
   }, []);
 
@@ -506,6 +556,10 @@ const ScheduleGrid = ({
   );
 
   const isVirtualized = visibleTasks.length > VIRTUALIZATION_THRESHOLD;
+  const tableMinWidth = useMemo(
+    () => Object.values(columnWidths).reduce((sum, width) => sum + width, 0),
+    [columnWidths]
+  );
 
   const { startIndex, endIndex, topSpacerHeight, bottomSpacerHeight, renderTasks } = useMemo(() => {
     if (!isVirtualized) {
@@ -540,9 +594,14 @@ const ScheduleGrid = ({
   }, []);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-none overflow-hidden" style={{ height: `${GRID_HEADER_HEIGHT}px` }}>
-        <table className="grid-table">
+    <div className="h-full min-w-0 flex flex-col">
+      <div
+        ref={headerScrollRef}
+        className="flex-none overflow-x-auto overflow-y-hidden no-scrollbar"
+        style={{ height: `${GRID_HEADER_HEIGHT}px` }}
+        onScroll={handleHeaderScroll}
+      >
+        <table className="grid-table" style={{ minWidth: `${tableMinWidth}px` }}>
           {colGroupCols}
           <thead>
             <tr>
@@ -568,7 +627,7 @@ const ScheduleGrid = ({
         id="grid-scroll"
         onScroll={handleGridScroll}
       >
-        <table className="grid-table">
+        <table className="grid-table" style={{ minWidth: `${tableMinWidth}px` }}>
           {colGroupCols}
           <tbody>
             {isVirtualized && topSpacerHeight > 0 && (

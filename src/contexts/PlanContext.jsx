@@ -1,6 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
+import {
+  BILLING_SYNC_POLL_MS,
+  BILLING_SYNC_TIMEOUT_MS,
+  clearBillingSyncPending,
+  hasBillingSyncPending,
+} from '../utils/billingSync';
 
 const PlanContext = createContext({});
 
@@ -106,6 +112,7 @@ export const PlanProvider = ({ children }) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [projectCount, setProjectCount] = useState(0);
+  const lastExternalRefreshAtRef = useRef(0);
 
   // ── Plan simulator state (admin only) ───────────────────────
   const [simulatedPlan, setSimulatedPlan] = useState(null);
@@ -191,6 +198,64 @@ export const PlanProvider = ({ children }) => {
     loadProfile();
     loadProjectCount();
   }, [loadProfile, loadProjectCount]);
+
+  const refreshProfileFromExternalChange = useCallback(() => {
+    if (!user) return;
+
+    const now = Date.now();
+    if (now - lastExternalRefreshAtRef.current < 1500) return;
+
+    lastExternalRefreshAtRef.current = now;
+    loadProfile();
+  }, [user, loadProfile]);
+
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return undefined;
+
+    const handleFocus = () => {
+      refreshProfileFromExternalChange();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshProfileFromExternalChange();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    let intervalId = null;
+    let timeoutId = null;
+
+    if (hasBillingSyncPending()) {
+      clearBillingSyncPending();
+      refreshProfileFromExternalChange();
+
+      intervalId = window.setInterval(() => {
+        refreshProfileFromExternalChange();
+      }, BILLING_SYNC_POLL_MS);
+
+      timeoutId = window.setTimeout(() => {
+        if (intervalId) {
+          window.clearInterval(intervalId);
+        }
+      }, BILLING_SYNC_TIMEOUT_MS);
+    }
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [user, refreshProfileFromExternalChange]);
 
   // ── Derived state ───────────────────────────────────────────
   const isAdmin = useMemo(() => isAdminEmail(user?.email), [user]);

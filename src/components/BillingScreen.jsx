@@ -1,21 +1,25 @@
 import { useState } from 'react';
 import { usePlan } from '../contexts/PlanContext';
 import { useAuth } from '../contexts/AuthContext';
+import { markBillingSyncPending } from '../utils/billingSync';
 
 export default function BillingScreen({ onClose, onOpenPricing }) {
   const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState('');
   const { user } = useAuth();
   const { userProfile, effectivePlan, isAdmin } = usePlan();
 
   const stripeCustomerId = userProfile?.stripe_customer_id;
   const subscriptionStatus = userProfile?.subscription_status;
-  const periodEnd = userProfile?.current_period_end;
+  const currentPeriodEnd = userProfile?.current_period_end;
+  const trialEnds = userProfile?.trial_ends;
   const cancelAtPeriodEnd = userProfile?.cancel_at_period_end;
 
   const handleManageBilling = async () => {
     if (!stripeCustomerId) return;
 
     setPortalLoading(true);
+    setPortalError('');
     try {
       const res = await fetch('/api/customer-portal', {
         method: 'POST',
@@ -23,15 +27,17 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
         body: JSON.stringify({ stripeCustomerId }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || 'Unable to open the billing portal right now.');
+      }
+
       if (data.url) {
+        markBillingSyncPending('portal');
         window.location.href = data.url;
-      } else {
-        alert('Could not open billing portal. Please try again.');
-        console.error('Portal error:', data.error);
       }
     } catch (err) {
-      alert('Failed to open billing portal.');
+      setPortalError(getPortalErrorMessage(err));
       console.error('Portal fetch error:', err);
     } finally {
       setPortalLoading(false);
@@ -109,24 +115,24 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
           </div>
 
           {/* Renewal / expiry info */}
-          {effectivePlan === 'pro' && periodEnd && !isAdmin && (
+          {effectivePlan === 'pro' && currentPeriodEnd && !isAdmin && (
             <div className="pt-3 border-t border-gray-200">
               {cancelAtPeriodEnd ? (
                 <p className="text-sm text-amber-600">
-                  Pro access ends {formatDate(periodEnd)}. You won't be charged again.
+                  Pro access ends {formatDate(currentPeriodEnd)}. You won't be charged again.
                 </p>
               ) : (
                 <p className="text-sm text-gray-500">
-                  Next renewal: {formatDate(periodEnd)}
+                  Next renewal: {formatDate(currentPeriodEnd)}
                 </p>
               )}
             </div>
           )}
 
-          {effectivePlan === 'trial' && periodEnd && (
+          {effectivePlan === 'trial' && trialEnds && (
             <div className="pt-3 border-t border-gray-200">
               <p className="text-sm text-blue-600">
-                Trial ends {formatDate(periodEnd)}. Upgrade to keep Pro features.
+                Trial ends {formatDate(trialEnds)}. Upgrade to keep Pro features.
               </p>
             </div>
           )}
@@ -142,12 +148,22 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
 
         {/* Actions */}
         <div className="px-8 py-6 space-y-3">
+          {portalError && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {portalError}
+            </div>
+          )}
+
           {/* Show "Manage Billing" if they have a Stripe customer */}
           {stripeCustomerId && (
             <button
               onClick={handleManageBilling}
               disabled={portalLoading}
-              className="w-full py-3 rounded-lg border border-gray-200 text-gray-700 font-medium text-sm hover:bg-gray-50 transition-colors"
+              className={`w-full py-3 rounded-lg font-medium text-sm transition-colors ${
+                subscriptionStatus === 'past_due'
+                  ? 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                  : 'border border-gray-200 text-gray-700 hover:bg-gray-50'
+              }`}
             >
               {portalLoading ? 'Opening billing portal...' : 'Manage billing & invoices'}
             </button>
@@ -184,4 +200,22 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
 
 function isCurrentlyProOrAdmin(plan, isAdmin) {
   return isAdmin || plan === 'pro' || plan === 'team';
+}
+
+function getPortalErrorMessage(error) {
+  const message = error instanceof Error ? error.message : String(error || '');
+
+  if (!message) {
+    return 'Unable to open the billing portal right now. Please try again in a moment.';
+  }
+
+  if (message.includes('Missing stripeCustomerId')) {
+    return 'Billing is not linked to this account yet. Try again after your first successful checkout.';
+  }
+
+  if (message.toLowerCase().includes('network')) {
+    return 'Network error while connecting to Stripe. Check your connection and try again.';
+  }
+
+  return 'Unable to open the billing portal right now. Please try again in a moment.';
 }

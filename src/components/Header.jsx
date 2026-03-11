@@ -80,7 +80,7 @@ const Header = ({
   const canAddEntry = hasTabAccess(activeTab);
 
   return (
-    <header className="flex-none bg-white border-b border-slate-200 px-3 sm:px-4 py-2 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-2 z-30">
+    <header className="flex-none bg-white border-b border-slate-200 px-2.5 sm:px-4 py-2 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-2 z-30">
       <div className="flex items-center gap-3 min-w-0">
         <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
           P
@@ -98,23 +98,24 @@ const Header = ({
         </div>
       </div>
       
-      <div className="w-full lg:w-auto flex flex-wrap items-center gap-1.5 lg:justify-end">
+      <div className="w-full lg:w-auto overflow-x-auto no-scrollbar pb-1 -mb-1">
+        <div className="flex items-center gap-1.5 min-w-max lg:min-w-0 lg:flex-wrap lg:justify-end">
         <button
           onClick={onToggleExternalView}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-500 text-[11px] font-medium transition-all hover:bg-slate-50 hover:border-slate-300"
+          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-500 text-[11px] font-medium transition-all hover:bg-slate-50 hover:border-slate-300"
         >
           <div className={`w-1.5 h-1.5 rounded-full ${isExternalView ? 'bg-emerald-500' : 'bg-slate-300'}`} />
           External View
         </button>
 
         {activeTab === 'schedule' ? (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-max lg:min-w-0 lg:flex-wrap">
             {isDemoProject && (
               <>
                 <button
                   onClick={onShowDemoBenefits}
                   title="Show client-facing benefits of the platform"
-                  className="text-[11px] font-medium text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-md transition-all"
+                  className="shrink-0 text-[11px] font-medium text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-md transition-all"
                 >
                   Free Benefits
                 </button>
@@ -122,7 +123,7 @@ const Header = ({
                 <button
                   onClick={onLoadTemplate}
                   title="Load network transformation demo plan with all sample tab data"
-                  className="text-[11px] font-medium text-emerald-600 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-md transition-all"
+                  className="shrink-0 text-[11px] font-medium text-emerald-600 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-md transition-all"
                 >
                   Demo Project
                 </button>
@@ -130,7 +131,7 @@ const Header = ({
                 <button
                   onClick={onResetDemoData}
                   title="Reset demo content in this project"
-                  className="text-[11px] font-medium text-rose-600 border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2.5 py-1.5 rounded-md transition-all"
+                  className="shrink-0 text-[11px] font-medium text-rose-600 border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2.5 py-1.5 rounded-md transition-all"
                 >
                   Reset Demo
                 </button>
@@ -142,7 +143,7 @@ const Header = ({
               <>
                 <button
                   onClick={handleImportClick}
-                  className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+                  className="shrink-0 text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
                   title="Import from Excel (.xlsx)"
                 >
                   ↑ Import
@@ -161,7 +162,7 @@ const Header = ({
             <div className="relative" ref={menuRef}>
               <button
                 onClick={handleSetBaseline}
-                className={`text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 border ${
+                className={`shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 border ${
                   !canBaseline
                     ? 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-60'
                     : hasBaseline 
@@ -211,11 +212,11 @@ const Header = ({
               )}
             </div>
 
-            <div className="h-5 w-px bg-slate-200 mx-0.5" />
+            <div className="hidden sm:block h-5 w-px bg-slate-200 mx-0.5" />
             <select
               value={viewMode}
               onChange={(e) => onViewModeChange(e.target.value)}
-              className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-1.5 rounded-md outline-none cursor-pointer hover:border-slate-300"
+              className="shrink-0 text-[11px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-1.5 rounded-md outline-none cursor-pointer hover:border-slate-300"
             >
               <option value="week">1 Week</option>
               <option value="2week">2 Weeks</option>
@@ -223,7 +224,7 @@ const Header = ({
             </select>
             <button
               onClick={onNewTask}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
+              className="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
             >
               <span className="text-[13px] leading-none">+</span>
               New Task
@@ -232,7 +233,7 @@ const Header = ({
         ) : canAddEntry && addEntryLabel ? (
           <button
             onClick={onAddRegisterItem}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
+            className="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5"
           >
             <span className="text-[13px] leading-none">+</span>
             {addEntryLabel}
@@ -242,7 +243,7 @@ const Header = ({
         {canExport && (
           <button
             onClick={onExport}
-            className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
+            className="shrink-0 text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
           >
             Export
           </button>
@@ -252,12 +253,13 @@ const Header = ({
         {onOpenBilling && (
           <button
             onClick={onOpenBilling}
-            className="text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
+            className="shrink-0 text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
             title="Billing & plan"
           >
             Billing
           </button>
         )}
+        </div>
       </div>
     </header>
   );

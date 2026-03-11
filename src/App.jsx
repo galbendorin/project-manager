@@ -46,30 +46,47 @@ const RACIView = lazy(() => import('./components/RACIView'));
 
 function App() {
   const { user, loading: authLoading } = useAuth();
+  const checkoutStatus = useCheckoutStatus();
   const [currentProject, setCurrentProject] = useState(null);
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-gray-400 text-lg">Loading...</div>
-      </div>
+      <>
+        <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+          <div className="text-gray-400 text-lg">Loading...</div>
+        </div>
+        <CheckoutToast status={checkoutStatus} />
+      </>
     );
   }
 
   if (!user) {
-    return <AuthPage />;
+    return (
+      <>
+        <AuthPage />
+        <CheckoutToast status={checkoutStatus} />
+      </>
+    );
   }
 
   if (!currentProject) {
-    return <ProjectSelector onSelectProject={setCurrentProject} />;
+    return (
+      <>
+        <ProjectSelector onSelectProject={setCurrentProject} />
+        <CheckoutToast status={checkoutStatus} />
+      </>
+    );
   }
 
   return (
-    <MainApp
-      project={currentProject}
-      currentUserId={user.id}
-      onBackToProjects={() => setCurrentProject(null)}
-    />
+    <>
+      <MainApp
+        project={currentProject}
+        currentUserId={user.id}
+        onBackToProjects={() => setCurrentProject(null)}
+      />
+      <CheckoutToast status={checkoutStatus} />
+    </>
   );
 }
 
@@ -94,7 +111,6 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
   const [showPricing, setShowPricing] = useState(false);
   const [showBilling, setShowBilling] = useState(false);
-  const checkoutStatus = useCheckoutStatus();
   const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
 
   // AI is available to trial, pro, team, and admin users
@@ -665,7 +681,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
    * On mobile: same layout, ScheduleView hides Gantt
    * ─────────────────────────────────────────────── */
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="min-h-screen h-[100dvh] flex flex-col overflow-hidden bg-slate-50">
       {/* Plan banners */}
       <TrialBanner onUpgrade={handleOpenPricing} />
       <CancellationBanner onUpgrade={handleOpenPricing} />
@@ -673,23 +689,23 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
 
       {/* Save Status Bar */}
       <div className="bg-gray-800 border-b border-gray-700 px-3 sm:px-4 py-1.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 text-xs">
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2.5 gap-y-1 min-w-0">
           <button
             onClick={onBackToProjects}
             className="text-gray-400 hover:text-white transition-colors flex items-center gap-1"
           >
             ← Projects
           </button>
-          <span className="text-gray-600">|</span>
+          <span className="hidden sm:inline text-gray-600">|</span>
           <span className="text-white font-medium truncate">{project.name}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 -mb-1 lg:flex-wrap">
           {/* Plan Simulator — admin only */}
           {isAdmin && simulatorOptions.length > 0 && (
             <select
               value={simulatedPlan || ''}
               onChange={(e) => setSimulatedPlan(e.target.value || null)}
-              className="text-[11px] px-1.5 py-0.5 bg-purple-900/60 border border-purple-500/50 text-purple-200 rounded cursor-pointer"
+              className="shrink-0 text-[11px] px-1.5 py-0.5 bg-purple-900/60 border border-purple-500/50 text-purple-200 rounded cursor-pointer"
               title="Plan Simulator (admin only)"
             >
               {simulatorOptions.map(opt => (
@@ -698,24 +714,24 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
             </select>
           )}
           {simulatedPlan && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-purple-600 text-white rounded-full font-medium animate-pulse">
+            <span className="shrink-0 text-[10px] px-1.5 py-0.5 bg-purple-600 text-white rounded-full font-medium animate-pulse">
               SIM: {simulatorOptions.find(o => o.value === simulatedPlan)?.label}
             </span>
           )}
           <button
             onClick={cleanupDuplicateDescriptions}
-            className="text-xs px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
+            className="shrink-0 text-xs px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
             title="One-time cleanup of duplicate text in Action Log"
           >
             Clean Action Log
           </button>
           {importStatus ? (
-            <span className={`flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' ? 'text-blue-400' : 'text-amber-400'}`}>
+            <span className={`shrink-0 flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' ? 'text-blue-400' : 'text-amber-400'}`}>
               {importStatus}
             </span>
           ) : saveConflict ? (
-            <div className="flex items-center gap-2">
-              <span className="text-rose-400">Save conflict detected</span>
+            <div className="shrink-0 flex items-center gap-2">
+              <span className="text-rose-400 whitespace-nowrap">Save conflict detected</span>
               <button
                 onClick={reloadProject}
                 className="px-2 py-1 text-[11px] bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors"
@@ -725,17 +741,17 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               </button>
             </div>
           ) : saveError ? (
-            <span className="text-rose-400" title={saveError}>Save failed</span>
+            <span className="shrink-0 text-rose-400 whitespace-nowrap" title={saveError}>Save failed</span>
           ) : saving ? (
-            <span className="text-yellow-400 flex items-center gap-1">
+            <span className="shrink-0 text-yellow-400 flex items-center gap-1 whitespace-nowrap">
               <span className="animate-pulse">●</span> Saving...
             </span>
           ) : lastSaved ? (
-            <span className="text-green-400 flex items-center gap-1">
+            <span className="shrink-0 text-green-400 flex items-center gap-1 whitespace-nowrap">
               ✓ Saved {lastSaved.toLocaleTimeString()}
             </span>
           ) : (
-            <span className="text-gray-500">Ready</span>
+            <span className="shrink-0 text-gray-500 whitespace-nowrap">Ready</span>
           )}
         </div>
       </div>
@@ -924,7 +940,6 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
           onOpenPricing={handleOpenPricing}
         />
       )}
-      <CheckoutToast status={checkoutStatus} />
     </div>
   );
 }
