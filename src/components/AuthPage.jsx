@@ -1,46 +1,63 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
-const VALUE_CARDS = [
+const AUDIENCE_TAGS = [
+  'Consultancies',
+  'Independent PMs',
+  'Internal delivery teams',
+];
+
+const HERO_METRICS = [
+  { value: '16', label: 'core registers' },
+  { value: '30-day', label: 'full Pro trial' },
+  { value: 'Excel', label: 'import and export ready' },
+];
+
+const CAPABILITY_ITEMS = [
   {
-    title: 'Run delivery in one workspace',
-    body: 'Build schedules, RAID logs, trackers, status reports, RACI, costs, and stakeholder registers without juggling separate tools.',
+    title: 'Plan the delivery path',
+    body: 'Run schedules, milestones, workstreams, and dependencies from a live workspace instead of a stack of disconnected files.',
   },
   {
-    title: 'Move from plan to payment',
-    body: 'Starter, trial, and Pro access are built in, so the product can launch as a real paid SaaS rather than a demo.',
+    title: 'Control the day-to-day',
+    body: 'Keep RAID, actions, decisions, and stakeholders in the same operating layer the project team actually uses every week.',
   },
   {
-    title: 'Import Excel, then keep working online',
-    body: 'Bring in existing plans, keep exporting when needed, and avoid forcing users to rebuild everything from scratch.',
+    title: 'Report without rebuilding',
+    body: 'Prepare client-ready status views and export the information when someone still needs a spreadsheet outside the tool.',
   },
   {
-    title: 'Use AI where it actually helps',
-    body: 'Generate project plans, reports, and assistant-driven edits without making AI the whole product.',
+    title: 'Start free, upgrade later',
+    body: 'Create an account without a card, use the full Pro trial, and move into paid access only when the workspace is proving useful.',
   },
 ];
 
-const STARTER_FEATURES = [
-  '3 projects',
-  '30 tasks per project',
-  'Schedule, Issues, Actions, Tracker',
-  'Excel import and export',
+const AUTH_BENEFITS = [
+  '30-day Pro trial with full workspace access',
+  'No card required to create an account',
+  'Email verification before the workspace opens',
 ];
 
-const PRO_FEATURES = [
-  'Full register set and all tabs',
-  'AI reports and AI assistant',
-  'Baseline snapshots',
-  'Billing and plan management',
+const WORKSPACE_PHASES = [
+  { title: 'Mobilisation and planning', status: 'Complete', percent: '100%', tone: 'bg-emerald-400' },
+  { title: 'Design and dependency mapping', status: 'In progress', percent: '68%', tone: 'bg-amber-300' },
+  { title: 'Delivery and go-live readiness', status: 'Planned', percent: '24%', tone: 'bg-sky-300' },
 ];
 
-const LAUNCH_SIGNALS = [
-  { value: '16', label: 'project registers' },
-  { value: '30-day', label: 'Pro trial' },
-  { value: 'Stripe', label: 'subscription billing' },
+const CONTROL_ITEMS = [
+  ['4', 'open risks'],
+  ['7', 'actions due'],
+  ['2', 'decisions pending'],
+  ['1', 'status pack drafted'],
 ];
 
-const AuthPage = () => {
+const ONBOARDING_STEPS = [
+  'Verify your email address',
+  'Open your workspace',
+  'Use the full Pro feature set for 30 days',
+];
+
+export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -82,7 +99,7 @@ const AuthPage = () => {
         const { error: signUpError } = await signUp(email, password, fullName);
         if (signUpError) throw signUpError;
 
-        setSuccessMessage(`Check ${email} for your confirmation link, then sign in to start your trial.`);
+        setSuccessMessage(`Check ${email} for your confirmation email, then sign in to enter your workspace.`);
         setIsLogin(true);
         setPassword('');
         setFullName('');
@@ -95,143 +112,244 @@ const AuthPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(99,102,241,0.16),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.14),_transparent_24%),linear-gradient(180deg,_#f8fbff_0%,_#ffffff_52%,_#eef4ff_100%)]">
+    <div style={{ fontFamily: "'Manrope', sans-serif" }} className="min-h-screen bg-[#f5efe6] text-slate-900">
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-indigo-200/40 blur-3xl" />
-          <div className="absolute top-32 right-0 h-80 w-80 rounded-full bg-sky-100/60 blur-3xl" />
-          <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-indigo-100/40 blur-3xl" />
+          <div
+            className="absolute inset-0 opacity-40"
+            style={{
+              backgroundImage:
+                'linear-gradient(rgba(15,23,42,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.06) 1px, transparent 1px)',
+              backgroundSize: '72px 72px',
+            }}
+          />
+          <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/75 to-transparent" />
+          <div className="absolute -left-24 top-28 h-72 w-72 rounded-full bg-teal-200/50 blur-3xl" />
+          <div className="absolute right-[-7rem] top-20 h-80 w-80 rounded-full bg-amber-100/65 blur-3xl" />
+          <div className="absolute bottom-[-8rem] left-1/3 h-96 w-96 rounded-full bg-emerald-100/45 blur-3xl" />
         </div>
 
-        <div className="relative mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
-          <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <header className="flex flex-col gap-5 border-b border-slate-300/55 pb-5 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
-              <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-700 text-2xl font-black text-white shadow-lg shadow-indigo-200/70">
-                P
+              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-lg font-extrabold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.9)]">
+                PM
               </div>
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-indigo-600">PM OS</p>
-                <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Project Manager OS</h1>
+                <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-teal-700">PM OS</p>
+                <h1 className="text-lg font-semibold text-slate-950 sm:text-xl">Project Delivery Workspace</h1>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full border border-indigo-200 bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-600">
-                30-day Pro trial. No card required to start.
-              </span>
-              <button
-                onClick={jumpToSignup}
-                className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800"
-              >
-                Start free trial
-              </button>
+            <div className="flex flex-wrap gap-2 md:justify-end">
+              {AUDIENCE_TAGS.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border border-slate-300/80 bg-white/75 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 backdrop-blur"
+                >
+                  {tag}
+                </span>
+              ))}
             </div>
           </header>
 
-          <main className="mt-8 grid items-start gap-8 xl:grid-cols-[1.15fr_0.85fr] xl:gap-12">
-            <section className="space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-700 shadow-sm">
-                Launch-ready project ops
-              </div>
-
-              <div className="max-w-3xl">
-                <h2 className="text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-[3.5rem] lg:leading-[1.02]">
-                  Plan, track, and upgrade projects in one operating system.
-                </h2>
-                <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
-                  PM OS gives solo operators and small teams one place to run delivery work:
-                  schedules, registers, status reporting, AI support, and subscription billing that is ready for a real launch.
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                {LAUNCH_SIGNALS.map((item) => (
-                  <div key={item.label} className="rounded-2xl border border-slate-200/80 bg-white/85 p-4 shadow-sm shadow-slate-200/40 backdrop-blur">
-                    <div className="text-2xl font-black text-slate-900">{item.value}</div>
-                    <div className="mt-1 text-sm text-slate-500">{item.label}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                {VALUE_CARDS.map((card) => (
-                  <div key={card.title} className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm shadow-slate-200/40 backdrop-blur">
-                    <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-sm font-bold text-indigo-700">
-                      +
-                    </div>
-                    <h3 className="text-lg font-semibold text-slate-900">{card.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">{card.body}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr]">
-                <div className="rounded-[28px] border border-slate-200/80 bg-slate-950 p-6 text-white shadow-[0_30px_90px_-45px_rgba(15,23,42,0.75)]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-indigo-200">What Launch Includes</p>
-                  <h3 className="mt-3 text-2xl font-bold">A commercial MVP, not just a planning demo.</h3>
-                  <div className="mt-5 space-y-3 text-sm text-slate-200">
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">Schedule, RAID logs, tracker, status reports, and stakeholder controls in one product.</div>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">Starter, trial, and Pro access control already wired to Stripe subscription billing.</div>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">Excel-friendly workflows for teams moving from static plans into a live workspace.</div>
-                  </div>
+          <main className="mt-10 grid items-start gap-8 xl:mt-14 xl:grid-cols-[1.03fr_0.97fr] xl:gap-10">
+            <section className="space-y-8 xl:pr-4">
+              <div className="space-y-6">
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/75 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.22em] text-teal-700 shadow-sm backdrop-blur">
+                  Client-ready project operations
                 </div>
 
-                <div className="rounded-[28px] border border-slate-200/80 bg-white/90 p-6 shadow-sm shadow-slate-200/40 backdrop-blur">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-indigo-700">Pricing Snapshot</p>
-                      <h3 className="mt-3 text-2xl font-bold text-slate-900">Launch with a simple Starter to Pro path.</h3>
-                    </div>
-                    <div className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                      Live on April 1
-                    </div>
-                  </div>
+                <div className="max-w-4xl">
+                  <h2 className="text-4xl font-extrabold tracking-[-0.045em] text-slate-950 sm:text-5xl lg:text-[4.5rem] lg:leading-[0.95]">
+                    Delivery control that feels
+                    <span
+                      style={{ fontFamily: "'Fraunces', serif" }}
+                      className="mt-2 block font-semibold tracking-[-0.03em] text-teal-800"
+                    >
+                      calm, sharp, and client-ready.
+                    </span>
+                  </h2>
+                  <p className="mt-6 max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
+                    Plan schedules, manage RAID, track actions, prepare status reporting, and keep billing in the
+                    same workspace built for serious project managers.
+                  </p>
+                </div>
 
-                  <div className="mt-6 grid gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                      <div className="text-sm font-semibold text-slate-900">Starter</div>
-                      <div className="mt-2 text-3xl font-black text-slate-900">£0</div>
-                      <p className="mt-1 text-sm text-slate-500">Free forever</p>
-                      <ul className="mt-4 space-y-2 text-sm text-slate-600">
-                        {STARTER_FEATURES.map((feature) => (
-                          <li key={feature}>- {feature}</li>
-                        ))}
-                      </ul>
-                    </div>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={jumpToSignup}
+                    className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.85)] transition hover:bg-slate-800"
+                  >
+                    Start free trial
+                  </button>
+                  <button
+                    onClick={() => switchMode(true)}
+                    className="rounded-full border border-slate-300/80 bg-white/80 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white"
+                  >
+                    Sign in
+                  </button>
+                </div>
 
-                    <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
-                      <div className="text-sm font-semibold text-indigo-900">Pro</div>
-                      <div className="mt-2 text-3xl font-black text-slate-900">£7.99</div>
-                      <p className="mt-1 text-sm text-slate-500">or £67 yearly</p>
-                      <ul className="mt-4 space-y-2 text-sm text-slate-700">
-                        {PRO_FEATURES.map((feature) => (
-                          <li key={feature}>- {feature}</li>
-                        ))}
-                      </ul>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {HERO_METRICS.map((item) => (
+                    <div
+                      key={item.label}
+                      className="rounded-3xl border border-slate-200/80 bg-white/84 p-4 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.55)] backdrop-blur"
+                    >
+                      <div className="text-2xl font-extrabold text-slate-950">{item.value}</div>
+                      <div className="mt-1 text-sm text-slate-500">{item.label}</div>
                     </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-[34px] border border-slate-200/85 bg-white/82 p-6 shadow-[0_36px_120px_-70px_rgba(15,23,42,0.45)] backdrop-blur sm:p-7">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-700">What PM OS handles</p>
+                    <h3
+                      style={{ fontFamily: "'Fraunces', serif" }}
+                      className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-slate-950"
+                    >
+                      A proper operating layer for live delivery.
+                    </h3>
                   </div>
+                  <p className="max-w-md text-sm leading-6 text-slate-500">
+                    Built around the weekly reality of delivery work, not around generic task lists or a document dump.
+                  </p>
+                </div>
+
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  {CAPABILITY_ITEMS.map((item) => (
+                    <div
+                      key={item.title}
+                      className="rounded-[28px] border border-slate-200/85 bg-[#faf8f2] p-5 shadow-[0_20px_60px_-50px_rgba(15,23,42,0.35)]"
+                    >
+                      <h4 className="text-lg font-semibold text-slate-900">{item.title}</h4>
+                      <p className="mt-3 text-sm leading-6 text-slate-600">{item.body}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </section>
 
-            <aside id="auth-panel" className="xl:sticky xl:top-6">
-              <div className="rounded-[32px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_40px_120px_-52px_rgba(15,23,42,0.5)] backdrop-blur sm:p-8">
-                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
-                  <span className="font-semibold">Launch path:</span> create an account, verify email, start the 30-day Pro trial, then upgrade when ready.
+            <aside id="auth-panel" className="space-y-5 xl:sticky xl:top-6">
+              <div className="rounded-[34px] border border-slate-900/85 bg-slate-950 p-6 text-white shadow-[0_44px_120px_-56px_rgba(15,23,42,0.92)] sm:p-7">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-200">Live workspace preview</p>
+                    <h3
+                      style={{ fontFamily: "'Fraunces', serif" }}
+                      className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-white"
+                    >
+                      A control room for the week ahead.
+                    </h3>
+                  </div>
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200">
+                    Client pack ready
+                  </div>
                 </div>
 
-                <div className="mt-6">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    Access PM OS
-                  </p>
-                  <h3 className="mt-3 text-3xl font-bold tracking-tight text-slate-900">
-                    {isLogin ? 'Welcome back' : 'Create your account'}
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    {isLogin
-                      ? 'Sign in to open your projects, billing, and reports.'
-                      : 'New accounts start with a 30-day Pro trial so you can test the full workflow before paying.'}
-                  </p>
+                <div className="mt-6 grid gap-4 lg:grid-cols-[1.12fr_0.88fr]">
+                  <div className="rounded-[28px] border border-white/10 bg-white/6 p-4">
+                    <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">Programme overview</div>
+                        <div className="text-xs text-slate-400">Network migration and launch readiness</div>
+                      </div>
+                      <div className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-200">
+                        On track
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {WORKSPACE_PHASES.map((phase) => (
+                        <div key={phase.title} className="rounded-2xl border border-white/8 bg-slate-900/50 p-3.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-white">{phase.title}</div>
+                              <div className="text-xs text-slate-400">{phase.status}</div>
+                            </div>
+                            <div className="text-sm font-bold text-white">{phase.percent}</div>
+                          </div>
+                          <div className="mt-3 h-2 rounded-full bg-white/10">
+                            <div className={`h-2 rounded-full ${phase.tone}`} style={{ width: phase.percent }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 rounded-[22px] border border-white/8 bg-white/5 p-4">
+                      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                        <span>Upcoming this week</span>
+                        <span>3 milestones</span>
+                      </div>
+                      <div className="mt-3 space-y-2 text-sm text-slate-200">
+                        <div className="rounded-2xl bg-slate-900/60 px-3 py-2.5">Dependency review with infrastructure team</div>
+                        <div className="rounded-2xl bg-slate-900/60 px-3 py-2.5">Draft status report prepared from live registers</div>
+                        <div className="rounded-2xl bg-slate-900/60 px-3 py-2.5">Launch readiness checkpoint with stakeholders</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-[28px] border border-white/10 bg-white/6 p-4">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Control room</div>
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        {CONTROL_ITEMS.map(([value, label]) => (
+                          <div key={label} className="rounded-2xl bg-slate-900/60 px-3 py-4">
+                            <div className="text-xl font-extrabold text-white">{value}</div>
+                            <div className="mt-1 text-xs text-slate-400">{label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-teal-500/18 to-white/5 p-4">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-100">Built for real PM work</div>
+                      <div className="mt-3 space-y-2 text-sm leading-6 text-slate-200">
+                        <p>One place for schedules, registers, and status reporting.</p>
+                        <p>Structured enough for delivery control, clean enough for client-facing outputs.</p>
+                        <p>Billing and plan changes are handled inside the same product.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[34px] border border-slate-200/90 bg-white/92 p-6 shadow-[0_42px_120px_-58px_rgba(15,23,42,0.55)] backdrop-blur sm:p-8">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-700">Access PM OS</p>
+                    <h3 className="mt-3 text-3xl font-bold tracking-[-0.03em] text-slate-950">
+                      {isLogin ? 'Welcome back' : 'Open your workspace'}
+                    </h3>
+                  </div>
+                  <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                    30-day Pro trial
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-3 gap-2 rounded-[22px] border border-slate-200 bg-slate-50/90 p-2 text-center">
+                  <div className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">Free setup</div>
+                  <div className="rounded-2xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white">Trial access</div>
+                  <div className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">Upgrade in app</div>
+                </div>
+
+                <p className="mt-5 text-sm leading-7 text-slate-600">
+                  {isLogin
+                    ? 'Sign in to continue planning, reporting, and managing billing from your workspace.'
+                    : 'Create an account to start with full Pro access first, then decide later whether you want to stay on a paid plan.'}
+                </p>
+
+                <div className="mt-5 space-y-2 rounded-[24px] border border-slate-200 bg-slate-50/90 p-4">
+                  {AUTH_BENEFITS.map((item) => (
+                    <div key={item} className="flex items-start gap-3 text-sm text-slate-600">
+                      <span className="mt-1 inline-flex h-2.5 w-2.5 rounded-full bg-teal-600" />
+                      <span>{item}</span>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
@@ -256,32 +374,38 @@ const AuthPage = () => {
                 <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
                   {!isLogin && (
                     <div>
-                      <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Full Name</label>
+                      <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                        Full name
+                      </label>
                       <input
                         type="text"
                         required
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
-                        placeholder="John Smith"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        placeholder="Jane Smith"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-teal-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                       />
                     </div>
                   )}
 
                   <div>
-                    <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Email</label>
+                    <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                      Email address
+                    </label>
                     <input
                       type="email"
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@company.com"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-teal-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Password</label>
+                    <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                      Password
+                    </label>
                     <input
                       type="password"
                       required
@@ -289,7 +413,7 @@ const AuthPage = () => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Minimum 6 characters"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-teal-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     />
                   </div>
 
@@ -308,7 +432,7 @@ const AuthPage = () => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-[0_22px_50px_-26px_rgba(15,23,42,0.85)] transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -319,10 +443,24 @@ const AuthPage = () => {
                         Processing...
                       </span>
                     ) : (
-                      isLogin ? 'Sign in to PM OS' : 'Create account and start trial'
+                      isLogin ? 'Sign in to workspace' : 'Create account'
                     )}
                   </button>
                 </form>
+
+                <div className="mt-6 rounded-[24px] border border-slate-200 bg-[#faf8f2] p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">What happens next</div>
+                  <div className="mt-3 space-y-2">
+                    {ONBOARDING_STEPS.map((step, index) => (
+                      <div key={step} className="flex items-center gap-3 text-sm text-slate-600">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white">
+                          {index + 1}
+                        </span>
+                        <span>{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="mt-6 border-t border-slate-100 pt-5">
                   <p className="text-center text-[13px] text-slate-500">
@@ -337,7 +475,7 @@ const AuthPage = () => {
                 </div>
 
                 <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">
-                  Built for professional project delivery. Trial access starts after signup and email confirmation.
+                  Trial access begins after email verification. Billing upgrades are managed inside the workspace.
                 </p>
               </div>
             </aside>
@@ -346,6 +484,4 @@ const AuthPage = () => {
       </div>
     </div>
   );
-};
-
-export default AuthPage;
+}
