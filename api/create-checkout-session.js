@@ -3,8 +3,8 @@ import Stripe from 'stripe';
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const PRICE_IDS = {
-  monthly: 'price_1T9R96GsgkWNV5UWrXLwysfd',
-  annual: 'price_1T9R9tGsgkWNV5UW4Gn4UBDu',
+  monthly: 'price_1T9YcZGmvS2YZ5sJKGD1NtYT',
+  annual: 'price_1T9YdXGmvS2YZ5sJTmCV5cNY',
 };
 
 export default async function handler(req, res) {
