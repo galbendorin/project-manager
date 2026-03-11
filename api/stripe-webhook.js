@@ -13,6 +13,18 @@ export const config = {
   api: { bodyParser: false },
 };
 
+// Helper: safely convert Stripe unix timestamp to ISO string
+function safeTimestamp(val) {
+  if (!val) return null;
+  try {
+    const ts = Number(val);
+    if (isNaN(ts)) return null;
+    return new Date(ts * 1000).toISOString();
+  } catch {
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -78,14 +90,26 @@ async function handleCheckoutCompleted(session) {
   // Retrieve the subscription to get period details
   const subscription = await stripe.subscriptions.retrieve(session.subscription);
 
+  // Safely convert period end to ISO string
+  const periodEndISO = safeTimestamp(subscription.current_period_end);
+
+  console.log('Updating user_profiles for:', supabaseUserId, {
+    plan: 'pro',
+    subscription_status: subscription.status,
+    stripe_customer_id: session.customer,
+    subscription_id: session.subscription,
+    current_period_end: periodEndISO,
+    cancel_at_period_end: subscription.cancel_at_period_end || false,
+  });
+
   const { error } = await supabase
     .from('user_profiles')
     .update({
       plan: 'pro',
-      subscription_status: subscription.status, // 'active' or 'trialing'
+      subscription_status: subscription.status,
       stripe_customer_id: session.customer,
       subscription_id: session.subscription,
-      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+      current_period_end: periodEndISO,
       cancel_at_period_end: subscription.cancel_at_period_end || false,
     })
     .eq('id', supabaseUserId);
@@ -119,7 +143,7 @@ async function handleSubscriptionUpdated(subscription) {
 
   const updateData = {
     subscription_status: subscription.status,
-    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+    current_period_end: safeTimestamp(subscription.current_period_end),
     cancel_at_period_end: subscription.cancel_at_period_end || false,
     subscription_id: subscription.id,
   };
