@@ -8,6 +8,7 @@ const MobilePlan = ({ tasks, onTaskTap, hasBaseline = false, onSetBaseline, onCl
   const [filter, setFilter] = useState('All');
   const [collapsedIndices, setCollapsedIndices] = useState(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [showBaselineMenu, setShowBaselineMenu] = useState(false);
 
   const toggleCollapse = useCallback((index) => {
     setCollapsedIndices(prev => {
@@ -46,26 +47,59 @@ const MobilePlan = ({ tasks, onTaskTap, hasBaseline = false, onSetBaseline, onCl
   return (
     <div className="flex flex-col h-full">
       {(onSetBaseline || (hasBaseline && onClearBaseline)) && (
-        <div className="px-3 pt-2.5 pb-1.5 flex gap-2 overflow-x-auto">
-          {onSetBaseline && (
-            <button
-              onClick={onSetBaseline}
-              className={`text-[10px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-all flex-shrink-0 ${
-                hasBaseline
-                  ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                  : 'bg-slate-950 text-white shadow-sm'
-              }`}
-            >
-              {hasBaseline ? 'Re-baseline' : 'Set Baseline'}
-            </button>
-          )}
-          {hasBaseline && onClearBaseline && (
-            <button
-              onClick={onClearBaseline}
-              className="text-[10px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-all flex-shrink-0 bg-rose-50 text-rose-700 border border-rose-200"
-            >
-              Delete Baseline
-            </button>
+        <div className="px-3 pt-2.5 pb-1.5">
+          <button
+            onClick={() => setShowBaselineMenu((prev) => !prev)}
+            className={`text-[10px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-all flex items-center gap-1.5 ${
+              hasBaseline
+                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                : 'bg-slate-950 text-white shadow-sm'
+            }`}
+          >
+            {hasBaseline ? <span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> : <span>📏</span>}
+            Baseline
+            <span className="text-[9px]">▾</span>
+          </button>
+
+          {showBaselineMenu && (
+            <div className="mt-2 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              {!hasBaseline ? (
+                <button
+                  onClick={() => {
+                    onSetBaseline?.();
+                    setShowBaselineMenu(false);
+                  }}
+                  className="w-full px-4 py-3 text-left text-[11px] font-medium text-slate-700 active:bg-purple-50"
+                >
+                  <span className="block">Set baseline</span>
+                  <span className="block mt-0.5 text-[10px] text-slate-400">Save the current project plan as the first snapshot</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      onSetBaseline?.();
+                      setShowBaselineMenu(false);
+                    }}
+                    className="w-full px-4 py-3 text-left text-[11px] font-medium text-slate-700 active:bg-purple-50"
+                  >
+                    <span className="block">Re-baseline</span>
+                    <span className="block mt-0.5 text-[10px] text-slate-400">Replace the saved baseline with the current plan</span>
+                  </button>
+                  <div className="border-t border-slate-100" />
+                  <button
+                    onClick={() => {
+                      onClearBaseline?.();
+                      setShowBaselineMenu(false);
+                    }}
+                    className="w-full px-4 py-3 text-left text-[11px] font-medium text-rose-600 active:bg-rose-50"
+                  >
+                    <span className="block">Delete baseline</span>
+                    <span className="block mt-0.5 text-[10px] text-rose-300">Remove the saved baseline snapshot</span>
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
       )}
