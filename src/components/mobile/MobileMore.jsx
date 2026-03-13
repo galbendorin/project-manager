@@ -47,7 +47,10 @@ const MobileMore = ({
         <MenuItem icon="📤" label="Export" sublabel="Download project as XLSX" onClick={onExport} />
         <MenuItem icon="📥" label="Import" sublabel="Import from XLSX file" onClick={onImport} />
         {hasBaseline ? (
-          <MenuItem icon="📏" label="Clear Baseline" sublabel="Remove saved baseline" onClick={onClearBaseline} />
+          <>
+            <MenuItem icon="📏" label="Re-baseline" sublabel="Replace saved baseline snapshot" onClick={onSetBaseline} />
+            <MenuItem icon="🗑️" label="Delete Baseline" sublabel="Remove saved baseline" onClick={onClearBaseline} danger />
+          </>
         ) : (
           <MenuItem icon="📏" label="Set Baseline" sublabel="Snapshot current schedule" onClick={onSetBaseline} />
         )}

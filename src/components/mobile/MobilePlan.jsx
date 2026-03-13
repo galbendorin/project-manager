@@ -4,7 +4,7 @@ import { buildVisibleTasks } from '../../utils/helpers';
 
 const FILTERS = ['All', 'Active', 'Overdue', 'Milestones', 'Red/Amber'];
 
-const MobilePlan = ({ tasks, onTaskTap }) => {
+const MobilePlan = ({ tasks, onTaskTap, hasBaseline = false, onSetBaseline, onClearBaseline }) => {
   const [filter, setFilter] = useState('All');
   const [collapsedIndices, setCollapsedIndices] = useState(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,6 +45,31 @@ const MobilePlan = ({ tasks, onTaskTap }) => {
 
   return (
     <div className="flex flex-col h-full">
+      {(onSetBaseline || (hasBaseline && onClearBaseline)) && (
+        <div className="px-3 pt-2.5 pb-1.5 flex gap-2 overflow-x-auto">
+          {onSetBaseline && (
+            <button
+              onClick={onSetBaseline}
+              className={`text-[10px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-all flex-shrink-0 ${
+                hasBaseline
+                  ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                  : 'bg-slate-950 text-white shadow-sm'
+              }`}
+            >
+              {hasBaseline ? 'Re-baseline' : 'Set Baseline'}
+            </button>
+          )}
+          {hasBaseline && onClearBaseline && (
+            <button
+              onClick={onClearBaseline}
+              className="text-[10px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-all flex-shrink-0 bg-rose-50 text-rose-700 border border-rose-200"
+            >
+              Delete Baseline
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Search */}
       <div className="px-3 pt-2.5 pb-1">
         <input

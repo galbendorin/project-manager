@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 import { ICONS } from '../utils/constants';
 import { PlanBadge } from './UpgradeBanner';
 import { usePlan } from '../contexts/PlanContext';
@@ -25,43 +25,23 @@ const Header = ({
   onOpenPricing,
   onOpenBilling
 }) => {
-  const [showBaselineMenu, setShowBaselineMenu] = useState(false);
-  const menuRef = useRef(null);
   const fileInputRef = useRef(null);
   const { canBaseline, canExport, canImport, hasTabAccess } = usePlan();
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setShowBaselineMenu(false);
-      }
-    };
-    if (showBaselineMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showBaselineMenu]);
 
   const handleSetBaseline = () => {
     if (!canBaseline) {
       if (onOpenPricing) onOpenPricing();
       return;
     }
-    if (hasBaseline) {
-      setShowBaselineMenu(!showBaselineMenu);
-    } else {
-      onSetBaseline();
-    }
+    onSetBaseline();
   };
 
   const handleRebaseline = () => {
     onSetBaseline();
-    setShowBaselineMenu(false);
   };
 
   const handleClearBaseline = () => {
     onClearBaseline();
-    setShowBaselineMenu(false);
   };
 
   const handleImportClick = () => {
@@ -158,59 +138,44 @@ const Header = ({
               </>
             )}
 
-            {/* Baseline button with dropdown */}
-            <div className="relative" ref={menuRef}>
+            {!canBaseline ? (
               <button
                 onClick={handleSetBaseline}
-                className={`shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 border ${
-                  !canBaseline
-                    ? 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-60'
-                    : hasBaseline 
-                      ? 'text-purple-600 border-purple-200 bg-purple-50 hover:bg-purple-100' 
-                      : 'text-slate-500 border-slate-200 hover:border-purple-300 hover:text-purple-600 hover:bg-purple-50'
-                }`}
-                title={
-                  !canBaseline ? 'Baseline — Pro feature'
-                  : hasBaseline ? 'Baseline is set — click for options'
-                  : 'Set baseline snapshot'
-                }
+                className="shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 border text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-60"
+                title="Baseline — Pro feature"
               >
-                {!canBaseline && (
-                  <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                )}
-                {canBaseline && hasBaseline && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                )}
+                <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
                 Baseline
-                {canBaseline && hasBaseline && (
-                  <span className="text-[9px] ml-0.5">▾</span>
-                )}
               </button>
-
-              {showBaselineMenu && canBaseline && (
-                <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50 w-48">
-                  <button
-                    onClick={handleRebaseline}
-                    className="w-full text-left px-3 py-2 text-[11px] font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors flex items-center gap-2"
-                  >
-                    <span className="text-[13px]">🔄</span>
-                    Re-baseline
-                    <span className="text-[10px] text-slate-400 ml-auto">Update snapshot</span>
-                  </button>
-                  <div className="border-t border-slate-100 my-1" />
-                  <button
-                    onClick={handleClearBaseline}
-                    className="w-full text-left px-3 py-2 text-[11px] font-medium text-rose-600 hover:bg-rose-50 transition-colors flex items-center gap-2"
-                  >
-                    <span className="text-[13px]">✕</span>
-                    Clear baseline
-                    <span className="text-[10px] text-rose-400 ml-auto">Remove ghost bars</span>
-                  </button>
-                </div>
-              )}
-            </div>
+            ) : hasBaseline ? (
+              <>
+                <button
+                  onClick={handleRebaseline}
+                  className="shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 border text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-100"
+                  title="Update the saved baseline snapshot"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                  Re-baseline
+                </button>
+                <button
+                  onClick={handleClearBaseline}
+                  className="shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-all border text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100"
+                  title="Delete the saved baseline snapshot"
+                >
+                  Delete Baseline
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleSetBaseline}
+                className="shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 border text-slate-500 border-slate-200 hover:border-purple-300 hover:text-purple-600 hover:bg-purple-50"
+                title="Set baseline snapshot"
+              >
+                Set Baseline
+              </button>
+            )}
 
             <div className="hidden sm:block h-5 w-px bg-slate-200 mx-0.5" />
             <select

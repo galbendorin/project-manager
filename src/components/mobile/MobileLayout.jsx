@@ -183,6 +183,9 @@ const MobileLayout = ({
           <MobilePlan
             tasks={projectData}
             onTaskTap={handleTaskTap}
+            hasBaseline={!!baseline}
+            onSetBaseline={onSetBaseline}
+            onClearBaseline={onClearBaseline}
           />
         );
       case 'todo':
