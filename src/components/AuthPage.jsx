@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  TRIAL_FULL_ACCESS_LABEL,
+  TRIAL_OFFER_LABEL,
+  TRIAL_SHORT_LABEL,
+} from '../utils/trialOffer';
 
 const AUDIENCE_TAGS = [
   'Consultancies',
@@ -9,7 +14,7 @@ const AUDIENCE_TAGS = [
 
 const HERO_METRICS = [
   { value: '16', label: 'core registers' },
-  { value: '30-day', label: 'full Pro trial' },
+  { value: TRIAL_SHORT_LABEL, label: 'free trial' },
   { value: 'Excel', label: 'import and export ready' },
 ];
 
@@ -28,12 +33,12 @@ const CAPABILITY_ITEMS = [
   },
   {
     title: 'Start free, upgrade later',
-    body: 'Create an account without a card, use the full Pro trial, and move into paid access only when the workspace is proving useful.',
+    body: `Create an account without a card, use the full ${TRIAL_OFFER_LABEL}, and move into paid access only when the workspace is proving useful.`,
   },
 ];
 
 const AUTH_BENEFITS = [
-  '30-day Pro trial with full workspace access',
+  `${TRIAL_OFFER_LABEL} with full workspace access`,
   'No card required to create an account',
   'Email verification before the workspace opens',
 ];
@@ -54,7 +59,7 @@ const CONTROL_ITEMS = [
 const ONBOARDING_STEPS = [
   'Verify your email address',
   'Open your workspace',
-  'Use the full Pro feature set for 30 days',
+  TRIAL_FULL_ACCESS_LABEL,
 ];
 
 export default function AuthPage() {
@@ -327,7 +332,7 @@ export default function AuthPage() {
                     </h3>
                   </div>
                   <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                    30-day Pro trial
+                    {TRIAL_OFFER_LABEL}
                   </div>
                 </div>
 
@@ -475,7 +480,7 @@ export default function AuthPage() {
                 </div>
 
                 <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">
-                  Trial access begins after email verification. Billing upgrades are managed inside the workspace.
+                  Your {TRIAL_OFFER_LABEL} begins after email verification. Billing upgrades are managed inside the workspace.
                 </p>
               </div>
             </aside>

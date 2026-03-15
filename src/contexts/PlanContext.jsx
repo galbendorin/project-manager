@@ -7,6 +7,10 @@ import {
   clearBillingSyncPending,
   hasBillingSyncPending,
 } from '../utils/billingSync';
+import {
+  TRIAL_LENGTH_DAYS,
+  getTrialEndDate,
+} from '../utils/trialOffer';
 
 const PlanContext = createContext({});
 
@@ -98,8 +102,8 @@ const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due'];
 const SIMULATOR_OPTIONS = [
   { value: null, label: 'Real (Admin)' },
   { value: 'starter', label: 'Starter' },
-  { value: 'trial_fresh', label: 'Trial — Day 1' },
-  { value: 'trial_ending', label: 'Trial — Day 29' },
+  { value: 'trial_fresh', label: `Trial — Day 1 of ${TRIAL_LENGTH_DAYS}` },
+  { value: 'trial_ending', label: 'Trial — 1 day left' },
   { value: 'trial_expired', label: 'Trial Expired → Starter' },
   { value: 'pro', label: 'Pro' },
   { value: 'pro_cancelling', label: 'Pro (Cancelling)' },
@@ -136,7 +140,7 @@ export const PlanProvider = ({ children }) => {
         // Profile might not exist yet (race condition with trigger)
         if (error.code === 'PGRST116') {
           const now = new Date();
-          const trialEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+          const trialEnd = getTrialEndDate(now);
           const { data: newProfile } = await supabase
             .from('user_profiles')
             .insert({

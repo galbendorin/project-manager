@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
 import { usePlan } from '../contexts/PlanContext';
+import {
+  TRIAL_OFFER_LABEL,
+  TRIAL_WARNING_WINDOW_DAYS,
+} from '../utils/trialOffer';
 
 // ── Trial Banner (shown at top of app during trial / after expiry) ───
 export const TrialBanner = ({ onUpgrade }) => {
@@ -32,14 +36,14 @@ export const TrialBanner = ({ onUpgrade }) => {
     );
   }
 
-  // Trial active — warn when 7 days or fewer left
-  if (isTrialActive && trialDaysLeft <= 7) {
+  // Trial active — warn when the offer is close to ending
+  if (isTrialActive && trialDaysLeft <= TRIAL_WARNING_WINDOW_DAYS) {
     return (
       <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-3">
         <span>
           {trialDaysLeft === 0
-            ? 'Your Pro trial ends today!'
-            : `${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left in your Pro trial`}
+            ? `Your ${TRIAL_OFFER_LABEL} ends today!`
+            : `${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left in your ${TRIAL_OFFER_LABEL}`}
         </span>
         <button
           onClick={() => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { usePlan } from '../contexts/PlanContext';
 import { useAuth } from '../contexts/AuthContext';
 import { markBillingSyncPending } from '../utils/billingSync';
+import { TRIAL_OFFER_LABEL } from '../utils/trialOffer';
 
 export default function BillingScreen({ onClose, onOpenPricing }) {
   const [portalLoading, setPortalLoading] = useState(false);
@@ -57,7 +58,7 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
     if (isAdmin) return 'Admin (Unlimited)';
     switch (effectivePlan) {
       case 'pro': return 'Pro';
-      case 'trial': return 'Pro Trial';
+      case 'trial': return 'Free Trial';
       case 'starter': return 'Starter (Free)';
       default: return effectivePlan;
     }
@@ -132,7 +133,7 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
           {effectivePlan === 'trial' && trialEnds && (
             <div className="pt-3 border-t border-gray-200">
               <p className="text-sm text-blue-600">
-                Trial ends {formatDate(trialEnds)}. Upgrade to keep Pro features.
+                You're on the {TRIAL_OFFER_LABEL}. Trial ends {formatDate(trialEnds)}. Upgrade to keep Pro features.
               </p>
             </div>
           )}

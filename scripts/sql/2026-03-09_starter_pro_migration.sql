@@ -36,7 +36,7 @@ WHERE plan IN ('pro', 'team')
   AND (subscription_status IS NULL OR subscription_status = 'free');
 
 -- 3) Update the handle_new_user trigger for new signups
---    New users get 30-day trial with full Pro access
+--    New users get 90-day free trial with full Pro access
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -46,7 +46,7 @@ BEGIN
   ON CONFLICT (id) DO NOTHING;
 
   -- Insert into user_profiles (plan system)
-  -- New users start on 30-day trial
+  -- New users start on a 90-day free trial
   INSERT INTO public.user_profiles (
     id,
     plan,
@@ -62,7 +62,7 @@ BEGIN
     'trial',
     'trialing',
     NOW(),
-    NOW() + INTERVAL '30 days',
+    NOW() + INTERVAL '90 days',
     0,
     DATE_TRUNC('month', NOW()),
     NOW(),
