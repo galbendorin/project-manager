@@ -1,7 +1,160 @@
-import { calculateSchedule, getCurrentDate } from './helpers';
-import { cloneDemoSeedPayload } from './demoSeedPayload';
+import { calculateSchedule, getCurrentDate, getFinishDate, parseDateValue, toISODateString } from './helpers.js';
+import { cloneDemoSeedPayload } from './demoSeedPayload.js';
 
 const nowIso = () => new Date().toISOString();
+const DEMO_SEED_START_DATE = '2025-04-07';
+const DEFAULT_DEMO_START_OFFSET_DAYS = -14;
+
+const addCalendarDays = (value, days) => {
+  const parsed = parseDateValue(value);
+  if (!parsed) return '';
+  const shifted = new Date(parsed);
+  shifted.setDate(shifted.getDate() + days);
+  return toISODateString(shifted);
+};
+
+const diffCalendarDays = (fromValue, toValue) => {
+  const from = parseDateValue(fromValue);
+  const to = parseDateValue(toValue);
+  if (!from || !to) return 0;
+  return Math.round((to.getTime() - from.getTime()) / 86400000);
+};
+
+const toMiddayTimestamp = (value) => {
+  const parsed = parseDateValue(value);
+  if (!parsed) return '';
+  const stamp = new Date(parsed);
+  stamp.setHours(12, 0, 0, 0);
+  return stamp.toISOString();
+};
+
+const shiftNamedFields = (item, fields, offsetDays) => {
+  const next = { ...item };
+  fields.forEach((field) => {
+    if (next[field]) {
+      next[field] = addCalendarDays(next[field], offsetDays);
+    }
+  });
+  return next;
+};
+
+const normalizeDemoTasks = (tasks, anchorDate, offsetDays) => {
+  return tasks.map((task) => {
+    const shiftedStart = addCalendarDays(task.start, offsetDays);
+    const finishDate = getFinishDate(shiftedStart, task.dur);
+    const lookbackDays = Math.max(1, Math.min(5, Number(task.dur) || 1));
+    const createdDate = addCalendarDays(shiftedStart, -lookbackDays);
+
+    let updatedDate = createdDate;
+    if (Number(task.pct) === 100) {
+      updatedDate = finishDate || shiftedStart;
+    } else if (Number(task.pct) > 0) {
+      updatedDate = shiftedStart <= anchorDate ? anchorDate : shiftedStart;
+    }
+
+    return {
+      ...task,
+      start: shiftedStart,
+      createdAt: toMiddayTimestamp(createdDate),
+      updatedAt: toMiddayTimestamp(updatedDate)
+    };
+  });
+};
+
+const normalizeDemoRegisters = (registers, anchorDate, offsetDays) => {
+  const next = { ...registers };
+  const completedActionOffsets = [-12, -8, -4];
+  const upcomingActionOffsets = [3, 7, 11, 16];
+  let completedActionIndex = 0;
+  let upcomingActionIndex = 0;
+
+  next.risks = (registers.risks || []).map((risk) => {
+    const shifted = shiftNamedFields(risk, ['raised'], offsetDays);
+    const createdDate = shifted.raised || anchorDate;
+    return {
+      ...shifted,
+      createdAt: toMiddayTimestamp(createdDate),
+      updatedAt: toMiddayTimestamp(createdDate)
+    };
+  });
+
+  next.issues = (registers.issues || []).map((issue) => {
+    const shifted = shiftNamedFields(issue, ['raised', 'target', 'completed', 'update'], offsetDays);
+    const createdDate = shifted.raised || addCalendarDays(shifted.target || anchorDate, -7) || anchorDate;
+    const updatedDate = shifted.update || shifted.completed || shifted.target || createdDate;
+    return {
+      ...shifted,
+      createdAt: toMiddayTimestamp(createdDate),
+      updatedAt: toMiddayTimestamp(updatedDate)
+    };
+  });
+
+  next.actions = (registers.actions || []).map((action) => {
+    const shifted = shiftNamedFields(action, ['raised', 'target', 'completed'], offsetDays);
+    const normalizedStatus = String(shifted.status || '').toLowerCase();
+    const isCompleted = ['completed', 'closed', 'done'].includes(normalizedStatus);
+
+    let targetDate = shifted.target || anchorDate;
+    if (isCompleted && completedActionIndex < completedActionOffsets.length) {
+      targetDate = addCalendarDays(anchorDate, completedActionOffsets[completedActionIndex++]);
+    } else if (!isCompleted && upcomingActionIndex < upcomingActionOffsets.length) {
+      targetDate = addCalendarDays(anchorDate, upcomingActionOffsets[upcomingActionIndex++]);
+    }
+
+    const createdDate = shifted.raised || addCalendarDays(targetDate, -7) || anchorDate;
+    const normalizedCompleted = isCompleted
+      ? (shifted.completed || targetDate || createdDate)
+      : shifted.completed;
+    const updatedDate = normalizedCompleted || (normalizedStatus === 'in progress' ? anchorDate : targetDate) || createdDate;
+
+    return {
+      ...shifted,
+      target: targetDate,
+      raised: shifted.raised || createdDate,
+      completed: normalizedCompleted || '',
+      createdAt: toMiddayTimestamp(createdDate),
+      updatedAt: toMiddayTimestamp(updatedDate)
+    };
+  });
+
+  next.changes = (registers.changes || []).map((change) => {
+    const shifted = shiftNamedFields(change, ['raised', 'target', 'updated', 'complete'], offsetDays);
+    const createdDate = shifted.raised || anchorDate;
+    const updatedDate = shifted.updated || shifted.complete || shifted.target || createdDate;
+    return {
+      ...shifted,
+      createdAt: toMiddayTimestamp(createdDate),
+      updatedAt: toMiddayTimestamp(updatedDate)
+    };
+  });
+
+  next.minutes = (registers.minutes || []).map((minute) => shiftNamedFields(minute, ['dateraised'], offsetDays));
+  next.costs = (registers.costs || []).map((cost) => shiftNamedFields(cost, ['dateraised', 'date'], offsetDays));
+  next.assumptions = (registers.assumptions || []).map((item) => shiftNamedFields(item, ['dateraised'], offsetDays));
+  next.decisions = (registers.decisions || []).map((item) => shiftNamedFields(item, ['dateraised', 'datedecided'], offsetDays));
+  next.lessons = (registers.lessons || []).map((lesson) => shiftNamedFields(lesson, ['date'], offsetDays));
+
+  next._raci = (registers._raci || []).map((entry) => ({
+    ...entry,
+    updatedAt: nowIso()
+  }));
+
+  return next;
+};
+
+const normalizeDemoTracker = (tracker, anchorDate) => {
+  return (tracker || []).map((item, index) => {
+    const dateAdded = addCalendarDays(anchorDate, -(6 - Math.min(index, 5)));
+    const lastUpdated = addCalendarDays(anchorDate, -(2 + index));
+    return {
+      ...item,
+      dateAdded,
+      lastUpdated,
+      createdAt: toMiddayTimestamp(dateAdded),
+      updatedAt: toMiddayTimestamp(lastUpdated)
+    };
+  });
+};
 
 export const buildDemoScheduleTasks = ({ timestamp = nowIso(), startDate = getCurrentDate() } = {}) => {
   const templateData = [];
@@ -216,6 +369,17 @@ export const buildDemoScheduleTasks = ({ timestamp = nowIso(), startDate = getCu
   return calculateSchedule(templateData);
 };
 
-export const buildDemoProjectPayload = () => {
-  return cloneDemoSeedPayload();
+export const buildDemoProjectPayload = ({
+  anchorDate = getCurrentDate(),
+  startOffsetDays = DEFAULT_DEMO_START_OFFSET_DAYS
+} = {}) => {
+  const payload = cloneDemoSeedPayload();
+  const demoStartDate = addCalendarDays(anchorDate, startOffsetDays);
+  const offsetDays = diffCalendarDays(DEMO_SEED_START_DATE, demoStartDate);
+
+  payload.tasks = normalizeDemoTasks(payload.tasks || [], anchorDate, offsetDays);
+  payload.registers = normalizeDemoRegisters(payload.registers || {}, anchorDate, offsetDays);
+  payload.tracker = normalizeDemoTracker(payload.tracker || [], anchorDate);
+
+  return payload;
 };
