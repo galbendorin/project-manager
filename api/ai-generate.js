@@ -9,9 +9,13 @@
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 const OPENAI_API = 'https://api.openai.com/v1/chat/completions'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://pmworkspace.com'
 
 // Allowed origins — add your production domain(s) here
 const ALLOWED_ORIGINS = [
+  APP_URL,
+  'https://pmworkspace.com',
+  'https://www.pmworkspace.com',
   'https://project-manager-app-tau.vercel.app',
   'http://localhost:3000',
   'http://localhost:3002',

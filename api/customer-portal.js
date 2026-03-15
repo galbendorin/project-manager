@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://pmworkspace.com';
 
 export default async function handler(req, res) {
   // CORS headers
@@ -25,7 +26,7 @@ export default async function handler(req, res) {
 
     const session = await stripe.billingPortal.sessions.create({
       customer: stripeCustomerId,
-      return_url: process.env.NEXT_PUBLIC_APP_URL || 'https://project-manager-app-tau.vercel.app',
+      return_url: APP_URL,
     });
 
     return res.status(200).json({ url: session.url });
