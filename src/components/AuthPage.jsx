@@ -5,6 +5,7 @@ import {
   TRIAL_OFFER_LABEL,
   TRIAL_SHORT_LABEL,
 } from '../utils/trialOffer';
+import { FEEDBACK_EMAIL, openFeedbackEmail } from '../utils/feedback';
 
 const AUDIENCE_TAGS = [
   'Consultancies',
@@ -88,6 +89,10 @@ export default function AuthPage() {
         block: 'start',
       });
     });
+  };
+
+  const handleOpenFeedback = () => {
+    openFeedbackEmail({ tab: 'General feedback' });
   };
 
   const handleSubmit = async (e) => {
@@ -482,6 +487,16 @@ export default function AuthPage() {
                 <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">
                   Your {TRIAL_OFFER_LABEL} begins after email verification. Billing upgrades are managed inside the workspace.
                 </p>
+                <div className="mt-3 text-center text-[11px] leading-5 text-slate-400">
+                  Need help or want to report a bug?{' '}
+                  <button
+                    type="button"
+                    onClick={handleOpenFeedback}
+                    className="font-semibold text-teal-700 underline decoration-teal-300 underline-offset-2 hover:text-teal-800"
+                  >
+                    Email {FEEDBACK_EMAIL}
+                  </button>
+                </div>
               </div>
             </aside>
           </main>

@@ -34,6 +34,7 @@ import {
   buildEmailDigestPrompt,
   getEmailDigestSystemPrompt
 } from './utils/aiPrompts';
+import { openFeedbackEmail } from './utils/feedback';
 
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
@@ -189,33 +190,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     setActiveTab('schedule');
   }, []);
 
-  // ONE-TIME CLEANUP: Fix duplicate descriptions in Action Log
-  const cleanupDuplicateDescriptions = useCallback(() => {
-    setRegisters(prev => {
-      const cleanedActions = prev.actions.map(action => {
-        if (action.description) {
-          // Remove duplicate text patterns like "Text\nText" or "Text Text"
-          const cleaned = action.description
-            .trim()
-            .replace(/(.+)\n\1/g, '$1')  // Remove newline duplicates
-            .replace(/^(.+?)\s+\1$/g, '$1');  // Remove space duplicates
-          
-          return {
-            ...action,
-            description: cleaned
-          };
-        }
-        return action;
-      });
-      
-      return {
-        ...prev,
-        actions: cleanedActions
-      };
+  const handleOpenFeedback = useCallback(() => {
+    openFeedbackEmail({
+      projectName: project?.name,
+      tab: activeTab,
+      subView: activeSubView,
     });
-    
-    alert('Action Log descriptions have been cleaned! Check the Action Log tab.');
-  }, [setRegisters]);
+  }, [project?.name, activeTab, activeSubView]);
 
   const handleLoadDemoData = useCallback(() => {
     const proceed = window.confirm(
@@ -719,11 +700,11 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
             </span>
           )}
           <button
-            onClick={cleanupDuplicateDescriptions}
-            className="shrink-0 text-xs px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
-            title="One-time cleanup of duplicate text in Action Log"
+            onClick={handleOpenFeedback}
+            className="shrink-0 text-xs px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded transition-colors"
+            title="Report a bug, request an improvement, or send feedback by email"
           >
-            Clean Action Log
+            Send Feedback
           </button>
           {importStatus ? (
             <span className={`shrink-0 flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' ? 'text-blue-400' : 'text-amber-400'}`}>
