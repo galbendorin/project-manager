@@ -15,7 +15,7 @@ const truncatePrompt = (value, limit = MAX_USER_MESSAGE_CHARS) => {
   return `${value.slice(0, keep)}\n\n[TRUNCATED: prompt exceeded safe client limit for proxy payload size]`
 }
 
-const normalizeAiError = (message = '', status) => {
+const normalizeAiError = (message = '', status, { usePlatformKey = false } = {}) => {
   const text = String(message || '').toLowerCase()
   if (status === 413 || text.includes('too large')) {
     return 'Request too large. Narrow the date range or reduce notes and try again.'
@@ -24,10 +24,19 @@ const normalizeAiError = (message = '', status) => {
     return 'API key rejected. Re-check provider, key, and key permissions in AI settings.'
   }
   if (text.includes('quota') || text.includes('billing') || text.includes('insufficient credits')) {
+    if (usePlatformKey) {
+      return 'Trial AI capacity is currently exhausted. Open AI Settings to use your own key, or try again later.'
+    }
     return 'Provider quota/billing limit reached. Check your AI provider account.'
   }
   if (text.includes('rate limit') || status === 429) {
+    if (usePlatformKey) {
+      return 'Trial AI capacity is busy right now. Open AI Settings to use your own key, or try again shortly.'
+    }
     return 'Rate limit reached. Wait a moment and retry.'
+  }
+  if (usePlatformKey && (text.includes('temporarily unavailable') || text.includes('platform ai'))) {
+    return 'Trial AI is temporarily unavailable. Open AI Settings to use your own key.'
   }
   if (text.includes('model') && (text.includes('not found') || text.includes('unsupported'))) {
     return 'Selected model is unavailable for this key. Pick another model in AI settings.'
@@ -88,7 +97,7 @@ export const generateAiContent = async ({
     if (!response.ok) {
       const errBody = await response.json().catch(() => ({}))
       const rawErr = errBody.error || `Provider returned ${response.status}`
-      const errMsg = normalizeAiError(rawErr, response.status)
+      const errMsg = normalizeAiError(rawErr, response.status, { usePlatformKey })
       return { ok: false, error: errMsg }
     }
 
@@ -116,7 +125,7 @@ export const generateAiContent = async ({
                 onChunk(parsed.text, fullText)
               }
               if (parsed.error) {
-                return { ok: false, error: normalizeAiError(parsed.error) }
+                return { ok: false, error: normalizeAiError(parsed.error, undefined, { usePlatformKey }) }
               }
             } catch {
               // Non-JSON data line, treat as text
@@ -135,7 +144,7 @@ export const generateAiContent = async ({
     // Non-streaming mode
     const body = await response.json()
     if (body.error) {
-      return { ok: false, error: normalizeAiError(body.error) }
+      return { ok: false, error: normalizeAiError(body.error, undefined, { usePlatformKey }) }
     }
     return { ok: true, text: body.text || '' }
 
@@ -143,6 +152,6 @@ export const generateAiContent = async ({
     if (err.name === 'AbortError') {
       return { ok: false, error: 'Request cancelled' }
     }
-    return { ok: false, error: normalizeAiError(err.message || 'Failed to reach AI proxy') }
+    return { ok: false, error: normalizeAiError(err.message || 'Failed to reach AI proxy', undefined, { usePlatformKey }) }
   }
 }

@@ -102,6 +102,7 @@ const AiReportPanel = ({
   };
 
   const showPayloadHint = /request too large|payload|body too large/i.test(errorMsg || '');
+  const showOwnKeyHint = usePlatformKey && /trial ai|quota|billing|temporarily unavailable|busy right now/i.test(errorMsg || '');
 
   // Not configured — show setup prompt
   if (!isConfigured) {
@@ -185,6 +186,17 @@ const AiReportPanel = ({
           {status === 'error' && (
             <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
               {errorMsg}
+            </div>
+          )}
+          {status === 'error' && showOwnKeyHint && (
+            <div className="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
+              <span>Add your own Gemini, OpenAI, or Anthropic key to keep generating reports.</span>
+              <button
+                onClick={onOpenSettings}
+                className="shrink-0 rounded-md bg-white border border-indigo-200 px-2.5 py-1 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 transition-all"
+              >
+                Open AI Settings
+              </button>
             </div>
           )}
           {status === 'error' && showPayloadHint && (
