@@ -37,6 +37,8 @@ const DATE_COLUMNS = [
   'Raised',
 ];
 
+const ALWAYS_VISIBLE_COLUMNS = ['Number', 'Status', 'Current Status', 'Level'];
+
 const STATUS_OPTIONS = [
   'Open',
   'In Progress',
@@ -56,6 +58,7 @@ const getColumnValue = (item, column) => {
 };
 
 const isPublicItem = (item) => item?.public !== false;
+const hasValue = (value) => String(value ?? '').trim().length > 0;
 
 const badgeTone = (value, type) => {
   const normalized = String(value || '').toLowerCase();
@@ -85,12 +88,127 @@ const badgeTone = (value, type) => {
 const RegisterDetailSheet = ({ item, schema, onClose, onDeleteItem, onUpdateItem }) => {
   const [editingColumn, setEditingColumn] = useState(null);
   const [draftValue, setDraftValue] = useState('');
+  const [showEmptyFields, setShowEmptyFields] = useState(false);
 
   const handleSave = useCallback((column) => {
     const key = keyGen(column);
     onUpdateItem(item._id || item.id, key, draftValue);
     setEditingColumn(null);
   }, [draftValue, item, onUpdateItem]);
+
+  const visibleColumns = useMemo(
+    () => schema.cols.filter((column) => column !== 'Visible'),
+    [schema.cols]
+  );
+
+  const filledColumns = useMemo(
+    () => visibleColumns.filter((column) => hasValue(getColumnValue(item, column))),
+    [item, visibleColumns]
+  );
+
+  const summaryColumns = useMemo(
+    () => ALWAYS_VISIBLE_COLUMNS.filter((column) => filledColumns.includes(column)),
+    [filledColumns]
+  );
+
+  const detailColumns = useMemo(
+    () => visibleColumns.filter((column) => !ALWAYS_VISIBLE_COLUMNS.includes(column) && filledColumns.includes(column)),
+    [filledColumns, visibleColumns]
+  );
+
+  const emptyColumns = useMemo(
+    () => visibleColumns.filter((column) => !filledColumns.includes(column)),
+    [filledColumns, visibleColumns]
+  );
+
+  const meaningfulTitleColumn = useMemo(
+    () => visibleColumns.find((column) => {
+      if (TITLE_SKIP_COLUMNS.has(column) || OWNER_COLUMNS.includes(column) || DATE_COLUMNS.includes(column)) return false;
+      return hasValue(getColumnValue(item, column));
+    }),
+    [item, visibleColumns]
+  );
+
+  const titleValue = meaningfulTitleColumn ? getColumnValue(item, meaningfulTitleColumn) : '';
+  const ownerValue = OWNER_COLUMNS.map((column) => getColumnValue(item, column)).find(hasValue);
+  const dateValue = DATE_COLUMNS.map((column) => getColumnValue(item, column)).find(hasValue);
+
+  const renderField = (column) => {
+    const value = getColumnValue(item, column);
+    const isEditing = editingColumn === column;
+    const isStatusField = column === 'Status' || column === 'Current Status';
+    const isLevelField = column === 'Level';
+    const options = isStatusField ? STATUS_OPTIONS : isLevelField ? LEVEL_OPTIONS : null;
+    const empty = !hasValue(value);
+
+    return (
+      <div key={column} className="border-b border-slate-100 px-4 py-3 last:border-b-0">
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+          {column}
+        </div>
+
+        {isEditing && options ? (
+          <div className="flex flex-wrap gap-2">
+            {options.map((option) => (
+              <button
+                key={option}
+                onClick={() => {
+                  setDraftValue(option);
+                  onUpdateItem(item._id || item.id, keyGen(column), option);
+                  setEditingColumn(null);
+                }}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                  String(value) === option
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-200 bg-white text-slate-600'
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        ) : isEditing ? (
+          <div className="space-y-2">
+            <textarea
+              autoFocus
+              rows={Math.max(3, String(value || '').length > 80 ? 5 : 3)}
+              value={draftValue}
+              onChange={(event) => setDraftValue(event.target.value)}
+              className="w-full rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleSave(column)}
+                className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setEditingColumn(null)}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => {
+              setEditingColumn(column);
+              setDraftValue(String(value || ''));
+            }}
+            className={`w-full rounded-2xl border px-3 py-3 text-left text-sm ${
+              empty
+                ? 'border-dashed border-slate-300 bg-white text-slate-400'
+                : 'border-slate-200 bg-slate-50 text-slate-700'
+            }`}
+          >
+            {empty ? 'Add details' : String(value)}
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col">
@@ -117,77 +235,71 @@ const RegisterDetailSheet = ({ item, schema, onClose, onDeleteItem, onUpdateItem
         </div>
 
         <div className="h-full overflow-y-auto pb-16">
-          {schema.cols.filter((column) => column !== 'Visible').map((column) => {
-            const value = getColumnValue(item, column);
-            const isEditing = editingColumn === column;
-            const isStatusField = column === 'Status' || column === 'Current Status';
-            const isLevelField = column === 'Level';
-            const options = isStatusField ? STATUS_OPTIONS : isLevelField ? LEVEL_OPTIONS : null;
+          <div className="space-y-4 px-4 py-4">
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {summaryColumns.map((column) => {
+                  const value = getColumnValue(item, column);
+                  const tone = column === 'Level' ? badgeTone(value, 'level') : badgeTone(value, 'status');
+                  return (
+                    <span key={column} className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${tone}`}>
+                      {value}
+                    </span>
+                  );
+                })}
+              </div>
 
-            return (
-              <div key={column} className="border-b border-slate-100 px-4 py-3">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  {column}
+              <div className="mt-3 text-base font-semibold leading-6 text-slate-900">
+                {titleValue || `${schema.title} entry`}
+              </div>
+
+              {(ownerValue || dateValue) && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {ownerValue && (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                      {ownerValue}
+                    </span>
+                  )}
+                  {dateValue && (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+                      {dateValue}
+                    </span>
+                  )}
                 </div>
+              )}
+            </div>
 
-                {isEditing && options ? (
-                  <div className="flex flex-wrap gap-2">
-                    {options.map((option) => (
-                      <button
-                        key={option}
-                        onClick={() => {
-                          setDraftValue(option);
-                          onUpdateItem(item._id || item.id, keyGen(column), option);
-                          setEditingColumn(null);
-                        }}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                          String(value) === option
-                            ? 'border-indigo-600 bg-indigo-600 text-white'
-                            : 'border-slate-200 bg-white text-slate-600'
-                        }`}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                ) : isEditing ? (
-                  <div className="space-y-2">
-                    <textarea
-                      autoFocus
-                      rows={Math.max(3, String(value || '').length > 80 ? 5 : 3)}
-                      value={draftValue}
-                      onChange={(event) => setDraftValue(event.target.value)}
-                      className="w-full rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400"
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleSave(column)}
-                        className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingColumn(null)}
-                        className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500"
-                      >
-                        Cancel
-                      </button>
+            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+              {detailColumns.length > 0 ? (
+                detailColumns.map(renderField)
+              ) : (
+                <div className="px-4 py-5 text-sm text-slate-500">
+                  Only the headline fields are filled in so far. Add more details below when you need them.
+                </div>
+              )}
+            </div>
+
+            {emptyColumns.length > 0 && (
+              <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+                <button
+                  onClick={() => setShowEmptyFields((current) => !current)}
+                  className="flex w-full items-center justify-between px-4 py-4 text-left"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">
+                      {showEmptyFields ? 'Hide extra fields' : `Add more details (${emptyColumns.length})`}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400">
+                      Keep the screen focused until you need the rest of the form.
                     </div>
                   </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setEditingColumn(column);
-                      setDraftValue(String(value || ''));
-                    }}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm text-slate-700"
-                  >
-                    {String(value || '').trim() || 'Tap to add'}
-                  </button>
-                )}
+                  <span className="text-xl text-slate-300">{showEmptyFields ? '−' : '+'}</span>
+                </button>
+
+                {showEmptyFields && emptyColumns.map(renderField)}
               </div>
-            );
-          })}
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -196,11 +308,11 @@ const RegisterDetailSheet = ({ item, schema, onClose, onDeleteItem, onUpdateItem
 
 const MobileRegisterCard = ({ item, schema, onOpen }) => {
   const titleColumn = schema.cols.find((column) => {
-    if (TITLE_SKIP_COLUMNS.has(column)) return false;
-    return String(getColumnValue(item, column) || '').trim().length > 0;
+    if (TITLE_SKIP_COLUMNS.has(column) || OWNER_COLUMNS.includes(column) || DATE_COLUMNS.includes(column)) return false;
+    return hasValue(getColumnValue(item, column));
   });
 
-  const title = titleColumn ? getColumnValue(item, titleColumn) : '';
+  const title = titleColumn ? getColumnValue(item, titleColumn) : `${schema.title} entry`;
   const number = getColumnValue(item, 'Number');
   const level = getColumnValue(item, 'Level');
   const status = getColumnValue(item, 'Status') || getColumnValue(item, 'Current Status');
@@ -208,8 +320,8 @@ const MobileRegisterCard = ({ item, schema, onOpen }) => {
   const dateValue = DATE_COLUMNS.map((column) => getColumnValue(item, column)).find(Boolean);
 
   const detailColumn = schema.cols.find((column) => {
-    if (column === titleColumn || TITLE_SKIP_COLUMNS.has(column) || OWNER_COLUMNS.includes(column)) return false;
-    return String(getColumnValue(item, column) || '').trim().length > 0;
+    if (column === titleColumn || TITLE_SKIP_COLUMNS.has(column)) return false;
+    return hasValue(getColumnValue(item, column));
   });
   const detail = detailColumn ? getColumnValue(item, detailColumn) : '';
 

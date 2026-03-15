@@ -2,6 +2,8 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { TRACKER_COLS } from '../utils/constants';
 import { filterBySearch } from '../utils/helpers';
 import { IconTrash } from './Icons';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import MobileTrackerView from './mobile/MobileTrackerView';
 
 // ── Viewport-aware popover (shared pattern) ────────────────────────
 
@@ -73,6 +75,7 @@ const TrackerView = ({
   onAddManualItem,
   onNavigateToSchedule
 }) => {
+  const isMobile = useMediaQuery('(max-width: 768px)');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingCell, setEditingCell] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
@@ -101,6 +104,19 @@ const TrackerView = ({
     const amberItems = trackerItems.filter(t => t.rag === 'Amber').length;
     return { total, completed, inProgress, redItems, amberItems };
   }, [trackerItems]);
+
+  if (isMobile) {
+    return (
+      <MobileTrackerView
+        trackerItems={trackerItems}
+        tasks={tasks}
+        onUpdateItem={onUpdateItem}
+        onRemoveItem={onRemoveItem}
+        onAddManualItem={onAddManualItem}
+        onNavigateToSchedule={onNavigateToSchedule}
+      />
+    );
+  }
 
   // Get linked task progress
   const getTaskProgress = (taskId) => {
