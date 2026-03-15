@@ -109,7 +109,7 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
 
   // Build effective settings for AI calls (platform key mode uses server defaults)
   const effectiveSettings = usePlatformKey && !isAiConfigured(aiSettings)
-    ? { provider: 'gemini', apiKey: '', model: 'gemini-2.0-flash-lite', usePlatformKey: true }
+    ? { provider: 'gemini', apiKey: '', model: 'gemini-2.5-flash-lite', usePlatformKey: true }
     : { ...aiSettings, usePlatformKey: false };
 
   const addMessage = useCallback((msg) => {

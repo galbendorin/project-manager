@@ -7,6 +7,12 @@
 
 const STORAGE_KEY = 'pm_os_ai_settings'
 
+const normalizeGeminiModel = (model) => {
+  if (model === 'gemini-2.0-flash') return 'gemini-2.5-flash'
+  if (model === 'gemini-2.0-flash-lite') return 'gemini-2.5-flash-lite'
+  return model
+}
+
 const PROVIDERS = {
   anthropic: {
     id: 'anthropic',
@@ -38,8 +44,7 @@ const PROVIDERS = {
     defaultModel: 'gemini-2.5-flash',
     models: [
       { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-      { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
+      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
       { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
       { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' }
     ],
@@ -64,12 +69,20 @@ export const loadAiSettings = () => {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULT_SETTINGS }
     const parsed = JSON.parse(raw)
-    return {
+    const provider = parsed.provider || DEFAULT_SETTINGS.provider
+    const model = provider === 'gemini'
+      ? normalizeGeminiModel(parsed.model || PROVIDERS.gemini.defaultModel)
+      : (parsed.model || DEFAULT_SETTINGS.model)
+    const normalized = {
       provider: parsed.provider || DEFAULT_SETTINGS.provider,
       apiKey: parsed.apiKey || DEFAULT_SETTINGS.apiKey,
-      model: parsed.model || DEFAULT_SETTINGS.model,
+      model,
       configured: !!(parsed.apiKey && parsed.provider)
     }
+    if (provider === 'gemini' && model !== parsed.model) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+    }
+    return normalized
   } catch {
     return { ...DEFAULT_SETTINGS }
   }
@@ -79,10 +92,14 @@ export const loadAiSettings = () => {
  * Save AI settings to localStorage
  */
 export const saveAiSettings = ({ provider, apiKey, model }) => {
+  const normalizedProvider = provider || DEFAULT_SETTINGS.provider
+  const normalizedModel = normalizedProvider === 'gemini'
+    ? normalizeGeminiModel(model || PROVIDERS.gemini.defaultModel)
+    : (model || PROVIDERS[normalizedProvider]?.defaultModel || DEFAULT_SETTINGS.model)
   const settings = {
-    provider: provider || DEFAULT_SETTINGS.provider,
+    provider: normalizedProvider,
     apiKey: (apiKey || '').trim(),
-    model: model || PROVIDERS[provider]?.defaultModel || DEFAULT_SETTINGS.model,
+    model: normalizedModel,
     configured: !!(apiKey && provider)
   }
   try {

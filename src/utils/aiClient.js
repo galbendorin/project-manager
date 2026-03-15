@@ -35,6 +35,9 @@ const normalizeAiError = (message = '', status, { usePlatformKey = false } = {})
     }
     return 'Rate limit reached. Wait a moment and retry.'
   }
+  if (text.includes('no longer available to new users') || text.includes('update your code to use a newer model')) {
+    return 'Selected Gemini model is deprecated. Open AI Settings and switch to Gemini 2.5 Flash.'
+  }
   if (usePlatformKey && (text.includes('temporarily unavailable') || text.includes('platform ai'))) {
     return 'Trial AI is temporarily unavailable. Open AI Settings to use your own key.'
   }

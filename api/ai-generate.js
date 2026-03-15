@@ -65,7 +65,7 @@ export default async function handler(req, res) {
     }
     apiKey = platformKey
     resolvedProvider = 'gemini'
-    resolvedModel = 'gemini-2.0-flash-lite' // Cost-efficient model for trial users
+    resolvedModel = 'gemini-2.5-flash-lite' // Cost-efficient model for trial users
   }
 
   if (!resolvedProvider || !apiKey || !userMessage) {
