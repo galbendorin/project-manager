@@ -4,6 +4,7 @@ import { AI_REPORT_TRIGGER_PROMPT } from '../utils/aiReportExport';
 import AiReportPanel from './AiReportPanel';
 import AiSettingsModal from './AiSettingsModal';
 import EmailDigestModal from './EmailDigestModal';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 // Track which detail sections are expanded
 
@@ -72,6 +73,7 @@ const StatusReportView = ({
   aiReportsLimit,
   usePlatformKey
 }) => {
+  const isMobile = useMediaQuery('(max-width: 768px)');
   // Date range state
   const [dateFrom, setDateFrom] = useState(daysAgo(14));
   const [dateTo, setDateTo] = useState(getCurrentDate());
@@ -285,49 +287,69 @@ const StatusReportView = ({
   };
 
   return (
-    <div className="w-full h-full bg-slate-50 p-6 overflow-auto">
+    <div className="w-full h-full bg-slate-50 overflow-auto p-4 md:p-6">
       <div className="max-w-[1200px] mx-auto space-y-5">
 
         {/* Date Range Picker */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Reporting Period</span>
-              <div className="flex gap-1 ml-2">
-                {PRESETS.map(preset => (
-                  <button
-                    key={preset.label}
-                    onClick={() => handlePreset(preset)}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
-                      activePreset === preset.label
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-4 md:px-5">
+          <div className="space-y-4">
+            <div className={`${isMobile ? 'space-y-3' : 'flex items-center justify-between gap-3 flex-wrap'}`}>
+              <div className={`${isMobile ? 'space-y-3' : 'flex items-center gap-2'}`}>
+                <span className={`font-bold text-slate-400 uppercase ${isMobile ? 'block text-[11px] tracking-[0.18em]' : 'text-[10px] tracking-widest'}`}>
+                  Reporting Period
+                </span>
+                <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'ml-2 flex gap-1 flex-wrap'}`}>
+                  {PRESETS.map(preset => (
+                    <button
+                      key={preset.label}
+                      onClick={() => handlePreset(preset)}
+                      className={`rounded-md font-medium transition-all ${
+                        isMobile ? 'px-3 py-2 text-[13px]' : 'px-2.5 py-1 text-[11px]'
+                      } ${
+                        activePreset === preset.label
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] text-slate-400 font-medium">From</span>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => handleCustomFrom(e.target.value)}
-                className="text-[11px] border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-indigo-300"
-              />
-              <span className="text-[10px] text-slate-400 font-medium">To</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => handleCustomTo(e.target.value)}
-                className="text-[11px] border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-indigo-300"
-              />
+
+            <div className={`${isMobile ? 'grid grid-cols-2 gap-3' : 'flex items-center gap-2 flex-wrap'}`}>
+              <label className={`${isMobile ? 'col-span-1' : ''} text-[10px] text-slate-400 font-medium`}>
+                <span className="mb-1 block uppercase tracking-[0.12em]">From</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => handleCustomFrom(e.target.value)}
+                  className={`w-full border border-slate-200 rounded-md outline-none focus:border-indigo-300 ${
+                    isMobile ? 'px-3 py-2 text-[13px]' : 'px-2 py-1 text-[11px]'
+                  }`}
+                />
+              </label>
+              <label className={`${isMobile ? 'col-span-1' : ''} text-[10px] text-slate-400 font-medium`}>
+                <span className="mb-1 block uppercase tracking-[0.12em]">To</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => handleCustomTo(e.target.value)}
+                  className={`w-full border border-slate-200 rounded-md outline-none focus:border-indigo-300 ${
+                    isMobile ? 'px-3 py-2 text-[13px]' : 'px-2 py-1 text-[11px]'
+                  }`}
+                />
+              </label>
+            </div>
+
+            <div className={`${isMobile ? 'grid grid-cols-1 gap-2' : 'flex items-center gap-2 flex-wrap'}`}>
               <button
                 onClick={handleOpenAiNotesModal}
                 disabled={aiExporting}
-                className={`text-[11px] font-medium px-2.5 py-1.5 rounded-md border transition-all ${
+                className={`font-medium rounded-md border transition-all ${
+                  isMobile ? 'w-full px-3 py-3 text-[13px]' : 'text-[11px] px-2.5 py-1.5'
+                } ${
                   aiExporting
                     ? 'text-slate-300 border-slate-200 bg-slate-50 cursor-not-allowed'
                     : 'text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100'
@@ -339,7 +361,9 @@ const StatusReportView = ({
               {aiConfigured && (
                 <button
                   onClick={() => setShowEmailDigest(true)}
-                  className="text-[11px] font-medium px-2.5 py-1.5 rounded-md border transition-all text-emerald-600 border-emerald-200 bg-emerald-50 hover:bg-emerald-100"
+                  className={`font-medium rounded-md border transition-all text-emerald-600 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 ${
+                    isMobile ? 'w-full px-3 py-3 text-[13px]' : 'text-[11px] px-2.5 py-1.5'
+                  }`}
                   title="Generate a concise status email for senior leadership"
                 >
                   📧 Email Digest
@@ -451,14 +475,16 @@ const StatusReportView = ({
         )}
 
         {/* Header Row: RAG + Completion + Task Stats */}
-        <div className="grid grid-cols-12 gap-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-12 md:gap-4">
           {/* Overall RAG */}
-          <div className="col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col items-center justify-center">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Overall Status</div>
-            <div className={`w-20 h-20 rounded-full ${ragStyle.bg} ring-4 ${ragStyle.ring} flex items-center justify-center mb-3 shadow-lg`}>
-              <span className="text-white font-black text-lg">{statusReport.overallRag}</span>
+          <div className="col-span-1 md:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5 flex flex-col items-center justify-center">
+            <div className={`mb-3 text-center font-bold text-slate-400 ${isMobile ? 'text-[11px] tracking-[0.14em]' : 'text-[10px] uppercase tracking-widest'}`}>
+              Overall Status
             </div>
-            <div className="flex gap-1.5 mt-1">
+            <div className={`${isMobile ? 'h-24 w-24' : 'w-20 h-20'} rounded-full ${ragStyle.bg} ring-4 ${ragStyle.ring} flex items-center justify-center mb-3 shadow-lg`}>
+              <span className={`text-white font-black ${isMobile ? 'text-xl' : 'text-lg'}`}>{statusReport.overallRag}</span>
+            </div>
+            <div className="mt-1 flex gap-1.5">
               {RAG_OPTIONS.map(rag => (
                 <button
                   key={rag}
@@ -475,10 +501,12 @@ const StatusReportView = ({
           </div>
 
           {/* Project Completion */}
-          <div className="col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col items-center justify-center">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Project Completion</div>
-            <div className="relative w-24 h-24">
-              <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 100 100">
+          <div className="col-span-1 md:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5 flex flex-col items-center justify-center">
+            <div className={`mb-3 text-center font-bold text-slate-400 ${isMobile ? 'text-[11px] tracking-[0.14em]' : 'text-[10px] uppercase tracking-widest'}`}>
+              Project Completion
+            </div>
+            <div className={`relative ${isMobile ? 'h-24 w-24' : 'w-24 h-24'}`}>
+              <svg className={`${isMobile ? 'h-24 w-24' : 'w-24 h-24'} transform -rotate-90`} viewBox="0 0 100 100">
                 <circle cx="50" cy="50" r="42" stroke="#e2e8f0" strokeWidth="8" fill="none" />
                 <circle cx="50" cy="50" r="42"
                   stroke={projectCompletion === 100 ? '#10b981' : '#6366f1'}
@@ -493,23 +521,25 @@ const StatusReportView = ({
           </div>
 
           {/* Task Stats */}
-          <div className="col-span-6 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Task Summary</div>
+          <div className="col-span-2 md:col-span-6 bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5">
+            <div className={`mb-3 font-bold text-slate-400 ${isMobile ? 'text-[11px] tracking-[0.14em]' : 'text-[10px] uppercase tracking-widest'}`}>
+              Task Summary
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
-                <span className="text-[11px] text-slate-500">Total Tasks</span>
+                <span className={`${isMobile ? 'text-[12px]' : 'text-[11px]'} text-slate-500`}>Total Tasks</span>
                 <span className="text-lg font-black text-slate-800">{taskStats.total}</span>
               </div>
               <div className="flex items-center justify-between bg-emerald-50 rounded-lg px-3 py-2">
-                <span className="text-[11px] text-emerald-600">Completed</span>
+                <span className={`${isMobile ? 'text-[12px]' : 'text-[11px]'} text-emerald-600`}>Completed</span>
                 <span className="text-lg font-black text-emerald-700">{taskStats.completed}</span>
               </div>
               <div className="flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
-                <span className="text-[11px] text-blue-600">In Progress</span>
+                <span className={`${isMobile ? 'text-[12px]' : 'text-[11px]'} text-blue-600`}>In Progress</span>
                 <span className="text-lg font-black text-blue-700">{taskStats.inProgress}</span>
               </div>
               <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
-                <span className="text-[11px] text-slate-500">Not Started</span>
+                <span className={`${isMobile ? 'text-[12px]' : 'text-[11px]'} text-slate-500`}>Not Started</span>
                 <span className="text-lg font-black text-slate-600">{taskStats.notStarted}</span>
               </div>
             </div>
@@ -553,7 +583,7 @@ const StatusReportView = ({
         </div>
 
         {/* Narrative Section */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Overall Status Narrative</label>
             <textarea
@@ -575,7 +605,7 @@ const StatusReportView = ({
         </div>
 
         {/* Deliverables Section */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Key Deliverables This Period</label>
             <textarea
@@ -597,7 +627,7 @@ const StatusReportView = ({
         </div>
 
         {/* Risks & Issues */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
             <div className="flex items-center justify-between mb-3">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Main Risks</label>
