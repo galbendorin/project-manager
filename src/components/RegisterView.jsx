@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { SCHEMAS } from '../utils/constants';
 import { keyGen, filterBySearch } from '../utils/helpers';
 import { IconEyeOpen, IconEyeClosed, IconTrash } from './Icons';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import MobileRegisterList from './mobile/MobileRegisterList';
 
 // Columns that are short/fixed — don't need clamp/tooltip
 const SHORT_COLS = ['visible', 'number', 'status', 'level', 'raised', 'target', 'completed', 'date', 'updated', 'complete', 'cost', 'billing', 'mobile', 'phone'];
@@ -91,6 +93,7 @@ const RegisterView = ({
   const [editingCell, setEditingCell] = useState(null);
   const [expandedCell, setExpandedCell] = useState(null);
   const expandAnchorRef = useRef(null);
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   const schema = SCHEMAS[registerType];
   if (!schema) return null;
@@ -100,7 +103,7 @@ const RegisterView = ({
     : schema.cols;
 
   const filteredItems = filterBySearch(items, searchQuery).filter(item =>
-    isExternalView ? item.public : true
+    isExternalView ? item.public !== false : true
   );
 
   const handleCellEdit = (itemId, key, value) => {
@@ -109,6 +112,18 @@ const RegisterView = ({
   };
 
   const closePopover = useCallback(() => setExpandedCell(null), []);
+
+  if (isMobile) {
+    return (
+      <MobileRegisterList
+        schema={schema}
+        items={items}
+        isExternalView={isExternalView}
+        onUpdateItem={(itemId, key, value) => onUpdateItem(registerType, itemId, key, value)}
+        onDeleteItem={(itemId) => onDeleteItem(registerType, itemId)}
+      />
+    );
+  }
 
   const EditableCell = ({ item, colName }) => {
     const key = keyGen(colName);

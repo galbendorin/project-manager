@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { SCHEMAS } from '../utils/constants';
 import { keyGen, filterBySearch } from '../utils/helpers';
 import { IconEyeOpen, IconEyeClosed, IconTrash } from './Icons';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import MobileRegisterList from './mobile/MobileRegisterList';
 
 const SUB_VIEWS = [
   { key: 'costs', label: 'Cost Register' },
@@ -14,6 +16,7 @@ const FinancialsView = ({ registers, isExternalView, onUpdateItem, onDeleteItem,
   const [activeView, setActiveView] = useState('costs');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingCell, setEditingCell] = useState(null);
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   const handleViewChange = (v) => {
     setActiveView(v);
@@ -30,7 +33,45 @@ const FinancialsView = ({ registers, isExternalView, onUpdateItem, onDeleteItem,
   const schema = SCHEMAS[activeView];
   const items = registers[activeView] || [];
   const cols = isExternalView ? schema.cols.filter(c => c !== 'Visible') : schema.cols;
-  const filteredItems = filterBySearch(items, searchQuery).filter(item => isExternalView ? item.public : true);
+  const filteredItems = filterBySearch(items, searchQuery).filter(item => isExternalView ? item.public !== false : true);
+
+  if (isMobile) {
+    return (
+      <div className="flex h-full flex-col bg-slate-50">
+        <div className="border-b border-slate-200 bg-white px-3 py-3">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            {SUB_VIEWS.map((view) => {
+              const count = (registers[view.key] || []).filter((item) => (isExternalView ? item.public !== false : true)).length;
+              return (
+                <button
+                  key={view.key}
+                  onClick={() => handleViewChange(view.key)}
+                  className={`shrink-0 rounded-full border px-3 py-2 text-[11px] font-semibold transition ${
+                    activeView === view.key
+                      ? 'border-indigo-600 bg-indigo-600 text-white'
+                      : 'border-slate-200 bg-white text-slate-500'
+                  }`}
+                >
+                  {view.label}
+                  <span className="ml-1 opacity-80">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1">
+          <MobileRegisterList
+            schema={schema}
+            items={items}
+            isExternalView={isExternalView}
+            onUpdateItem={(itemId, key, value) => onUpdateItem(activeView, itemId, key, value)}
+            onDeleteItem={(itemId) => onDeleteItem(activeView, itemId)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   const handleCellEdit = (itemId, key, value) => {
     onUpdateItem(activeView, itemId, key, value);

@@ -196,10 +196,15 @@ const Header = ({
         <div className="flex items-center gap-1.5 min-w-max lg:min-w-0 lg:flex-wrap lg:justify-end">
         <button
           onClick={onToggleExternalView}
-          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-500 text-[11px] font-medium transition-all hover:bg-slate-50 hover:border-slate-300"
+          className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[11px] font-medium transition-all ${
+            isExternalView
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
+          }`}
+          title={isExternalView ? 'External view is on. Only public items are shown in registers.' : 'External view is off. All items are shown.'}
         >
           <div className={`w-1.5 h-1.5 rounded-full ${isExternalView ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-          External View
+          {isExternalView ? 'External On' : 'External Off'}
         </button>
 
         {activeTab === 'schedule' ? (
