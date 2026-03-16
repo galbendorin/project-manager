@@ -500,8 +500,8 @@ export const useProjectData = (projectId, userId = null) => {
     setProjectData(buildDemoScheduleTasks());
   }, []);
 
-  const loadDemoDataAllTabs = useCallback(() => {
-    const demoPayload = buildDemoProjectPayload();
+  const loadDemoDataAllTabs = useCallback((options = {}) => {
+    const demoPayload = buildDemoProjectPayload(options);
     setProjectData(demoPayload.tasks);
     setRegisters(demoPayload.registers);
     setTracker(demoPayload.tracker);

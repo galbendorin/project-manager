@@ -203,10 +203,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       'Load the Network Transformation demo plan and fill all tabs with sample content? This will replace current demo content in this project.'
     );
     if (!proceed) return;
-    loadDemoDataAllTabs();
+    loadDemoDataAllTabs({
+      anchorDate: project?.created_at,
+      startOffsetDays: 0
+    });
     setImportStatus('✓ Demo data loaded across all tabs');
     setTimeout(() => setImportStatus(null), 4000);
-  }, [loadDemoDataAllTabs]);
+  }, [loadDemoDataAllTabs, project?.created_at]);
 
   const handleResetDemoData = useCallback(() => {
     const proceed = window.confirm(

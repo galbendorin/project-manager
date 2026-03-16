@@ -29,6 +29,12 @@ const toMiddayTimestamp = (value) => {
   return stamp.toISOString();
 };
 
+const normalizeAnchorDate = (value, fallback = DEFAULT_DEMO_ANCHOR_DATE) => {
+  const parsed = parseDateValue(value);
+  if (!parsed) return fallback;
+  return toISODateString(parsed);
+};
+
 const shiftNamedFields = (item, fields, offsetDays) => {
   const next = { ...item };
   fields.forEach((field) => {
@@ -375,12 +381,13 @@ export const buildDemoProjectPayload = ({
   startOffsetDays = DEFAULT_DEMO_START_OFFSET_DAYS
 } = {}) => {
   const payload = cloneDemoSeedPayload();
-  const demoStartDate = addCalendarDays(anchorDate, startOffsetDays);
+  const normalizedAnchorDate = normalizeAnchorDate(anchorDate);
+  const demoStartDate = addCalendarDays(normalizedAnchorDate, startOffsetDays);
   const offsetDays = diffCalendarDays(DEMO_SEED_START_DATE, demoStartDate);
 
-  payload.tasks = normalizeDemoTasks(payload.tasks || [], anchorDate, offsetDays);
-  payload.registers = normalizeDemoRegisters(payload.registers || {}, anchorDate, offsetDays);
-  payload.tracker = normalizeDemoTracker(payload.tracker || [], anchorDate);
+  payload.tasks = normalizeDemoTasks(payload.tasks || [], normalizedAnchorDate, offsetDays);
+  payload.registers = normalizeDemoRegisters(payload.registers || {}, normalizedAnchorDate, offsetDays);
+  payload.tracker = normalizeDemoTracker(payload.tracker || [], normalizedAnchorDate);
 
   return payload;
 };

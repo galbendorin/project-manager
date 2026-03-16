@@ -147,7 +147,10 @@ const ProjectSelector = ({ onSelectProject }) => {
   }, [user?.id, user?.user_metadata]);
 
   const seedDemoProject = useCallback(async (retriesLeft = 2) => {
-    const demoPayload = buildDemoProjectPayload();
+    const demoPayload = buildDemoProjectPayload({
+      anchorDate: user?.created_at,
+      startOffsetDays: 0
+    });
     const { data, error } = await createProjectRecord({
       user_id: user.id,
       name: 'Network Transformation Demo',
@@ -170,7 +173,7 @@ const ProjectSelector = ({ onSelectProject }) => {
     }
     await markDemoSeeded();
     return data;
-  }, [createProjectRecord, markDemoSeeded, user.id]);
+  }, [createProjectRecord, markDemoSeeded, user.id, user?.created_at]);
 
   const queryProjects = useCallback(async () => {
     const primarySelect = supportsIsDemoRef.current

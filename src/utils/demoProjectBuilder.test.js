@@ -35,3 +35,19 @@ test('buildDemoProjectPayload rebases demo dates around the current period and s
     'No due items found for next period'
   );
 });
+
+test('buildDemoProjectPayload can anchor the first demo task to a supplied account or project date', () => {
+  const payload = buildDemoProjectPayload({
+    anchorDate: '2026-05-12T09:30:00.000Z',
+    startOffsetDays: 0
+  });
+
+  const earliestTaskStart = payload.tasks.reduce((earliest, task) => {
+    if (!earliest || task.start < earliest) return task.start;
+    return earliest;
+  }, '');
+
+  assert.equal(earliestTaskStart, '2026-05-12');
+  assert.match(payload.tasks[0].createdAt, /^2026-/);
+  assert.match(payload.tracker[0].updatedAt, /^2026-/);
+});
