@@ -9,6 +9,7 @@ export const AI_REPORT_SECTION_NAMES = [
   'Main Risks and Issues',
   'Additional Notes'
 ]
+const NEXT_PERIOD_DAYS = 7
 
 const COMPLETED_STATUSES = new Set(['done', 'completed', 'closed'])
 const CLOSED_STATUSES = new Set(['done', 'completed', 'closed', 'resolved', 'cancelled'])
@@ -114,7 +115,7 @@ export const buildAiReportExportData = ({
   const { from: windowStart, to: windowEnd } = ensureDateRange(dateFrom, dateTo)
   const windowDays = getInclusiveDayCount(windowStart, windowEnd)
   const nextPeriodStart = addDays(windowEnd, 1)
-  const nextPeriodEnd = addDays(nextPeriodStart, Math.max(0, windowDays - 1))
+  const nextPeriodEnd = addDays(nextPeriodStart, NEXT_PERIOD_DAYS - 1)
   const reportGeneratedAtUtc = generatedAtUtc || new Date().toISOString()
   const reportTimezone = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   const projectId = project?.id || null
@@ -323,6 +324,7 @@ export const buildAiReportExportData = ({
     { Field: 'window_days', Value: String(windowDays) },
     { Field: 'next_period_start', Value: nextPeriodStart },
     { Field: 'next_period_end', Value: nextPeriodEnd },
+    { Field: 'next_period_days', Value: String(NEXT_PERIOD_DAYS) },
     { Field: 'completed_items_count', Value: String(thisPeriodCompletedRows.length) },
     { Field: 'next_period_items_count', Value: String(keyDeliverablesNextPeriodRows.length) },
     { Field: 'risk_signals_count', Value: String(mainRisksAndIssuesRows.length) }

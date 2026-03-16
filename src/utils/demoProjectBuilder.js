@@ -3,6 +3,7 @@ import { cloneDemoSeedPayload } from './demoSeedPayload.js';
 
 const nowIso = () => new Date().toISOString();
 const DEMO_SEED_START_DATE = '2025-04-07';
+const DEFAULT_DEMO_ANCHOR_DATE = '2026-03-16';
 const DEFAULT_DEMO_START_OFFSET_DAYS = -14;
 
 const addCalendarDays = (value, days) => {
@@ -370,7 +371,7 @@ export const buildDemoScheduleTasks = ({ timestamp = nowIso(), startDate = getCu
 };
 
 export const buildDemoProjectPayload = ({
-  anchorDate = getCurrentDate(),
+  anchorDate = DEFAULT_DEMO_ANCHOR_DATE,
   startOffsetDays = DEFAULT_DEMO_START_OFFSET_DAYS
 } = {}) => {
   const payload = cloneDemoSeedPayload();

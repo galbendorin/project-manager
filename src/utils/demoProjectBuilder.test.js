@@ -4,13 +4,13 @@ import { buildDemoProjectPayload } from './demoProjectBuilder.js';
 import { buildAiReportExportData } from './aiReportExport.js';
 
 test('buildDemoProjectPayload rebases demo dates around the current period and supports AI report windows', () => {
-  const payload = buildDemoProjectPayload({ anchorDate: '2026-03-15' });
+  const payload = buildDemoProjectPayload();
   const earliestTaskStart = payload.tasks.reduce((earliest, task) => {
     if (!earliest || task.start < earliest) return task.start;
     return earliest;
   }, '');
 
-  assert.equal(earliestTaskStart, '2026-03-01');
+  assert.equal(earliestTaskStart, '2026-03-02');
   assert.match(payload.tasks[0].createdAt, /^2026-/);
   assert.match(payload.tasks[0].updatedAt, /^2026-/);
   assert.match(payload.tracker[0].updatedAt, /^2026-/);
@@ -22,8 +22,8 @@ test('buildDemoProjectPayload rebases demo dates around the current period and s
     tracker: payload.tracker,
     statusReport: payload.status_report,
     todos: [],
-    dateFrom: '2026-03-01',
-    dateTo: '2026-03-15'
+    dateFrom: '2026-03-02',
+    dateTo: '2026-03-16'
   });
 
   assert.notEqual(

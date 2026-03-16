@@ -64,7 +64,7 @@ test('buildAiReportExportData includes project-scoped completed todos and requir
   assert.equal(exportData.windowStart, '2026-02-01')
   assert.equal(exportData.windowEnd, '2026-02-14')
   assert.equal(exportData.nextPeriodStart, '2026-02-15')
-  assert.equal(exportData.nextPeriodEnd, '2026-02-28')
+  assert.equal(exportData.nextPeriodEnd, '2026-02-21')
   assert.match(exportData.fileNameBase, /^Alpha_Launch_project_report_input$/)
 
   const templateKeys = Object.keys(exportData.outputTemplateRows[0])
