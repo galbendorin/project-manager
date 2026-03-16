@@ -77,8 +77,8 @@ const EmailDigestModal = ({ onClose, onGenerate, projectName }) => {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200">
           <div>
-            <h2 className="text-[13px] font-bold text-slate-800">Email Digest for SLT</h2>
-            <p className="text-[10px] text-slate-400 mt-0.5">AI-generated executive summary email</p>
+            <h2 className="text-[13px] font-bold text-slate-800">SLT Report</h2>
+            <p className="text-[10px] text-slate-400 mt-0.5">AI-generated senior leadership summary</p>
           </div>
           <button
             onClick={onClose}
@@ -95,13 +95,13 @@ const EmailDigestModal = ({ onClose, onGenerate, projectName }) => {
             <div className="text-center py-6">
               <div className="text-3xl mb-3">📧</div>
               <p className="text-[12px] text-slate-500 leading-relaxed max-w-xs mx-auto mb-4">
-                Generate a concise executive status email from your current project data. Ready to send to senior leadership.
+                Generate a concise SLT report from your current project data. Ready to copy, share, or send by email.
               </p>
               <button
                 onClick={handleGenerate}
                 className="text-[12px] font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-5 py-2.5 rounded-lg transition-all"
               >
-                Generate Email
+                Generate SLT Report
               </button>
             </div>
           )}
@@ -126,7 +126,7 @@ const EmailDigestModal = ({ onClose, onGenerate, projectName }) => {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                <span className="text-[11px] text-slate-500 font-medium">Writing email…</span>
+                <span className="text-[11px] text-slate-500 font-medium">Writing report…</span>
                 <button
                   onClick={handleCancel}
                   className="ml-auto text-[11px] font-medium text-slate-400 hover:text-rose-500 transition-colors"

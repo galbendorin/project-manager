@@ -364,9 +364,9 @@ const StatusReportView = ({
                   className={`font-medium rounded-md border transition-all text-emerald-600 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 ${
                     isMobile ? 'w-full px-3 py-3 text-[13px]' : 'text-[11px] px-2.5 py-1.5'
                   }`}
-                  title="Generate a concise status email for senior leadership"
+                  title="Generate an SLT report from the current project status"
                 >
-                  📧 Email Digest
+                  📧 SLT Report
                 </button>
               )}
             </div>
