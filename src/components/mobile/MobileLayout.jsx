@@ -159,6 +159,7 @@ const MobileLayout = ({
                 aiReportsRemaining={aiReportsRemaining}
                 aiReportsLimit={aiReportsLimit}
                 usePlatformKey={usePlatformKey}
+                isExternalView={isExternalView}
               />
             </Suspense>
           </div>

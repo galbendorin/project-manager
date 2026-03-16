@@ -55,6 +55,8 @@ const PRESETS = [
   { label: 'This month', from: () => startOfMonth(), to: () => getCurrentDate() },
 ];
 
+const isPublicItem = (item) => item?.public !== false;
+
 const StatusReportView = ({
   tasks,
   baseline,
@@ -71,9 +73,11 @@ const StatusReportView = ({
   canUseAiReport,
   aiReportsRemaining,
   aiReportsLimit,
-  usePlatformKey
+  usePlatformKey,
+  isExternalView = false
 }) => {
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const hideRegisterSignals = isExternalView;
   // Date range state
   const [dateFrom, setDateFrom] = useState(daysAgo(14));
   const [dateTo, setDateTo] = useState(getCurrentDate());
@@ -145,22 +149,27 @@ const StatusReportView = ({
       isInRange(t.updatedAt, dateFrom, dateTo) && !isInRange(t.createdAt, dateFrom, dateTo)
     );
 
+    if (hideRegisterSignals) {
+      result.trackerUpdates = (tracker || []).filter(t => isInRange(t.updatedAt, dateFrom, dateTo));
+      return result;
+    }
+
     // Risks
-    const risks = registers?.risks || [];
+    const risks = (registers?.risks || []).filter(isPublicItem);
     result.newRisks = risks.filter(r => isInRange(r.createdAt, dateFrom, dateTo));
     result.updatedRisks = risks.filter(r =>
       isInRange(r.updatedAt, dateFrom, dateTo) && !isInRange(r.createdAt, dateFrom, dateTo)
     );
 
     // Issues
-    const issues = registers?.issues || [];
+    const issues = (registers?.issues || []).filter(isPublicItem);
     result.newIssues = issues.filter(i => isInRange(i.createdAt, dateFrom, dateTo));
     result.updatedIssues = issues.filter(i =>
       isInRange(i.updatedAt, dateFrom, dateTo) && !isInRange(i.createdAt, dateFrom, dateTo)
     );
 
     // Actions
-    const actions = registers?.actions || [];
+    const actions = (registers?.actions || []).filter(isPublicItem);
     result.newActions = actions.filter(a => isInRange(a.createdAt, dateFrom, dateTo));
     result.completedActions = actions.filter(a => {
       const status = (a.status || '').toLowerCase();
@@ -168,14 +177,14 @@ const StatusReportView = ({
     });
 
     // Changes
-    const changes = registers?.changes || [];
+    const changes = (registers?.changes || []).filter(isPublicItem);
     result.newChanges = changes.filter(c => isInRange(c.createdAt, dateFrom, dateTo));
 
     // Tracker
     result.trackerUpdates = (tracker || []).filter(t => isInRange(t.updatedAt, dateFrom, dateTo));
 
     return result;
-  }, [tasks, registers, tracker, dateFrom, dateTo]);
+  }, [tasks, registers, tracker, dateFrom, dateTo, hideRegisterSignals]);
 
   // Total activity count
   const totalActivity = useMemo(() => {
@@ -204,18 +213,20 @@ const StatusReportView = ({
 
   // Top open risks
   const topRisks = useMemo(() => {
-    if (!registers?.risks) return [];
-    return registers.risks.filter(r => r.level && r.level.toString().toLowerCase() !== 'closed');
-  }, [registers]);
+    if (hideRegisterSignals || !registers?.risks) return [];
+    return registers.risks
+      .filter(isPublicItem)
+      .filter(r => r.level && r.level.toString().toLowerCase() !== 'closed');
+  }, [registers, hideRegisterSignals]);
 
   // Top open issues
   const topIssues = useMemo(() => {
-    if (!registers?.issues) return [];
-    return registers.issues.filter(i => {
+    if (hideRegisterSignals || !registers?.issues) return [];
+    return registers.issues.filter(isPublicItem).filter(i => {
       const status = (i.status || '').toLowerCase();
       return status !== 'closed' && status !== 'completed';
     });
-  }, [registers]);
+  }, [registers, hideRegisterSignals]);
 
   const ragStyle = RAG_STYLES[statusReport.overallRag] || RAG_STYLES.Green;
   const handleFieldChange = (key, value) => onUpdateStatusReport(key, value);
@@ -569,10 +580,18 @@ const StatusReportView = ({
           {totalActivity > 0 ? (
             <div className="space-y-1.5">
               <ActivityRow label="Tasks" icon="📋" color="text-indigo-600" newItems={periodActivity.newTasks} updatedItems={periodActivity.updatedTasks} />
-              <ActivityRow label="Risks" icon="⚠️" color="text-amber-600" newItems={periodActivity.newRisks} updatedItems={periodActivity.updatedRisks} />
-              <ActivityRow label="Issues" icon="🔴" color="text-rose-600" newItems={periodActivity.newIssues} updatedItems={periodActivity.updatedIssues} />
-              <ActivityRow label="Actions" icon="✅" color="text-emerald-600" newItems={periodActivity.newActions} updatedItems={periodActivity.completedActions} />
-              <ActivityRow label="Changes" icon="🔄" color="text-blue-600" newItems={periodActivity.newChanges} updatedItems={[]} />
+              {!hideRegisterSignals && (
+                <ActivityRow label="Risks" icon="⚠️" color="text-amber-600" newItems={periodActivity.newRisks} updatedItems={periodActivity.updatedRisks} />
+              )}
+              {!hideRegisterSignals && (
+                <ActivityRow label="Issues" icon="🔴" color="text-rose-600" newItems={periodActivity.newIssues} updatedItems={periodActivity.updatedIssues} />
+              )}
+              {!hideRegisterSignals && (
+                <ActivityRow label="Actions" icon="✅" color="text-emerald-600" newItems={periodActivity.newActions} updatedItems={periodActivity.completedActions} />
+              )}
+              {!hideRegisterSignals && (
+                <ActivityRow label="Changes" icon="🔄" color="text-blue-600" newItems={periodActivity.newChanges} updatedItems={[]} />
+              )}
               <ActivityRow label="Tracker Items" icon="📌" color="text-purple-600" newItems={[]} updatedItems={periodActivity.trackerUpdates} />
             </div>
           ) : (
@@ -627,66 +646,68 @@ const StatusReportView = ({
         </div>
 
         {/* Risks & Issues */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Main Risks</label>
+        {!hideRegisterSignals && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Main Risks</label>
+                {topRisks.length > 0 && (
+                  <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{topRisks.length} open</span>
+                )}
+              </div>
               {topRisks.length > 0 && (
-                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{topRisks.length} open</span>
+                <div className="space-y-2 mb-3">
+                  {topRisks.map((risk, i) => (
+                    <div key={risk._id || i} className="flex items-start gap-2 text-[11px] bg-slate-50 rounded-lg px-3 py-2">
+                      <span className="text-amber-500 font-bold flex-shrink-0">R{risk.number}</span>
+                      <span className="text-slate-600 flex-grow">{risk.riskdetails || risk.description || '—'}</span>
+                      {risk.level && (
+                        <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                          risk.level.toLowerCase() === 'high' ? 'bg-rose-100 text-rose-600' :
+                          risk.level.toLowerCase() === 'medium' ? 'bg-amber-100 text-amber-600' :
+                          'bg-emerald-100 text-emerald-600'
+                        }`}>{risk.level}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
+              <textarea
+                value={statusReport.mainRisks}
+                onChange={(e) => handleFieldChange('mainRisks', e.target.value)}
+                placeholder="Additional risk commentary..."
+                className="w-full h-16 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] text-slate-700 outline-none focus:border-indigo-300 resize-none transition-colors"
+              />
             </div>
-            {topRisks.length > 0 && (
-              <div className="space-y-2 mb-3">
-                {topRisks.map((risk, i) => (
-                  <div key={risk._id || i} className="flex items-start gap-2 text-[11px] bg-slate-50 rounded-lg px-3 py-2">
-                    <span className="text-amber-500 font-bold flex-shrink-0">R{risk.number}</span>
-                    <span className="text-slate-600 flex-grow">{risk.riskdetails || risk.description || '—'}</span>
-                    {risk.level && (
-                      <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                        risk.level.toLowerCase() === 'high' ? 'bg-rose-100 text-rose-600' :
-                        risk.level.toLowerCase() === 'medium' ? 'bg-amber-100 text-amber-600' :
-                        'bg-emerald-100 text-emerald-600'
-                      }`}>{risk.level}</span>
-                    )}
-                  </div>
-                ))}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Main Issues</label>
+                {topIssues.length > 0 && (
+                  <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">{topIssues.length} open</span>
+                )}
               </div>
-            )}
-            <textarea
-              value={statusReport.mainRisks}
-              onChange={(e) => handleFieldChange('mainRisks', e.target.value)}
-              placeholder="Additional risk commentary..."
-              className="w-full h-16 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] text-slate-700 outline-none focus:border-indigo-300 resize-none transition-colors"
-            />
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Main Issues</label>
               {topIssues.length > 0 && (
-                <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">{topIssues.length} open</span>
+                <div className="space-y-2 mb-3">
+                  {topIssues.map((issue, i) => (
+                    <div key={issue._id || i} className="flex items-start gap-2 text-[11px] bg-slate-50 rounded-lg px-3 py-2">
+                      <span className="text-rose-500 font-bold flex-shrink-0">I{issue.number}</span>
+                      <span className="text-slate-600 flex-grow">{issue.description || '—'}</span>
+                      {issue.status && (
+                        <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500">{issue.status}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
+              <textarea
+                value={statusReport.mainIssues}
+                onChange={(e) => handleFieldChange('mainIssues', e.target.value)}
+                placeholder="Additional issue commentary..."
+                className="w-full h-16 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] text-slate-700 outline-none focus:border-indigo-300 resize-none transition-colors"
+              />
             </div>
-            {topIssues.length > 0 && (
-              <div className="space-y-2 mb-3">
-                {topIssues.map((issue, i) => (
-                  <div key={issue._id || i} className="flex items-start gap-2 text-[11px] bg-slate-50 rounded-lg px-3 py-2">
-                    <span className="text-rose-500 font-bold flex-shrink-0">I{issue.number}</span>
-                    <span className="text-slate-600 flex-grow">{issue.description || '—'}</span>
-                    {issue.status && (
-                      <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500">{issue.status}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            <textarea
-              value={statusReport.mainIssues}
-              onChange={(e) => handleFieldChange('mainIssues', e.target.value)}
-              placeholder="Additional issue commentary..."
-              className="w-full h-16 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] text-slate-700 outline-none focus:border-indigo-300 resize-none transition-colors"
-            />
           </div>
-        </div>
+        )}
 
         {/* Milestone Comparison Table */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
@@ -792,7 +813,7 @@ const StatusReportView = ({
                     ))}
                   </div>
                 )}
-                {periodActivity.newRisks.length > 0 && (
+                {!hideRegisterSignals && periodActivity.newRisks.length > 0 && (
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Risks This Period</div>
                     {periodActivity.newRisks.map((r, i) => (
@@ -802,7 +823,7 @@ const StatusReportView = ({
                     ))}
                   </div>
                 )}
-                {periodActivity.updatedRisks.length > 0 && (
+                {!hideRegisterSignals && periodActivity.updatedRisks.length > 0 && (
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Updated Risks This Period</div>
                     {periodActivity.updatedRisks.map((r, i) => (
@@ -812,7 +833,7 @@ const StatusReportView = ({
                     ))}
                   </div>
                 )}
-                {periodActivity.newIssues.length > 0 && (
+                {!hideRegisterSignals && periodActivity.newIssues.length > 0 && (
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Issues This Period</div>
                     {periodActivity.newIssues.map((item, idx) => (
@@ -822,7 +843,7 @@ const StatusReportView = ({
                     ))}
                   </div>
                 )}
-                {periodActivity.updatedIssues.length > 0 && (
+                {!hideRegisterSignals && periodActivity.updatedIssues.length > 0 && (
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Updated Issues This Period</div>
                     {periodActivity.updatedIssues.map((item, idx) => (
@@ -832,7 +853,7 @@ const StatusReportView = ({
                     ))}
                   </div>
                 )}
-                {periodActivity.newActions.length > 0 && (
+                {!hideRegisterSignals && periodActivity.newActions.length > 0 && (
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Actions This Period</div>
                     {periodActivity.newActions.map((a, i) => (
@@ -842,7 +863,7 @@ const StatusReportView = ({
                     ))}
                   </div>
                 )}
-                {periodActivity.completedActions.length > 0 && (
+                {!hideRegisterSignals && periodActivity.completedActions.length > 0 && (
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Actions Completed This Period</div>
                     {periodActivity.completedActions.map((a, i) => (
@@ -852,7 +873,7 @@ const StatusReportView = ({
                     ))}
                   </div>
                 )}
-                {periodActivity.newChanges.length > 0 && (
+                {!hideRegisterSignals && periodActivity.newChanges.length > 0 && (
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Changes This Period</div>
                     {periodActivity.newChanges.map((c, i) => (

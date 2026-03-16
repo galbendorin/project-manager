@@ -204,7 +204,7 @@ const Header = ({
           title={isExternalView ? 'External view is on. Only public items are shown in registers.' : 'External view is off. All items are shown.'}
         >
           <div className={`w-1.5 h-1.5 rounded-full ${isExternalView ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-          {isExternalView ? 'External On' : 'External Off'}
+          External View
         </button>
 
         {activeTab === 'schedule' ? (

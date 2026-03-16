@@ -838,6 +838,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
                 aiReportsRemaining={aiReportsRemaining}
                 aiReportsLimit={limits.aiReportsPerMonth}
                 usePlatformKey={usePlatformKey}
+                isExternalView={isExternalView}
               />
             </BlurOverlay>
           ) : activeTab === 'todo' ? (
