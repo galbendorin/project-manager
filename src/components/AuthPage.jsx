@@ -91,8 +91,8 @@ export default function AuthPage() {
     setError(null);
   };
 
-  const jumpToSignup = () => {
-    switchMode(false);
+  const jumpToAuth = (nextIsLogin) => {
+    switchMode(nextIsLogin);
     setSuccessMessage('');
 
     window.requestAnimationFrame(() => {
@@ -101,6 +101,14 @@ export default function AuthPage() {
         block: 'start',
       });
     });
+  };
+
+  const jumpToSignup = () => {
+    jumpToAuth(false);
+  };
+
+  const jumpToSignIn = () => {
+    jumpToAuth(true);
   };
 
   const handleOpenFeedback = () => {
@@ -175,9 +183,9 @@ export default function AuthPage() {
             </div>
           </header>
 
-          <main className="mt-10 grid items-start gap-8 xl:mt-14 xl:grid-cols-[1.03fr_0.97fr] xl:gap-10">
-            <section className="space-y-8 xl:pr-4">
-              <div className="space-y-6">
+          <main className="mt-10 space-y-8 xl:mt-14 xl:space-y-10">
+            <section className="grid items-start gap-8 xl:grid-cols-[1.03fr_0.97fr] xl:gap-10">
+              <div className="space-y-6 xl:pr-4 xl:pt-4">
                 <div className="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/75 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.22em] text-teal-700 shadow-sm backdrop-blur">
                   Client-ready project operations
                 </div>
@@ -206,7 +214,7 @@ export default function AuthPage() {
                     Start free trial
                   </button>
                   <button
-                    onClick={() => switchMode(true)}
+                    onClick={jumpToSignIn}
                     className="rounded-full border border-slate-300/80 bg-white/80 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white"
                   >
                     Sign in
@@ -226,6 +234,117 @@ export default function AuthPage() {
                 </div>
               </div>
 
+              <div className="xl:pt-1">
+                <div className="rounded-[34px] border border-slate-900/85 bg-slate-950 p-6 text-white shadow-[0_44px_120px_-56px_rgba(15,23,42,0.92)] sm:p-7">
+                  <div className="flex flex-col gap-4 border-b border-white/10 pb-5 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-200">Live workspace preview</p>
+                      <h3
+                        style={{ fontFamily: "'Fraunces', serif" }}
+                        className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-white"
+                      >
+                        Client-ready control before the weekly status call.
+                      </h3>
+                      <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
+                        A single live view for RAID, decisions, and delivery signals so consultancies can brief the client
+                        quickly and keep the week under control.
+                      </p>
+                    </div>
+                    <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                      Status pack ready
+                    </div>
+                  </div>
+
+                  <div className="mt-6 space-y-4">
+                    <div className="rounded-[28px] border border-white/10 bg-white/6 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Control room</div>
+                          <div className="mt-2 text-sm text-slate-300">Weekly delivery signals surfaced for the client-facing update.</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {CONTROL_ITEMS.map((item) => (
+                            <div
+                              key={item.label}
+                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold ${item.tone}`}
+                            >
+                              <span className="text-base font-extrabold text-white">{item.value}</span>
+                              <span>{item.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
+                      <div className="rounded-[28px] border border-white/10 bg-white/6 p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Live control view</div>
+                            <div className="mt-2 text-sm text-slate-300">Readiness signals pulled together before the next client touchpoint.</div>
+                          </div>
+                          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200">
+                            This week
+                          </div>
+                        </div>
+
+                        <div className="mt-4 space-y-3">
+                          {WORKSPACE_PHASES.map((phase) => (
+                            <div key={phase.title} className="rounded-2xl border border-white/8 bg-slate-900/50 p-3.5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="text-sm font-semibold text-white">{phase.title}</div>
+                                  <div className="text-xs text-slate-400">{phase.status}</div>
+                                </div>
+                                <div className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${phase.tone}`}>
+                                  {phase.percent}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-white/6 via-white/4 to-teal-500/10 p-4">
+                        <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                          <span>Upcoming this week</span>
+                          <span>3 live updates</span>
+                        </div>
+
+                        <div className="mt-4 space-y-3">
+                          {UPCOMING_ITEMS.map((item) => (
+                            <div key={item.title} className="flex gap-3 rounded-2xl border border-white/8 bg-slate-900/55 px-3 py-3">
+                              <div className="flex flex-col items-center">
+                                <span className={`mt-1 inline-flex h-2.5 w-2.5 rounded-full ${item.tone}`} />
+                                <span className="mt-2 h-full w-px bg-white/10" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{item.meta}</div>
+                                <div className="mt-1 text-sm leading-6 text-slate-100">{item.title}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="mt-4 border-t border-white/10 pt-4">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-100">Why teams use it</div>
+                          <div className="mt-3 space-y-2">
+                            {PREVIEW_PROOF_POINTS.map((item) => (
+                              <div key={item} className="flex items-start gap-2.5 text-sm leading-6 text-slate-200">
+                                <span className="mt-2 inline-flex h-2 w-2 rounded-full bg-teal-300" />
+                                <span>{item}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="grid items-start gap-8 xl:grid-cols-[1.03fr_0.97fr] xl:gap-10">
               <div className="rounded-[34px] border border-slate-200/85 bg-white/82 p-6 shadow-[0_36px_120px_-70px_rgba(15,23,42,0.45)] backdrop-blur sm:p-7">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
@@ -254,117 +373,8 @@ export default function AuthPage() {
                   ))}
                 </div>
               </div>
-            </section>
-
-            <aside id="auth-panel" className="space-y-5 xl:sticky xl:top-6">
-              <div className="rounded-[34px] border border-slate-900/85 bg-slate-950 p-6 text-white shadow-[0_44px_120px_-56px_rgba(15,23,42,0.92)] sm:p-7">
-                <div className="flex flex-col gap-4 border-b border-white/10 pb-5 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-200">Live workspace preview</p>
-                    <h3
-                      style={{ fontFamily: "'Fraunces', serif" }}
-                      className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-white"
-                    >
-                      Client-ready control before the weekly status call.
-                    </h3>
-                    <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
-                      A single live view for RAID, decisions, and delivery signals so consultancies can brief the client
-                      quickly and keep the week under control.
-                    </p>
-                  </div>
-                  <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                    Status pack ready
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-4">
-                  <div className="rounded-[28px] border border-white/10 bg-white/6 p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                      <div>
-                        <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Control room</div>
-                        <div className="mt-2 text-sm text-slate-300">Weekly delivery signals surfaced for the client-facing update.</div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {CONTROL_ITEMS.map((item) => (
-                          <div
-                            key={item.label}
-                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold ${item.tone}`}
-                          >
-                            <span className="text-base font-extrabold text-white">{item.value}</span>
-                            <span>{item.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
-                    <div className="rounded-[28px] border border-white/10 bg-white/6 p-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Live control view</div>
-                          <div className="mt-2 text-sm text-slate-300">Readiness signals pulled together before the next client touchpoint.</div>
-                        </div>
-                        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200">
-                          This week
-                        </div>
-                      </div>
-
-                      <div className="mt-4 space-y-3">
-                      {WORKSPACE_PHASES.map((phase) => (
-                        <div key={phase.title} className="rounded-2xl border border-white/8 bg-slate-900/50 p-3.5">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="text-sm font-semibold text-white">{phase.title}</div>
-                              <div className="text-xs text-slate-400">{phase.status}</div>
-                            </div>
-                            <div className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${phase.tone}`}>
-                              {phase.percent}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    </div>
-
-                    <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-white/6 via-white/4 to-teal-500/10 p-4">
-                      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                        <span>Upcoming this week</span>
-                        <span>3 live updates</span>
-                      </div>
-
-                      <div className="mt-4 space-y-3">
-                        {UPCOMING_ITEMS.map((item) => (
-                          <div key={item.title} className="flex gap-3 rounded-2xl border border-white/8 bg-slate-900/55 px-3 py-3">
-                            <div className="flex flex-col items-center">
-                              <span className={`mt-1 inline-flex h-2.5 w-2.5 rounded-full ${item.tone}`} />
-                              <span className="mt-2 h-full w-px bg-white/10" />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{item.meta}</div>
-                              <div className="mt-1 text-sm leading-6 text-slate-100">{item.title}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="mt-4 border-t border-white/10 pt-4">
-                        <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-100">Why teams use it</div>
-                        <div className="mt-3 space-y-2">
-                          {PREVIEW_PROOF_POINTS.map((item) => (
-                            <div key={item} className="flex items-start gap-2.5 text-sm leading-6 text-slate-200">
-                              <span className="mt-2 inline-flex h-2 w-2 rounded-full bg-teal-300" />
-                              <span>{item}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[34px] border border-slate-200/90 bg-white/92 p-6 shadow-[0_42px_120px_-58px_rgba(15,23,42,0.55)] backdrop-blur sm:p-8">
+              <aside id="auth-panel" className="xl:sticky xl:top-6">
+                <div className="rounded-[34px] border border-slate-200/90 bg-white/92 p-6 shadow-[0_42px_120px_-58px_rgba(15,23,42,0.55)] backdrop-blur sm:p-8">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-700">Access PM OS</p>
@@ -533,8 +543,9 @@ export default function AuthPage() {
                     Email {FEEDBACK_EMAIL}
                   </button>
                 </div>
-              </div>
-            </aside>
+                </div>
+              </aside>
+            </section>
           </main>
         </div>
       </div>
