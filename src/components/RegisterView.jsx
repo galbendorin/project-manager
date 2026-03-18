@@ -161,87 +161,117 @@ const RegisterView = ({
 
   const getHeaderSortValue = (col) => {
     if (col === 'Number') {
-      return sortKey === 'numberAsc' ? sortKey : 'default';
+      return sortKey === 'numberAsc' || sortKey === 'numberDesc' ? sortKey : 'default';
     }
     if (col === viewConfig.dateColumn) {
       return sortKey === 'dateAsc' || sortKey === 'dateDesc' ? sortKey : 'default';
+    }
+    if (col === viewConfig.statusColumn) {
+      return sortKey === 'statusAsc' || sortKey === 'statusDesc' ? sortKey : 'default';
+    }
+    if (col === viewConfig.ownerColumn) {
+      return sortKey === 'ownerAsc' || sortKey === 'ownerDesc' ? sortKey : 'default';
+    }
+    if (col === viewConfig.categoryColumn) {
+      return sortKey === 'categoryAsc' || sortKey === 'categoryDesc' ? sortKey : 'default';
     }
     return 'default';
   };
 
   const renderHeaderControl = (col) => {
     const sharedClassName = 'mt-1 block w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-medium normal-case text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all';
+    const renderSortSelect = (options) => (
+      <select
+        value={getHeaderSortValue(col)}
+        onChange={(e) => setSortKey(e.target.value)}
+        className={sharedClassName}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    );
 
     if (col === viewConfig.statusColumn) {
       return (
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className={sharedClassName}
-        >
-          <option value="all">All</option>
-          {viewConfig.statusOptions.map((option) => (
-            <option key={option} value={option}>{option}</option>
-          ))}
-        </select>
+        <div className="space-y-1">
+          {renderSortSelect([
+            { value: 'default', label: 'Sort' },
+            { value: 'statusAsc', label: 'A-Z' },
+            { value: 'statusDesc', label: 'Z-A' }
+          ])}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className={sharedClassName}
+          >
+            <option value="all">All</option>
+            {viewConfig.statusOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+        </div>
       );
     }
 
     if (col === viewConfig.ownerColumn) {
       return (
-        <select
-          value={ownerFilter}
-          onChange={(e) => setOwnerFilter(e.target.value)}
-          className={sharedClassName}
-        >
-          <option value="all">All</option>
-          {viewConfig.ownerOptions.map((option) => (
-            <option key={option} value={option}>{option}</option>
-          ))}
-        </select>
+        <div className="space-y-1">
+          {renderSortSelect([
+            { value: 'default', label: 'Sort' },
+            { value: 'ownerAsc', label: 'A-Z' },
+            { value: 'ownerDesc', label: 'Z-A' }
+          ])}
+          <select
+            value={ownerFilter}
+            onChange={(e) => setOwnerFilter(e.target.value)}
+            className={sharedClassName}
+          >
+            <option value="all">All</option>
+            {viewConfig.ownerOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+        </div>
       );
     }
 
     if (col === viewConfig.categoryColumn) {
       return (
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className={sharedClassName}
-        >
-          <option value="all">All</option>
-          {viewConfig.categoryOptions.map((option) => (
-            <option key={option} value={option}>{option}</option>
-          ))}
-        </select>
+        <div className="space-y-1">
+          {renderSortSelect([
+            { value: 'default', label: 'Sort' },
+            { value: 'categoryAsc', label: 'A-Z' },
+            { value: 'categoryDesc', label: 'Z-A' }
+          ])}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className={sharedClassName}
+          >
+            <option value="all">All</option>
+            {viewConfig.categoryOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+        </div>
       );
     }
 
     if (col === viewConfig.dateColumn) {
-      return (
-        <select
-          value={getHeaderSortValue(col)}
-          onChange={(e) => setSortKey(e.target.value)}
-          className={sharedClassName}
-        >
-          <option value="default">Default</option>
-          <option value="dateAsc">Soonest</option>
-          <option value="dateDesc">Latest</option>
-        </select>
-      );
+      return renderSortSelect([
+        { value: 'default', label: 'Sort' },
+        { value: 'dateAsc', label: 'Soonest' },
+        { value: 'dateDesc', label: 'Latest' }
+      ]);
     }
 
     if (col === 'Number') {
-      return (
-        <select
-          value={getHeaderSortValue(col)}
-          onChange={(e) => setSortKey(e.target.value)}
-          className={sharedClassName}
-        >
-          <option value="default">Default</option>
-          <option value="numberAsc">Order</option>
-        </select>
-      );
+      return renderSortSelect([
+        { value: 'default', label: 'Sort' },
+        { value: 'numberAsc', label: '1-9' },
+        { value: 'numberDesc', label: '9-1' }
+      ]);
     }
 
     return null;

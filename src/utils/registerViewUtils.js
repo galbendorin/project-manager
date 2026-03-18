@@ -88,16 +88,28 @@ export const getRegisterViewConfig = (schema, items = [], isExternalView = false
     );
   }
   if (hasNumberColumn) {
-    sortOptions.push({ value: 'numberAsc', label: 'Number' });
+    sortOptions.push(
+      { value: 'numberAsc', label: 'Number: low to high' },
+      { value: 'numberDesc', label: 'Number: high to low' }
+    );
   }
   if (statusColumn) {
-    sortOptions.push({ value: 'statusAsc', label: statusColumn });
+    sortOptions.push(
+      { value: 'statusAsc', label: `${statusColumn}: A-Z` },
+      { value: 'statusDesc', label: `${statusColumn}: Z-A` }
+    );
   }
   if (ownerColumn) {
-    sortOptions.push({ value: 'ownerAsc', label: ownerColumn });
+    sortOptions.push(
+      { value: 'ownerAsc', label: `${ownerColumn}: A-Z` },
+      { value: 'ownerDesc', label: `${ownerColumn}: Z-A` }
+    );
   }
   if (categoryColumn) {
-    sortOptions.push({ value: 'categoryAsc', label: categoryColumn });
+    sortOptions.push(
+      { value: 'categoryAsc', label: `${categoryColumn}: A-Z` },
+      { value: 'categoryDesc', label: `${categoryColumn}: Z-A` }
+    );
   }
   if (sortOptions.length === 0) {
     sortOptions.push({ value: 'default', label: 'Default order' });
@@ -142,16 +154,40 @@ const sortRegisterItemsForView = (items, sortKey, config) => {
           getRegisterFieldValue(b, config.statusColumn)
         );
         break;
+      case 'statusDesc':
+        comparison = compareText(
+          getRegisterFieldValue(b, config.statusColumn),
+          getRegisterFieldValue(a, config.statusColumn)
+        );
+        break;
       case 'ownerAsc':
         comparison = compareText(
           getRegisterFieldValue(a, config.ownerColumn),
           getRegisterFieldValue(b, config.ownerColumn)
         );
         break;
+      case 'ownerDesc':
+        comparison = compareText(
+          getRegisterFieldValue(b, config.ownerColumn),
+          getRegisterFieldValue(a, config.ownerColumn)
+        );
+        break;
       case 'categoryAsc':
         comparison = compareText(
           getRegisterFieldValue(a, config.categoryColumn),
           getRegisterFieldValue(b, config.categoryColumn)
+        );
+        break;
+      case 'categoryDesc':
+        comparison = compareText(
+          getRegisterFieldValue(b, config.categoryColumn),
+          getRegisterFieldValue(a, config.categoryColumn)
+        );
+        break;
+      case 'numberDesc':
+        comparison = compareText(
+          getRegisterFieldValue(b, 'Number'),
+          getRegisterFieldValue(a, 'Number')
         );
         break;
       case 'numberAsc':
