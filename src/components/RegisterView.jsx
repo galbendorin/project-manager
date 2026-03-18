@@ -159,6 +159,94 @@ const RegisterView = ({
     );
   }
 
+  const getHeaderSortValue = (col) => {
+    if (col === 'Number') {
+      return sortKey === 'numberAsc' ? sortKey : 'default';
+    }
+    if (col === viewConfig.dateColumn) {
+      return sortKey === 'dateAsc' || sortKey === 'dateDesc' ? sortKey : 'default';
+    }
+    return 'default';
+  };
+
+  const renderHeaderControl = (col) => {
+    const sharedClassName = 'mt-1 block w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-medium normal-case text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all';
+
+    if (col === viewConfig.statusColumn) {
+      return (
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className={sharedClassName}
+        >
+          <option value="all">All</option>
+          {viewConfig.statusOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === viewConfig.ownerColumn) {
+      return (
+        <select
+          value={ownerFilter}
+          onChange={(e) => setOwnerFilter(e.target.value)}
+          className={sharedClassName}
+        >
+          <option value="all">All</option>
+          {viewConfig.ownerOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === viewConfig.categoryColumn) {
+      return (
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className={sharedClassName}
+        >
+          <option value="all">All</option>
+          {viewConfig.categoryOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === viewConfig.dateColumn) {
+      return (
+        <select
+          value={getHeaderSortValue(col)}
+          onChange={(e) => setSortKey(e.target.value)}
+          className={sharedClassName}
+        >
+          <option value="default">Default</option>
+          <option value="dateAsc">Soonest</option>
+          <option value="dateDesc">Latest</option>
+        </select>
+      );
+    }
+
+    if (col === 'Number') {
+      return (
+        <select
+          value={getHeaderSortValue(col)}
+          onChange={(e) => setSortKey(e.target.value)}
+          className={sharedClassName}
+        >
+          <option value="default">Default</option>
+          <option value="numberAsc">Order</option>
+        </select>
+      );
+    }
+
+    return null;
+  };
+
   const EditableCell = ({ item, colName }) => {
     const key = keyGen(colName);
     const cellId = `${item._id}-${key}`;
@@ -294,62 +382,13 @@ const RegisterView = ({
                 </div>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-                {viewConfig.statusColumn && (
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[130px] bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-                  >
-                    <option value="all">All status</option>
-                    {viewConfig.statusOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                )}
-
-                {viewConfig.ownerColumn && (
-                  <select
-                    value={ownerFilter}
-                    onChange={(e) => setOwnerFilter(e.target.value)}
-                    className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[140px] bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-                  >
-                    <option value="all">All owners</option>
-                    {viewConfig.ownerOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                )}
-
-                {viewConfig.categoryColumn && (
-                  <select
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[140px] bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-                  >
-                    <option value="all">All categories</option>
-                    {viewConfig.categoryOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                )}
-
-                <select
-                  value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value)}
-                  className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[170px] bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-                >
-                  {viewConfig.sortOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-
+              <div className="w-full sm:w-auto">
                 <input
                   type="text"
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[180px] outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+                  className="w-full px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[180px] outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
                 />
               </div>
             </div>
@@ -365,17 +404,20 @@ const RegisterView = ({
                     key={col}
                     className={`px-3 py-3 border-b whitespace-nowrap ${
                       col === 'Visible' ? 'w-12 text-center' : 
-                      col === 'Number' ? 'w-16 text-center' : 
-                      col === 'Status' || col === 'Level' || col === 'Complete' ? 'w-20' :
-                      col === 'Raised' || col === 'Target' || col === 'Completed' || col === 'Date' || col === 'Updated' ? 'w-28' :
-                      col === 'Owner' || col === 'Category' ? 'w-32' :
+                      col === 'Number' ? 'w-24 text-center' : 
+                      col === viewConfig.statusColumn || col === 'Level' || col === 'Complete' ? 'w-32' :
+                      col === viewConfig.dateColumn || col === 'Completed' || col === 'Date' || col === 'Updated' ? 'w-36' :
+                      col === viewConfig.ownerColumn || col === viewConfig.categoryColumn || col === 'Owner' || col === 'Category' ? 'w-40' :
                       ''
                     }`}
                   >
                     {col === 'Visible' ? (
                       <IconEyeOpen />
                     ) : (
-                      col
+                      <div className="min-w-0">
+                        <div>{col}</div>
+                        {renderHeaderControl(col)}
+                      </div>
                     )}
                   </th>
                 ))}
