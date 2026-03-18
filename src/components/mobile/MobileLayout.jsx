@@ -1,4 +1,4 @@
-import React, { useState, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import BottomNav from './BottomNav';
 import MobileHeader from './MobileHeader';
 import MobileHome from './MobileHome';
@@ -108,6 +108,21 @@ const MobileLayout = ({
   const handleRemoveFromTracker = useCallback((trackerId) => {
     removeFromTracker(trackerId);
   }, [removeFromTracker]);
+
+  const mobileHeaderModuleType = useMemo(() => {
+    if (moreSubView === 'tracker') return 'tracker';
+    if (moreSubView === 'statusreport') return 'statusreport';
+    if (activeTab === 'plan') return 'schedule';
+    if (activeTab === 'todos') return 'todo';
+    return null;
+  }, [activeTab, moreSubView]);
+
+  const mobileHeaderCount = useMemo(() => {
+    if (mobileHeaderModuleType === 'schedule') return projectData.length;
+    if (mobileHeaderModuleType === 'todo') return todos.length;
+    if (mobileHeaderModuleType === 'tracker') return tracker.length;
+    return null;
+  }, [mobileHeaderModuleType, projectData.length, todos.length, tracker.length]);
 
   const renderContent = () => {
     // Sub-views from More tab
@@ -239,7 +254,8 @@ const MobileLayout = ({
     <div className="h-screen flex flex-col overflow-hidden bg-white">
       <MobileHeader
         projectName={project.name}
-        taskCount={projectData.length}
+        moduleType={mobileHeaderModuleType}
+        moduleCount={mobileHeaderCount}
         saving={saving}
         lastSaved={lastSaved}
         saveConflict={saveConflict}

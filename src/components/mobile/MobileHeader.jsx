@@ -1,6 +1,16 @@
 import React from 'react';
+import ModuleHeader from '../ModuleHeader';
 
-const MobileHeader = ({ projectName, taskCount, saving, lastSaved, saveConflict, onNewTask, onBackToProjects }) => {
+const MobileHeader = ({
+  projectName,
+  moduleType,
+  moduleCount,
+  saving,
+  lastSaved,
+  saveConflict,
+  onNewTask,
+  onBackToProjects
+}) => {
   return (
     <div className="flex-none bg-white border-b border-slate-100 px-4 py-2.5">
       <div className="flex items-center justify-between">
@@ -9,10 +19,8 @@ const MobileHeader = ({ projectName, taskCount, saving, lastSaved, saveConflict,
             <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold text-[10px]">PM</div>
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-bold text-slate-900 truncate">{projectName}</div>
+            <ModuleHeader projectName={projectName} moduleType={moduleType} count={moduleCount} />
             <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
-              {taskCount} tasks
-              <span className="text-slate-200">·</span>
               {saveConflict ? (
                 <span className="text-rose-500 font-semibold">Conflict</span>
               ) : saving ? (

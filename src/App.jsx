@@ -1,4 +1,4 @@
-import React, { useState, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { SCHEMAS } from './utils/constants';
 import { useAuth } from './contexts/AuthContext';
 import AuthPage from './components/AuthPage';
@@ -199,6 +199,15 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       subView: activeSubView,
     });
   }, [project?.name, activeTab, activeSubView]);
+
+  const activeModuleType = activeSubView || activeTab;
+  const activeModuleCount = useMemo(() => {
+    if (activeModuleType === 'schedule') return projectData.length;
+    if (activeModuleType === 'todo') return todos.length;
+    if (activeModuleType === 'tracker') return tracker.length;
+    if (SCHEMAS[activeModuleType]) return (registers[activeModuleType] || []).length;
+    return null;
+  }, [activeModuleType, projectData.length, todos.length, tracker.length, registers]);
 
   const handleLoadDemoData = useCallback(() => {
     const proceed = window.confirm(
@@ -771,7 +780,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       </div>
 
       <Header
-        taskCount={projectData.length}
+        moduleType={activeModuleType}
+        moduleCount={activeModuleCount}
         isExternalView={isExternalView}
         onToggleExternalView={() => setIsExternalView(!isExternalView)}
         onShowDemoBenefits={() => setIsBenefitsOpen(true)}

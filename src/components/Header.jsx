@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { PlanBadge } from './UpgradeBanner';
+import ModuleHeader from './ModuleHeader';
 import { usePlan } from '../contexts/PlanContext';
 
 const Header = ({ 
-  taskCount, 
+  projectName = 'Project Management OS',
+  moduleType,
+  moduleCount,
   isExternalView, 
   onToggleExternalView, 
   onLoadTemplate,
@@ -179,17 +181,12 @@ const Header = ({
         <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
           P
         </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold text-slate-800 leading-tight truncate">
-              Project Management OS
-            </h1>
-            <PlanBadge />
-          </div>
-          <p className="text-[10px] text-slate-400 font-medium">
-            {taskCount} tasks
-          </p>
-        </div>
+        <ModuleHeader
+          projectName={projectName}
+          moduleType={moduleType}
+          count={moduleCount}
+          className="min-w-0"
+        />
       </div>
       
       <div className="w-full lg:w-auto overflow-x-auto no-scrollbar pb-1 -mb-1">
