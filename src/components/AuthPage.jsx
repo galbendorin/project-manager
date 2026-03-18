@@ -81,6 +81,14 @@ const PREVIEW_PROOF_POINTS = [
   'Weekly delivery signals that stay readable for both the team and the client.',
 ];
 
+const SHOW_TRUST_BAND = true;
+
+const TRUST_BAND_ITEMS = [
+  'Project plan, RAID, actions, and reporting in one delivery layer.',
+  'Client-ready weekly updates without rebuilding the same story in separate tools.',
+  'Excel-friendly workflows that still give teams a cleaner operating model.',
+];
+
 const ONBOARDING_STEPS = [
   'Verify your email address',
   'Open your workspace',
@@ -412,6 +420,38 @@ export default function AuthPage() {
                 </div>
               </div>
             </section>
+
+            {SHOW_TRUST_BAND && (
+              <section className="rounded-[34px] border border-slate-200/85 bg-white/82 p-6 shadow-[0_36px_120px_-70px_rgba(15,23,42,0.35)] backdrop-blur sm:p-7">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-2xl">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-700">Built for real delivery teams</p>
+                    <h3
+                      style={{ fontFamily: "'Fraunces', serif" }}
+                      className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-slate-950"
+                    >
+                      Built for consultancies and internal delivery teams.
+                    </h3>
+                    <p className="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
+                      PM OS is designed for teams that need a clearer weekly operating rhythm, cleaner client reporting,
+                      and a workspace that still fits the reality of Excel-heavy delivery environments.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3 lg:max-w-3xl">
+                    {TRUST_BAND_ITEMS.map((item) => (
+                      <div
+                        key={item}
+                        className="rounded-[24px] border border-slate-200 bg-[#faf8f2] px-4 py-4 text-sm leading-6 text-slate-600 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.32)]"
+                      >
+                        <div className="mb-3 inline-flex h-2.5 w-2.5 rounded-full bg-teal-600" />
+                        <div>{item}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className="grid items-start gap-8 xl:grid-cols-[1.03fr_0.97fr] xl:gap-10">
               <div className="rounded-[34px] border border-slate-200/85 bg-white/82 p-6 shadow-[0_36px_120px_-70px_rgba(15,23,42,0.45)] backdrop-blur sm:p-7">
