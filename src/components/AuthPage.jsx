@@ -89,6 +89,14 @@ const TRUST_BAND_ITEMS = [
   'Excel-friendly workflows that still give teams a cleaner operating model.',
 ];
 
+const LANDING_NAV_ITEMS = [
+  { label: 'Features', target: 'landing-features' },
+  { label: 'Preview', target: 'landing-preview' },
+];
+
+const LANDING_FOCUS_CLASS =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white';
+
 const ONBOARDING_STEPS = [
   'Verify your email address',
   'Open your workspace',
@@ -185,6 +193,15 @@ export default function AuthPage() {
     jumpToAuth(true);
   };
 
+  const jumpToSection = (sectionId) => {
+    window.requestAnimationFrame(() => {
+      document.getElementById(sectionId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+  };
+
   const handleOpenFeedback = () => {
     openFeedbackEmail({ tab: 'General feedback' });
   };
@@ -217,7 +234,7 @@ export default function AuthPage() {
 
   return (
     <div style={{ fontFamily: "'Manrope', sans-serif" }} className="min-h-screen bg-[#f5efe6] text-slate-900">
-      <div className="relative overflow-hidden">
+      <div className="relative overflow-x-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div
             className="absolute inset-0 opacity-40"
@@ -234,31 +251,72 @@ export default function AuthPage() {
         </div>
 
         <div className="relative mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <header className="flex flex-col gap-5 border-b border-slate-300/55 pb-5 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-4">
-              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-lg font-extrabold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.9)]">
-                PM
-              </div>
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-teal-700">PM OS</p>
-                <h1 className="text-lg font-semibold text-slate-950 sm:text-xl">Project Delivery Workspace</h1>
-              </div>
-            </div>
+          <header className="sticky top-3 z-20">
+            <div className="rounded-[32px] border border-slate-200/85 bg-white/88 px-4 py-4 shadow-[0_24px_90px_-54px_rgba(15,23,42,0.42)] backdrop-blur sm:px-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-center gap-4">
+                  <button
+                    type="button"
+                    onClick={() => jumpToSection('landing-hero')}
+                    className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-lg font-extrabold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.9)] transition hover:bg-slate-800 ${LANDING_FOCUS_CLASS}`}
+                    aria-label="Back to top"
+                  >
+                    PM
+                  </button>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-teal-700">PM OS</p>
+                    <h1 className="text-lg font-semibold text-slate-950 sm:text-xl">Project Delivery Workspace</h1>
+                  </div>
+                </div>
 
-            <div className="flex flex-wrap gap-2 md:justify-end">
-              {AUDIENCE_TAGS.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full border border-slate-300/80 bg-white/75 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 backdrop-blur"
-                >
-                  {tag}
-                </span>
-              ))}
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
+                  <nav className="flex flex-wrap items-center gap-2" aria-label="Landing page">
+                    {LANDING_NAV_ITEMS.map((item) => (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => jumpToSection(item.target)}
+                        className={`rounded-full px-3.5 py-2 text-sm font-semibold text-slate-600 transition hover:bg-[#faf8f2] hover:text-slate-950 ${LANDING_FOCUS_CLASS}`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </nav>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={jumpToSignIn}
+                      className={`rounded-full border border-slate-300/80 bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white ${LANDING_FOCUS_CLASS}`}
+                    >
+                      Sign in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={jumpToSignup}
+                      className={`rounded-full bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.85)] transition hover:bg-slate-800 ${LANDING_FOCUS_CLASS}`}
+                    >
+                      Start free trial
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200/80 pt-4">
+                {AUDIENCE_TAGS.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-slate-300/80 bg-[#faf8f2] px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
             </div>
           </header>
 
           <main className="mt-10 space-y-8 xl:mt-14 xl:space-y-10">
-            <section className="grid items-start gap-8 xl:grid-cols-[1.03fr_0.97fr] xl:gap-10">
+            <section id="landing-hero" className="scroll-mt-28 grid items-start gap-8 xl:grid-cols-[1.03fr_0.97fr] xl:gap-10">
               <div className="space-y-6 xl:pr-4 xl:pt-4">
                 <div className="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/75 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.22em] text-teal-700 shadow-sm backdrop-blur">
                   Client-ready project operations
@@ -282,14 +340,16 @@ export default function AuthPage() {
 
                 <div className="flex flex-wrap gap-3">
                   <button
+                    type="button"
                     onClick={jumpToSignup}
-                    className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.85)] transition hover:bg-slate-800"
+                    className={`rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.85)] transition hover:bg-slate-800 ${LANDING_FOCUS_CLASS}`}
                   >
                     Start free trial
                   </button>
                   <button
+                    type="button"
                     onClick={jumpToSignIn}
-                    className="rounded-full border border-slate-300/80 bg-white/80 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white"
+                    className={`rounded-full border border-slate-300/80 bg-white/80 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white ${LANDING_FOCUS_CLASS}`}
                   >
                     Sign in
                   </button>
@@ -311,7 +371,7 @@ export default function AuthPage() {
                 </div>
               </div>
 
-              <div className="xl:pt-1">
+              <div id="landing-preview" className="scroll-mt-28 xl:pt-1">
                 <div className="rounded-[34px] border border-slate-900/85 bg-slate-950 p-6 text-white shadow-[0_44px_120px_-56px_rgba(15,23,42,0.92)] sm:p-7">
                   <div className="flex flex-col gap-4 border-b border-white/10 pb-5 md:flex-row md:items-start md:justify-between">
                     <div>
@@ -453,7 +513,7 @@ export default function AuthPage() {
               </section>
             )}
 
-            <section className="grid items-start gap-8 xl:grid-cols-[1.03fr_0.97fr] xl:gap-10">
+            <section id="landing-features" className="scroll-mt-28 grid items-start gap-8 xl:grid-cols-[1.03fr_0.97fr] xl:gap-10">
               <div className="rounded-[34px] border border-slate-200/85 bg-white/82 p-6 shadow-[0_36px_120px_-70px_rgba(15,23,42,0.45)] backdrop-blur sm:p-7">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
@@ -519,16 +579,18 @@ export default function AuthPage() {
 
                 <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
                   <button
+                    type="button"
                     onClick={() => switchMode(true)}
-                    className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                    className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${LANDING_FOCUS_CLASS} ${
                       isLogin ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
                     Sign in
                   </button>
                   <button
+                    type="button"
                     onClick={() => switchMode(false)}
-                    className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                    className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${LANDING_FOCUS_CLASS} ${
                       !isLogin ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
@@ -597,7 +659,7 @@ export default function AuthPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-[0_22px_50px_-26px_rgba(15,23,42,0.85)] transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                    className={`w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-[0_22px_50px_-26px_rgba(15,23,42,0.85)] transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 ${LANDING_FOCUS_CLASS}`}
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -632,8 +694,9 @@ export default function AuthPage() {
                     {isLogin ? "Don't have an account yet?" : 'Already have an account?'}
                   </p>
                   <button
+                    type="button"
                     onClick={() => switchMode(!isLogin)}
-                    className="mt-3 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                    className={`mt-3 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 ${LANDING_FOCUS_CLASS}`}
                   >
                     {isLogin ? 'Create an account' : 'Sign in instead'}
                   </button>
@@ -647,7 +710,7 @@ export default function AuthPage() {
                   <button
                     type="button"
                     onClick={handleOpenFeedback}
-                    className="font-semibold text-teal-700 underline decoration-teal-300 underline-offset-2 hover:text-teal-800"
+                    className={`font-semibold text-teal-700 underline decoration-teal-300 underline-offset-2 transition hover:text-teal-800 ${LANDING_FOCUS_CLASS}`}
                   >
                     Email {FEEDBACK_EMAIL}
                   </button>
@@ -656,6 +719,25 @@ export default function AuthPage() {
               </aside>
             </section>
           </main>
+
+          <footer className="mt-10 border-t border-slate-300/55 pt-6 text-sm text-slate-500">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="font-semibold text-slate-900">PM OS</div>
+                <div className="mt-1">Project delivery workspace for structured weekly control.</div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                <button
+                  type="button"
+                  onClick={handleOpenFeedback}
+                  className={`rounded-full px-3 py-1.5 font-medium text-slate-600 transition hover:bg-white/80 hover:text-slate-950 ${LANDING_FOCUS_CLASS}`}
+                >
+                  Contact
+                </button>
+              </div>
+            </div>
+          </footer>
         </div>
       </div>
     </div>
