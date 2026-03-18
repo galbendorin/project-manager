@@ -80,6 +80,110 @@ const CellPopover = ({ text, anchorRef, onClose }) => {
   );
 };
 
+const HeaderMenuPopover = ({
+  anchorRect,
+  title,
+  sortValue,
+  sortOptions = [],
+  filterValue = 'all',
+  filterOptions = [],
+  filterLabel = 'Filter',
+  onSortChange,
+  onFilterChange,
+  onClose
+}) => {
+  const popRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!anchorRect || !popRef.current) return;
+    const pop = popRef.current.getBoundingClientRect();
+    const pad = 8;
+    let top = anchorRect.bottom + 6;
+    let left = anchorRect.left;
+
+    if (left + pop.width > window.innerWidth - pad) {
+      left = window.innerWidth - pop.width - pad;
+    }
+    if (left < pad) left = pad;
+
+    if (top + pop.height > window.innerHeight - pad) {
+      top = Math.max(pad, anchorRect.top - pop.height - 6);
+    }
+
+    setPos({ top, left });
+  }, [anchorRect]);
+
+  useEffect(() => {
+    const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    const handleClick = (e) => {
+      if (popRef.current && !popRef.current.contains(e.target)) onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    document.addEventListener('mousedown', handleClick);
+    return () => {
+      document.removeEventListener('keydown', handleEsc);
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={popRef}
+      className="fixed z-[9999] w-56 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl"
+      style={{ top: pos.top, left: pos.left }}
+    >
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        {title}
+      </div>
+
+      {sortOptions.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-2 text-[11px] font-semibold text-slate-500">Sort</div>
+          <div className="space-y-1">
+            {sortOptions.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => {
+                  onSortChange(option.value);
+                  onClose();
+                }}
+                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[12px] transition-colors ${
+                  sortValue === option.value
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span>{option.label}</span>
+                {sortValue === option.value && <span className="text-indigo-600">✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {filterOptions.length > 0 && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="mb-2 text-[11px] font-semibold text-slate-500">{filterLabel}</div>
+          <select
+            value={filterValue}
+            onChange={(e) => {
+              onFilterChange(e.target.value);
+              onClose();
+            }}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+          >
+            <option value="all">All</option>
+            {filterOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Main component ─────────────────────────────────────────────────
 
 const RegisterView = ({ 
@@ -95,6 +199,7 @@ const RegisterView = ({
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortKey, setSortKey] = useState('default');
+  const [headerMenu, setHeaderMenu] = useState(null);
   const [editingCell, setEditingCell] = useState(null);
   const [expandedCell, setExpandedCell] = useState(null);
   const expandAnchorRef = useRef(null);
@@ -118,6 +223,7 @@ const RegisterView = ({
     setOwnerFilter('all');
     setCategoryFilter('all');
     setSortKey(viewConfig.defaultSort);
+    setHeaderMenu(null);
   }, [registerType, viewConfig.defaultSort]);
 
   const filteredItems = useMemo(() => applyRegisterView({
@@ -178,103 +284,102 @@ const RegisterView = ({
     return 'default';
   };
 
-  const renderHeaderControl = (col) => {
-    const sharedClassName = 'mt-1 block w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-medium normal-case text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all';
-    const renderSortSelect = (options) => (
-      <select
-        value={getHeaderSortValue(col)}
-        onChange={(e) => setSortKey(e.target.value)}
-        className={sharedClassName}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    );
-
+  const getHeaderMenuConfig = (col) => {
     if (col === viewConfig.statusColumn) {
-      return (
-        <div className="space-y-1">
-          {renderSortSelect([
-            { value: 'default', label: 'Sort' },
-            { value: 'statusAsc', label: 'A-Z' },
-            { value: 'statusDesc', label: 'Z-A' }
-          ])}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className={sharedClassName}
-          >
-            <option value="all">All</option>
-            {viewConfig.statusOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-        </div>
-      );
+      return {
+        sortValue: getHeaderSortValue(col),
+        sortOptions: [
+          { value: 'default', label: 'Default' },
+          { value: 'statusAsc', label: 'A to Z' },
+          { value: 'statusDesc', label: 'Z to A' }
+        ],
+        filterValue: statusFilter,
+        filterOptions: viewConfig.statusOptions,
+        filterLabel: 'Filter status',
+        onFilterChange: setStatusFilter
+      };
     }
 
     if (col === viewConfig.ownerColumn) {
-      return (
-        <div className="space-y-1">
-          {renderSortSelect([
-            { value: 'default', label: 'Sort' },
-            { value: 'ownerAsc', label: 'A-Z' },
-            { value: 'ownerDesc', label: 'Z-A' }
-          ])}
-          <select
-            value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-            className={sharedClassName}
-          >
-            <option value="all">All</option>
-            {viewConfig.ownerOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-        </div>
-      );
+      return {
+        sortValue: getHeaderSortValue(col),
+        sortOptions: [
+          { value: 'default', label: 'Default' },
+          { value: 'ownerAsc', label: 'A to Z' },
+          { value: 'ownerDesc', label: 'Z to A' }
+        ],
+        filterValue: ownerFilter,
+        filterOptions: viewConfig.ownerOptions,
+        filterLabel: 'Filter owner',
+        onFilterChange: setOwnerFilter
+      };
     }
 
     if (col === viewConfig.categoryColumn) {
-      return (
-        <div className="space-y-1">
-          {renderSortSelect([
-            { value: 'default', label: 'Sort' },
-            { value: 'categoryAsc', label: 'A-Z' },
-            { value: 'categoryDesc', label: 'Z-A' }
-          ])}
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className={sharedClassName}
-          >
-            <option value="all">All</option>
-            {viewConfig.categoryOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-        </div>
-      );
+      return {
+        sortValue: getHeaderSortValue(col),
+        sortOptions: [
+          { value: 'default', label: 'Default' },
+          { value: 'categoryAsc', label: 'A to Z' },
+          { value: 'categoryDesc', label: 'Z to A' }
+        ],
+        filterValue: categoryFilter,
+        filterOptions: viewConfig.categoryOptions,
+        filterLabel: 'Filter category',
+        onFilterChange: setCategoryFilter
+      };
     }
 
     if (col === viewConfig.dateColumn) {
-      return renderSortSelect([
-        { value: 'default', label: 'Sort' },
-        { value: 'dateAsc', label: 'Soonest' },
-        { value: 'dateDesc', label: 'Latest' }
-      ]);
+      return {
+        sortValue: getHeaderSortValue(col),
+        sortOptions: [
+          { value: 'default', label: 'Default' },
+          { value: 'dateAsc', label: 'Soonest first' },
+          { value: 'dateDesc', label: 'Latest first' }
+        ],
+        filterOptions: []
+      };
     }
 
     if (col === 'Number') {
-      return renderSortSelect([
-        { value: 'default', label: 'Sort' },
-        { value: 'numberAsc', label: '1-9' },
-        { value: 'numberDesc', label: '9-1' }
-      ]);
+      return {
+        sortValue: getHeaderSortValue(col),
+        sortOptions: [
+          { value: 'default', label: 'Default' },
+          { value: 'numberAsc', label: 'Smallest first' },
+          { value: 'numberDesc', label: 'Largest first' }
+        ],
+        filterOptions: []
+      };
     }
 
     return null;
+  };
+
+  const isHeaderActive = (col) => {
+    if (col === viewConfig.statusColumn) {
+      return statusFilter !== 'all' || getHeaderSortValue(col) !== 'default';
+    }
+    if (col === viewConfig.ownerColumn) {
+      return ownerFilter !== 'all' || getHeaderSortValue(col) !== 'default';
+    }
+    if (col === viewConfig.categoryColumn) {
+      return categoryFilter !== 'all' || getHeaderSortValue(col) !== 'default';
+    }
+    if (col === 'Number' || col === viewConfig.dateColumn) {
+      return getHeaderSortValue(col) !== 'default';
+    }
+    return false;
+  };
+
+  const toggleHeaderMenu = (col, event) => {
+    const config = getHeaderMenuConfig(col);
+    if (!config) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHeaderMenu((current) => (
+      current?.col === col ? null : { col, anchorRect: rect }
+    ));
   };
 
   const EditableCell = ({ item, colName }) => {
@@ -444,9 +549,24 @@ const RegisterView = ({
                     {col === 'Visible' ? (
                       <IconEyeOpen />
                     ) : (
-                      <div className="min-w-0">
-                        <div>{col}</div>
-                        {renderHeaderControl(col)}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate">{col}</span>
+                        {getHeaderMenuConfig(col) ? (
+                          <button
+                            type="button"
+                            onClick={(event) => toggleHeaderMenu(col, event)}
+                            className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border transition-colors ${
+                              isHeaderActive(col)
+                                ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
+                                : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-600'
+                            }`}
+                            title={`${col} options`}
+                          >
+                            <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                              <path d="M3 5h10L9 10v3l-2-1V10L3 5z" />
+                            </svg>
+                          </button>
+                        ) : null}
                       </div>
                     )}
                   </th>
@@ -487,6 +607,16 @@ const RegisterView = ({
           )}
         </div>
       </div>
+
+      {headerMenu && getHeaderMenuConfig(headerMenu.col) && (
+        <HeaderMenuPopover
+          anchorRect={headerMenu.anchorRect}
+          title={headerMenu.col}
+          {...getHeaderMenuConfig(headerMenu.col)}
+          onSortChange={setSortKey}
+          onClose={() => setHeaderMenu(null)}
+        />
+      )}
     </div>
   );
 };
