@@ -45,16 +45,28 @@ const AUTH_BENEFITS = [
 ];
 
 const WORKSPACE_PHASES = [
-  { title: 'Mobilisation and planning', status: 'Complete', percent: '100%', tone: 'bg-emerald-400' },
-  { title: 'Design and dependency mapping', status: 'In progress', percent: '68%', tone: 'bg-amber-300' },
-  { title: 'Delivery and go-live readiness', status: 'Planned', percent: '24%', tone: 'bg-sky-300' },
+  { title: 'Weekly client status pack', status: 'Drafted from live data', percent: 'Ready', tone: 'bg-emerald-400/20 text-emerald-200 border-emerald-400/20' },
+  { title: 'RAID review for steering call', status: 'High-priority items surfaced', percent: '4 live', tone: 'bg-rose-400/20 text-rose-200 border-rose-400/20' },
+  { title: 'Delivery checkpoint actions', status: 'Owners and dates aligned', percent: '7 due', tone: 'bg-amber-300/20 text-amber-100 border-amber-300/20' },
 ];
 
 const CONTROL_ITEMS = [
-  ['4', 'open risks'],
-  ['7', 'actions due'],
-  ['2', 'decisions pending'],
-  ['1', 'status pack drafted'],
+  { value: '4', label: 'Open risks', tone: 'text-rose-200 border-rose-400/25 bg-rose-400/12' },
+  { value: '7', label: 'Actions due', tone: 'text-amber-100 border-amber-300/25 bg-amber-300/12' },
+  { value: '2', label: 'Decisions pending', tone: 'text-sky-100 border-sky-400/25 bg-sky-400/12' },
+  { value: '1', label: 'Status pack drafted', tone: 'text-emerald-200 border-emerald-400/25 bg-emerald-400/12' },
+];
+
+const UPCOMING_ITEMS = [
+  { title: 'RAID review prepared for the client checkpoint', meta: 'Mon · 09:00', tone: 'bg-rose-400' },
+  { title: 'Status pack drafted directly from live registers', meta: 'Wed · 13:00', tone: 'bg-emerald-400' },
+  { title: 'Dependency decisions confirmed with delivery leads', meta: 'Thu · 15:30', tone: 'bg-amber-300' },
+];
+
+const PREVIEW_PROOF_POINTS = [
+  'Client-ready status reporting without rebuilding the same update in slides.',
+  'Live RAID control that keeps risks, issues, and actions visible in one operating view.',
+  'Weekly delivery signals that stay readable for both the team and the client.',
 ];
 
 const ONBOARDING_STEPS = [
@@ -246,82 +258,106 @@ export default function AuthPage() {
 
             <aside id="auth-panel" className="space-y-5 xl:sticky xl:top-6">
               <div className="rounded-[34px] border border-slate-900/85 bg-slate-950 p-6 text-white shadow-[0_44px_120px_-56px_rgba(15,23,42,0.92)] sm:p-7">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="flex flex-col gap-4 border-b border-white/10 pb-5 md:flex-row md:items-start md:justify-between">
                   <div>
                     <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-200">Live workspace preview</p>
                     <h3
                       style={{ fontFamily: "'Fraunces', serif" }}
                       className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-white"
                     >
-                      A control room for the week ahead.
+                      Client-ready control before the weekly status call.
                     </h3>
+                    <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
+                      A single live view for RAID, decisions, and delivery signals so consultancies can brief the client
+                      quickly and keep the week under control.
+                    </p>
                   </div>
-                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200">
-                    Client pack ready
+                  <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                    Status pack ready
                   </div>
                 </div>
 
-                <div className="mt-6 grid gap-4 lg:grid-cols-[1.12fr_0.88fr]">
+                <div className="mt-6 space-y-4">
                   <div className="rounded-[28px] border border-white/10 bg-white/6 p-4">
-                    <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                       <div>
-                        <div className="text-sm font-semibold text-white">Programme overview</div>
-                        <div className="text-xs text-slate-400">Network migration and launch readiness</div>
+                        <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Control room</div>
+                        <div className="mt-2 text-sm text-slate-300">Weekly delivery signals surfaced for the client-facing update.</div>
                       </div>
-                      <div className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-200">
-                        On track
-                      </div>
-                    </div>
-
-                    <div className="mt-4 space-y-3">
-                      {WORKSPACE_PHASES.map((phase) => (
-                        <div key={phase.title} className="rounded-2xl border border-white/8 bg-slate-900/50 p-3.5">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="text-sm font-semibold text-white">{phase.title}</div>
-                              <div className="text-xs text-slate-400">{phase.status}</div>
-                            </div>
-                            <div className="text-sm font-bold text-white">{phase.percent}</div>
-                          </div>
-                          <div className="mt-3 h-2 rounded-full bg-white/10">
-                            <div className={`h-2 rounded-full ${phase.tone}`} style={{ width: phase.percent }} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="mt-4 rounded-[22px] border border-white/8 bg-white/5 p-4">
-                      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                        <span>Upcoming this week</span>
-                        <span>3 milestones</span>
-                      </div>
-                      <div className="mt-3 space-y-2 text-sm text-slate-200">
-                        <div className="rounded-2xl bg-slate-900/60 px-3 py-2.5">Dependency review with infrastructure team</div>
-                        <div className="rounded-2xl bg-slate-900/60 px-3 py-2.5">Draft status report prepared from live registers</div>
-                        <div className="rounded-2xl bg-slate-900/60 px-3 py-2.5">Launch readiness checkpoint with stakeholders</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="rounded-[28px] border border-white/10 bg-white/6 p-4">
-                      <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Control room</div>
-                      <div className="mt-4 grid grid-cols-2 gap-3">
-                        {CONTROL_ITEMS.map(([value, label]) => (
-                          <div key={label} className="rounded-2xl bg-slate-900/60 px-3 py-4">
-                            <div className="text-xl font-extrabold text-white">{value}</div>
-                            <div className="mt-1 text-xs text-slate-400">{label}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {CONTROL_ITEMS.map((item) => (
+                          <div
+                            key={item.label}
+                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold ${item.tone}`}
+                          >
+                            <span className="text-base font-extrabold text-white">{item.value}</span>
+                            <span>{item.label}</span>
                           </div>
                         ))}
                       </div>
                     </div>
+                  </div>
 
-                    <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-teal-500/18 to-white/5 p-4">
-                      <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-100">Built for real PM work</div>
-                      <div className="mt-3 space-y-2 text-sm leading-6 text-slate-200">
-                        <p>One place for schedules, registers, and status reporting.</p>
-                        <p>Structured enough for delivery control, clean enough for client-facing outputs.</p>
-                        <p>Billing and plan changes are handled inside the same product.</p>
+                  <div className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
+                    <div className="rounded-[28px] border border-white/10 bg-white/6 p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Live control view</div>
+                          <div className="mt-2 text-sm text-slate-300">Readiness signals pulled together before the next client touchpoint.</div>
+                        </div>
+                        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200">
+                          This week
+                        </div>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                      {WORKSPACE_PHASES.map((phase) => (
+                        <div key={phase.title} className="rounded-2xl border border-white/8 bg-slate-900/50 p-3.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-white">{phase.title}</div>
+                              <div className="text-xs text-slate-400">{phase.status}</div>
+                            </div>
+                            <div className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${phase.tone}`}>
+                              {phase.percent}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    </div>
+
+                    <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-white/6 via-white/4 to-teal-500/10 p-4">
+                      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                        <span>Upcoming this week</span>
+                        <span>3 live updates</span>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {UPCOMING_ITEMS.map((item) => (
+                          <div key={item.title} className="flex gap-3 rounded-2xl border border-white/8 bg-slate-900/55 px-3 py-3">
+                            <div className="flex flex-col items-center">
+                              <span className={`mt-1 inline-flex h-2.5 w-2.5 rounded-full ${item.tone}`} />
+                              <span className="mt-2 h-full w-px bg-white/10" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{item.meta}</div>
+                              <div className="mt-1 text-sm leading-6 text-slate-100">{item.title}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 border-t border-white/10 pt-4">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-100">Why teams use it</div>
+                        <div className="mt-3 space-y-2">
+                          {PREVIEW_PROOF_POINTS.map((item) => (
+                            <div key={item} className="flex items-start gap-2.5 text-sm leading-6 text-slate-200">
+                              <span className="mt-2 inline-flex h-2 w-2 rounded-full bg-teal-300" />
+                              <span>{item}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
