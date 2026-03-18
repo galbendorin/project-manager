@@ -13,10 +13,22 @@ const AUDIENCE_TAGS = [
   'Internal delivery teams',
 ];
 
-const HERO_METRICS = [
-  { value: '16', label: 'core registers' },
-  { value: TRIAL_SHORT_LABEL, label: 'free trial' },
-  { value: 'Excel', label: 'import and export ready' },
+const HERO_FEATURES = [
+  {
+    icon: 'workspace',
+    title: 'Run delivery in one workspace',
+    body: 'Plans, RAID, actions, and reporting stay connected instead of drifting across separate files.',
+  },
+  {
+    icon: 'spreadsheet',
+    title: 'Import from Excel, export when needed',
+    body: 'Fit the way project teams already work without forcing a painful change on day one.',
+  },
+  {
+    icon: 'trial',
+    title: `${TRIAL_SHORT_LABEL} with full access`,
+    body: 'Start without a card, open the full workspace, and decide later if you want to keep it.',
+  },
 ];
 
 const CAPABILITY_ITEMS = [
@@ -74,6 +86,60 @@ const ONBOARDING_STEPS = [
   'Open your workspace',
   TRIAL_FULL_ACCESS_LABEL,
 ];
+
+function HeroFeatureIcon({ type }) {
+  const shared = {
+    className: 'h-5 w-5 text-slate-900',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: '1.8',
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    viewBox: '0 0 24 24',
+    'aria-hidden': 'true',
+  };
+
+  if (type === 'spreadsheet') {
+    return (
+      <svg {...shared}>
+        <rect x="3.5" y="4" width="17" height="16" rx="2.5" />
+        <path d="M8 4v16" />
+        <path d="M3.5 9h17" />
+        <path d="M12.5 9v11" />
+        <path d="M8 14.5h12.5" />
+      </svg>
+    );
+  }
+
+  if (type === 'trial') {
+    return (
+      <svg {...shared}>
+        <path d="M12 3.5v3" />
+        <path d="M12 17.5v3" />
+        <path d="M5.6 5.6l2.1 2.1" />
+        <path d="M16.3 16.3l2.1 2.1" />
+        <path d="M3.5 12h3" />
+        <path d="M17.5 12h3" />
+        <path d="M5.6 18.4l2.1-2.1" />
+        <path d="M16.3 7.7l2.1-2.1" />
+        <circle cx="12" cy="12" r="4.5" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...shared}>
+      <rect x="3.5" y="5" width="17" height="14" rx="3" />
+      <path d="M8 3.5v3" />
+      <path d="M16 3.5v3" />
+      <path d="M3.5 9.5h17" />
+      <path d="M7.5 13h3" />
+      <path d="M13.5 13h3" />
+      <path d="M7.5 16.5h3" />
+      <path d="M13.5 16.5h3" />
+    </svg>
+  );
+}
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -221,14 +287,17 @@ export default function AuthPage() {
                   </button>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {HERO_METRICS.map((item) => (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {HERO_FEATURES.map((item) => (
                     <div
-                      key={item.label}
+                      key={item.title}
                       className="rounded-3xl border border-slate-200/80 bg-white/84 p-4 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.55)] backdrop-blur"
                     >
-                      <div className="text-2xl font-extrabold text-slate-950">{item.value}</div>
-                      <div className="mt-1 text-sm text-slate-500">{item.label}</div>
+                      <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-[#faf8f2] shadow-sm">
+                        <HeroFeatureIcon type={item.icon} />
+                      </div>
+                      <div className="mt-4 text-base font-semibold leading-6 text-slate-950">{item.title}</div>
+                      <div className="mt-2 text-sm leading-6 text-slate-500">{item.body}</div>
                     </div>
                   ))}
                 </div>
