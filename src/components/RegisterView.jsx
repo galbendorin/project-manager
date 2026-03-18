@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { SCHEMAS } from '../utils/constants';
-import { keyGen, filterBySearch } from '../utils/helpers';
+import { keyGen } from '../utils/helpers';
+import { applyRegisterView, getRegisterViewConfig } from '../utils/registerViewUtils';
 import { IconEyeOpen, IconEyeClosed, IconTrash } from './Icons';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import MobileRegisterList from './mobile/MobileRegisterList';
@@ -90,6 +91,10 @@ const RegisterView = ({
   onTogglePublic
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [ownerFilter, setOwnerFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [sortKey, setSortKey] = useState('default');
   const [editingCell, setEditingCell] = useState(null);
   const [expandedCell, setExpandedCell] = useState(null);
   const expandAnchorRef = useRef(null);
@@ -102,9 +107,38 @@ const RegisterView = ({
     ? schema.cols.filter(c => c !== "Visible") 
     : schema.cols;
 
-  const filteredItems = filterBySearch(items, searchQuery).filter(item =>
-    isExternalView ? item.public !== false : true
+  const viewConfig = useMemo(
+    () => getRegisterViewConfig(schema, items, isExternalView),
+    [schema, items, isExternalView]
   );
+
+  useEffect(() => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setOwnerFilter('all');
+    setCategoryFilter('all');
+    setSortKey(viewConfig.defaultSort);
+  }, [registerType, viewConfig.defaultSort]);
+
+  const filteredItems = useMemo(() => applyRegisterView({
+    items,
+    searchQuery,
+    isExternalView,
+    statusFilter,
+    ownerFilter,
+    categoryFilter,
+    sortKey,
+    config: viewConfig
+  }), [
+    items,
+    searchQuery,
+    isExternalView,
+    statusFilter,
+    ownerFilter,
+    categoryFilter,
+    sortKey,
+    viewConfig
+  ]);
 
   const handleCellEdit = (itemId, key, value) => {
     onUpdateItem(registerType, itemId, key, value);
@@ -248,17 +282,78 @@ const RegisterView = ({
   return (
     <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
       <div className="max-w-[1650px] mx-auto bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-h-[500px]">
-        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex justify-between items-center rounded-t-xl">
-          <h2 className="text-base font-bold text-slate-800 tracking-tight">
-            {schema.title}
-          </h2>
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-3 py-1.5 text-[12px] border border-slate-200 rounded-lg w-48 sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-          />
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 rounded-t-xl">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">
+                  {schema.title}
+                </h2>
+                <div className="text-[11px] text-slate-400">
+                  {filteredItems.length} matching item{filteredItems.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                {viewConfig.statusColumn && (
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[130px] bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+                  >
+                    <option value="all">All status</option>
+                    {viewConfig.statusOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                )}
+
+                {viewConfig.ownerColumn && (
+                  <select
+                    value={ownerFilter}
+                    onChange={(e) => setOwnerFilter(e.target.value)}
+                    className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[140px] bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+                  >
+                    <option value="all">All owners</option>
+                    {viewConfig.ownerOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                )}
+
+                {viewConfig.categoryColumn && (
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[140px] bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+                  >
+                    <option value="all">All categories</option>
+                    {viewConfig.categoryOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                )}
+
+                <select
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value)}
+                  className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[170px] bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+                >
+                  {viewConfig.sortOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="px-3 py-2 text-[12px] border border-slate-200 rounded-lg min-w-[180px] outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
