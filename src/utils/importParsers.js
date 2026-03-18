@@ -42,6 +42,18 @@ const COLUMN_MAP_ACTIONS = {
   Raised: 'raised', Target: 'target', Updated: 'update', Completed: 'completed'
 };
 
+const COLUMN_MAP_TODOS = {
+  ID: 'id',
+  Title: 'title',
+  'Task Name': 'title',
+  Description: 'title',
+  'Due Date': 'dueDate',
+  Owner: 'owner',
+  Status: 'status',
+  Recurrence: 'recurrence',
+  Frequency: 'recurrence'
+};
+
 const COLUMN_MAP_CHANGES = {
   Number: 'number', ID: 'number',
   Category: 'category',
@@ -182,6 +194,8 @@ export const REGISTER_IMPORT_SHEET_CANDIDATES = {
   lessons: ['Lessons Learned', 'Lessons', 'Lessons Log']
 };
 
+export const TODO_IMPORT_SHEET_CANDIDATES = ['ToDo', 'Todo', 'To Do', 'Task List', 'Manual Tasks'];
+
 export const RACI_IMPORT_SHEET_CANDIDATES = ['RACI', 'RACI Matrix'];
 
 const RACI_ACTIVITY_COLUMN_CANDIDATES = [
@@ -238,6 +252,27 @@ export function parseScheduleSheet(rows) {
       tracked: parseBooleanLike(mapped.tracked)
     };
   }).filter(t => t.name && t.name.trim());
+}
+
+const normalizeTodoStatus = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['done', 'complete', 'completed', 'closed', 'resolved'].includes(normalized) ? 'Done' : 'Open';
+};
+
+export function parseTodoSheet(rows) {
+  return rows.map((row) => {
+    const mapped = mapRow(row, COLUMN_MAP_TODOS);
+    const title = String(mapped.title || '').trim();
+    if (!title) return null;
+
+    return {
+      title,
+      dueDate: mapped.dueDate ? String(mapped.dueDate).trim() : '',
+      owner: mapped.owner ? String(mapped.owner).trim() : '',
+      status: normalizeTodoStatus(mapped.status),
+      recurrence: mapped.recurrence ? String(mapped.recurrence).trim() : null
+    };
+  }).filter(Boolean);
 }
 
 export function parseRegisterSheet(rows, columnMap) {

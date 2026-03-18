@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   parseBooleanLike,
   parseScheduleSheet,
+  parseTodoSheet,
   parseRegisterSheet,
   parseRaciSheet,
   findSheet,
@@ -47,6 +48,32 @@ test('parseScheduleSheet maps and normalizes schedule fields', () => {
     pct: 100,
     indent: 1,
     tracked: true
+  });
+});
+
+test('parseTodoSheet maps manual todo fields and normalizes status', () => {
+  const parsed = parseTodoSheet([
+    {
+      ID: '7',
+      'Task Name': 'Buy fresh milk',
+      'Due Date': '2026-03-20',
+      Owner: 'Couple B',
+      Status: 'Completed',
+      Recurrence: 'weekly'
+    },
+    {
+      Title: '   ',
+      'Due Date': '2026-03-21'
+    }
+  ]);
+
+  assert.equal(parsed.length, 1);
+  assert.deepEqual(parsed[0], {
+    title: 'Buy fresh milk',
+    dueDate: '2026-03-20',
+    owner: 'Couple B',
+    status: 'Done',
+    recurrence: 'weekly'
   });
 });
 

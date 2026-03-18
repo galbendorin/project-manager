@@ -18,12 +18,14 @@ import { usePlan } from './contexts/PlanContext';
 import {
   loadXLSX,
   parseScheduleSheet,
+  parseTodoSheet,
   parseRegisterSheet,
   parseRaciSheet,
   findSheet,
   REGISTER_IMPORT_COLUMN_MAPS,
   REGISTER_IMPORT_SHEET_CANDIDATES,
-  RACI_IMPORT_SHEET_CANDIDATES
+  RACI_IMPORT_SHEET_CANDIDATES,
+  TODO_IMPORT_SHEET_CANDIDATES
 } from './utils/importParsers';
 import { buildAiReportExportData } from './utils/aiReportExport';
 import { loadAiSettings, isAiConfigured } from './utils/aiSettings';
@@ -279,6 +281,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       }
 
       const tasks = parseScheduleSheet(scheduleRows);
+      let importedTodosCount = 0;
 
       const newRegisters = {
         risks: [], issues: [], actions: [],
@@ -399,6 +402,17 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         }
       }
 
+      const todoSheet = findSheet(sheetNames, TODO_IMPORT_SHEET_CANDIDATES);
+      if (todoSheet) {
+        const parsedTodos = parseTodoSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[todoSheet], { raw: false })
+        );
+        for (const todo of parsedTodos) {
+          await addTodo(todo);
+        }
+        importedTodosCount = parsedTodos.length;
+      }
+
       setProjectData(tasks);
       setRegisters(prev => ({
         ...prev,
@@ -420,6 +434,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         newRegisters.assumptions?.length > 0 ? `${newRegisters.assumptions.length} assumptions` : null,
         newRegisters.decisions?.length > 0 ? `${newRegisters.decisions.length} decisions` : null,
         newRegisters.lessons?.length > 0 ? `${newRegisters.lessons.length} lessons` : null,
+        importedTodosCount > 0 ? `${importedTodosCount} todos` : null,
         newRegisters._raci?.[0]?.assignments?._customTasks?.length > 0
           ? `${newRegisters._raci[0].assignments._customTasks.length} RACI activities`
           : null,
@@ -491,6 +506,21 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         return row;
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(raciExport), 'RACI');
+    }
+
+    const manualTodosExport = (todos || [])
+      .filter((item) => !item.isDerived && (item.projectId || null) === project.id)
+      .map((item) => ({
+        ID: item._id,
+        Title: item.title,
+        'Due Date': item.dueDate,
+        Owner: item.owner,
+        Status: item.status,
+        Recurrence: item.recurrence?.type || ''
+      }));
+
+    if (manualTodosExport.length > 0) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(manualTodosExport), 'ToDo');
     }
 
     Object.keys(registers).forEach(key => {
