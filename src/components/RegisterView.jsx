@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { SCHEMAS } from '../utils/constants';
 import { keyGen } from '../utils/helpers';
 import { applyRegisterView, getRegisterViewConfig } from '../utils/registerViewUtils';
@@ -13,71 +13,6 @@ const isLongTextCol = (colName) => {
   const k = colName.toLowerCase().replace(/[^a-z]/g, '');
   if (k === 'status' || k === 'number' || k === 'visible' || k === 'level' || k === 'complete') return false;
   return !SHORT_COLS.some(s => s !== 'status' && k.includes(s));
-};
-
-// ── Viewport-aware popover ─────────────────────────────────────────
-
-const CellPopover = ({ text, anchorRef, onClose }) => {
-  const popRef = useRef(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-
-  useEffect(() => {
-    if (!anchorRef?.current || !popRef.current) return;
-    const anchor = anchorRef.current.getBoundingClientRect();
-    const pop = popRef.current.getBoundingClientRect();
-    const pad = 8;
-
-    let top = anchor.bottom + 4;
-    let left = anchor.left;
-
-    // If popover goes below viewport, show above
-    if (top + pop.height > window.innerHeight - pad) {
-      top = anchor.top - pop.height - 4;
-    }
-    // If still off-screen vertically, pin to top
-    if (top < pad) top = pad;
-
-    // Keep within right edge
-    if (left + pop.width > window.innerWidth - pad) {
-      left = window.innerWidth - pop.width - pad;
-    }
-    // Keep within left edge
-    if (left < pad) left = pad;
-
-    setPos({ top, left });
-  }, [anchorRef]);
-
-  useEffect(() => {
-    const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
-    const handleClick = (e) => {
-      if (popRef.current && !popRef.current.contains(e.target)) onClose();
-    };
-    document.addEventListener('keydown', handleEsc);
-    document.addEventListener('mousedown', handleClick);
-    return () => {
-      document.removeEventListener('keydown', handleEsc);
-      document.removeEventListener('mousedown', handleClick);
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      ref={popRef}
-      className="fixed z-[9999] bg-slate-800 text-white text-[12px] leading-relaxed rounded-lg shadow-2xl p-3.5"
-      style={{
-        top: pos.top,
-        left: pos.left,
-        maxWidth: 420,
-        minWidth: 200,
-        maxHeight: 300,
-        overflowY: 'auto',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word'
-      }}
-    >
-      {text}
-    </div>
-  );
 };
 
 const HeaderMenuPopover = ({
@@ -202,7 +137,6 @@ const RegisterView = ({
   const [headerMenu, setHeaderMenu] = useState(null);
   const [editingCell, setEditingCell] = useState(null);
   const [expandedCell, setExpandedCell] = useState(null);
-  const expandAnchorRef = useRef(null);
   const isMobile = useMediaQuery('(max-width: 768px)');
 
   const schema = SCHEMAS[registerType];
@@ -250,8 +184,6 @@ const RegisterView = ({
     onUpdateItem(registerType, itemId, key, value);
     setEditingCell(null);
   };
-
-  const closePopover = useCallback(() => setExpandedCell(null), []);
 
   if (isMobile) {
     return (
@@ -390,7 +322,7 @@ const RegisterView = ({
     const textValue = value || '...';
     const isLong = isLongTextCol(colName);
     const hasContent = value && value !== '...' && value.length > 40;
-    const cellRef = useRef(null);
+    const isExpanded = expandedCell === cellId;
 
     if (colName === "Visible") {
       return (
@@ -433,8 +365,7 @@ const RegisterView = ({
 
     const handleExpand = (e) => {
       e.stopPropagation();
-      expandAnchorRef.current = cellRef.current;
-      setExpandedCell(expandedCell === cellId ? null : cellId);
+      setExpandedCell(isExpanded ? null : cellId);
     };
 
     if (isEditing) {
@@ -455,7 +386,6 @@ const RegisterView = ({
     if (isLong) {
       return (
         <td
-          ref={cellRef}
           className="px-3 py-2.5 editable relative"
           onClick={handleClick}
         >
@@ -479,14 +409,16 @@ const RegisterView = ({
                 title="Expand"
               >
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M6 4l4 4-4 4" />
+                  {isExpanded ? <path d="M4 10l4-4 4 4" /> : <path d="M6 4l4 4-4 4" />}
                 </svg>
               </button>
             )}
           </div>
 
-          {expandedCell === cellId && (
-            <CellPopover text={value} anchorRef={{ current: cellRef.current }} onClose={closePopover} />
+          {isExpanded && (
+            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700 whitespace-pre-wrap break-words shadow-sm">
+              {value}
+            </div>
           )}
         </td>
       );
