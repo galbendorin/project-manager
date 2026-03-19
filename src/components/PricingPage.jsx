@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { usePlan } from '../contexts/PlanContext';
-import { useAuth } from '../contexts/AuthContext';
 import { markBillingSyncPending } from '../utils/billingSync';
+import { supabase } from '../lib/supabase';
 
 const PRICE_IDS = {
   monthly: 'price_1T9YcZGmvS2YZ5sJKGD1NtYT',
@@ -12,8 +12,7 @@ export default function PricingPage({ onClose }) {
   const [billingCycle, setBillingCycle] = useState('annual');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { user } = useAuth();
-  const { userProfile, effectivePlan, isAdmin, simulatedPlan } = usePlan();
+  const { effectivePlan, isAdmin, simulatedPlan } = usePlan();
 
   const isCurrentlyPro = effectivePlan === 'pro' || effectivePlan === 'team';
   // Allow admin to test checkout when plan simulator is active
@@ -25,14 +24,20 @@ export default function PricingPage({ onClose }) {
     setLoading(true);
     setError('');
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        throw new Error('Your session has expired. Please sign in again and retry checkout.');
+      }
+
       const res = await fetch('/api/create-checkout-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
-          userId: user?.id,
-          userEmail: user?.email,
           plan,
-          stripeCustomerId: userProfile?.stripe_customer_id || null,
         }),
       });
 
@@ -247,6 +252,14 @@ function getCheckoutErrorMessage(error) {
 
   if (message.includes('Missing required fields') || message.includes('Invalid plan')) {
     return 'Checkout could not be prepared. Refresh the page and try again.';
+  }
+
+  if (
+    message.includes('Authentication required') ||
+    message.includes('expired') ||
+    message.includes('Invalid or expired session')
+  ) {
+    return 'Your session has expired. Please sign in again and retry checkout.';
   }
 
   if (message.toLowerCase().includes('network')) {

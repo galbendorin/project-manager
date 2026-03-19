@@ -3,6 +3,7 @@ import { usePlan } from '../contexts/PlanContext';
 import { useAuth } from '../contexts/AuthContext';
 import { markBillingSyncPending } from '../utils/billingSync';
 import { TRIAL_OFFER_LABEL } from '../utils/trialOffer';
+import { supabase } from '../lib/supabase';
 
 export default function BillingScreen({ onClose, onOpenPricing }) {
   const [portalLoading, setPortalLoading] = useState(false);
@@ -22,10 +23,18 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
     setPortalLoading(true);
     setPortalError('');
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        throw new Error('Your session has expired. Please sign in again to manage billing.');
+      }
+
       const res = await fetch('/api/customer-portal', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stripeCustomerId }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
       });
 
       const data = await res.json().catch(() => ({}));
@@ -210,8 +219,19 @@ function getPortalErrorMessage(error) {
     return 'Unable to open the billing portal right now. Please try again in a moment.';
   }
 
-  if (message.includes('Missing stripeCustomerId')) {
+  if (
+    message.includes('Billing is not linked to this account yet') ||
+    message.includes('Missing stripeCustomerId')
+  ) {
     return 'Billing is not linked to this account yet. Try again after your first successful checkout.';
+  }
+
+  if (
+    message.includes('Authentication required') ||
+    message.includes('expired') ||
+    message.includes('Invalid or expired session')
+  ) {
+    return 'Your session has expired. Please sign in again to manage billing.';
   }
 
   if (message.toLowerCase().includes('network')) {

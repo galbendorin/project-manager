@@ -1,7 +1,9 @@
 import Stripe from 'stripe';
+import { applyApiCors, getAdminSupabase, requireAuthenticatedUser } from './_auth.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://pmworkspace.com';
+const supabase = getAdminSupabase();
 
 const PRICE_IDS = {
   monthly: 'price_1T9YcZGmvS2YZ5sJKGD1NtYT',
@@ -9,10 +11,7 @@ const PRICE_IDS = {
 };
 
 export default async function handler(req, res) {
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  applyApiCors(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -23,16 +22,36 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { userId, userEmail, plan, stripeCustomerId } = req.body;
+    const user = await requireAuthenticatedUser(req, res);
+    if (!user) return;
 
-    if (!userId || !userEmail || !plan) {
-      return res.status(400).json({ error: 'Missing required fields: userId, userEmail, plan' });
+    const { plan } = req.body || {};
+    if (!plan) {
+      return res.status(400).json({ error: 'Missing required field: plan' });
     }
 
     const priceId = PRICE_IDS[plan];
     if (!priceId) {
       return res.status(400).json({ error: 'Invalid plan. Use "monthly" or "annual".' });
     }
+
+    const userEmail = user.email;
+    if (!userEmail) {
+      return res.status(400).json({ error: 'Authenticated user email is missing.' });
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('stripe_customer_id')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError && profileError.code !== 'PGRST116') {
+      console.error('Failed to load billing profile:', profileError);
+      return res.status(500).json({ error: 'Unable to load billing profile.' });
+    }
+
+    const stripeCustomerId = profile?.stripe_customer_id || null;
 
     // Build checkout session params
     const sessionParams = {
@@ -41,8 +60,8 @@ export default async function handler(req, res) {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${APP_URL}?checkout=success`,
       cancel_url: `${APP_URL}?checkout=cancelled`,
-      client_reference_id: userId,
-      metadata: { supabase_user_id: userId },
+      client_reference_id: user.id,
+      metadata: { supabase_user_id: user.id },
       allow_promotion_codes: true,
     };
 
