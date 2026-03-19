@@ -386,9 +386,7 @@ const MobileRegisterList = ({
   onDeleteItem,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [ownerFilter, setOwnerFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [columnFilters, setColumnFilters] = useState({});
   const [sortKey, setSortKey] = useState('default');
   const [selectedItem, setSelectedItem] = useState(null);
 
@@ -396,32 +394,27 @@ const MobileRegisterList = ({
     () => getRegisterViewConfig(schema, items, isExternalView),
     [schema, items, isExternalView]
   );
+  const filterColumnsKey = viewConfig.filterColumns.join('|');
 
   useEffect(() => {
     setSearchQuery('');
-    setStatusFilter('all');
-    setOwnerFilter('all');
-    setCategoryFilter('all');
+    setColumnFilters(viewConfig.defaultFilters);
     setSortKey(viewConfig.defaultSort);
     setSelectedItem(null);
-  }, [schema.title, viewConfig.defaultSort]);
+  }, [schema.title, filterColumnsKey, viewConfig.defaultSort]);
 
   const filteredItems = useMemo(() => applyRegisterView({
     items,
     searchQuery,
     isExternalView,
-    statusFilter,
-    ownerFilter,
-    categoryFilter,
+    columnFilters,
     sortKey,
     config: viewConfig
   }), [
     items,
     searchQuery,
     isExternalView,
-    statusFilter,
-    ownerFilter,
-    categoryFilter,
+    columnFilters,
     sortKey,
     viewConfig
   ]);
@@ -452,44 +445,19 @@ const MobileRegisterList = ({
         />
 
         <div className="mt-3 space-y-3">
-          {viewConfig.statusColumn && (
+          {viewConfig.filterColumns.map((column) => (
             <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              key={column}
+              value={columnFilters[column] || 'all'}
+              onChange={(event) => setColumnFilters((current) => ({ ...current, [column]: event.target.value }))}
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:bg-white"
             >
-              <option value="all">All status</option>
-              {viewConfig.statusOptions.map((option) => (
+              <option value="all">All {column.toLowerCase()}</option>
+              {(viewConfig.filterOptionsByColumn[column] || []).map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
-          )}
-
-          {viewConfig.ownerColumn && (
-            <select
-              value={ownerFilter}
-              onChange={(event) => setOwnerFilter(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:bg-white"
-            >
-              <option value="all">All owners</option>
-              {viewConfig.ownerOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          )}
-
-          {viewConfig.categoryColumn && (
-            <select
-              value={categoryFilter}
-              onChange={(event) => setCategoryFilter(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:bg-white"
-            >
-              <option value="all">All categories</option>
-              {viewConfig.categoryOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          )}
+          ))}
 
           <select
             value={sortKey}

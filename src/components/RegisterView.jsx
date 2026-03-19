@@ -130,9 +130,7 @@ const RegisterView = ({
   onTogglePublic
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [ownerFilter, setOwnerFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [columnFilters, setColumnFilters] = useState({});
   const [sortKey, setSortKey] = useState('default');
   const [headerMenu, setHeaderMenu] = useState(null);
   const [editingCell, setEditingCell] = useState(null);
@@ -150,32 +148,27 @@ const RegisterView = ({
     () => getRegisterViewConfig(schema, items, isExternalView),
     [schema, items, isExternalView]
   );
+  const filterColumnsKey = viewConfig.filterColumns.join('|');
 
   useEffect(() => {
     setSearchQuery('');
-    setStatusFilter('all');
-    setOwnerFilter('all');
-    setCategoryFilter('all');
+    setColumnFilters(viewConfig.defaultFilters);
     setSortKey(viewConfig.defaultSort);
     setHeaderMenu(null);
-  }, [registerType, viewConfig.defaultSort]);
+  }, [registerType, filterColumnsKey, viewConfig.defaultSort]);
 
   const filteredItems = useMemo(() => applyRegisterView({
     items,
     searchQuery,
     isExternalView,
-    statusFilter,
-    ownerFilter,
-    categoryFilter,
+    columnFilters,
     sortKey,
     config: viewConfig
   }), [
     items,
     searchQuery,
     isExternalView,
-    statusFilter,
-    ownerFilter,
-    categoryFilter,
+    columnFilters,
     sortKey,
     viewConfig
   ]);
@@ -198,111 +191,30 @@ const RegisterView = ({
   }
 
   const getHeaderSortValue = (col) => {
-    if (col === 'Number') {
-      return sortKey === 'numberAsc' || sortKey === 'numberDesc' ? sortKey : 'default';
-    }
-    if (col === viewConfig.dateColumn) {
-      return sortKey === 'dateAsc' || sortKey === 'dateDesc' ? sortKey : 'default';
-    }
-    if (col === viewConfig.statusColumn) {
-      return sortKey === 'statusAsc' || sortKey === 'statusDesc' ? sortKey : 'default';
-    }
-    if (col === viewConfig.ownerColumn) {
-      return sortKey === 'ownerAsc' || sortKey === 'ownerDesc' ? sortKey : 'default';
-    }
-    if (col === viewConfig.categoryColumn) {
-      return sortKey === 'categoryAsc' || sortKey === 'categoryDesc' ? sortKey : 'default';
-    }
+    const sortOptions = viewConfig.sortOptionsByColumn?.[col] || [];
+    if (sortOptions.some((option) => option.value === sortKey)) return sortKey;
     return 'default';
   };
 
   const getHeaderMenuConfig = (col) => {
-    if (col === viewConfig.statusColumn) {
-      return {
-        sortValue: getHeaderSortValue(col),
-        sortOptions: [
-          { value: 'default', label: 'Default' },
-          { value: 'statusAsc', label: 'A to Z' },
-          { value: 'statusDesc', label: 'Z to A' }
-        ],
-        filterValue: statusFilter,
-        filterOptions: viewConfig.statusOptions,
-        filterLabel: 'Filter status',
-        onFilterChange: setStatusFilter
-      };
-    }
+    const sortOptions = viewConfig.sortOptionsByColumn?.[col] || [];
+    const filterOptions = viewConfig.filterOptionsByColumn?.[col] || [];
+    if (sortOptions.length === 0 && filterOptions.length === 0) return null;
 
-    if (col === viewConfig.ownerColumn) {
-      return {
-        sortValue: getHeaderSortValue(col),
-        sortOptions: [
-          { value: 'default', label: 'Default' },
-          { value: 'ownerAsc', label: 'A to Z' },
-          { value: 'ownerDesc', label: 'Z to A' }
-        ],
-        filterValue: ownerFilter,
-        filterOptions: viewConfig.ownerOptions,
-        filterLabel: 'Filter owner',
-        onFilterChange: setOwnerFilter
-      };
-    }
-
-    if (col === viewConfig.categoryColumn) {
-      return {
-        sortValue: getHeaderSortValue(col),
-        sortOptions: [
-          { value: 'default', label: 'Default' },
-          { value: 'categoryAsc', label: 'A to Z' },
-          { value: 'categoryDesc', label: 'Z to A' }
-        ],
-        filterValue: categoryFilter,
-        filterOptions: viewConfig.categoryOptions,
-        filterLabel: 'Filter category',
-        onFilterChange: setCategoryFilter
-      };
-    }
-
-    if (col === viewConfig.dateColumn) {
-      return {
-        sortValue: getHeaderSortValue(col),
-        sortOptions: [
-          { value: 'default', label: 'Default' },
-          { value: 'dateAsc', label: 'Soonest first' },
-          { value: 'dateDesc', label: 'Latest first' }
-        ],
-        filterOptions: []
-      };
-    }
-
-    if (col === 'Number') {
-      return {
-        sortValue: getHeaderSortValue(col),
-        sortOptions: [
-          { value: 'default', label: 'Default' },
-          { value: 'numberAsc', label: 'Smallest first' },
-          { value: 'numberDesc', label: 'Largest first' }
-        ],
-        filterOptions: []
-      };
-    }
-
-    return null;
+    return {
+      sortValue: getHeaderSortValue(col),
+      sortOptions: sortOptions.length > 0
+        ? [{ value: 'default', label: 'Default' }, ...sortOptions]
+        : [],
+      filterValue: columnFilters[col] || 'all',
+      filterOptions,
+      filterLabel: `Filter ${col.toLowerCase()}`,
+      onFilterChange: (value) => setColumnFilters((current) => ({ ...current, [col]: value }))
+    };
   };
 
   const isHeaderActive = (col) => {
-    if (col === viewConfig.statusColumn) {
-      return statusFilter !== 'all' || getHeaderSortValue(col) !== 'default';
-    }
-    if (col === viewConfig.ownerColumn) {
-      return ownerFilter !== 'all' || getHeaderSortValue(col) !== 'default';
-    }
-    if (col === viewConfig.categoryColumn) {
-      return categoryFilter !== 'all' || getHeaderSortValue(col) !== 'default';
-    }
-    if (col === 'Number' || col === viewConfig.dateColumn) {
-      return getHeaderSortValue(col) !== 'default';
-    }
-    return false;
+    return (columnFilters[col] || 'all') !== 'all' || getHeaderSortValue(col) !== 'default';
   };
 
   const toggleHeaderMenu = (col, event) => {

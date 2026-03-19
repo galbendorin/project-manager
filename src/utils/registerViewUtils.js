@@ -30,6 +30,11 @@ const collator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: 'base'
 });
+const LEVEL_RANK = {
+  low: 1,
+  medium: 2,
+  high: 3,
+};
 
 const hasValue = (value) => String(value ?? '').trim().length > 0;
 const isPublicItem = (item) => item?.public !== false;
@@ -46,6 +51,12 @@ export const getRegisterFieldValue = (item, column) => {
 };
 
 const compareText = (a, b) => collator.compare(String(a ?? ''), String(b ?? ''));
+const compareLevelValues = (a, b) => {
+  const aRank = LEVEL_RANK[String(a || '').trim().toLowerCase()] || 0;
+  const bRank = LEVEL_RANK[String(b || '').trim().toLowerCase()] || 0;
+  if (aRank !== bRank) return aRank - bRank;
+  return compareText(a, b);
+};
 
 const compareDateValues = (a, b) => {
   const aDate = parseDateValue(a);
@@ -71,6 +82,39 @@ const buildOptionList = (items, column) => {
   return [...unique].sort(compareText);
 };
 
+const getUniqueColumns = (columns = []) => [...new Set(columns.filter(Boolean))];
+
+const buildSortConfig = ({ schemaColumns, dateColumn, statusColumn, ownerColumn, categoryColumn, levelColumn }) => {
+  const sortDefinitions = {};
+  const sortOptions = [{ value: 'default', label: 'Default order' }];
+  const sortOptionsByColumn = {};
+
+  const addSortPair = (column, type, ascValue, ascLabel, descValue, descLabel) => {
+    if (!column || !schemaColumns.includes(column)) return;
+    sortDefinitions[ascValue] = { column, type, direction: 'asc' };
+    sortDefinitions[descValue] = { column, type, direction: 'desc' };
+    sortOptions.push(
+      { value: ascValue, label: ascLabel },
+      { value: descValue, label: descLabel }
+    );
+    sortOptionsByColumn[column] = [
+      { value: ascValue, label: ascLabel.replace(`${column}: `, '') },
+      { value: descValue, label: descLabel.replace(`${column}: `, '') }
+    ];
+  };
+
+  addSortPair(dateColumn, 'date', 'dateAsc', `${dateColumn}: soonest first`, 'dateDesc', `${dateColumn}: latest first`);
+  if (schemaColumns.includes('Number')) {
+    addSortPair('Number', 'text', 'numberAsc', 'Number: low to high', 'numberDesc', 'Number: high to low');
+  }
+  addSortPair(statusColumn, 'text', 'statusAsc', `${statusColumn}: A-Z`, 'statusDesc', `${statusColumn}: Z-A`);
+  addSortPair(ownerColumn, 'text', 'ownerAsc', `${ownerColumn}: A-Z`, 'ownerDesc', `${ownerColumn}: Z-A`);
+  addSortPair(categoryColumn, 'text', 'categoryAsc', `${categoryColumn}: A-Z`, 'categoryDesc', `${categoryColumn}: Z-A`);
+  addSortPair(levelColumn, 'level', 'levelAsc', 'Level: low to high', 'levelDesc', 'Level: high to low');
+
+  return { sortDefinitions, sortOptions, sortOptionsByColumn };
+};
+
 export const getRegisterViewConfig = (schema, items = [], isExternalView = false) => {
   const scopedItems = (isExternalView ? items.filter(isPublicItem) : items).filter(Boolean);
   const schemaColumns = schema?.cols || [];
@@ -78,53 +122,41 @@ export const getRegisterViewConfig = (schema, items = [], isExternalView = false
   const ownerColumn = pickPreferredColumn(schemaColumns, OWNER_COLUMNS);
   const categoryColumn = pickPreferredColumn(schemaColumns, CATEGORY_COLUMNS);
   const dateColumn = pickPreferredColumn(schemaColumns, DATE_COLUMNS);
-  const hasNumberColumn = schemaColumns.includes('Number');
-
-  const sortOptions = [];
-  if (dateColumn) {
-    sortOptions.push(
-      { value: 'dateAsc', label: `${dateColumn}: soonest first` },
-      { value: 'dateDesc', label: `${dateColumn}: latest first` }
-    );
-  }
-  if (hasNumberColumn) {
-    sortOptions.push(
-      { value: 'numberAsc', label: 'Number: low to high' },
-      { value: 'numberDesc', label: 'Number: high to low' }
-    );
-  }
-  if (statusColumn) {
-    sortOptions.push(
-      { value: 'statusAsc', label: `${statusColumn}: A-Z` },
-      { value: 'statusDesc', label: `${statusColumn}: Z-A` }
-    );
-  }
-  if (ownerColumn) {
-    sortOptions.push(
-      { value: 'ownerAsc', label: `${ownerColumn}: A-Z` },
-      { value: 'ownerDesc', label: `${ownerColumn}: Z-A` }
-    );
-  }
-  if (categoryColumn) {
-    sortOptions.push(
-      { value: 'categoryAsc', label: `${categoryColumn}: A-Z` },
-      { value: 'categoryDesc', label: `${categoryColumn}: Z-A` }
-    );
-  }
-  if (sortOptions.length === 0) {
-    sortOptions.push({ value: 'default', label: 'Default order' });
-  }
+  const levelColumn = schemaColumns.includes('Level') ? 'Level' : '';
+  const filterColumns = getUniqueColumns([
+    statusColumn,
+    ownerColumn,
+    categoryColumn,
+    ...(schema?.extraFilterColumns || [])
+  ]).filter((column) => schemaColumns.includes(column));
+  const filterOptionsByColumn = Object.fromEntries(
+    filterColumns.map((column) => [column, buildOptionList(scopedItems, column)])
+  );
+  const { sortDefinitions, sortOptions, sortOptionsByColumn } = buildSortConfig({
+    schemaColumns,
+    dateColumn,
+    statusColumn,
+    ownerColumn,
+    categoryColumn,
+    levelColumn: (schema?.extraSortColumns || []).includes('Level') ? levelColumn : ''
+  });
 
   return {
     statusColumn,
     ownerColumn,
     categoryColumn,
     dateColumn,
-    statusOptions: buildOptionList(scopedItems, statusColumn),
-    ownerOptions: buildOptionList(scopedItems, ownerColumn),
-    categoryOptions: buildOptionList(scopedItems, categoryColumn),
+    levelColumn,
+    filterColumns,
+    filterOptionsByColumn,
+    defaultFilters: Object.fromEntries(filterColumns.map((column) => [column, 'all'])),
+    statusOptions: filterOptionsByColumn[statusColumn] || [],
+    ownerOptions: filterOptionsByColumn[ownerColumn] || [],
+    categoryOptions: filterOptionsByColumn[categoryColumn] || [],
     sortOptions,
-    defaultSort: dateColumn ? 'dateAsc' : hasNumberColumn ? 'numberAsc' : 'default'
+    sortOptionsByColumn,
+    sortDefinitions,
+    defaultSort: dateColumn ? 'dateAsc' : schemaColumns.includes('Number') ? 'numberAsc' : 'default'
   };
 };
 
@@ -133,71 +165,27 @@ const sortRegisterItemsForView = (items, sortKey, config) => {
 
   const sorted = [...items];
   sorted.sort((a, b) => {
+    const sortDefinition = config?.sortDefinitions?.[sortKey];
+    if (!sortDefinition) {
+      return compareText(
+        getRegisterFieldValue(a, 'Number'),
+        getRegisterFieldValue(b, 'Number')
+      );
+    }
+
+    const left = getRegisterFieldValue(a, sortDefinition.column);
+    const right = getRegisterFieldValue(b, sortDefinition.column);
     let comparison = 0;
 
-    switch (sortKey) {
-      case 'dateAsc':
-        comparison = compareDateValues(
-          getRegisterFieldValue(a, config.dateColumn),
-          getRegisterFieldValue(b, config.dateColumn)
-        );
-        break;
-      case 'dateDesc':
-        comparison = compareDateValues(
-          getRegisterFieldValue(b, config.dateColumn),
-          getRegisterFieldValue(a, config.dateColumn)
-        );
-        break;
-      case 'statusAsc':
-        comparison = compareText(
-          getRegisterFieldValue(a, config.statusColumn),
-          getRegisterFieldValue(b, config.statusColumn)
-        );
-        break;
-      case 'statusDesc':
-        comparison = compareText(
-          getRegisterFieldValue(b, config.statusColumn),
-          getRegisterFieldValue(a, config.statusColumn)
-        );
-        break;
-      case 'ownerAsc':
-        comparison = compareText(
-          getRegisterFieldValue(a, config.ownerColumn),
-          getRegisterFieldValue(b, config.ownerColumn)
-        );
-        break;
-      case 'ownerDesc':
-        comparison = compareText(
-          getRegisterFieldValue(b, config.ownerColumn),
-          getRegisterFieldValue(a, config.ownerColumn)
-        );
-        break;
-      case 'categoryAsc':
-        comparison = compareText(
-          getRegisterFieldValue(a, config.categoryColumn),
-          getRegisterFieldValue(b, config.categoryColumn)
-        );
-        break;
-      case 'categoryDesc':
-        comparison = compareText(
-          getRegisterFieldValue(b, config.categoryColumn),
-          getRegisterFieldValue(a, config.categoryColumn)
-        );
-        break;
-      case 'numberDesc':
-        comparison = compareText(
-          getRegisterFieldValue(b, 'Number'),
-          getRegisterFieldValue(a, 'Number')
-        );
-        break;
-      case 'numberAsc':
-      default:
-        comparison = compareText(
-          getRegisterFieldValue(a, 'Number'),
-          getRegisterFieldValue(b, 'Number')
-        );
-        break;
+    if (sortDefinition.type === 'date') {
+      comparison = compareDateValues(left, right);
+    } else if (sortDefinition.type === 'level') {
+      comparison = compareLevelValues(left, right);
+    } else {
+      comparison = compareText(left, right);
     }
+
+    if (sortDefinition.direction === 'desc') comparison *= -1;
 
     if (comparison !== 0) return comparison;
     return compareText(
@@ -213,6 +201,7 @@ export const applyRegisterView = ({
   items = [],
   searchQuery = '',
   isExternalView = false,
+  columnFilters = {},
   statusFilter = 'all',
   ownerFilter = 'all',
   categoryFilter = 'all',
@@ -223,15 +212,18 @@ export const applyRegisterView = ({
     isExternalView ? isPublicItem(item) : true
   ));
 
-  if (statusFilter !== 'all' && config?.statusColumn) {
-    scopedItems = scopedItems.filter((item) => getRegisterFieldValue(item, config.statusColumn) === statusFilter);
-  }
-  if (ownerFilter !== 'all' && config?.ownerColumn) {
-    scopedItems = scopedItems.filter((item) => getRegisterFieldValue(item, config.ownerColumn) === ownerFilter);
-  }
-  if (categoryFilter !== 'all' && config?.categoryColumn) {
-    scopedItems = scopedItems.filter((item) => getRegisterFieldValue(item, config.categoryColumn) === categoryFilter);
-  }
+  const mergedFilters = {
+    ...(config?.defaultFilters || {}),
+    ...(config?.statusColumn ? { [config.statusColumn]: statusFilter } : {}),
+    ...(config?.ownerColumn ? { [config.ownerColumn]: ownerFilter } : {}),
+    ...(config?.categoryColumn ? { [config.categoryColumn]: categoryFilter } : {}),
+    ...columnFilters
+  };
+
+  Object.entries(mergedFilters).forEach(([column, value]) => {
+    if (value === 'all' || !column) return;
+    scopedItems = scopedItems.filter((item) => getRegisterFieldValue(item, column) === value);
+  });
 
   return sortRegisterItemsForView(scopedItems, sortKey, config);
 };

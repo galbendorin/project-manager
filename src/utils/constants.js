@@ -6,15 +6,18 @@
 export const SCHEMAS = {
   risks: {
     title: "Risk Log",
-    cols: ["Visible", "Number", "Category", "Risk Details", "Mitigation Action", "Notes", "Raised", "Owner", "Level"]
+    cols: ["Visible", "Number", "Category", "Risk Details", "Mitigation Action", "Notes", "Raised", "Owner", "Level"],
+    extraSortColumns: ["Level"]
   },
   issues: {
     title: "Issue Log",
-    cols: ["Visible", "Number", "Issue Assigned to", "Description", "Current Status", "Status", "Raised", "Target", "Update", "Completed"]
+    cols: ["Visible", "Number", "Issue Assigned to", "Description", "Current Status", "Status", "Raised", "Target", "Update", "Completed"],
+    extraFilterColumns: ["Raised", "Update", "Completed"]
   },
   actions: {
     title: "Action Log",
-    cols: ["Visible", "Number", "Category", "Action Assigned to", "Description", "Current Status", "Status", "Raised", "Target", "Update", "Completed"]
+    cols: ["Visible", "Number", "Category", "Action Assigned to", "Description", "Current Status", "Status", "Raised", "Target", "Update", "Completed"],
+    extraFilterColumns: ["Raised", "Update", "Completed"]
   },
   minutes: {
     title: "Meeting Log",
@@ -46,7 +49,8 @@ export const SCHEMAS = {
   },
   lessons: {
     title: "Lessons Learned",
-    cols: ["Visible", "Number", "Date", "Phase", "Category", "Description", "Recommendation", "Owner", "Status"]
+    cols: ["Visible", "Number", "Date", "Phase", "Category", "Description", "Recommendation", "Owner", "Status"],
+    extraFilterColumns: ["Phase"]
   }
 };
 

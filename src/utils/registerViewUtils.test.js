@@ -90,3 +90,91 @@ test('applyRegisterView filters and sorts Action Log items by selected controls'
 
   assert.deepEqual(dorinItems.map((item) => item.number), ['A3', 'A1']);
 });
+
+test('getRegisterViewConfig exposes extra filters for Issue Log and Lessons Learned', () => {
+  const issueItems = [
+    {
+      _id: 'i1',
+      number: 'I1',
+      issueassignedto: 'Dorin',
+      status: 'Open',
+      raised: '2026-03-10',
+      update: '2026-03-12',
+      completed: '2026-03-15'
+    }
+  ];
+  const issueConfig = getRegisterViewConfig(SCHEMAS.issues, issueItems, false);
+
+  assert.deepEqual(issueConfig.filterColumns, ['Status', 'Issue Assigned to', 'Raised', 'Update', 'Completed']);
+  assert.deepEqual(issueConfig.filterOptionsByColumn.Raised, ['2026-03-10']);
+  assert.deepEqual(issueConfig.filterOptionsByColumn.Update, ['2026-03-12']);
+  assert.deepEqual(issueConfig.filterOptionsByColumn.Completed, ['2026-03-15']);
+
+  const lessonItems = [
+    {
+      _id: 'l1',
+      number: 'L1',
+      phase: 'Execution',
+      category: 'Governance',
+      owner: 'PM',
+      status: 'Open'
+    }
+  ];
+  const lessonConfig = getRegisterViewConfig(SCHEMAS.lessons, lessonItems, false);
+
+  assert.deepEqual(lessonConfig.filterColumns, ['Status', 'Owner', 'Category', 'Phase']);
+  assert.deepEqual(lessonConfig.filterOptionsByColumn.Phase, ['Execution']);
+  assert.deepEqual(lessonConfig.filterOptionsByColumn.Category, ['Governance']);
+});
+
+test('applyRegisterView sorts Risk Log items by level severity', () => {
+  const items = [
+    { _id: 'r1', number: 'R1', category: 'Tech', level: 'Medium', public: true },
+    { _id: 'r2', number: 'R2', category: 'Tech', level: 'High', public: true },
+    { _id: 'r3', number: 'R3', category: 'Tech', level: 'Low', public: true }
+  ];
+
+  const config = getRegisterViewConfig(SCHEMAS.risks, items, false);
+  const highToLow = applyRegisterView({
+    items,
+    sortKey: 'levelDesc',
+    config
+  });
+
+  assert.deepEqual(highToLow.map((item) => item.number), ['R2', 'R1', 'R3']);
+});
+
+test('applyRegisterView supports column-specific filters for Action Log dates', () => {
+  const items = [
+    {
+      _id: 'a1',
+      number: 'A1',
+      actionassignedto: 'Dorin',
+      status: 'Open',
+      raised: '2026-03-10',
+      update: '2026-03-18',
+      completed: ''
+    },
+    {
+      _id: 'a2',
+      number: 'A2',
+      actionassignedto: 'Dorin',
+      status: 'Completed',
+      raised: '2026-03-11',
+      update: '2026-03-18',
+      completed: '2026-03-19'
+    }
+  ];
+
+  const config = getRegisterViewConfig(SCHEMAS.actions, items, false);
+  const filtered = applyRegisterView({
+    items,
+    columnFilters: {
+      Raised: '2026-03-11',
+      Completed: '2026-03-19'
+    },
+    config
+  });
+
+  assert.deepEqual(filtered.map((item) => item.number), ['A2']);
+});
