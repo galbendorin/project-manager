@@ -363,6 +363,7 @@ const ScheduleGrid = ({
   const [dependenciesEditorOpen, setDependenciesEditorOpen] = useState(null);
   const [editingDependencies, setEditingDependencies] = useState([]);
   const [editingDepLogic, setEditingDepLogic] = useState('ALL');
+  const [dependencySearch, setDependencySearch] = useState('');
   const [columnWidths, setColumnWidths] = useState({
     drag: 28, id: 40, name: 280, parent: 50, dep: 60, type: 70,
     dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 150
@@ -418,6 +419,12 @@ const ScheduleGrid = ({
         task,
       }));
   }, [allTasks, dependenciesEditorOpen]);
+  const filteredDependencyTaskOptions = useMemo(() => {
+    const query = dependencySearch.trim().toLowerCase();
+    if (!query) return dependencyTaskOptions;
+
+    return dependencyTaskOptions.filter((option) => option.label.toLowerCase().includes(query));
+  }, [dependencySearch, dependencyTaskOptions]);
   const dependencyTaskMap = useMemo(
     () => new Map(dependencyTaskOptions.map((option) => [option.value, option.task])),
     [dependencyTaskOptions]
@@ -440,6 +447,7 @@ const ScheduleGrid = ({
     const deps = task.dependencies || (task.parent ? [{ parentId: task.parent, depType: task.depType || 'FS' }] : []);
     setEditingDependencies(deps.length > 0 ? deps : [{ parentId: '', depType: 'FS' }]);
     setEditingDepLogic(task.depLogic || 'ALL');
+    setDependencySearch('');
     setDependenciesEditorOpen(task.id);
   }, []);
 
@@ -803,9 +811,23 @@ const ScheduleGrid = ({
               <p className="mb-3 text-sm text-slate-500">
                 Choose the parent task you want to link to, then choose how the dates should move together.
               </p>
+              {dependencyTaskOptions.length > 0 && (
+                <input
+                  type="text"
+                  value={dependencySearch}
+                  onChange={(e) => setDependencySearch(e.target.value)}
+                  placeholder="Search tasks by ID or name"
+                  className="mb-3 w-full border border-slate-300 rounded px-3 py-2 text-sm"
+                />
+              )}
               {dependencyTaskOptions.length === 0 && (
                 <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
                   Add at least one more task before creating a dependency link.
+                </div>
+              )}
+              {dependencyTaskOptions.length > 0 && filteredDependencyTaskOptions.length === 0 && (
+                <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  No tasks match that search yet.
                 </div>
               )}
               <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -818,7 +840,7 @@ const ScheduleGrid = ({
                         className="border border-slate-300 rounded px-3 py-2 text-sm flex-1 bg-white"
                       >
                         <option value="">Choose parent task</option>
-                        {dependencyTaskOptions.map((option) => (
+                        {filteredDependencyTaskOptions.map((option) => (
                           <option key={option.value} value={String(option.value)}>
                             {option.label}
                           </option>
