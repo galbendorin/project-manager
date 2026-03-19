@@ -119,22 +119,36 @@ const MultiSelectFilter = ({
           >
             Clear selection
           </button>
+          <div className="px-2.5 pt-1 pb-2 text-[10px] text-slate-400">
+            Tap a name to show only that option, or use checkboxes to combine filters.
+          </div>
           <div className="mt-1 max-h-64 overflow-y-auto space-y-1">
             {options.map((option) => {
               const checked = selectedValues.includes(option.value);
               return (
-                <label
+                <div
                   key={option.value}
-                  className="flex items-center gap-2 px-2.5 py-2 text-[11px] text-slate-700 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="flex items-center gap-2 px-2.5 py-2 text-[11px] text-slate-700 rounded-lg hover:bg-slate-50"
                 >
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={() => onChange(toggleMultiFilterValue(selectedValues, option.value))}
                     className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    aria-label={`Include ${option.label}`}
                   />
-                  <span className="truncate">{option.label}</span>
-                </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange([option.value]);
+                      setIsOpen(false);
+                    }}
+                    className="flex-1 truncate text-left"
+                    aria-label={`Show only ${option.label}`}
+                  >
+                    {option.label}
+                  </button>
+                </div>
               );
             })}
           </div>
