@@ -8,6 +8,15 @@ import {
 } from '../utils/helpers';
 import { IconTrash } from './Icons';
 import { supabase } from '../lib/supabase';
+import {
+  getMultiFilterSummary,
+  matchesBucketSelection,
+  matchesOwnerSelection,
+  matchesProjectSelection,
+  matchesRecurrenceSelection,
+  matchesSourceSelection,
+  toggleMultiFilterValue,
+} from '../utils/todoFilterUtils';
 
 const STATUS_OPTIONS = ['Open', 'Done'];
 
@@ -55,6 +64,85 @@ const statusClass = (status) => {
   return 'text-amber-700 bg-amber-50 border border-amber-100';
 };
 
+const MultiSelectFilter = ({
+  allLabel,
+  options,
+  selectedValues,
+  onChange,
+  className = '',
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={wrapperRef} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-left text-slate-700 flex items-center justify-between gap-2 hover:border-slate-300 transition-colors"
+      >
+        <span className="truncate">{getMultiFilterSummary(selectedValues, options, allLabel)}</span>
+        <span className={`text-[10px] text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-30 mt-2 w-full min-w-[220px] rounded-xl border border-slate-200 bg-white shadow-lg p-2">
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="w-full text-left px-2.5 py-2 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded-lg"
+          >
+            Clear selection
+          </button>
+          <div className="mt-1 max-h-64 overflow-y-auto space-y-1">
+            {options.map((option) => {
+              const checked = selectedValues.includes(option.value);
+              return (
+                <label
+                  key={option.value}
+                  className="flex items-center gap-2 px-2.5 py-2 text-[11px] text-slate-700 rounded-lg hover:bg-slate-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onChange(toggleMultiFilterValue(selectedValues, option.value))}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="truncate">{option.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TodoView = ({
   todos,
   projectData,
@@ -68,11 +156,11 @@ const TodoView = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [scope, setScope] = useState('project');
-  const [projectFilter, setProjectFilter] = useState('all');
-  const [sourceFilter, setSourceFilter] = useState('all');
-  const [ownerFilter, setOwnerFilter] = useState('all');
-  const [recurrenceFilter, setRecurrenceFilter] = useState('all');
-  const [bucketFilter, setBucketFilter] = useState('all');
+  const [projectFilter, setProjectFilter] = useState([]);
+  const [sourceFilter, setSourceFilter] = useState([]);
+  const [ownerFilter, setOwnerFilter] = useState([]);
+  const [recurrenceFilter, setRecurrenceFilter] = useState([]);
+  const [bucketFilter, setBucketFilter] = useState([]);
 
   const [projectOptions, setProjectOptions] = useState([]);
   const [allProjectsData, setAllProjectsData] = useState([]);
@@ -141,7 +229,7 @@ const TodoView = ({
   };
 
   useEffect(() => {
-    setProjectFilter('all');
+    setProjectFilter([]);
   }, [scope, currentProject?.id]);
 
   useEffect(() => {
@@ -283,39 +371,18 @@ const TodoView = ({
     mergedOpenTodos.forEach((item) => {
       if (item.owner) values.add(item.owner);
     });
-    return ['all', ...Array.from(values)];
+    return Array.from(values)
+      .sort((a, b) => a.localeCompare(b))
+      .map((owner) => ({ value: owner, label: owner }));
   }, [mergedOpenTodos]);
 
   const filteredTodos = useMemo(() => {
     let items = [...mergedOpenTodos];
 
-    if (projectFilter !== 'all') {
-      if (projectFilter === 'other') {
-        items = items.filter((item) => !item.projectId);
-      } else {
-        items = items.filter((item) => item.projectId === projectFilter);
-      }
-    }
-
-    if (sourceFilter !== 'all') {
-      items = items.filter((item) => {
-        if (sourceFilter === 'manual') return !item.isDerived;
-        if (sourceFilter === 'derived') return item.isDerived;
-        return sourceFilterKeyForItem(item) === sourceFilter;
-      });
-    }
-
-    if (ownerFilter !== 'all') {
-      items = items.filter((item) => item.owner === ownerFilter);
-    }
-
-    if (recurrenceFilter !== 'all') {
-      if (recurrenceFilter === 'none') {
-        items = items.filter((item) => !item.isDerived && !item.recurrence);
-      } else {
-        items = items.filter((item) => !item.isDerived && item.recurrence?.type === recurrenceFilter);
-      }
-    }
+    items = items.filter((item) => matchesProjectSelection(projectFilter, item));
+    items = items.filter((item) => matchesSourceSelection(sourceFilter, item, sourceFilterKeyForItem));
+    items = items.filter((item) => matchesOwnerSelection(ownerFilter, item));
+    items = items.filter((item) => matchesRecurrenceSelection(recurrenceFilter, item));
 
     items = filterBySearch(items, searchQuery);
 
@@ -336,14 +403,12 @@ const TodoView = ({
 
   const bucketedTodos = useMemo(() => {
     const grouped = bucketByDeadline(filteredTodos);
-    if (bucketFilter === 'all') return grouped;
-    return grouped.filter((bucket) => bucket.key === bucketFilter);
+    return grouped.filter((bucket) => matchesBucketSelection(bucketFilter, bucket.key));
   }, [filteredTodos, bucketFilter]);
 
   const projectSelectOptions = useMemo(() => {
     if (scope === 'project') {
       return [
-        { value: 'all', label: 'In Scope (This Project + Other)' },
         ...(currentProject?.id
           ? [{ value: currentProject.id, label: currentProject.name || 'Current Project' }]
           : []),
@@ -351,8 +416,7 @@ const TodoView = ({
       ];
     }
 
-    const options = [{ value: 'all', label: 'All Projects + Other' }];
-    options.push({ value: 'other', label: 'Other' });
+    const options = [{ value: 'other', label: 'Other' }];
     projectOptions.forEach((project) => {
       options.push({ value: project.id, label: project.name });
     });
@@ -385,7 +449,7 @@ const TodoView = ({
               onChange={(e) => {
                 const nextScope = e.target.value;
                 setScope(nextScope);
-                setProjectFilter('all');
+                setProjectFilter([]);
               }}
               className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
             >
@@ -393,60 +457,40 @@ const TodoView = ({
               <option value="all">All Projects + Other</option>
             </select>
 
-            <select
-              value={projectFilter}
-              onChange={(e) => setProjectFilter(e.target.value)}
-              className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
-            >
-              {projectSelectOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <MultiSelectFilter
+              allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
+              options={projectSelectOptions}
+              selectedValues={projectFilter}
+              onChange={setProjectFilter}
+            />
 
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
-            >
-              {SOURCE_FILTER_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <MultiSelectFilter
+              allLabel="All Sources"
+              options={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
+              selectedValues={sourceFilter}
+              onChange={setSourceFilter}
+            />
 
-            <select
-              value={ownerFilter}
-              onChange={(e) => setOwnerFilter(e.target.value)}
-              className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
-            >
-              <option value="all">All Owners</option>
-              {ownerOptions
-                .filter((owner) => owner !== 'all')
-                .map((owner) => (
-                  <option key={owner} value={owner}>{owner}</option>
-                ))}
-            </select>
+            <MultiSelectFilter
+              allLabel="All Owners"
+              options={ownerOptions}
+              selectedValues={ownerFilter}
+              onChange={setOwnerFilter}
+            />
 
-            <select
-              value={recurrenceFilter}
-              onChange={(e) => setRecurrenceFilter(e.target.value)}
-              className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
-            >
-              <option value="all">All Recurrence</option>
-              {RECURRENCE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <MultiSelectFilter
+              allLabel="All Recurrence"
+              options={RECURRENCE_OPTIONS}
+              selectedValues={recurrenceFilter}
+              onChange={setRecurrenceFilter}
+            />
 
-            <select
-              value={bucketFilter}
-              onChange={(e) => setBucketFilter(e.target.value)}
-              className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
-            >
-              <option value="all">All Buckets</option>
-              {TODO_BUCKETS.map((bucket) => (
-                <option key={bucket.key} value={bucket.key}>{bucket.label}</option>
-              ))}
-            </select>
+            <MultiSelectFilter
+              allLabel="All Buckets"
+              options={TODO_BUCKETS.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
+              selectedValues={bucketFilter}
+              onChange={setBucketFilter}
+            />
           </div>
 
           {scope === 'all' && loadingAllProjects && (
