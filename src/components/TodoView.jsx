@@ -151,6 +151,8 @@ const TodoView = ({
   currentProject,
   currentUserId,
   isExternalView,
+  pendingFocusTodoId,
+  onTodoFocusHandled,
   onUpdateTodo,
   onDeleteTodo
 }) => {
@@ -167,8 +169,18 @@ const TodoView = ({
   const [loadingAllProjects, setLoadingAllProjects] = useState(false);
   const [draftEdits, setDraftEdits] = useState({});
   const draftEditsRef = useRef({});
+  const titleInputRefs = useRef(new Map());
 
   const makeDraftKey = (todoId, field) => `${todoId}::${field}`;
+
+  const setTitleInputRef = (todoId, element) => {
+    if (!todoId) return;
+    if (element) {
+      titleInputRefs.current.set(todoId, element);
+      return;
+    }
+    titleInputRefs.current.delete(todoId);
+  };
 
   useEffect(() => {
     draftEditsRef.current = draftEdits;
@@ -366,6 +378,24 @@ const TodoView = ({
     return merged.filter((item) => item.status !== 'Done');
   }, [manualTodosByScope, derivedTodosByScope]);
 
+  useEffect(() => {
+    if (!pendingFocusTodoId) return undefined;
+
+    const matchingTodo = mergedOpenTodos.find((item) => item._id === pendingFocusTodoId);
+    if (!matchingTodo) return undefined;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const input = titleInputRefs.current.get(pendingFocusTodoId);
+      if (input) {
+        input.focus();
+        input.select();
+      }
+      onTodoFocusHandled?.();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [mergedOpenTodos, onTodoFocusHandled, pendingFocusTodoId]);
+
   const ownerOptions = useMemo(() => {
     const values = new Set();
     mergedOpenTodos.forEach((item) => {
@@ -532,9 +562,17 @@ const TodoView = ({
                               {isManualEditable ? (
                                 <input
                                   type="text"
+                                  ref={(element) => setTitleInputRef(todo._id, element)}
                                   value={getDraftValue(todo, 'title')}
                                   onChange={(e) => setDraftValue(todo._id, 'title', e.target.value)}
                                   onBlur={() => commitDraftValue(todo, 'title')}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      commitDraftValue(todo, 'title');
+                                      e.currentTarget.blur();
+                                    }
+                                  }}
                                   className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 />
                               ) : (

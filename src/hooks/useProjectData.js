@@ -360,7 +360,7 @@ export const useProjectData = (projectId, userId = null) => {
 
     if (!userId || !supportsManualTodosTableRef.current) {
       setTodos(prev => [...prev, localTodo]);
-      return;
+      return localTodo;
     }
 
     const { data, error } = await supabase
@@ -380,8 +380,9 @@ export const useProjectData = (projectId, userId = null) => {
       .single();
 
     if (!error && data) {
-      setTodos(prev => [...prev, mapManualTodoRow(data)]);
-      return;
+      const savedTodo = mapManualTodoRow(data);
+      setTodos(prev => [...prev, savedTodo]);
+      return savedTodo;
     }
 
     if (isMissingRelationError(error, 'manual_todos')) {
@@ -390,6 +391,7 @@ export const useProjectData = (projectId, userId = null) => {
       console.error('Failed to create manual todo:', error);
     }
     setTodos(prev => [...prev, localTodo]);
+    return localTodo;
   }, [projectId, userId]);
 
   const updateTodo = useCallback(async (todoId, key, value) => {

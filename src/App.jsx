@@ -118,6 +118,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
   const [activeSubView, setActiveSubView] = useState(null);
   const [viewMode, setViewMode] = useState('week');
   const [isExternalView, setIsExternalView] = useState(false);
+  const [pendingTodoFocusId, setPendingTodoFocusId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [insertAfterId, setInsertAfterId] = useState(null);
@@ -805,7 +806,11 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         onOpenBilling={handleOpenBilling}
         onAddRegisterItem={() => {
           if (activeTab === 'todo') {
-            addTodo();
+            addTodo().then((createdTodo) => {
+              if (createdTodo?._id) {
+                setPendingTodoFocusId(createdTodo._id);
+              }
+            });
             return;
           }
           if (activeTab === 'raci') return; // RACI has its own add role button
@@ -911,6 +916,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
                 currentProject={project}
                 currentUserId={currentUserId}
                 isExternalView={isExternalView}
+                pendingFocusTodoId={pendingTodoFocusId}
+                onTodoFocusHandled={() => setPendingTodoFocusId(null)}
                 onUpdateTodo={updateTodo}
                 onDeleteTodo={deleteTodo}
               />
