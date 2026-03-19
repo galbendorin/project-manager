@@ -123,18 +123,74 @@ const ScheduleView = ({
 
   const [showLegend, setShowLegend] = useState(false);
 
+  const legendItems = [
+    { label: 'Red', detail: 'Past deadline and not complete.' },
+    { label: 'Amber', detail: 'Custom highlight for a row that needs attention.' },
+    { label: 'Brown', detail: 'Custom highlight for dependency, decision, or review rows.' },
+    { label: 'Complete', detail: 'Task is at 100% progress.' },
+  ];
+
+  const dependencyItems = [
+    { code: 'FS', label: 'Finish to Start', detail: 'Task B starts after Task A finishes.' },
+    { code: 'SS', label: 'Start to Start', detail: 'Task B starts when Task A starts.' },
+    { code: 'FF', label: 'Finish to Finish', detail: 'Task B finishes when Task A finishes.' },
+    { code: 'SF', label: 'Start to Finish', detail: 'Task B finishes when Task A starts.' },
+  ];
+
+  const workflowItems = [
+    { badge: 'Track', label: 'Adds the schedule task to the task list / Action Log feed.' },
+    { badge: 'MT+', label: 'Send the task to Master Tracker for closer control.' },
+    { badge: 'AL+', label: 'Send the task to Action Log so it appears as an action item.' },
+    { badge: 'CP', label: 'Critical Path marker. Delay here is likely to move the finish date.' },
+  ];
+
   return (
     <div className="h-full w-full min-w-0 bg-white flex flex-col overflow-hidden">
       {showLegend && (
-        <div className="flex-none px-2 py-1 bg-slate-50 border-b border-slate-200 text-[10px] text-slate-600 flex flex-wrap items-center gap-2">
-          <span className="font-semibold text-slate-700">Legend</span>
-          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-200 border border-red-300" /> Red</span>
-          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-200 border border-amber-300" /> Amber</span>
-          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-700 border border-amber-800" /> Brown</span>
-          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-200 border border-emerald-300" /> Complete</span>
-          <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-indigo-300 text-indigo-700 bg-indigo-50 text-[9px] font-semibold">MT+</span> Master Tracker</span>
-          <span className="inline-flex items-center gap-1"><span className="px-1 rounded border border-emerald-300 text-emerald-700 bg-emerald-50 text-[9px] font-semibold">AL+</span> Action Log</span>
-          <button onClick={() => setShowLegend(false)} className="ml-auto text-slate-400 hover:text-slate-600 text-[10px]">✕</button>
+        <div className="flex-none border-b border-slate-200 bg-slate-50 px-3 py-3 text-[11px] text-slate-600">
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="min-w-[200px] flex-1">
+              <div className="font-semibold text-slate-800">Legend</div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {legendItems.map((item) => (
+                  <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <div className="font-semibold text-slate-700">{item.label}</div>
+                    <div className="mt-1 text-slate-500">{item.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="min-w-[220px] flex-1">
+              <div className="font-semibold text-slate-800">Dependencies</div>
+              <div className="mt-2 grid gap-2">
+                {dependencyItems.map((item) => (
+                  <div key={item.code} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <div className="font-semibold text-slate-700">
+                      {item.code} · {item.label}
+                    </div>
+                    <div className="mt-1 text-slate-500">{item.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="min-w-[220px] flex-1">
+              <div className="font-semibold text-slate-800">Helpful shortcuts</div>
+              <div className="mt-2 grid gap-2">
+                {workflowItems.map((item) => (
+                  <div key={item.badge} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <div className="font-semibold text-slate-700">{item.badge}</div>
+                    <div className="mt-1 text-slate-500">{item.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button onClick={() => setShowLegend(false)} className="ml-auto text-slate-400 hover:text-slate-600 text-[11px] font-semibold">
+              Close
+            </button>
+          </div>
         </div>
       )}
 
@@ -156,7 +212,7 @@ const ScheduleView = ({
           </div>
           <div className="flex items-center gap-2">
             {!showLegend && (
-              <button onClick={() => setShowLegend(true)} className="flex-none text-[10px] text-indigo-200 hover:text-white transition-colors whitespace-nowrap">
+              <button onClick={() => setShowLegend(true)} className="flex-none text-[10px] text-indigo-200 hover:text-white transition-colors whitespace-nowrap font-semibold">
                 Legend
               </button>
             )}

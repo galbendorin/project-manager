@@ -21,6 +21,16 @@ const formatDateDisplay = (dateStr) => {
 
 const getProgressColor = (pct) => pct === 100 ? 'progress-complete' : pct > 0 ? 'progress-partial' : 'progress-none';
 
+const HEADER_HELP = {
+  dependencies: 'Click a task dependency cell to link tasks. Use FS/SS/FF/SF to control how dates move together.',
+  type: 'Task is a normal activity, Milestone is a zero-duration checkpoint, and GROUP rows summarise child tasks.',
+  dur: 'Duration is shown in working days.',
+  start: 'Tasks with dependencies have start dates driven automatically by those links.',
+  progress: '0% means not started, 1-99% means in progress, 100% means complete.',
+  track: 'Track adds the task to the task list / Action Log feed for follow-up.',
+  actions: 'MT+ sends the task to Master Tracker. AL+ sends it to Action Log.',
+};
+
 // ── Memoized EditableCell ────────────────────────────────────────────
 
 const EditableCell = React.memo(({
@@ -546,6 +556,16 @@ const ScheduleGrid = ({
     />
   );
 
+  const HelpBadge = ({ text }) => (
+    <span
+      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[9px] font-bold text-slate-400"
+      title={text}
+      aria-label={text}
+    >
+      ?
+    </span>
+  );
+
   const colGroupCols = (
     <colgroup>
       <col style={{ width: `${columnWidths.drag}px` }} />
@@ -608,14 +628,14 @@ const ScheduleGrid = ({
               <th style={{ textAlign: 'center', padding: '8px 2px' }}>⠿</th>
               <th className="text-center">ID <ResizeHandle column="id" /></th>
               <th>Task Name <ResizeHandle column="name" /></th>
-              <th className="text-center" colSpan={2} title="Dependencies (Parent ID + Type)">Dependencies</th>
-              <th className="text-center">Type <ResizeHandle column="type" /></th>
-              <th className="text-center">Dur <ResizeHandle column="dur" /></th>
-              <th>Start Date <ResizeHandle column="start" /></th>
+              <th className="text-center" colSpan={2} title="Dependencies (Parent ID + Type)">Dependencies <HelpBadge text={HEADER_HELP.dependencies} /></th>
+              <th className="text-center">Type <HelpBadge text={HEADER_HELP.type} /><ResizeHandle column="type" /></th>
+              <th className="text-center">Dur <HelpBadge text={HEADER_HELP.dur} /><ResizeHandle column="dur" /></th>
+              <th>Start Date <HelpBadge text={HEADER_HELP.start} /><ResizeHandle column="start" /></th>
               <th>Finish <ResizeHandle column="finish" /></th>
-              <th className="text-center">Progress <ResizeHandle column="pct" /></th>
-              <th className="text-center">Track <ResizeHandle column="track" /></th>
-              <th className="text-center" style={{ borderRight: 'none' }}>Actions</th>
+              <th className="text-center">Progress <HelpBadge text={HEADER_HELP.progress} /><ResizeHandle column="pct" /></th>
+              <th className="text-center">Track <HelpBadge text={HEADER_HELP.track} /><ResizeHandle column="track" /></th>
+              <th className="text-center" style={{ borderRight: 'none' }}>Actions <HelpBadge text={HEADER_HELP.actions} /></th>
             </tr>
           </thead>
         </table>
@@ -699,6 +719,19 @@ const ScheduleGrid = ({
           >
             <h3 className="text-lg font-bold text-slate-800 mb-4">Edit Dependencies - Task #{dependenciesEditorOpen}</h3>
 
+            <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-slate-600">
+              <div className="font-semibold text-slate-700">How dependency links work</div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <div><span className="font-semibold text-slate-700">FS</span> = start after the parent task finishes</div>
+                <div><span className="font-semibold text-slate-700">SS</span> = start when the parent task starts</div>
+                <div><span className="font-semibold text-slate-700">FF</span> = finish when the parent task finishes</div>
+                <div><span className="font-semibold text-slate-700">SF</span> = finish when the parent task starts</div>
+              </div>
+              <div className="mt-2 text-slate-500">
+                Tip: once a task has dependencies, its start date is driven automatically by those links.
+              </div>
+            </div>
+
             <div className="mb-4">
               <label className="block text-sm font-semibold text-slate-700 mb-2">
                 Dependency Logic:
@@ -713,7 +746,7 @@ const ScheduleGrid = ({
                     onChange={(e) => setEditingDepLogic(e.target.value)}
                     className="accent-indigo-600"
                   />
-                  <span className="text-sm">ALL (wait for all parents to finish)</span>
+                  <span className="text-sm">ALL (wait for every linked parent)</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -724,13 +757,16 @@ const ScheduleGrid = ({
                     onChange={(e) => setEditingDepLogic(e.target.value)}
                     className="accent-indigo-600"
                   />
-                  <span className="text-sm">ANY (start when any parent allows)</span>
+                  <span className="text-sm">ANY (start when one linked parent allows)</span>
                 </label>
               </div>
             </div>
 
             <div className="mb-4">
               <label className="block text-sm font-semibold text-slate-700 mb-2">Dependencies:</label>
+              <p className="mb-3 text-sm text-slate-500">
+                Enter the parent task ID you want to link to, then choose the dependency type.
+              </p>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {editingDependencies.map((dep, index) => (
                   <div key={index} className="flex gap-2 items-center">
