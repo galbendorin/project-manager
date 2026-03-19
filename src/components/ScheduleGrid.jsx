@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { getFinishDate, calculateCriticalPath, getHierarchyMap, formatDependencies, hasDependencies } from '../utils/helpers';
+import { getFinishDate, calculateCriticalPath, getHierarchyMap, formatDependencies, getTaskDependencies, hasDependencies } from '../utils/helpers';
 
 const GRID_HEADER_HEIGHT = 55;
 const ROW_HEIGHT = 36;
@@ -34,6 +34,19 @@ const HEADER_HELP = {
 const getDependencyTaskLabel = (task) => {
   if (!task) return '';
   return `#${task.id} - ${task.name || 'Untitled task'}`;
+};
+
+const getDependencyTooltip = (task, taskMap) => {
+  const deps = getTaskDependencies(task);
+  if (deps.length === 0) return 'No dependencies';
+
+  return deps
+    .map((dep) => {
+      const parentTask = taskMap.get(dep.parentId);
+      if (!parentTask) return `#${dep.parentId} (${dep.depType})`;
+      return `${getDependencyTaskLabel(parentTask)} (${dep.depType})`;
+    })
+    .join('\n');
 };
 
 // ── Memoized EditableCell ────────────────────────────────────────────
@@ -97,7 +110,8 @@ const TaskRow = React.memo(({
   onToggleTrack, onInsertTask, onSendToTracker, onSendToActionLog,
   onRemoveFromActionLog, onRemoveFromTracker, isInTracker,
   onDragStart, onDragEnd, onDragOver, onDrop,
-  onCellEdit, setEditingCell, setColorPickerOpen, onOpenDepsEditor
+  onCellEdit, setEditingCell, setColorPickerOpen, onOpenDepsEditor,
+  dependencyTitle
 }) => {
   const origIdx = task._originalIndex;
   const isParentRow = task._isParent;
@@ -179,7 +193,7 @@ const TaskRow = React.memo(({
       <td
         className="text-center text-[10px] text-slate-600 cursor-pointer hover:bg-indigo-50 px-2"
         onClick={() => !isParentRow && onOpenDepsEditor(task)}
-        title="Click to edit dependencies"
+        title={`${dependencyTitle}\nClick to edit dependencies`}
         colSpan={2}
       >
         {formatDependencies(task)}
@@ -409,6 +423,10 @@ const ScheduleGrid = ({
   }, [allTasks]);
 
   const { directChildCount } = useMemo(() => getHierarchyMap(allTasks), [allTasks]);
+  const allTaskLookup = useMemo(
+    () => new Map(allTasks.map((task) => [task.id, task])),
+    [allTasks]
+  );
   const dependencyTaskOptions = useMemo(() => {
     if (!dependenciesEditorOpen) return [];
 
@@ -426,13 +444,13 @@ const ScheduleGrid = ({
 
     return dependencyTaskOptions.filter((option) => option.label.toLowerCase().includes(query));
   }, [dependencySearch, dependencyTaskOptions]);
-  const dependencyTaskMap = useMemo(
+  const dependencyOptionTaskMap = useMemo(
     () => new Map(dependencyTaskOptions.map((option) => [option.value, option.task])),
     [dependencyTaskOptions]
   );
   const activeDependencyTask = useMemo(
-    () => allTasks.find((task) => task.id === dependenciesEditorOpen) || null,
-    [allTasks, dependenciesEditorOpen]
+    () => allTaskLookup.get(dependenciesEditorOpen) || null,
+    [allTaskLookup, dependenciesEditorOpen]
   );
 
   const handleCellEdit = useCallback((taskId, field, value) => {
@@ -764,6 +782,7 @@ const ScheduleGrid = ({
                   setEditingCell={setEditingCell}
                   setColorPickerOpen={setColorPickerOpen}
                   onOpenDepsEditor={openDependenciesEditor}
+                  dependencyTitle={getDependencyTooltip(task, allTaskLookup)}
                 />
               );
             })}
@@ -893,9 +912,9 @@ const ScheduleGrid = ({
                         Remove
                       </button>
                     </div>
-                    {dep.parentId && dependencyTaskMap.has(dep.parentId) && (
+                    {dep.parentId && dependencyOptionTaskMap.has(dep.parentId) && (
                       <div className="mt-2 text-xs text-slate-500">
-                        Linked parent: <span className="font-medium text-slate-700">{getDependencyTaskLabel(dependencyTaskMap.get(dep.parentId))}</span>
+                        Linked parent: <span className="font-medium text-slate-700">{getDependencyTaskLabel(dependencyOptionTaskMap.get(dep.parentId))}</span>
                       </div>
                     )}
                   </div>
