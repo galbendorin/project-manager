@@ -31,6 +31,11 @@ const HEADER_HELP = {
   actions: 'MT+ sends the task to Master Tracker. AL+ sends it to Action Log.',
 };
 
+const getDependencyTaskLabel = (task) => {
+  if (!task) return '';
+  return `#${task.id} - ${task.name || 'Untitled task'}`;
+};
+
 // ── Memoized EditableCell ────────────────────────────────────────────
 
 const EditableCell = React.memo(({
@@ -402,6 +407,25 @@ const ScheduleGrid = ({
   }, [allTasks]);
 
   const { directChildCount } = useMemo(() => getHierarchyMap(allTasks), [allTasks]);
+  const dependencyTaskOptions = useMemo(() => {
+    if (!dependenciesEditorOpen) return [];
+
+    return allTasks
+      .filter((task) => task.id !== dependenciesEditorOpen)
+      .map((task) => ({
+        value: task.id,
+        label: getDependencyTaskLabel(task),
+        task,
+      }));
+  }, [allTasks, dependenciesEditorOpen]);
+  const dependencyTaskMap = useMemo(
+    () => new Map(dependencyTaskOptions.map((option) => [option.value, option.task])),
+    [dependencyTaskOptions]
+  );
+  const activeDependencyTask = useMemo(
+    () => allTasks.find((task) => task.id === dependenciesEditorOpen) || null,
+    [allTasks, dependenciesEditorOpen]
+  );
 
   const handleCellEdit = useCallback((taskId, field, value) => {
     let processedValue = value;
@@ -420,7 +444,14 @@ const ScheduleGrid = ({
   }, []);
 
   const saveDependencies = () => {
-    const validDeps = editingDependencies.filter(d => d.parentId && d.parentId !== '');
+    const seenParents = new Set();
+    const validDeps = editingDependencies.filter((dep) => {
+      if (!dep.parentId || dep.parentId === '' || dep.parentId === dependenciesEditorOpen) return false;
+      const depKey = `${dep.parentId}-${dep.depType}`;
+      if (seenParents.has(depKey)) return false;
+      seenParents.add(depKey);
+      return true;
+    });
     onUpdateTask(dependenciesEditorOpen, {
       dependencies: validDeps.length > 0 ? validDeps : null,
       depLogic: editingDepLogic,
@@ -717,7 +748,12 @@ const ScheduleGrid = ({
             className="bg-white rounded-lg shadow-2xl p-6 max-w-2xl w-full mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-bold text-slate-800 mb-4">Edit Dependencies - Task #{dependenciesEditorOpen}</h3>
+            <h3 className="text-lg font-bold text-slate-800 mb-1">Edit Dependencies - Task #{dependenciesEditorOpen}</h3>
+            {activeDependencyTask && (
+              <p className="mb-4 text-sm text-slate-500">
+                Working on <span className="font-medium text-slate-700">{activeDependencyTask.name}</span>
+              </p>
+            )}
 
             <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-slate-600">
               <div className="font-semibold text-slate-700">How dependency links work</div>
@@ -765,41 +801,58 @@ const ScheduleGrid = ({
             <div className="mb-4">
               <label className="block text-sm font-semibold text-slate-700 mb-2">Dependencies:</label>
               <p className="mb-3 text-sm text-slate-500">
-                Enter the parent task ID you want to link to, then choose the dependency type.
+                Choose the parent task you want to link to, then choose how the dates should move together.
               </p>
+              {dependencyTaskOptions.length === 0 && (
+                <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                  Add at least one more task before creating a dependency link.
+                </div>
+              )}
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {editingDependencies.map((dep, index) => (
-                  <div key={index} className="flex gap-2 items-center">
-                    <input
-                      type="number"
-                      placeholder="Parent ID"
-                      value={dep.parentId}
-                      onChange={(e) => updateDependency(index, 'parentId', e.target.value)}
-                      className="border border-slate-300 rounded px-3 py-2 text-sm flex-1"
-                      min="1"
-                    />
-                    <select
-                      value={dep.depType}
-                      onChange={(e) => updateDependency(index, 'depType', e.target.value)}
-                      className="border border-slate-300 rounded px-3 py-2 text-sm w-24"
-                    >
-                      <option value="FS">FS</option>
-                      <option value="SS">SS</option>
-                      <option value="FF">FF</option>
-                      <option value="SF">SF</option>
-                    </select>
-                    <button
-                      onClick={() => removeDependency(index)}
-                      className="px-3 py-2 text-rose-600 hover:bg-rose-50 rounded text-sm font-semibold"
-                    >
-                      Remove
-                    </button>
+                  <div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                      <select
+                        value={dep.parentId === '' ? '' : String(dep.parentId)}
+                        onChange={(e) => updateDependency(index, 'parentId', e.target.value)}
+                        className="border border-slate-300 rounded px-3 py-2 text-sm flex-1 bg-white"
+                      >
+                        <option value="">Choose parent task</option>
+                        {dependencyTaskOptions.map((option) => (
+                          <option key={option.value} value={String(option.value)}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={dep.depType}
+                        onChange={(e) => updateDependency(index, 'depType', e.target.value)}
+                        className="border border-slate-300 rounded px-3 py-2 text-sm md:w-36 bg-white"
+                      >
+                        <option value="FS">FS - finish to start</option>
+                        <option value="SS">SS - start to start</option>
+                        <option value="FF">FF - finish to finish</option>
+                        <option value="SF">SF - start to finish</option>
+                      </select>
+                      <button
+                        onClick={() => removeDependency(index)}
+                        className="px-3 py-2 text-rose-600 hover:bg-rose-50 rounded text-sm font-semibold md:self-stretch"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    {dep.parentId && dependencyTaskMap.has(dep.parentId) && (
+                      <div className="mt-2 text-xs text-slate-500">
+                        Linked parent: <span className="font-medium text-slate-700">{getDependencyTaskLabel(dependencyTaskMap.get(dep.parentId))}</span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
               <button
                 onClick={addDependency}
-                className="mt-2 px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-sm font-semibold"
+                disabled={dependencyTaskOptions.length === 0}
+                className="mt-2 px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
               >
                 + Add Dependency
               </button>
