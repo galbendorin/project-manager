@@ -813,7 +813,13 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
           const target = activeSubView || activeTab;
           addRegisterItem(target);
         }}
-        addEntryLabel={activeTab === 'todo' ? 'Add Task' : activeTab === 'raci' || activeTab === 'tracker' ? '' : 'Add Entry'}
+        addEntryLabel={
+          activeTab === 'todo'
+            ? 'Add Task'
+            : activeTab === 'raci' || activeTab === 'tracker' || activeTab === 'statusreport'
+              ? ''
+              : 'Add Entry'
+        }
         onSetBaseline={setBaseline}
         onClearBaseline={clearBaseline}
         hasBaseline={!!baseline}
