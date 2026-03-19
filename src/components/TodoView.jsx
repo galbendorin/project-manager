@@ -664,7 +664,7 @@ const TodoView = ({
               placeholder="Search tasks..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="px-3 py-1.5 text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+              className="px-3 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
             />
           </div>
 
@@ -676,7 +676,7 @@ const TodoView = ({
                 setScope(nextScope);
                 setProjectFilter([]);
               }}
-              className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
+              className="px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-lg bg-white"
             >
               <option value="project">This Project + Other</option>
               <option value="all">All Projects + Other</option>
@@ -812,7 +812,7 @@ const TodoView = ({
                                       e.currentTarget.blur();
                                     }
                                   }}
-                                  className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
+                                  className="w-full px-2.5 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 />
                               ) : (
                                 <button
@@ -833,7 +833,7 @@ const TodoView = ({
                                 <select
                                   value={todo.projectId || 'other'}
                                   onChange={(e) => onUpdateTodo(todo._id, 'projectId', e.target.value === 'other' ? null : e.target.value)}
-                                  className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
+                                  className="w-full px-2.5 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 >
                                   <option value="other">Other</option>
                                   {projectOptions.map((project) => (
@@ -850,7 +850,7 @@ const TodoView = ({
                                   type="date"
                                   value={todo.dueDate || ''}
                                   onChange={(e) => onUpdateTodo(todo._id, 'dueDate', e.target.value)}
-                                  className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
+                                  className="w-full px-2.5 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 />
                               ) : (
                                 <span className="text-[12px] text-slate-600">{todo.dueDate ? formatDate(todo.dueDate) : 'No deadline'}</span>
@@ -863,7 +863,7 @@ const TodoView = ({
                                   value={getDraftValue(todo, 'owner')}
                                   onChange={(e) => setDraftValue(todo._id, 'owner', e.target.value)}
                                   onBlur={() => commitDraftValue(todo, 'owner')}
-                                  className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
+                                  className="w-full px-2.5 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 />
                               ) : (
                                 <span className="text-[12px] text-slate-600">{todo.owner || 'Unassigned'}</span>
@@ -878,7 +878,7 @@ const TodoView = ({
                                     'recurrence',
                                     e.target.value === 'none' ? null : { type: e.target.value, interval: 1 }
                                   )}
-                                  className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
+                                  className="w-full px-2.5 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 >
                                   {RECURRENCE_OPTIONS.map((option) => (
                                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -898,7 +898,7 @@ const TodoView = ({
                                 <select
                                   value={todo.status || 'Open'}
                                   onChange={(e) => onUpdateTodo(todo._id, 'status', e.target.value)}
-                                  className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
+                                  className="w-full px-2.5 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 >
                                   {STATUS_OPTIONS.map((status) => (
                                     <option key={status} value={status}>{status}</option>
@@ -951,7 +951,7 @@ const TodoView = ({
                         }
                       }}
                       placeholder={`Add a task to ${bucket.label.toLowerCase()} and press Enter`}
-                      className="flex-1 px-3 py-2 text-[12px] border border-slate-200 rounded-lg bg-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
+                      className="flex-1 px-3 py-2 text-base sm:text-[12px] border border-slate-200 rounded-lg bg-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
                     />
                     <div className="text-[11px] text-slate-500 whitespace-nowrap">
                       {formatQuickAddDueHint(bucket.key)}
