@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { SCHEMAS } from './utils/constants';
 import { useAuth } from './contexts/AuthContext';
 import AuthPage from './components/AuthPage';
+import LegalPage from './components/LegalPage';
 import ProjectSelector from './components/ProjectSelector';
 import Header from './components/Header';
 import Navigation from './components/Navigation';
@@ -51,6 +52,16 @@ function App() {
   const { user, loading: authLoading } = useAuth();
   const checkoutStatus = useCheckoutStatus();
   const [currentProject, setCurrentProject] = useState(null);
+  const publicPath =
+    typeof window !== 'undefined' ? (window.location.pathname.replace(/\/+$/, '') || '/') : '/';
+
+  if (publicPath === '/privacy') {
+    return <LegalPage page="privacy" />;
+  }
+
+  if (publicPath === '/terms') {
+    return <LegalPage page="terms" />;
+  }
 
   if (authLoading) {
     return (

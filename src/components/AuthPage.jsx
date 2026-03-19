@@ -728,6 +728,18 @@ export default function AuthPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                <a
+                  href="/privacy"
+                  className={`rounded-full px-3 py-1.5 font-medium text-slate-600 transition hover:bg-white/80 hover:text-slate-950 ${LANDING_FOCUS_CLASS}`}
+                >
+                  Privacy
+                </a>
+                <a
+                  href="/terms"
+                  className={`rounded-full px-3 py-1.5 font-medium text-slate-600 transition hover:bg-white/80 hover:text-slate-950 ${LANDING_FOCUS_CLASS}`}
+                >
+                  Terms
+                </a>
                 <button
                   type="button"
                   onClick={handleOpenFeedback}
