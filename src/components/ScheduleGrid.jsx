@@ -373,6 +373,7 @@ const ScheduleGrid = ({
   const startWidth = useRef(0);
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [openHelpKey, setOpenHelpKey] = useState(null);
   const headerScrollRef = useRef(null);
   const gridBodyRef = useRef(null);
   const scrollRafRef = useRef(null);
@@ -595,15 +596,44 @@ const ScheduleGrid = ({
     />
   );
 
-  const HelpBadge = ({ text }) => (
-    <span
-      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[9px] font-bold text-slate-400"
-      title={text}
-      aria-label={text}
-    >
-      ?
-    </span>
-  );
+  const HelpBadge = ({ helpKey, text }) => {
+    const tooltipId = `schedule-help-${helpKey}`;
+    const isOpen = openHelpKey === helpKey;
+
+    return (
+      <span
+        className="relative ml-1 inline-flex align-middle"
+        onMouseEnter={() => setOpenHelpKey(helpKey)}
+        onMouseLeave={() => setOpenHelpKey((current) => (current === helpKey ? null : current))}
+      >
+        <button
+          type="button"
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[9px] font-bold text-slate-400 transition-colors hover:border-indigo-300 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          aria-label={text}
+          aria-describedby={isOpen ? tooltipId : undefined}
+          onFocus={() => setOpenHelpKey(helpKey)}
+          onBlur={() => setOpenHelpKey((current) => (current === helpKey ? null : current))}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setOpenHelpKey(null);
+              e.currentTarget.blur();
+            }
+          }}
+        >
+          ?
+        </button>
+        {isOpen && (
+          <span
+            id={tooltipId}
+            role="tooltip"
+            className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-52 -translate-x-1/2 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11px] font-normal leading-relaxed text-white shadow-xl"
+          >
+            {text}
+          </span>
+        )}
+      </span>
+    );
+  };
 
   const colGroupCols = (
     <colgroup>
@@ -667,14 +697,14 @@ const ScheduleGrid = ({
               <th style={{ textAlign: 'center', padding: '8px 2px' }}>⠿</th>
               <th className="text-center">ID <ResizeHandle column="id" /></th>
               <th>Task Name <ResizeHandle column="name" /></th>
-              <th className="text-center" colSpan={2} title="Dependencies (Parent ID + Type)">Dependencies <HelpBadge text={HEADER_HELP.dependencies} /></th>
-              <th className="text-center">Type <HelpBadge text={HEADER_HELP.type} /><ResizeHandle column="type" /></th>
-              <th className="text-center">Dur <HelpBadge text={HEADER_HELP.dur} /><ResizeHandle column="dur" /></th>
-              <th>Start Date <HelpBadge text={HEADER_HELP.start} /><ResizeHandle column="start" /></th>
+              <th className="text-center" colSpan={2} title="Dependencies (linked task + type)">Dependencies <HelpBadge helpKey="dependencies" text={HEADER_HELP.dependencies} /></th>
+              <th className="text-center">Type <HelpBadge helpKey="type" text={HEADER_HELP.type} /><ResizeHandle column="type" /></th>
+              <th className="text-center">Dur <HelpBadge helpKey="dur" text={HEADER_HELP.dur} /><ResizeHandle column="dur" /></th>
+              <th>Start Date <HelpBadge helpKey="start" text={HEADER_HELP.start} /><ResizeHandle column="start" /></th>
               <th>Finish <ResizeHandle column="finish" /></th>
-              <th className="text-center">Progress <HelpBadge text={HEADER_HELP.progress} /><ResizeHandle column="pct" /></th>
-              <th className="text-center">Track <HelpBadge text={HEADER_HELP.track} /><ResizeHandle column="track" /></th>
-              <th className="text-center" style={{ borderRight: 'none' }}>Actions <HelpBadge text={HEADER_HELP.actions} /></th>
+              <th className="text-center">Progress <HelpBadge helpKey="progress" text={HEADER_HELP.progress} /><ResizeHandle column="pct" /></th>
+              <th className="text-center">Track <HelpBadge helpKey="track" text={HEADER_HELP.track} /><ResizeHandle column="track" /></th>
+              <th className="text-center" style={{ borderRight: 'none' }}>Actions <HelpBadge helpKey="actions" text={HEADER_HELP.actions} /></th>
             </tr>
           </thead>
         </table>
