@@ -15,6 +15,7 @@ import {
   addTrackedActionIfMissing,
   removeTrackedAction
 } from './projectData/registers.js';
+import { getTodoCompletionDescriptor } from './projectData/todoCompletion.js';
 
 test('createLocalManualTodo applies defaults and project linkage', () => {
   const todo = createLocalManualTodo({
@@ -30,6 +31,18 @@ test('createLocalManualTodo applies defaults and project linkage', () => {
   assert.equal(todo.assigneeUserId, 'user_1');
   assert.equal(todo.recurrence, null);
   assert.match(todo.dueDate, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test('createLocalManualTodo keeps explicit blank due date for later bucket quick-add', () => {
+  const todo = createLocalManualTodo({
+    todoData: { title: 'Later task', dueDate: '' },
+    projectId: 'project_1',
+    userId: 'user_1',
+    ts: '2026-02-24T10:00:00.000Z'
+  });
+
+  assert.equal(todo.title, 'Later task');
+  assert.equal(todo.dueDate, '');
 });
 
 test('buildLocalTodoUpdate creates recurring follow-up when marking done', () => {
@@ -176,4 +189,90 @@ test('tracked action helpers are idempotent and removable', () => {
 
   const removed = removeTrackedAction(stillOne, 5);
   assert.equal(removed.actions.length, 0);
+});
+
+test('getTodoCompletionDescriptor maps each Tasks source to the right underlying update', () => {
+  const currentDate = '2026-03-19';
+  const nowIso = '2026-03-19T10:00:00.000Z';
+
+  assert.deepEqual(
+    getTodoCompletionDescriptor({ _id: 'todo_1', isDerived: false }, currentDate, nowIso),
+    { kind: 'manual', todoId: 'todo_1', key: 'status', value: 'Done' }
+  );
+
+  assert.deepEqual(
+    getTodoCompletionDescriptor({
+      _id: 'action_a1',
+      isDerived: true,
+      originType: 'register',
+      originRegisterType: 'actions',
+      originItemId: 'a1'
+    }, currentDate, nowIso),
+    {
+      kind: 'register',
+      registerType: 'actions',
+      itemId: 'a1',
+      patch: { status: 'Completed', completed: currentDate, update: currentDate }
+    }
+  );
+
+  assert.deepEqual(
+    getTodoCompletionDescriptor({
+      _id: 'issue_i1',
+      isDerived: true,
+      originType: 'register',
+      originRegisterType: 'issues',
+      originItemId: 'i1'
+    }, currentDate, nowIso),
+    {
+      kind: 'register',
+      registerType: 'issues',
+      itemId: 'i1',
+      patch: { status: 'Resolved', completed: currentDate, update: currentDate }
+    }
+  );
+
+  assert.deepEqual(
+    getTodoCompletionDescriptor({
+      _id: 'change_c1',
+      isDerived: true,
+      originType: 'register',
+      originRegisterType: 'changes',
+      originItemId: 'c1'
+    }, currentDate, nowIso),
+    {
+      kind: 'register',
+      registerType: 'changes',
+      itemId: 'c1',
+      patch: { status: 'Implemented', complete: currentDate, updated: currentDate }
+    }
+  );
+
+  assert.deepEqual(
+    getTodoCompletionDescriptor({
+      _id: 'tracker_t1',
+      isDerived: true,
+      originType: 'tracker',
+      originItemId: 't1'
+    }, currentDate, nowIso),
+    {
+      kind: 'tracker',
+      trackerId: 't1',
+      patch: { status: 'Completed', lastUpdated: currentDate, updatedAt: nowIso }
+    }
+  );
+
+  assert.deepEqual(
+    getTodoCompletionDescriptor({
+      _id: 'schedule_5',
+      isDerived: true,
+      originType: 'schedule',
+      originTaskId: 5
+    }, currentDate, nowIso),
+    {
+      kind: 'schedule',
+      taskId: 5,
+      patch: { pct: 100 }
+    }
+  );
 });

@@ -168,6 +168,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     addTodo,
     updateTodo,
     deleteTodo,
+    completeTodoFromView,
     reloadProject,
     setProjectData,
     setRegisters
@@ -918,8 +919,10 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
                 isExternalView={isExternalView}
                 pendingFocusTodoId={pendingTodoFocusId}
                 onTodoFocusHandled={() => setPendingTodoFocusId(null)}
+                onAddTodo={addTodo}
                 onUpdateTodo={updateTodo}
                 onDeleteTodo={deleteTodo}
+                onCompleteTodo={completeTodoFromView}
               />
             </BlurOverlay>
           ) : activeTab === 'stakeholdersmgmt' ? (

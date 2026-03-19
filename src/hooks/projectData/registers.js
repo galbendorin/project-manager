@@ -91,6 +91,13 @@ export const updateRegisterItemInState = (registers, registerType, itemId, key, 
   ))
 });
 
+export const patchRegisterItemInState = (registers, registerType, itemId, patch, nowIso) => ({
+  ...registers,
+  [registerType]: (registers[registerType] || []).map((item) => (
+    item._id === itemId ? { ...item, ...patch, updatedAt: nowIso } : item
+  ))
+});
+
 export const deleteRegisterItemFromState = (registers, registerType, itemId) => ({
   ...registers,
   [registerType]: (registers[registerType] || []).filter((item) => item._id !== itemId)

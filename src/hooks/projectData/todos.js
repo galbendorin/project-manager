@@ -6,12 +6,15 @@ export const createLocalManualTodo = ({ todoData = {}, projectId, userId, ts }) 
   const nextProjectId = Object.prototype.hasOwnProperty.call(todoData, 'projectId')
     ? todoData.projectId
     : projectId;
+  const nextDueDate = Object.prototype.hasOwnProperty.call(todoData, 'dueDate')
+    ? (todoData.dueDate || '')
+    : getCurrentDate();
 
   return {
     _id: createManualTodoId(),
     projectId: nextProjectId || null,
     title: todoData.title || 'New Task',
-    dueDate: todoData.dueDate || getCurrentDate(),
+    dueDate: nextDueDate,
     owner: todoData.owner || 'PM',
     assigneeUserId: todoData.assigneeUserId || userId || null,
     status: todoData.status === 'Done' ? 'Done' : 'Open',

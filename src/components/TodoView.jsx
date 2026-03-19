@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   filterBySearch,
   collectDerivedTodos,
   bucketByDeadline,
+  getTodoBucketDefaultDueDate,
   formatDate,
   TODO_BUCKETS
 } from '../utils/helpers';
@@ -64,6 +65,38 @@ const statusClass = (status) => {
   if (status === 'Done') return 'text-emerald-700 bg-emerald-50 border border-emerald-100';
   return 'text-amber-700 bg-amber-50 border border-amber-100';
 };
+
+const formatQuickAddDueHint = (bucketKey) => {
+  const defaultDueDate = getTodoBucketDefaultDueDate(bucketKey);
+  if (!defaultDueDate) return 'No deadline';
+
+  const parsed = new Date(`${defaultDueDate}T00:00:00`);
+  return `Due: ${parsed.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short'
+  })}`;
+};
+
+const CompletionTickButton = ({ checked, disabled, onClick, label }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    aria-label={label}
+    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border transition-all ${
+      checked
+        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+        : 'border-slate-300 bg-white text-transparent hover:border-indigo-400 hover:bg-indigo-50'
+    } ${disabled ? 'cursor-default opacity-80' : 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-400/30'}`}
+  >
+    {checked && (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+      </svg>
+    )}
+  </button>
+);
 
 const MultiSelectFilter = ({
   allLabel,
@@ -168,8 +201,10 @@ const TodoView = ({
   isExternalView,
   pendingFocusTodoId,
   onTodoFocusHandled,
+  onAddTodo,
   onUpdateTodo,
-  onDeleteTodo
+  onDeleteTodo,
+  onCompleteTodo
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [scope, setScope] = useState('project');
@@ -184,8 +219,13 @@ const TodoView = ({
   const [loadingAllProjects, setLoadingAllProjects] = useState(false);
   const [draftEdits, setDraftEdits] = useState({});
   const [mobileEditingTitleTodoId, setMobileEditingTitleTodoId] = useState(null);
+  const [quickAddValues, setQuickAddValues] = useState({});
+  const [recentlyCompletedTodos, setRecentlyCompletedTodos] = useState({});
   const draftEditsRef = useRef({});
   const titleInputRefs = useRef(new Map());
+  const quickAddInputRefs = useRef(new Map());
+  const completionTimeoutsRef = useRef(new Map());
+  const mergedOpenTodoIdsRef = useRef(new Set());
   const isMobile = useMediaQuery('(max-width: 768px)');
 
   const makeDraftKey = (todoId, field) => `${todoId}::${field}`;
@@ -199,9 +239,32 @@ const TodoView = ({
     titleInputRefs.current.delete(todoId);
   };
 
+  const setQuickAddInputRef = (bucketKey, element) => {
+    if (!bucketKey) return;
+    if (element) {
+      quickAddInputRefs.current.set(bucketKey, element);
+      return;
+    }
+    quickAddInputRefs.current.delete(bucketKey);
+  };
+
+  const setQuickAddValue = (bucketKey, value) => {
+    setQuickAddValues((prev) => ({
+      ...prev,
+      [bucketKey]: value
+    }));
+  };
+
   useEffect(() => {
     draftEditsRef.current = draftEdits;
   }, [draftEdits]);
+
+  useEffect(() => () => {
+    completionTimeoutsRef.current.forEach((timeoutId) => {
+      window.clearTimeout(timeoutId);
+    });
+    completionTimeoutsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     if (!mobileEditingTitleTodoId) return undefined;
@@ -410,6 +473,10 @@ const TodoView = ({
   }, [manualTodosByScope, derivedTodosByScope]);
 
   useEffect(() => {
+    mergedOpenTodoIdsRef.current = new Set(mergedOpenTodos.map((item) => item._id));
+  }, [mergedOpenTodos]);
+
+  useEffect(() => {
     if (!pendingFocusTodoId) return undefined;
 
     const matchingTodo = mergedOpenTodos.find((item) => item._id === pendingFocusTodoId);
@@ -441,35 +508,48 @@ const TodoView = ({
       .map((owner) => ({ value: owner, label: owner }));
   }, [mergedOpenTodos]);
 
-  const filteredTodos = useMemo(() => {
-    let items = [...mergedOpenTodos];
+  const applyTodoFilters = useCallback((items) => {
+    let nextItems = [...(items || [])];
 
-    items = items.filter((item) => matchesProjectSelection(projectFilter, item));
-    items = items.filter((item) => matchesSourceSelection(sourceFilter, item, sourceFilterKeyForItem));
-    items = items.filter((item) => matchesOwnerSelection(ownerFilter, item));
-    items = items.filter((item) => matchesRecurrenceSelection(recurrenceFilter, item));
-
-    items = filterBySearch(items, searchQuery);
+    nextItems = nextItems.filter((item) => matchesProjectSelection(projectFilter, item));
+    nextItems = nextItems.filter((item) => matchesSourceSelection(sourceFilter, item, sourceFilterKeyForItem));
+    nextItems = nextItems.filter((item) => matchesOwnerSelection(ownerFilter, item));
+    nextItems = nextItems.filter((item) => matchesRecurrenceSelection(recurrenceFilter, item));
+    nextItems = filterBySearch(nextItems, searchQuery);
 
     if (isExternalView) {
-      items = items.filter((item) => item.public !== false);
+      nextItems = nextItems.filter((item) => item.public !== false);
     }
 
-    return items;
+    return nextItems;
   }, [
-    mergedOpenTodos,
-    projectFilter,
-    sourceFilter,
     ownerFilter,
+    projectFilter,
     recurrenceFilter,
     searchQuery,
+    sourceFilter,
     isExternalView
   ]);
 
+  const filteredOpenTodos = useMemo(
+    () => applyTodoFilters(mergedOpenTodos),
+    [applyTodoFilters, mergedOpenTodos]
+  );
+
+  const filteredTransientTodos = useMemo(
+    () => Object.values(recentlyCompletedTodos).filter((entry) => applyTodoFilters([entry.todo]).length > 0),
+    [applyTodoFilters, recentlyCompletedTodos]
+  );
+
+  const visibleOpenTodos = useMemo(() => {
+    const hiddenIds = new Set(Object.keys(recentlyCompletedTodos));
+    return filteredOpenTodos.filter((item) => !hiddenIds.has(item._id));
+  }, [filteredOpenTodos, recentlyCompletedTodos]);
+
   const bucketedTodos = useMemo(() => {
-    const grouped = bucketByDeadline(filteredTodos);
+    const grouped = bucketByDeadline(visibleOpenTodos);
     return grouped.filter((bucket) => matchesBucketSelection(bucketFilter, bucket.key));
-  }, [filteredTodos, bucketFilter]);
+  }, [visibleOpenTodos, bucketFilter]);
 
   const projectSelectOptions = useMemo(() => {
     if (scope === 'project') {
@@ -487,6 +567,79 @@ const TodoView = ({
     });
     return options;
   }, [scope, projectOptions, currentProject?.id, currentProject?.name]);
+
+  const scheduleCompletionCleanup = useCallback((todoId, delayMs = 1200) => {
+    const existingTimeoutId = completionTimeoutsRef.current.get(todoId);
+    if (existingTimeoutId) {
+      window.clearTimeout(existingTimeoutId);
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      if (mergedOpenTodoIdsRef.current.has(todoId)) {
+        scheduleCompletionCleanup(todoId, 250);
+        return;
+      }
+
+      setRecentlyCompletedTodos((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, todoId)) return prev;
+        const next = { ...prev };
+        delete next[todoId];
+        return next;
+      });
+      completionTimeoutsRef.current.delete(todoId);
+    }, delayMs);
+
+    completionTimeoutsRef.current.set(todoId, timeoutId);
+  }, []);
+
+  const handleCompleteTodo = useCallback((todo, bucketKey, displayIndex) => {
+    if (!todo || isExternalView || !onCompleteTodo) return;
+
+    setRecentlyCompletedTodos((prev) => {
+      if (Object.prototype.hasOwnProperty.call(prev, todo._id)) return prev;
+      return {
+        ...prev,
+        [todo._id]: {
+          todo: {
+            ...todo,
+            status: 'Done',
+            completedAt: new Date().toISOString()
+          },
+          bucketKey,
+          displayIndex
+        }
+      };
+    });
+
+    scheduleCompletionCleanup(todo._id);
+    Promise.resolve(onCompleteTodo(todo)).catch((error) => {
+      console.error('Failed to complete task from Tasks view:', error);
+    });
+  }, [isExternalView, onCompleteTodo, scheduleCompletionCleanup]);
+
+  const handleQuickAddSubmit = useCallback(async (bucketKey) => {
+    const rawTitle = quickAddValues[bucketKey] || '';
+    const title = rawTitle.trim();
+    if (!title || !onAddTodo || isExternalView) return;
+
+    setQuickAddValue(bucketKey, '');
+
+    await onAddTodo({
+      title,
+      projectId: currentProject?.id || null,
+      dueDate: getTodoBucketDefaultDueDate(bucketKey)
+    });
+
+    window.requestAnimationFrame(() => {
+      const input = quickAddInputRefs.current.get(bucketKey);
+      if (input) {
+        input.focus();
+      }
+    });
+  }, [currentProject?.id, isExternalView, onAddTodo, quickAddValues]);
+
+  const showCompletionTick = !isExternalView;
+  const showQuickAdd = !isExternalView;
 
   return (
     <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
@@ -564,20 +717,33 @@ const TodoView = ({
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          {bucketedTodos.map((bucket) => (
+          {bucketedTodos.map((bucket) => {
+            const displayItems = [...bucket.items];
+            filteredTransientTodos
+              .filter((entry) => entry.bucketKey === bucket.key)
+              .sort((a, b) => a.displayIndex - b.displayIndex)
+              .forEach((entry) => {
+                const insertAt = Math.max(0, Math.min(entry.displayIndex, displayItems.length));
+                displayItems.splice(insertAt, 0, entry.todo);
+              });
+
+            return (
             <section key={bucket.key} className="border border-slate-200 rounded-lg overflow-hidden">
               <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                 <h3 className="text-[12px] font-semibold text-slate-700 uppercase tracking-wide">{bucket.label}</h3>
-                <span className="text-[11px] text-slate-500">{bucket.items.length}</span>
+                <span className="text-[11px] text-slate-500">{displayItems.length}</span>
               </div>
 
-              {bucket.items.length === 0 ? (
-                <div className="px-4 py-5 text-[12px] text-slate-400">No items</div>
+              {displayItems.length === 0 ? (
+                <div className="px-4 py-5 text-[12px] text-slate-400">No items yet</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-white text-[10px] uppercase font-bold text-slate-400 border-b">
                       <tr>
+                        {showCompletionTick && (
+                          <th className="px-4 py-3 border-b w-[5%] text-center">Done</th>
+                        )}
                         <th className="px-4 py-3 border-b w-[24%]">Title</th>
                         <th className="px-4 py-3 border-b w-[14%]">Project</th>
                         <th className="px-4 py-3 border-b w-[12%]">Due Date</th>
@@ -589,11 +755,26 @@ const TodoView = ({
                       </tr>
                     </thead>
                     <tbody className="text-xs">
-                      {bucket.items.map((todo) => {
-                        const isManualEditable = !isExternalView && !todo.isDerived && !isMobile;
-                        const isMobileTitleEditing = isMobile && mobileEditingTitleTodoId === todo._id && !todo.isDerived && !isExternalView;
+                      {displayItems.map((todo, displayIndex) => {
+                        const canEditManualRow = !isExternalView && !todo.isDerived && todo.status !== 'Done';
+                        const isManualEditable = canEditManualRow && !isMobile;
+                        const isMobileTitleEditing = isMobile && mobileEditingTitleTodoId === todo._id && canEditManualRow;
+                        const isCompleted = todo.status === 'Done';
                         return (
-                          <tr key={todo._id} className="border-b border-slate-100 hover:bg-slate-50 transition-all">
+                          <tr
+                            key={todo._id}
+                            className={`border-b border-slate-100 transition-all ${isCompleted ? 'bg-emerald-50/70' : 'hover:bg-slate-50'}`}
+                          >
+                            {showCompletionTick && (
+                              <td className="px-4 py-2.5 align-top text-center">
+                                <CompletionTickButton
+                                  checked={isCompleted}
+                                  disabled={isCompleted}
+                                  onClick={() => handleCompleteTodo(todo, bucket.key, displayIndex)}
+                                  label={isCompleted ? `${todo.title || 'Task'} completed` : `Mark ${todo.title || 'task'} complete`}
+                                />
+                              </td>
+                            )}
                             <td className="px-4 py-2.5 align-top">
                               {isManualEditable || isMobileTitleEditing ? (
                                 <input
@@ -627,7 +808,7 @@ const TodoView = ({
                                       setMobileEditingTitleTodoId(todo._id);
                                     }
                                   }}
-                                  className={`w-full text-left ${isMobile && !todo.isDerived && !isExternalView ? 'cursor-text' : 'cursor-default'} ${todo.status === 'Done' ? 'line-through text-slate-400' : 'text-[12px] text-slate-700'}`}
+                                  className={`w-full text-left ${isMobile && !todo.isDerived && !isExternalView ? 'cursor-text' : 'cursor-default'} ${isCompleted ? 'line-through text-slate-400' : 'text-[12px] text-slate-700'}`}
                                 >
                                   {todo.title || 'Untitled'}
                                 </button>
@@ -733,14 +914,33 @@ const TodoView = ({
                   </table>
                 </div>
               )}
-            </section>
-          ))}
 
-          {filteredTodos.length === 0 && (
-            <div className="text-center py-10 text-slate-400 text-sm">
-              No open tasks found
-            </div>
-          )}
+              {showQuickAdd && (
+                <div className="border-t border-slate-200 bg-slate-50/80 px-4 py-3">
+                  <div className={`flex ${isMobile ? 'flex-col items-stretch gap-2' : 'items-center gap-3'}`}>
+                    <input
+                      type="text"
+                      ref={(element) => setQuickAddInputRef(bucket.key, element)}
+                      value={quickAddValues[bucket.key] || ''}
+                      onChange={(e) => setQuickAddValue(bucket.key, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleQuickAddSubmit(bucket.key);
+                        }
+                      }}
+                      placeholder={`Add a task to ${bucket.label.toLowerCase()} and press Enter`}
+                      className="flex-1 px-3 py-2 text-[12px] border border-slate-200 rounded-lg bg-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
+                    />
+                    <div className="text-[11px] text-slate-500 whitespace-nowrap">
+                      {formatQuickAddDueHint(bucket.key)}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+            );
+          })}
         </div>
       </div>
     </div>

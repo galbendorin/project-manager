@@ -652,6 +652,30 @@ const getMondayStart = (value) => {
   return addCalendarDays(dt, offset);
 };
 
+const getTodoBucketBoundaries = (today = getCurrentDate()) => {
+  const todayDate = startOfDay(today) || startOfDay(new Date());
+  const thisWeekStart = getMondayStart(todayDate);
+  const thisWeekEnd = addCalendarDays(thisWeekStart, 6);
+  const nextWeekStart = addCalendarDays(thisWeekEnd, 1);
+  const nextWeekEnd = addCalendarDays(nextWeekStart, 6);
+  const inTwoWeeksStart = addCalendarDays(nextWeekEnd, 1);
+  const inTwoWeeksEnd = addCalendarDays(inTwoWeeksStart, 6);
+  const weeksThreeToFourStart = addCalendarDays(inTwoWeeksEnd, 1);
+  const weeksThreeToFourEnd = addCalendarDays(weeksThreeToFourStart, 13);
+
+  return {
+    todayDate,
+    thisWeekStart,
+    thisWeekEnd,
+    nextWeekStart,
+    nextWeekEnd,
+    inTwoWeeksStart,
+    inTwoWeeksEnd,
+    weeksThreeToFourStart,
+    weeksThreeToFourEnd
+  };
+};
+
 const RECURRENCE_TYPE_ALIASES = {
   weekday: 'weekdays',
   weekdays: 'weekdays',
@@ -757,7 +781,11 @@ const makeDerivedTodo = ({
   createdAt,
   updatedAt,
   completedAt,
-  publicValue = true
+  publicValue = true,
+  originType = '',
+  originRegisterType = '',
+  originItemId = '',
+  originTaskId = null
 }) => ({
   _id: id,
   title: title || 'Untitled',
@@ -770,7 +798,11 @@ const makeDerivedTodo = ({
   completedAt: completedAt || '',
   isDerived: true,
   source,
-  public: publicValue !== false
+  public: publicValue !== false,
+  originType,
+  originRegisterType,
+  originItemId,
+  originTaskId
 });
 
 /**
@@ -796,7 +828,11 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       createdAt: item.createdAt,
       updatedAt: item.updatedAt || item.update,
       completedAt: item.completed,
-      publicValue: item.public
+      publicValue: item.public,
+      originType: 'register',
+      originRegisterType: 'actions',
+      originItemId: item._id || String(idx),
+      originTaskId: null
     }));
 
   const issueTodos = issues
@@ -811,7 +847,11 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       createdAt: item.createdAt,
       updatedAt: item.updatedAt || item.update,
       completedAt: item.completed,
-      publicValue: item.public
+      publicValue: item.public,
+      originType: 'register',
+      originRegisterType: 'issues',
+      originItemId: item._id || String(idx),
+      originTaskId: null
     }));
 
   const changeTodos = changes
@@ -826,7 +866,11 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       createdAt: item.createdAt,
       updatedAt: item.updatedAt || item.updated,
       completedAt: item.complete,
-      publicValue: item.public
+      publicValue: item.public,
+      originType: 'register',
+      originRegisterType: 'changes',
+      originItemId: item._id || String(idx),
+      originTaskId: null
     }));
 
   const taskById = new Map(tasks.map(task => [task.id, task]));
@@ -853,7 +897,11 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
         createdAt: item.createdAt || item.dateAdded,
         updatedAt: item.updatedAt || item.lastUpdated,
         completedAt: item.status === 'Completed' ? (item.updatedAt || item.lastUpdated || '') : '',
-        publicValue: item.public
+        publicValue: item.public,
+        originType: 'tracker',
+        originRegisterType: '',
+        originItemId: item._id || String(idx),
+        originTaskId: item.taskId ?? null
       });
     });
 
@@ -870,7 +918,11 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       completedAt: Number(task.pct) >= 100 ? (task.updatedAt || '') : '',
-      publicValue: true
+      publicValue: true,
+      originType: 'schedule',
+      originRegisterType: '',
+      originItemId: '',
+      originTaskId: task.id ?? null
     }));
 
   return [
@@ -891,19 +943,47 @@ export const TODO_BUCKETS = [
   { key: 'later', label: 'Later / no deadline' }
 ];
 
+export const getTodoBucketDefaultDueDate = (bucketKey, today = getCurrentDate()) => {
+  const {
+    todayDate,
+    thisWeekEnd,
+    nextWeekEnd,
+    inTwoWeeksEnd,
+    weeksThreeToFourEnd
+  } = getTodoBucketBoundaries(today);
+
+  switch (bucketKey) {
+    case 'overdue':
+      return toISODateString(addCalendarDays(todayDate, -1));
+    case 'this_week':
+      return toISODateString(thisWeekEnd);
+    case 'next_week':
+      return toISODateString(nextWeekEnd);
+    case 'in_2_weeks':
+      return toISODateString(inTwoWeeksEnd);
+    case 'weeks_3_4':
+      return toISODateString(weeksThreeToFourEnd);
+    case 'later':
+    default:
+      return '';
+  }
+};
+
 /**
  * Group todo-like items into time buckets relative to `today`.
  */
 export const bucketByDeadline = (items = [], today = getCurrentDate()) => {
-  const todayDate = startOfDay(today) || startOfDay(new Date());
-  const thisWeekStart = getMondayStart(todayDate);
-  const thisWeekEnd = addCalendarDays(thisWeekStart, 6);
-  const nextWeekStart = addCalendarDays(thisWeekEnd, 1);
-  const nextWeekEnd = addCalendarDays(nextWeekStart, 6);
-  const inTwoWeeksStart = addCalendarDays(nextWeekEnd, 1);
-  const inTwoWeeksEnd = addCalendarDays(inTwoWeeksStart, 6);
-  const weeksThreeToFourStart = addCalendarDays(inTwoWeeksEnd, 1);
-  const weeksThreeToFourEnd = addCalendarDays(weeksThreeToFourStart, 13);
+  const {
+    todayDate,
+    thisWeekStart,
+    thisWeekEnd,
+    nextWeekStart,
+    nextWeekEnd,
+    inTwoWeeksStart,
+    inTwoWeeksEnd,
+    weeksThreeToFourStart,
+    weeksThreeToFourEnd
+  } = getTodoBucketBoundaries(today);
 
   const getBucketKey = (dueDateValue) => {
     const dueDate = startOfDay(dueDateValue);

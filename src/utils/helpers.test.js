@@ -15,6 +15,7 @@ import {
   hasDependencies,
   collectDerivedTodos,
   bucketByDeadline,
+  getTodoBucketDefaultDueDate,
   getNextRecurringDueDate
 } from './helpers.js';
 
@@ -177,6 +178,44 @@ test('collectDerivedTodos merges action, issue, change, tracker, and tracked sch
   assert.equal(sources.has('Project Plan'), true);
 });
 
+test('collectDerivedTodos attaches origin metadata for source-aware completion', () => {
+  const projectData = [
+    { id: 7, name: 'Tracked task', start: '2026-02-23', dur: 1, tracked: true, pct: 0 }
+  ];
+  const registers = {
+    actions: [{ _id: 'a1', description: 'Send status update', actionassignedto: 'PM', target: '2026-02-24', status: 'Open' }],
+    issues: [{ _id: 'i1', description: 'Resolve firewall rule', issueassignedto: 'SecOps', target: '2026-02-25', status: 'In Progress' }],
+    changes: [{ _id: 'c1', description: 'Approve maintenance window', assignedto: 'CAB', target: '2026-02-26', status: 'Approved' }]
+  };
+  const tracker = [{ _id: 't1', taskId: 99, taskName: 'Tracker item', status: 'In Progress' }];
+
+  const derived = collectDerivedTodos(projectData, registers, tracker);
+  const actionTodo = derived.find((item) => item.source === 'Action Log');
+  const issueTodo = derived.find((item) => item.source === 'Issue Log');
+  const changeTodo = derived.find((item) => item.source === 'Change Log');
+  const trackerTodo = derived.find((item) => item.source === 'Master Tracker');
+  const scheduleTodo = derived.find((item) => item.source === 'Project Plan');
+
+  assert.equal(actionTodo.originType, 'register');
+  assert.equal(actionTodo.originRegisterType, 'actions');
+  assert.equal(actionTodo.originItemId, 'a1');
+
+  assert.equal(issueTodo.originType, 'register');
+  assert.equal(issueTodo.originRegisterType, 'issues');
+  assert.equal(issueTodo.originItemId, 'i1');
+
+  assert.equal(changeTodo.originType, 'register');
+  assert.equal(changeTodo.originRegisterType, 'changes');
+  assert.equal(changeTodo.originItemId, 'c1');
+
+  assert.equal(trackerTodo.originType, 'tracker');
+  assert.equal(trackerTodo.originItemId, 't1');
+  assert.equal(trackerTodo.originTaskId, 99);
+
+  assert.equal(scheduleTodo.originType, 'schedule');
+  assert.equal(scheduleTodo.originTaskId, 7);
+});
+
 test('bucketByDeadline places todos in expected deadline buckets', () => {
   const items = [
     { _id: '1', title: 'Late', dueDate: '2026-02-22', status: 'Open' },       // Sunday before today
@@ -197,6 +236,17 @@ test('bucketByDeadline places todos in expected deadline buckets', () => {
   assert.equal(byKey.in_2_weeks, 1);
   assert.equal(byKey.weeks_3_4, 1);
   assert.equal(byKey.later, 2);
+});
+
+test('getTodoBucketDefaultDueDate aligns new manual tasks with bucket boundaries', () => {
+  const today = '2026-02-23';
+
+  assert.equal(getTodoBucketDefaultDueDate('overdue', today), '2026-02-22');
+  assert.equal(getTodoBucketDefaultDueDate('this_week', today), '2026-03-01');
+  assert.equal(getTodoBucketDefaultDueDate('next_week', today), '2026-03-08');
+  assert.equal(getTodoBucketDefaultDueDate('in_2_weeks', today), '2026-03-15');
+  assert.equal(getTodoBucketDefaultDueDate('weeks_3_4', today), '2026-03-29');
+  assert.equal(getTodoBucketDefaultDueDate('later', today), '');
 });
 
 test('getNextRecurringDueDate handles recurrence aliases, fallback, and interval edge cases', () => {

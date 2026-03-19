@@ -11,6 +11,7 @@ import {
   syncTrackedActionFromTask,
   addRegisterItemToState,
   updateRegisterItemInState,
+  patchRegisterItemInState,
   deleteRegisterItemFromState,
   toggleRegisterItemPublicInState
 } from './projectData/registers';
@@ -26,6 +27,7 @@ import {
   mapManualTodoRow,
   isMissingRelationError
 } from './projectData/manualTodoUtils';
+import { getTodoCompletionDescriptor } from './projectData/todoCompletion';
 
 // Helper: get ISO timestamp
 const now = () => new Date().toISOString();
@@ -496,6 +498,40 @@ export const useProjectData = (projectId, userId = null) => {
     }
   }, [userId]);
 
+  const completeTodoFromView = useCallback(async (todo) => {
+    const completion = getTodoCompletionDescriptor(todo, getCurrentDate(), now());
+    if (!completion) return;
+
+    if (completion.kind === 'manual') {
+      await updateTodo(completion.todoId, completion.key, completion.value);
+      return;
+    }
+
+    if (completion.kind === 'register') {
+      setRegisters((prev) => patchRegisterItemInState(
+        prev,
+        completion.registerType,
+        completion.itemId,
+        completion.patch,
+        now()
+      ));
+      return;
+    }
+
+    if (completion.kind === 'tracker') {
+      setTracker((prev) => prev.map((item) => (
+        item._id === completion.trackerId
+          ? { ...item, ...completion.patch }
+          : item
+      )));
+      return;
+    }
+
+    if (completion.kind === 'schedule') {
+      updateTask(completion.taskId, completion.patch);
+    }
+  }, [updateTask, updateTodo]);
+
   // ==================== TEMPLATE ====================
 
   const loadTemplate = useCallback(() => {
@@ -575,6 +611,7 @@ export const useProjectData = (projectId, userId = null) => {
     addTodo,
     updateTodo,
     deleteTodo,
+    completeTodoFromView,
     reloadProject,
     setProjectData,
     setRegisters,
