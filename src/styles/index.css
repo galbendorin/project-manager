@@ -8,6 +8,8 @@ html, body, #root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 13px;
   color: #333;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 html,
@@ -17,6 +19,15 @@ body {
 
 body {
   overscroll-behavior-y: none;
+}
+
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea,
+  .editing-input {
+    font-size: 16px !important;
+  }
 }
 
 .standalone-web-app,
