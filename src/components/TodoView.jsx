@@ -17,6 +17,7 @@ import {
   matchesSourceSelection,
   toggleMultiFilterValue,
 } from '../utils/todoFilterUtils';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 const STATUS_OPTIONS = ['Open', 'Done'];
 
@@ -168,8 +169,10 @@ const TodoView = ({
   const [allProjectsData, setAllProjectsData] = useState([]);
   const [loadingAllProjects, setLoadingAllProjects] = useState(false);
   const [draftEdits, setDraftEdits] = useState({});
+  const [mobileEditingTitleTodoId, setMobileEditingTitleTodoId] = useState(null);
   const draftEditsRef = useRef({});
   const titleInputRefs = useRef(new Map());
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   const makeDraftKey = (todoId, field) => `${todoId}::${field}`;
 
@@ -185,6 +188,20 @@ const TodoView = ({
   useEffect(() => {
     draftEditsRef.current = draftEdits;
   }, [draftEdits]);
+
+  useEffect(() => {
+    if (!mobileEditingTitleTodoId) return undefined;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const input = titleInputRefs.current.get(mobileEditingTitleTodoId);
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [mobileEditingTitleTodoId]);
 
   useEffect(() => {
     const activeIds = new Set((todos || []).map((item) => item._id));
@@ -384,6 +401,10 @@ const TodoView = ({
     const matchingTodo = mergedOpenTodos.find((item) => item._id === pendingFocusTodoId);
     if (!matchingTodo) return undefined;
 
+    if (isMobile) {
+      setMobileEditingTitleTodoId(pendingFocusTodoId);
+    }
+
     const frameId = window.requestAnimationFrame(() => {
       const input = titleInputRefs.current.get(pendingFocusTodoId);
       if (input) {
@@ -394,7 +415,7 @@ const TodoView = ({
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [mergedOpenTodos, onTodoFocusHandled, pendingFocusTodoId]);
+  }, [isMobile, mergedOpenTodos, onTodoFocusHandled, pendingFocusTodoId]);
 
   const ownerOptions = useMemo(() => {
     const values = new Set();
@@ -555,30 +576,47 @@ const TodoView = ({
                     </thead>
                     <tbody className="text-xs">
                       {bucket.items.map((todo) => {
-                        const isManualEditable = !isExternalView && !todo.isDerived;
+                        const isManualEditable = !isExternalView && !todo.isDerived && !isMobile;
+                        const isMobileTitleEditing = isMobile && mobileEditingTitleTodoId === todo._id && !todo.isDerived && !isExternalView;
                         return (
                           <tr key={todo._id} className="border-b border-slate-100 hover:bg-slate-50 transition-all">
                             <td className="px-4 py-2.5 align-top">
-                              {isManualEditable ? (
+                              {isManualEditable || isMobileTitleEditing ? (
                                 <input
                                   type="text"
                                   ref={(element) => setTitleInputRef(todo._id, element)}
                                   value={getDraftValue(todo, 'title')}
                                   onChange={(e) => setDraftValue(todo._id, 'title', e.target.value)}
-                                  onBlur={() => commitDraftValue(todo, 'title')}
+                                  onBlur={() => {
+                                    commitDraftValue(todo, 'title');
+                                    if (isMobile) {
+                                      setMobileEditingTitleTodoId((currentId) => (currentId === todo._id ? null : currentId));
+                                    }
+                                  }}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                       e.preventDefault();
                                       commitDraftValue(todo, 'title');
+                                      if (isMobile) {
+                                        setMobileEditingTitleTodoId((currentId) => (currentId === todo._id ? null : currentId));
+                                      }
                                       e.currentTarget.blur();
                                     }
                                   }}
                                   className="w-full px-2.5 py-1.5 text-[12px] border border-slate-200 rounded-md outline-none focus:border-indigo-300"
                                 />
                               ) : (
-                                <div className={todo.status === 'Done' ? 'line-through text-slate-400' : 'text-[12px] text-slate-700'}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isMobile && !todo.isDerived && !isExternalView) {
+                                      setMobileEditingTitleTodoId(todo._id);
+                                    }
+                                  }}
+                                  className={`w-full text-left ${isMobile && !todo.isDerived && !isExternalView ? 'cursor-text' : 'cursor-default'} ${todo.status === 'Done' ? 'line-through text-slate-400' : 'text-[12px] text-slate-700'}`}
+                                >
                                   {todo.title || 'Untitled'}
-                                </div>
+                                </button>
                               )}
                             </td>
                             <td className="px-4 py-2.5 align-top">
