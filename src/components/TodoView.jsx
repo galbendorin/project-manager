@@ -78,6 +78,9 @@ const formatQuickAddDueHint = (bucketKey) => {
   })}`;
 };
 
+const DESKTOP_COMPLETE_DELAY_MS = 1600;
+const MOBILE_COMPLETE_DELAY_MS = 3200;
+
 const CompletionTickButton = ({ checked, disabled, onClick, label }) => (
   <button
     type="button"
@@ -220,12 +223,11 @@ const TodoView = ({
   const [draftEdits, setDraftEdits] = useState({});
   const [mobileEditingTitleTodoId, setMobileEditingTitleTodoId] = useState(null);
   const [quickAddValues, setQuickAddValues] = useState({});
-  const [recentlyCompletedTodos, setRecentlyCompletedTodos] = useState({});
+  const [pendingCompletedTodos, setPendingCompletedTodos] = useState({});
   const draftEditsRef = useRef({});
   const titleInputRefs = useRef(new Map());
   const quickAddInputRefs = useRef(new Map());
   const completionTimeoutsRef = useRef(new Map());
-  const mergedOpenTodoIdsRef = useRef(new Set());
   const isMobile = useMediaQuery('(max-width: 768px)');
 
   const makeDraftKey = (todoId, field) => `${todoId}::${field}`;
@@ -473,10 +475,6 @@ const TodoView = ({
   }, [manualTodosByScope, derivedTodosByScope]);
 
   useEffect(() => {
-    mergedOpenTodoIdsRef.current = new Set(mergedOpenTodos.map((item) => item._id));
-  }, [mergedOpenTodos]);
-
-  useEffect(() => {
     if (!pendingFocusTodoId) return undefined;
 
     const matchingTodo = mergedOpenTodos.find((item) => item._id === pendingFocusTodoId);
@@ -537,14 +535,14 @@ const TodoView = ({
   );
 
   const filteredTransientTodos = useMemo(
-    () => Object.values(recentlyCompletedTodos).filter((entry) => applyTodoFilters([entry.todo]).length > 0),
-    [applyTodoFilters, recentlyCompletedTodos]
+    () => Object.values(pendingCompletedTodos).filter((entry) => applyTodoFilters([entry.todo]).length > 0),
+    [applyTodoFilters, pendingCompletedTodos]
   );
 
   const visibleOpenTodos = useMemo(() => {
-    const hiddenIds = new Set(Object.keys(recentlyCompletedTodos));
+    const hiddenIds = new Set(Object.keys(pendingCompletedTodos));
     return filteredOpenTodos.filter((item) => !hiddenIds.has(item._id));
-  }, [filteredOpenTodos, recentlyCompletedTodos]);
+  }, [filteredOpenTodos, pendingCompletedTodos]);
 
   const bucketedTodos = useMemo(() => {
     const grouped = bucketByDeadline(visibleOpenTodos);
@@ -568,54 +566,63 @@ const TodoView = ({
     return options;
   }, [scope, projectOptions, currentProject?.id, currentProject?.name]);
 
-  const scheduleCompletionCleanup = useCallback((todoId, delayMs = 1200) => {
+  const clearPendingCompletion = useCallback((todoId) => {
     const existingTimeoutId = completionTimeoutsRef.current.get(todoId);
+    if (existingTimeoutId) {
+      window.clearTimeout(existingTimeoutId);
+      completionTimeoutsRef.current.delete(todoId);
+    }
+
+    setPendingCompletedTodos((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, todoId)) return prev;
+      const next = { ...prev };
+      delete next[todoId];
+      return next;
+    });
+  }, []);
+
+  const schedulePendingCompletion = useCallback((todo, delayMs) => {
+    const existingTimeoutId = completionTimeoutsRef.current.get(todo._id);
     if (existingTimeoutId) {
       window.clearTimeout(existingTimeoutId);
     }
 
     const timeoutId = window.setTimeout(() => {
-      if (mergedOpenTodoIdsRef.current.has(todoId)) {
-        scheduleCompletionCleanup(todoId, 250);
-        return;
-      }
-
-      setRecentlyCompletedTodos((prev) => {
-        if (!Object.prototype.hasOwnProperty.call(prev, todoId)) return prev;
-        const next = { ...prev };
-        delete next[todoId];
-        return next;
-      });
-      completionTimeoutsRef.current.delete(todoId);
+      Promise.resolve(onCompleteTodo(todo))
+        .catch((error) => {
+          console.error('Failed to complete task from Tasks view:', error);
+        })
+        .finally(() => {
+          clearPendingCompletion(todo._id);
+        });
     }, delayMs);
 
-    completionTimeoutsRef.current.set(todoId, timeoutId);
-  }, []);
+    completionTimeoutsRef.current.set(todo._id, timeoutId);
+  }, [clearPendingCompletion, onCompleteTodo]);
 
   const handleCompleteTodo = useCallback((todo, bucketKey, displayIndex) => {
     if (!todo || isExternalView || !onCompleteTodo) return;
 
-    setRecentlyCompletedTodos((prev) => {
-      if (Object.prototype.hasOwnProperty.call(prev, todo._id)) return prev;
-      return {
-        ...prev,
-        [todo._id]: {
-          todo: {
-            ...todo,
-            status: 'Done',
-            completedAt: new Date().toISOString()
-          },
-          bucketKey,
-          displayIndex
-        }
-      };
-    });
+    if (Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id)) {
+      clearPendingCompletion(todo._id);
+      return;
+    }
 
-    scheduleCompletionCleanup(todo._id);
-    Promise.resolve(onCompleteTodo(todo)).catch((error) => {
-      console.error('Failed to complete task from Tasks view:', error);
-    });
-  }, [isExternalView, onCompleteTodo, scheduleCompletionCleanup]);
+    setPendingCompletedTodos((prev) => ({
+      ...prev,
+      [todo._id]: {
+        todo: {
+          ...todo,
+          status: 'Done',
+          completedAt: new Date().toISOString()
+        },
+        bucketKey,
+        displayIndex
+      }
+    }));
+
+    schedulePendingCompletion(todo, isMobile ? MOBILE_COMPLETE_DELAY_MS : DESKTOP_COMPLETE_DELAY_MS);
+  }, [clearPendingCompletion, isExternalView, isMobile, onCompleteTodo, pendingCompletedTodos, schedulePendingCompletion]);
 
   const handleQuickAddSubmit = useCallback(async (bucketKey) => {
     const rawTitle = quickAddValues[bucketKey] || '';
@@ -760,6 +767,7 @@ const TodoView = ({
                         const isManualEditable = canEditManualRow && !isMobile;
                         const isMobileTitleEditing = isMobile && mobileEditingTitleTodoId === todo._id && canEditManualRow;
                         const isCompleted = todo.status === 'Done';
+                        const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id);
                         return (
                           <tr
                             key={todo._id}
@@ -769,9 +777,15 @@ const TodoView = ({
                               <td className="px-4 py-2.5 align-top text-center">
                                 <CompletionTickButton
                                   checked={isCompleted}
-                                  disabled={isCompleted}
+                                  disabled={false}
                                   onClick={() => handleCompleteTodo(todo, bucket.key, displayIndex)}
-                                  label={isCompleted ? `${todo.title || 'Task'} completed` : `Mark ${todo.title || 'task'} complete`}
+                                  label={
+                                    isPendingCompletion
+                                      ? `Undo completion for ${todo.title || 'task'}`
+                                      : isCompleted
+                                        ? `${todo.title || 'Task'} completed`
+                                        : `Mark ${todo.title || 'task'} complete`
+                                  }
                                 />
                               </td>
                             )}
@@ -891,9 +905,16 @@ const TodoView = ({
                                   ))}
                                 </select>
                               ) : (
-                                <span className={`inline-flex items-center px-2 py-1 rounded-md text-[11px] font-medium ${statusClass(todo.status)}`}>
-                                  {todo.status || 'Open'}
-                                </span>
+                                <div className="space-y-1">
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-md text-[11px] font-medium ${statusClass(todo.status)}`}>
+                                    {isPendingCompletion ? 'Completing...' : (todo.status || 'Open')}
+                                  </span>
+                                  {isPendingCompletion && (
+                                    <div className="text-[10px] text-slate-500">
+                                      Tap the tick again to undo
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </td>
                             <td className="px-4 py-2.5 text-center align-top">
