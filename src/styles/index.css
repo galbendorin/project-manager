@@ -10,6 +10,29 @@ html, body, #root {
   color: #333;
 }
 
+html,
+body {
+  background: #f8fafc;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+.standalone-web-app,
+.standalone-web-app body,
+.standalone-web-app #root {
+  min-height: 100dvh;
+}
+
+@media (display-mode: standalone) {
+  html,
+  body,
+  #root {
+    min-height: 100dvh;
+  }
+}
+
 /* Custom Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;

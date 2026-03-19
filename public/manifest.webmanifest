@@ -1,0 +1,23 @@
+{
+  "name": "PM OS - Project Delivery Workspace",
+  "short_name": "PM OS",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
+  "description": "Project delivery workspace for plans, tasks, logs, and reporting.",
+  "icons": [
+    {
+      "src": "/pm-os-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
