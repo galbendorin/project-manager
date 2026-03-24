@@ -55,6 +55,19 @@ const isMissingRelationError = (error, relationName) => {
   return msg.includes(relationName.toLowerCase()) && (msg.includes('relation') || msg.includes('relationship'));
 };
 
+const isRowLevelSecurityError = (error, tableName = '') => {
+  const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return msg.includes('row-level security')
+    && (!tableName || msg.includes(tableName.toLowerCase()));
+};
+
+const generateProjectId = () => {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return '';
+};
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const ProjectSelector = ({ onSelectProject }) => {
@@ -92,23 +105,74 @@ const ProjectSelector = ({ onSelectProject }) => {
       ? 'id, user_id, name, is_demo, created_at, updated_at'
       : 'id, user_id, name, created_at, updated_at';
 
-    const insertPayload = includeIsDemo
+    const baseInsertPayload = includeIsDemo
       ? payload
       : Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'is_demo'));
+    const generatedProjectId = baseInsertPayload.id || generateProjectId();
+    const insertPayload = generatedProjectId
+      ? {
+          id: generatedProjectId,
+          ...baseInsertPayload
+        }
+      : baseInsertPayload;
 
-    let { data, error } = await supabase
-      .from('projects')
-      .insert(insertPayload)
-      .select(selectCols)
-      .single();
+    const insertProjectWithFetchFallback = async (projectPayload, projectSelectCols, expectsIsDemo) => {
+      let { data, error } = await supabase
+        .from('projects')
+        .insert(projectPayload)
+        .select(projectSelectCols)
+        .single();
+
+      if (!error || !projectPayload.id || !isRowLevelSecurityError(error, 'projects')) {
+        return { data, error };
+      }
+
+      const { error: insertError } = await supabase
+        .from('projects')
+        .insert(projectPayload);
+
+      const insertSucceededOrAlreadyExists = !insertError || insertError.code === '23505';
+      if (!insertSucceededOrAlreadyExists) {
+        return { data: null, error: insertError };
+      }
+
+      const fetchResult = await supabase
+        .from('projects')
+        .select(projectSelectCols)
+        .eq('id', projectPayload.id)
+        .single();
+
+      if (!fetchResult.error && fetchResult.data) {
+        return fetchResult;
+      }
+
+      if (fetchResult.error && insertError?.code === '23505') {
+        return { data: null, error: fetchResult.error };
+      }
+
+      const optimisticTimestamp = new Date().toISOString();
+      return {
+        data: {
+          id: projectPayload.id,
+          user_id: projectPayload.user_id,
+          name: projectPayload.name || '',
+          is_demo: expectsIsDemo ? Boolean(projectPayload.is_demo) : false,
+          created_at: optimisticTimestamp,
+          updated_at: optimisticTimestamp
+        },
+        error: null
+      };
+    };
+
+    let { data, error } = await insertProjectWithFetchFallback(insertPayload, selectCols, includeIsDemo);
 
     if (error && includeIsDemo && isMissingColumnError(error, 'is_demo')) {
       supportsIsDemoRef.current = false;
-      const retry = await supabase
-        .from('projects')
-        .insert(Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'is_demo')))
-        .select('id, user_id, name, created_at, updated_at')
-        .single();
+      const retry = await insertProjectWithFetchFallback(
+        Object.fromEntries(Object.entries(insertPayload).filter(([key]) => key !== 'is_demo')),
+        'id, user_id, name, created_at, updated_at',
+        false
+      );
       data = retry.data;
       error = retry.error;
     }
@@ -124,11 +188,7 @@ const ProjectSelector = ({ onSelectProject }) => {
         const retryPayload = Object.fromEntries(
           Object.entries(insertPayload).filter(([key]) => key !== missingColumn)
         );
-        const retry = await supabase
-          .from('projects')
-          .insert(retryPayload)
-          .select(selectCols)
-          .single();
+        const retry = await insertProjectWithFetchFallback(retryPayload, selectCols, includeIsDemo);
         data = retry.data;
         error = retry.error;
       }
