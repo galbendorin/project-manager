@@ -8,6 +8,29 @@
 const API_ENDPOINT = '/api/ai-generate'
 const MAX_USER_MESSAGE_CHARS = 120_000
 
+const readStoredAccessToken = () => {
+  if (typeof window === 'undefined' || !window.localStorage) return ''
+
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index)
+      if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) continue
+
+      const raw = window.localStorage.getItem(key)
+      if (!raw) continue
+
+      const parsed = JSON.parse(raw)
+      if (parsed?.access_token) return parsed.access_token
+      if (parsed?.currentSession?.access_token) return parsed.currentSession.access_token
+      if (Array.isArray(parsed) && parsed[0]?.access_token) return parsed[0].access_token
+    }
+  } catch {
+    return ''
+  }
+
+  return ''
+}
+
 const truncatePrompt = (value, limit = MAX_USER_MESSAGE_CHARS) => {
   if (!value) return ''
   if (value.length <= limit) return value
@@ -21,6 +44,9 @@ const normalizeAiError = (message = '', status, { usePlatformKey = false } = {})
     return 'Request too large. Narrow the date range or reduce notes and try again.'
   }
   if (text.includes('invalid api key') || text.includes('incorrect api key') || text.includes('authentication')) {
+    if (usePlatformKey) {
+      return 'Your session expired or trial AI access is unavailable. Sign in again and retry.'
+    }
     return 'API key rejected. Re-check provider, key, and key permissions in AI settings.'
   }
   if (text.includes('quota') || text.includes('billing') || text.includes('insufficient credits')) {
@@ -80,6 +106,12 @@ export const generateAiContent = async ({
     const headers = { 'Content-Type': 'application/json' }
     if (apiKey && !usePlatformKey) {
       headers['X-Api-Key'] = apiKey
+    }
+    if (usePlatformKey) {
+      const accessToken = readStoredAccessToken()
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`
+      }
     }
 
     const response = await fetch(API_ENDPOINT, {

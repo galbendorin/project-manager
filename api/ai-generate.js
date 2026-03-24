@@ -7,33 +7,16 @@
  * The key is only in-transit; it is never logged or stored.
  */
 
+import { applyApiCors, requireAuthenticatedUser } from './_auth.js'
+
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 const OPENAI_API = 'https://api.openai.com/v1/chat/completions'
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://pmworkspace.com'
-
-// Allowed origins — add your production domain(s) here
-const ALLOWED_ORIGINS = [
-  APP_URL,
-  'https://pmworkspace.com',
-  'https://www.pmworkspace.com',
-  'https://project-manager-app-tau.vercel.app',
-  'http://localhost:3000',
-  'http://localhost:3002',
-  'http://localhost:5173'
-]
 
 // Max request body size (200KB — generous for prompts)
 const MAX_BODY_SIZE = 200_000
 
 export default async function handler(req, res) {
-  // CORS — restrict to known origins
-  const origin = req.headers.origin || ''
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin)
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Api-Key')
-  res.setHeader('Vary', 'Origin')
+  applyApiCors(req, res)
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
@@ -52,6 +35,11 @@ export default async function handler(req, res) {
   // Accept API key from header (preferred) or body (backward compat)
   const userApiKey = req.headers['x-api-key'] || req.body?.apiKey
   const { provider, model, systemPrompt, userMessage, maxTokens = 4096, stream = false, usePlatformKey = false } = req.body || {}
+
+  if (usePlatformKey) {
+    const user = await requireAuthenticatedUser(req, res)
+    if (!user) return
+  }
 
   // Platform key mode: trial users use the server-side Anthropic key
   let apiKey = userApiKey

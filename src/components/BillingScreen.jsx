@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AuthenticatedFooter from './AuthenticatedFooter';
 import { usePlan } from '../contexts/PlanContext';
 import { useAuth } from '../contexts/AuthContext';
 import { markBillingSyncPending } from '../utils/billingSync';
@@ -198,11 +199,10 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-100 px-8 py-4">
-          <p className="text-xs text-gray-400 text-center">
-            Payments are processed securely via Stripe. Cancel anytime from the billing portal.
-          </p>
-        </div>
+        <AuthenticatedFooter
+          compact
+          note="Payments are processed securely via Stripe. Cancel anytime from the billing portal."
+        />
       </div>
     </div>
   );

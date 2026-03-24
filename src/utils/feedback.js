@@ -1,4 +1,9 @@
-export const FEEDBACK_EMAIL = 'galben.dorin@yahoo.com';
+export const COMPANY_NAME = 'Company Name';
+export const PRODUCT_NAME = 'PM Workspace';
+export const INTERNAL_PRODUCT_NAME = 'PM OS';
+export const SUPPORT_EMAIL = 'support@pmworkspace.com';
+export const PRIVACY_EMAIL = 'privacy@pmworkspace.com';
+export const FEEDBACK_EMAIL = SUPPORT_EMAIL;
 
 const TAB_LABELS = {
   schedule: 'Project Plan',
@@ -30,8 +35,8 @@ function getSectionLabel(tab, subView) {
 function buildSubject({ projectName, tab, subView }) {
   const section = getSectionLabel(tab, subView);
   return projectName
-    ? `PM OS feedback - ${projectName} - ${section}`
-    : `PM OS feedback - ${section}`;
+    ? `${PRODUCT_NAME} feedback - ${projectName} - ${section}`
+    : `${PRODUCT_NAME} feedback - ${section}`;
 }
 
 function buildBody({ projectName, tab, subView }) {
@@ -40,7 +45,7 @@ function buildBody({ projectName, tab, subView }) {
   const section = getSectionLabel(tab, subView);
 
   return [
-    'Hi Dorin,',
+    'Hello,',
     '',
     'I want to report a bug / share feedback / request an improvement.',
     '',

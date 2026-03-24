@@ -4,6 +4,7 @@ import { getModuleHeaderCountText, getModuleHeaderLabel } from './moduleHeader.j
 
 test('module header label mapping stays aligned with the main registers', () => {
   assert.equal(getModuleHeaderLabel('schedule'), 'Tasks');
+  assert.equal(getModuleHeaderLabel('timesheets'), 'Entries');
   assert.equal(getModuleHeaderLabel('risks'), 'Risks');
   assert.equal(getModuleHeaderLabel('issues'), 'Issues');
   assert.equal(getModuleHeaderLabel('actions'), 'Actions');
@@ -13,6 +14,7 @@ test('module header label mapping stays aligned with the main registers', () => 
 
 test('module header count text renders only for supported module types', () => {
   assert.equal(getModuleHeaderCountText('schedule', 35), 'Tasks: 35');
+  assert.equal(getModuleHeaderCountText('timesheets', 12), 'Entries: 12');
   assert.equal(getModuleHeaderCountText('risks', 8), 'Risks: 8');
   assert.equal(getModuleHeaderCountText('issues', 5), 'Issues: 5');
   assert.equal(getModuleHeaderCountText('actions', 13), 'Actions: 13');

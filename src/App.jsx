@@ -1,9 +1,11 @@
-import React, { useState, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { SCHEMAS } from './utils/constants';
 import { useAuth } from './contexts/AuthContext';
 import AuthPage from './components/AuthPage';
 import LegalPage from './components/LegalPage';
+import PublicPricingPage from './components/PublicPricingPage';
 import ProjectSelector from './components/ProjectSelector';
+import AuthenticatedFooter from './components/AuthenticatedFooter';
 import Header from './components/Header';
 import Navigation from './components/Navigation';
 import TaskModal from './components/TaskModal';
@@ -47,20 +49,62 @@ const TodoView = lazy(() => import('./components/TodoView'));
 const StakeholdersView = lazy(() => import('./components/StakeholdersView'));
 const FinancialsView = lazy(() => import('./components/FinancialsView'));
 const RACIView = lazy(() => import('./components/RACIView'));
+const TimesheetView = lazy(() => import('./components/TimesheetView'));
+
+const normalizeAppPath = (value = '/') => {
+  const normalized = String(value || '/').replace(/\/+$/, '');
+  return normalized || '/';
+};
 
 function App() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const checkoutStatus = useCheckoutStatus();
   const [currentProject, setCurrentProject] = useState(null);
-  const publicPath =
-    typeof window !== 'undefined' ? (window.location.pathname.replace(/\/+$/, '') || '/') : '/';
+  const [currentPath, setCurrentPath] = useState(() => (
+    typeof window !== 'undefined' ? normalizeAppPath(window.location.pathname) : '/'
+  ));
 
-  if (publicPath === '/privacy') {
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handlePopState = () => {
+      setCurrentPath(normalizeAppPath(window.location.pathname));
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateToPath = useCallback((path) => {
+    const nextPath = normalizeAppPath(path);
+    if (typeof window !== 'undefined' && normalizeAppPath(window.location.pathname) !== nextPath) {
+      window.history.pushState({}, '', nextPath);
+    }
+    setCurrentPath(nextPath);
+  }, []);
+
+  if (currentPath === '/privacy') {
     return <LegalPage page="privacy" />;
   }
 
-  if (publicPath === '/terms') {
+  if (currentPath === '/terms') {
     return <LegalPage page="terms" />;
+  }
+
+  if (currentPath === '/cookie-storage-notice' || currentPath === '/cookies') {
+    return <LegalPage page="cookies" />;
+  }
+
+  if (currentPath === '/privacy-requests') {
+    return <LegalPage page="privacy-requests" />;
+  }
+
+  if (currentPath === '/subprocessors') {
+    return <LegalPage page="subprocessors" />;
+  }
+
+  if (currentPath === '/pricing') {
+    return <PublicPricingPage />;
   }
 
   if (authLoading) {
@@ -86,7 +130,22 @@ function App() {
   if (!currentProject) {
     return (
       <>
-        <ProjectSelector onSelectProject={setCurrentProject} />
+        {currentPath === '/track' ? (
+          <AuthenticatedTrackShell
+            currentUserId={user.id}
+            userEmail={user.email}
+            onGoToProjects={() => navigateToPath('/')}
+            onSignOut={signOut}
+          />
+        ) : (
+          <ProjectSelector
+            onSelectProject={(project) => {
+              setCurrentProject(project);
+              navigateToPath('/');
+            }}
+            onOpenTrack={() => navigateToPath('/track')}
+          />
+        )}
         <CheckoutToast status={checkoutStatus} />
       </>
     );
@@ -97,10 +156,57 @@ function App() {
       <MainApp
         project={currentProject}
         currentUserId={user.id}
-        onBackToProjects={() => setCurrentProject(null)}
+        onBackToProjects={() => {
+          setCurrentProject(null);
+          navigateToPath('/');
+        }}
       />
       <CheckoutToast status={checkoutStatus} />
     </>
+  );
+}
+
+function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onSignOut }) {
+  return (
+    <div className="min-h-screen bg-[#f6f2ea] flex flex-col">
+      <div className="border-b border-slate-200 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-sm font-bold text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.7)]">
+                T
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Track</p>
+                <h1 className="truncate text-lg font-bold text-slate-950">Time tracking inside PM Workspace</h1>
+              </div>
+            </div>
+            <p className="mt-2 text-sm text-slate-500">{userEmail}</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onGoToProjects}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+            >
+              Projects
+            </button>
+            <button
+              onClick={onSignOut}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0">
+        <TimesheetView currentUserId={currentUserId} />
+      </div>
+
+      <AuthenticatedFooter className="flex-none" />
+    </div>
   );
 }
 
@@ -793,6 +899,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
       </div>
 
       <Header
+        projectName={activeTab === 'timesheets' ? 'Track' : project.name}
         moduleType={activeModuleType}
         moduleCount={activeModuleCount}
         isExternalView={isExternalView}
@@ -846,7 +953,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         }}
       />
 
-      <main className="flex-grow overflow-hidden relative">
+      <main className="relative flex-grow min-h-0 overflow-hidden">
         <Suspense
           fallback={
             <div className="h-full flex items-center justify-center text-sm text-slate-500">
@@ -875,6 +982,12 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               onAiSettingsChange={handleAiSettingsChange}
               onApplyAiTasks={setProjectData}
               usePlatformKey={usePlatformKey}
+            />
+          ) : activeTab === 'timesheets' ? (
+            <TimesheetView
+              currentUserId={currentUserId}
+              currentProject={project}
+              onBackToProject={() => setActiveTab('schedule')}
             />
           ) : activeTab === 'tracker' ? (
             <TrackerView
@@ -969,6 +1082,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
           )}
         </Suspense>
       </main>
+
+      <AuthenticatedFooter className="flex-none" />
 
       <DemoBenefitsModal
         isOpen={isBenefitsOpen}

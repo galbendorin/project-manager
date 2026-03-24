@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AuthenticatedFooter from './AuthenticatedFooter';
 import { usePlan } from '../contexts/PlanContext';
 import { markBillingSyncPending } from '../utils/billingSync';
 import { supabase } from '../lib/supabase';
@@ -69,7 +70,7 @@ export default function PricingPage({ onClose }) {
   ];
 
   const proFeatures = [
-    { text: '10 projects', included: true },
+    { text: 'Unlimited projects', included: true },
     { text: '500 tasks per project', included: true },
     { text: 'All tabs & registers', included: true },
     { text: 'Import & Export to Excel', included: true },
@@ -233,11 +234,10 @@ export default function PricingPage({ onClose }) {
         </div>
 
         {/* Footer note */}
-        <div className="border-t border-gray-100 px-8 py-4 text-center">
-          <p className="text-xs text-gray-400">
-            Cancel anytime. Your Pro access continues until the end of your billing period.
-          </p>
-        </div>
+        <AuthenticatedFooter
+          compact
+          note="Cancel anytime. Your Pro access continues until the end of your billing period."
+        />
       </div>
     </div>
   );

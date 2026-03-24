@@ -33,6 +33,7 @@ const Header = ({
   const [showBaselineMenu, setShowBaselineMenu] = useState(false);
   const [baselineMenuStyle, setBaselineMenuStyle] = useState({ top: 0, left: 0 });
   const { canBaseline, canExport, canImport, hasTabAccess } = usePlan();
+  const isTimesheetTab = activeTab === 'timesheets';
 
   const updateBaselineMenuPosition = () => {
     if (typeof window === 'undefined' || !baselineButtonRef.current) return;
@@ -123,7 +124,7 @@ const Header = ({
   };
 
   // Don't show Add Entry for blurred/locked tabs
-  const canAddEntry = hasTabAccess(activeTab);
+  const canAddEntry = hasTabAccess(activeTab) && !isTimesheetTab;
 
   const baselineMenu = showBaselineMenu && canBaseline && typeof document !== 'undefined'
     ? createPortal(
@@ -191,18 +192,20 @@ const Header = ({
       
       <div className="w-full lg:w-auto overflow-x-auto no-scrollbar pb-1 -mb-1">
         <div className="flex items-center gap-1.5 min-w-max lg:min-w-0 lg:flex-wrap lg:justify-end">
-        <button
-          onClick={onToggleExternalView}
-          className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[11px] font-medium transition-all ${
-            isExternalView
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-              : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
-          }`}
-          title={isExternalView ? 'External view is on. Only public items are shown in registers.' : 'External view is off. All items are shown.'}
-        >
-          <div className={`w-1.5 h-1.5 rounded-full ${isExternalView ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-          External View
-        </button>
+        {!isTimesheetTab && (
+          <button
+            onClick={onToggleExternalView}
+            className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[11px] font-medium transition-all ${
+              isExternalView
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
+            }`}
+            title={isExternalView ? 'External view is on. Only public items are shown in registers.' : 'External view is off. All items are shown.'}
+          >
+            <div className={`w-1.5 h-1.5 rounded-full ${isExternalView ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+            External View
+          </button>
+        )}
 
         {activeTab === 'schedule' ? (
           <div className="flex items-center gap-1.5 min-w-max lg:min-w-0 lg:flex-wrap">
@@ -309,7 +312,7 @@ const Header = ({
           </button>
         ) : null}
 
-        {canExport && (
+        {canExport && !isTimesheetTab && (
           <button
             onClick={onExport}
             className="shrink-0 text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"

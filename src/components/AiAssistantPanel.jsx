@@ -298,6 +298,12 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
 
         {/* Messages */}
         <div className="flex-1 overflow-auto px-4 py-3">
+          {configured && (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] leading-5 text-amber-800">
+              Selected plan content may be sent to an external AI provider to generate or edit plan output. Do not include special-category personal data or highly sensitive data unless you are authorised to do so and this setup is approved for that use.
+            </div>
+          )}
+
           {!configured && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-3">
               <p className="text-[12px] text-amber-800 mb-2">

@@ -98,9 +98,17 @@ const LANDING_FOCUS_CLASS =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white';
 
 const ONBOARDING_STEPS = [
-  'Verify your email address',
+  'Verify your email if your setup requires it',
   'Open your workspace',
   TRIAL_FULL_ACCESS_LABEL,
+];
+
+const LEGAL_LINKS = [
+  { label: 'Privacy Notice', href: '/privacy' },
+  { label: 'Terms of Service', href: '/terms' },
+  { label: 'Cookie & Storage Notice', href: '/cookie-storage-notice' },
+  { label: 'Privacy Requests', href: '/privacy-requests' },
+  { label: 'Subprocessors', href: '/subprocessors' },
 ];
 
 function HeroFeatureIcon({ type }) {
@@ -165,6 +173,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
 
   const { signIn, signUp } = useAuth();
 
@@ -217,11 +226,19 @@ export default function AuthPage() {
         const { error: signInError } = await signIn(email, password);
         if (signInError) throw signInError;
       } else {
-        const { error: signUpError } = await signUp(email, password, fullName);
+        if (!acceptedLegal) {
+          throw new Error('Please accept the Terms of Service and Privacy Notice to create an account.');
+        }
+
+        const { data, error: signUpError } = await signUp(email, password, fullName);
         if (signUpError) throw signUpError;
 
-        setSuccessMessage(`Check ${email} for your confirmation email, then sign in to enter your workspace.`);
-        setIsLogin(true);
+        if (data?.session) {
+          setSuccessMessage('Your account is ready. Opening your workspace now.');
+        } else {
+          setSuccessMessage(`Check ${email} for your confirmation email if verification is enabled, then sign in to enter your workspace.`);
+          setIsLogin(true);
+        }
         setPassword('');
         setFullName('');
       }
@@ -264,7 +281,7 @@ export default function AuthPage() {
                     PM
                   </button>
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-teal-700">PM OS</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-teal-700">PM Workspace</p>
                     <h1 className="text-lg font-semibold text-slate-950 sm:text-xl">Project Delivery Workspace</h1>
                   </div>
                 </div>
@@ -493,7 +510,7 @@ export default function AuthPage() {
                       Built for consultancies and internal delivery teams.
                     </h3>
                     <p className="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-                      PM OS is designed for teams that need a clearer weekly operating rhythm, cleaner client reporting,
+                      PM Workspace is designed for teams that need a clearer weekly operating rhythm, cleaner client reporting,
                       and a workspace that still fits the reality of Excel-heavy delivery environments.
                     </p>
                   </div>
@@ -517,7 +534,7 @@ export default function AuthPage() {
               <div className="rounded-[34px] border border-slate-200/85 bg-white/82 p-6 shadow-[0_36px_120px_-70px_rgba(15,23,42,0.45)] backdrop-blur sm:p-7">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-700">What PM OS handles</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-700">What PM Workspace handles</p>
                     <h3
                       style={{ fontFamily: "'Fraunces', serif" }}
                       className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-slate-950"
@@ -546,7 +563,7 @@ export default function AuthPage() {
                 <div className="rounded-[34px] border border-slate-200/90 bg-white/92 p-6 shadow-[0_42px_120px_-58px_rgba(15,23,42,0.55)] backdrop-blur sm:p-8">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-700">Access PM OS</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-700">Access PM Workspace</p>
                     <h3 className="mt-3 text-3xl font-bold tracking-[-0.03em] text-slate-950">
                       {isLogin ? 'Welcome back' : 'Open your workspace'}
                     </h3>
@@ -689,6 +706,28 @@ export default function AuthPage() {
                   </div>
                 </div>
 
+                {!isLogin && (
+                  <label className="mt-6 flex gap-3 rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={acceptedLegal}
+                      onChange={(e) => setAcceptedLegal(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-teal-600"
+                    />
+                    <span className="leading-6">
+                      By creating an account, I agree to the{' '}
+                      <a href="/terms" className="font-semibold text-slate-800 underline decoration-slate-300 underline-offset-4">
+                        Terms of Service
+                      </a>{' '}
+                      and acknowledge the{' '}
+                      <a href="/privacy" className="font-semibold text-slate-800 underline decoration-slate-300 underline-offset-4">
+                        Privacy Notice
+                      </a>
+                      . I also understand that the service currently uses only essential cookies and similar storage needed to run the workspace.
+                    </span>
+                  </label>
+                )}
+
                 <div className="mt-6 border-t border-slate-100 pt-5">
                   <p className="text-center text-[13px] text-slate-500">
                     {isLogin ? "Don't have an account yet?" : 'Already have an account?'}
@@ -703,7 +742,7 @@ export default function AuthPage() {
                 </div>
 
                 <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">
-                  Your {TRIAL_OFFER_LABEL} begins after email verification. Billing upgrades are managed inside the workspace.
+                  Your {TRIAL_OFFER_LABEL} begins when your workspace opens. If email confirmation is enabled for your account, you will be asked to verify before signing in.
                 </p>
                 <div className="mt-3 text-center text-[11px] leading-5 text-slate-400">
                   Need help or want to report a bug?{' '}
@@ -723,23 +762,20 @@ export default function AuthPage() {
           <footer className="mt-10 border-t border-slate-300/55 pt-6 text-sm text-slate-500">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="font-semibold text-slate-900">PM OS</div>
+                <div className="font-semibold text-slate-900">PM Workspace</div>
                 <div className="mt-1">Project delivery workspace for structured weekly control.</div>
               </div>
 
               <div className="flex flex-wrap items-center gap-3 sm:justify-end">
-                <a
-                  href="/privacy"
-                  className={`rounded-full px-3 py-1.5 font-medium text-slate-600 transition hover:bg-white/80 hover:text-slate-950 ${LANDING_FOCUS_CLASS}`}
-                >
-                  Privacy
-                </a>
-                <a
-                  href="/terms"
-                  className={`rounded-full px-3 py-1.5 font-medium text-slate-600 transition hover:bg-white/80 hover:text-slate-950 ${LANDING_FOCUS_CLASS}`}
-                >
-                  Terms
-                </a>
+                {LEGAL_LINKS.map((item) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    className={`rounded-full px-3 py-1.5 font-medium text-slate-600 transition hover:bg-white/80 hover:text-slate-950 ${LANDING_FOCUS_CLASS}`}
+                  >
+                    {item.label}
+                  </a>
+                ))}
                 <button
                   type="button"
                   onClick={handleOpenFeedback}

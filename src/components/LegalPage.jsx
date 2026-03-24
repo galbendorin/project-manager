@@ -1,82 +1,71 @@
 import React from 'react';
-import { FEEDBACK_EMAIL } from '../utils/feedback';
+import { LEGAL_NAV_ITEMS, getLegalPage, LAST_UPDATED } from '../utils/legalContent';
+import { COMPANY_NAME, PRODUCT_NAME } from '../utils/feedback';
 
-const LEGAL_CONTENT = {
-  privacy: {
-    eyebrow: 'Privacy',
-    title: 'Privacy Notice',
-    intro:
-      'PM OS helps teams manage live delivery work. This notice explains what information we collect, how we use it, and how to contact us if you need help with your data.',
-    sections: [
-      {
-        heading: 'What we collect',
-        body:
-          'We collect account details such as name, email address, and authentication data, along with the project information you choose to store in PM OS. That can include schedules, risks, issues, actions, decisions, stakeholder details, notes, and status-report content.',
-      },
-      {
-        heading: 'How we use it',
-        body:
-          'We use this information to provide the workspace, secure accounts, support users, improve product reliability, and generate in-app outputs such as reports. We also use operational data needed for billing, troubleshooting, and abuse prevention.',
-      },
-      {
-        heading: 'Third-party services',
-        body:
-          'PM OS relies on third-party providers for infrastructure and product operations, including hosting, authentication, payments, and AI-assisted features. Those providers may process data on our behalf to deliver the service.',
-      },
-      {
-        heading: 'AI-assisted features',
-        body:
-          'If you use AI generation features, project context may be sent to the configured AI provider to create report output. Teams should avoid entering highly sensitive personal data into AI-assisted workflows unless they have reviewed whether that is appropriate for their use case.',
-      },
-      {
-        heading: 'Your choices',
-        body:
-          'You can contact us if you want help with access, export, correction, or deletion requests. We will work with you on those requests in line with the service setup and any legal obligations that apply.',
-      },
-    ],
-  },
-  terms: {
-    eyebrow: 'Terms',
-    title: 'Terms of Use',
-    intro:
-      'These terms describe the basic rules for using PM OS during this stage of the product. They are intended to set clear expectations for account use, service access, and acceptable behavior.',
-    sections: [
-      {
-        heading: 'Using the service',
-        body:
-          'You may use PM OS for legitimate project delivery and collaboration work. You are responsible for the accuracy of the information you enter and for protecting access to your account.',
-      },
-      {
-        heading: 'Accounts and access',
-        body:
-          'You must provide accurate sign-up information and keep your login credentials secure. We may suspend access if we reasonably believe an account is being used improperly or in a way that threatens the service or other users.',
-      },
-      {
-        heading: 'Acceptable use',
-        body:
-          'You must not use PM OS to break the law, interfere with the platform, attempt unauthorized access, or store content that you do not have the right to use. Teams remain responsible for the data they upload and share.',
-      },
-      {
-        heading: 'Billing and plan access',
-        body:
-          'Some features are plan-dependent. Trial and paid access are governed by the workspace plan attached to the account, and billing changes are handled inside the product where applicable.',
-      },
-      {
-        heading: 'Product changes',
-        body:
-          'PM OS is still evolving. We may improve, change, or retire features over time as part of product development, security work, or service operations.',
-      },
-      {
-        heading: 'Contact',
-        body:
-          `If you need help, want to report a concern, or need a copy of the current legal terms shared directly, contact us at ${FEEDBACK_EMAIL}.`,
-      },
-    ],
-  },
-};
+function SectionContent({ section }) {
+  return (
+    <section className="rounded-[28px] border border-slate-200 bg-[#faf8f2] p-5 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.28)]">
+      <h2 className="text-lg font-semibold text-slate-950">{section.heading}</h2>
+
+      {Array.isArray(section.paragraphs) && section.paragraphs.length > 0 && (
+        <div className="mt-3 space-y-3">
+          {section.paragraphs.map((paragraph) => (
+            <p key={paragraph} className="text-sm leading-7 text-slate-600 sm:text-base">
+              {paragraph}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {Array.isArray(section.listItems) && section.listItems.length > 0 && (
+        <ul className="mt-3 space-y-2 text-sm leading-7 text-slate-600 sm:text-base">
+          {section.listItems.map((item) => (
+            <li key={item} className="flex gap-3">
+              <span className="mt-2 h-1.5 w-1.5 rounded-full bg-teal-600" />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {section.table && (
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                {section.table.columns.map((column) => (
+                  <th key={column} className="px-4 py-3 font-semibold text-slate-700">
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {section.table.rows.map((row) => (
+                <tr key={row.join('|')} className="align-top">
+                  {row.map((cell) => (
+                    <td key={cell} className="px-4 py-3 text-slate-600">
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {section.note && (
+        <div className="mt-4 rounded-2xl border border-teal-100 bg-teal-50/70 px-4 py-3 text-sm leading-7 text-teal-900">
+          {section.note}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default function LegalPage({ page = 'privacy' }) {
-  const content = LEGAL_CONTENT[page] || LEGAL_CONTENT.privacy;
+  const content = getLegalPage(page);
 
   return (
     <div style={{ fontFamily: "'Manrope', sans-serif" }} className="min-h-screen bg-[#f5efe6] text-slate-900">
@@ -96,9 +85,10 @@ export default function LegalPage({ page = 'privacy' }) {
           <div className="absolute bottom-[-8rem] left-1/3 h-96 w-96 rounded-full bg-emerald-100/45 blur-3xl" />
         </div>
 
-        <div className="relative mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+        <div className="relative mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
           <header className="rounded-[32px] border border-slate-200/85 bg-white/88 px-5 py-4 shadow-[0_24px_90px_-54px_rgba(15,23,42,0.42)] backdrop-blur">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <a
                   href="/"
@@ -107,7 +97,7 @@ export default function LegalPage({ page = 'privacy' }) {
                   PM
                 </a>
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-teal-700">PM OS</p>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-teal-700">{PRODUCT_NAME}</p>
                   <div className="text-lg font-semibold text-slate-950 sm:text-xl">{content.title}</div>
                 </div>
               </div>
@@ -116,40 +106,88 @@ export default function LegalPage({ page = 'privacy' }) {
                 href="/"
                 className="inline-flex items-center justify-center rounded-full border border-slate-300/80 bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
               >
-                Back to PM OS
+                Back to {PRODUCT_NAME}
               </a>
+            </div>
+
+              <nav className="flex flex-wrap gap-2" aria-label="Legal pages">
+                {LEGAL_NAV_ITEMS.map((item) => {
+                  const active = item.id === page;
+                  return (
+                    <a
+                      key={item.id}
+                      href={item.href}
+                      className={`rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
+                        active
+                          ? 'border-slate-900 bg-slate-950 text-white'
+                          : 'border-slate-200 bg-[#faf8f2] text-slate-600 hover:border-slate-300 hover:text-slate-950'
+                      }`}
+                    >
+                      {item.label}
+                    </a>
+                  );
+                })}
+              </nav>
             </div>
           </header>
 
-          <main className="mt-8 rounded-[34px] border border-slate-200/85 bg-white/86 p-6 shadow-[0_36px_120px_-70px_rgba(15,23,42,0.4)] backdrop-blur sm:p-8">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-700">{content.eyebrow}</p>
-              <h1
-                style={{ fontFamily: "'Fraunces', serif" }}
-                className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-slate-950 sm:text-5xl"
-              >
-                {content.title}
-              </h1>
-              <p className="mt-5 text-base leading-8 text-slate-600 sm:text-lg">{content.intro}</p>
-              <p className="mt-4 text-sm text-slate-400">Last updated: 19 March 2026</p>
-            </div>
-
-            <div className="mt-8 space-y-5">
-              {content.sections.map((section) => (
-                <section
-                  key={section.heading}
-                  className="rounded-[28px] border border-slate-200 bg-[#faf8f2] p-5 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.28)]"
+          <main className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="rounded-[34px] border border-slate-200/85 bg-white/86 p-6 shadow-[0_36px_120px_-70px_rgba(15,23,42,0.4)] backdrop-blur sm:p-8">
+              <div className="max-w-3xl">
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-700">{content.eyebrow}</p>
+                <h1
+                  style={{ fontFamily: "'Fraunces', serif" }}
+                  className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-slate-950 sm:text-5xl"
                 >
-                  <h2 className="text-lg font-semibold text-slate-950">{section.heading}</h2>
-                  <p className="mt-3 text-sm leading-7 text-slate-600 sm:text-base">{section.body}</p>
-                </section>
-              ))}
+                  {content.title}
+                </h1>
+                <p className="mt-5 text-base leading-8 text-slate-600 sm:text-lg">{content.intro}</p>
+                {content.summary && <p className="mt-4 text-sm leading-7 text-slate-500">{content.summary}</p>}
+                <p className="mt-4 text-sm text-slate-400">Last updated: {LAST_UPDATED}</p>
+              </div>
+
+              <div className="mt-8 space-y-5">
+                {content.sections.map((section) => (
+                  <SectionContent key={section.heading} section={section} />
+                ))}
+              </div>
+
+              <div className="mt-8 rounded-[24px] border border-slate-200 bg-slate-50/90 p-4 text-sm leading-7 text-slate-600">
+                These launch materials are meant to match the live product more closely than the previous first-pass pages, but they still need a final legal review against the live deployment, billing setup, retention periods, and mailbox configuration before formal publication.
+              </div>
             </div>
 
-            <div className="mt-8 rounded-[24px] border border-slate-200 bg-slate-50/90 p-4 text-sm leading-7 text-slate-600">
-              These pages are a practical first pass for the live product surface. They should still be reviewed and
-              refined alongside your broader GDPR and legal rollout work.
-            </div>
+            <aside className="space-y-4">
+              <div className="rounded-[30px] border border-slate-200/85 bg-white/90 p-5 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.45)] backdrop-blur">
+                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                  {content.sidebar.title}
+                </div>
+                <div className="mt-4 space-y-3">
+                  {content.sidebar.items.map((item) => (
+                    <div key={item.label} className="rounded-2xl border border-slate-200 bg-[#faf8f2] px-4 py-3">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{item.label}</div>
+                      {item.href ? (
+                        <a href={item.href} className="mt-1 block text-sm font-medium text-slate-700 underline decoration-slate-300 underline-offset-4">
+                          {item.value}
+                        </a>
+                      ) : (
+                        <div className="mt-1 text-sm font-medium text-slate-700">{item.value}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-[30px] border border-slate-200/85 bg-slate-950 p-5 text-white shadow-[0_24px_70px_-48px_rgba(15,23,42,0.55)]">
+                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-300">Practical note</div>
+                <p className="mt-3 text-sm leading-7 text-slate-200">
+                  Replace any remaining operational placeholders with live mailbox and company details before relying on these pages as a final public legal position.
+                </p>
+                <p className="mt-4 text-xs leading-6 text-slate-400">
+                  Public company placeholder intentionally shown as <strong>{COMPANY_NAME}</strong>.
+                </p>
+              </div>
+            </aside>
           </main>
         </div>
       </div>

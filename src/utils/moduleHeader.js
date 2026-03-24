@@ -6,6 +6,7 @@ const MODULE_HEADER_LABELS = {
   actions: 'Actions',
   minutes: 'Meetings',
   tracker: 'Tracked Items',
+  timesheets: 'Entries',
   stakeholders: 'Stakeholders',
   commsplan: 'Communications',
   costs: 'Costs',

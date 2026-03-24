@@ -39,9 +39,9 @@ const PLAN_LIMITS = {
     canUseAi: false,
     canUseAiAssistant: false,
     canExportAiReport: false,
-    // Starter gets: schedule, issues, actions, tracker
+    // Starter gets: schedule, issues, actions, tracker, timesheets
     // Everything else is visible but blurred
-    fullAccessTabs: ['schedule', 'issues', 'actions', 'tracker'],
+    fullAccessTabs: ['schedule', 'issues', 'actions', 'tracker', 'timesheets'],
   },
   trial: {
     label: 'Pro Trial',
@@ -89,7 +89,7 @@ const PLAN_LIMITS = {
 
 // All tabs in the app — used for blurred-tab logic
 const ALL_TABS = [
-  'schedule', 'tracker', 'statusreport', 'todo',
+  'timesheets', 'schedule', 'tracker', 'statusreport', 'todo',
   'risks', 'issues', 'actions', 'changes',
   'minutes', 'costs', 'stakeholdersmgmt', 'financials',
   'assumptions', 'decisions', 'lessons', 'raci'

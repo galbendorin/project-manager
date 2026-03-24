@@ -151,6 +151,9 @@ const AiReportPanel = ({
       {/* Input area — show when idle or error */}
       {(status === 'idle' || status === 'error') && (
         <div className="space-y-3">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
+            When you use AI features, selected project or workspace content may be sent to an external AI provider to generate the requested output. Do not include special-category personal data or highly sensitive data unless you are authorised to do so and the feature is configured for that use.
+          </div>
           {/* AI usage badge */}
           {aiReportsLimit != null && (
             <div className={`flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-lg border ${
