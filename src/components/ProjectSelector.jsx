@@ -1,9 +1,16 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlan } from '../contexts/PlanContext';
 import { buildDemoProjectPayload } from '../utils/demoProjectBuilder';
 import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
+import ProjectShareModal from './ProjectShareModal';
+import {
+  countOwnedProjects,
+  normalizeProjectRecord,
+  shouldSeedDemoProject,
+  summarizeProjectAccess,
+} from '../utils/projectSharing';
 
 const DEMO_SEED_FLAG = 'default_demo_seed_v1';
 
@@ -43,18 +50,25 @@ const extractMissingColumnName = (error) => {
   return null;
 };
 
+const isMissingRelationError = (error, relationName) => {
+  const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return msg.includes(relationName.toLowerCase()) && (msg.includes('relation') || msg.includes('relationship'));
+};
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const ProjectSelector = ({ onSelectProject }) => {
   const { user, signOut } = useAuth();
-  const { canCreateProject, limits, projectCount, effectivePlan, isReadOnly, refreshProjectCount } = usePlan();
+  const { canCreateProject, limits, isReadOnly, refreshProjectCount } = usePlan();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Loading projects...');
   const [newProjectName, setNewProjectName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [shareProjectId, setShareProjectId] = useState(null);
   const supportsIsDemoRef = useRef(true);
+  const supportsProjectMembersRef = useRef(true);
   const isSeedingDemoRef = useRef(false);
   const demoSeededRef = useRef(
     Boolean(user?.user_metadata?.[DEMO_SEED_FLAG]) || readLocalDemoSeedFlag(user?.id)
@@ -65,15 +79,18 @@ const ProjectSelector = ({ onSelectProject }) => {
     demoSeededRef.current = Boolean(user?.user_metadata?.[DEMO_SEED_FLAG]) || readLocalDemoSeedFlag(user?.id);
   }, [user?.id, user?.user_metadata]);
 
-  const normalizeProject = useCallback((project) => ({
-    ...project,
-    is_demo: !!project?.is_demo
-  }), []);
+  const normalizeProject = useCallback((project) => normalizeProjectRecord(project, user?.id), [user?.id]);
+
+  const accessSummary = useMemo(() => summarizeProjectAccess(projects, user?.id), [projects, user?.id]);
+  const shareProject = useMemo(
+    () => projects.find((project) => project.id === shareProjectId) || null,
+    [projects, shareProjectId]
+  );
 
   const createProjectRecord = useCallback(async (payload, includeIsDemo = supportsIsDemoRef.current) => {
     const selectCols = includeIsDemo
-      ? 'id, name, is_demo, created_at, updated_at'
-      : 'id, name, created_at, updated_at';
+      ? 'id, user_id, name, is_demo, created_at, updated_at'
+      : 'id, user_id, name, created_at, updated_at';
 
     const insertPayload = includeIsDemo
       ? payload
@@ -90,7 +107,7 @@ const ProjectSelector = ({ onSelectProject }) => {
       const retry = await supabase
         .from('projects')
         .insert(Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'is_demo')))
-        .select('id, name, created_at, updated_at')
+        .select('id, user_id, name, created_at, updated_at')
         .single();
       data = retry.data;
       error = retry.error;
@@ -175,30 +192,61 @@ const ProjectSelector = ({ onSelectProject }) => {
     return data;
   }, [createProjectRecord, markDemoSeeded, user.id, user?.created_at]);
 
-  const queryProjects = useCallback(async () => {
-    const primarySelect = supportsIsDemoRef.current
-      ? 'id, name, is_demo, created_at, updated_at'
-      : 'id, name, created_at, updated_at';
+  const runProjectQuery = useCallback(async (includeIsDemo, includeMembers) => {
+    const selectParts = [
+      'id',
+      'user_id',
+      'name',
+      includeIsDemo ? 'is_demo' : null,
+      'created_at',
+      'updated_at',
+      includeMembers
+        ? 'project_members(id, user_id, member_email, role, invited_by_user_id, created_at)'
+        : null
+    ].filter(Boolean);
 
-    let { data, error } = await supabase
+    return supabase
       .from('projects')
-      .select(primarySelect)
-      .eq('user_id', user.id)
+      .select(selectParts.join(', '))
       .order('updated_at', { ascending: false });
+  }, []);
 
-    if (error && supportsIsDemoRef.current && isMissingColumnError(error, 'is_demo')) {
-      supportsIsDemoRef.current = false;
-      const fallback = await supabase
-        .from('projects')
-        .select('id, name, created_at, updated_at')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false });
-      data = fallback.data;
-      error = fallback.error;
+  const queryProjects = useCallback(async () => {
+    let includeIsDemo = supportsIsDemoRef.current;
+    let includeMembers = supportsProjectMembersRef.current;
+    let data = null;
+    let error = null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await runProjectQuery(includeIsDemo, includeMembers);
+      data = response.data;
+      error = response.error;
+
+      if (!error) {
+        break;
+      }
+
+      let shouldRetry = false;
+
+      if (includeMembers && isMissingRelationError(error, 'project_members')) {
+        supportsProjectMembersRef.current = false;
+        includeMembers = false;
+        shouldRetry = true;
+      }
+
+      if (includeIsDemo && isMissingColumnError(error, 'is_demo')) {
+        supportsIsDemoRef.current = false;
+        includeIsDemo = false;
+        shouldRetry = true;
+      }
+
+      if (!shouldRetry) {
+        break;
+      }
     }
 
     return { data, error };
-  }, [user?.id]);
+  }, [runProjectQuery]);
 
   const fetchProjects = useCallback(async (isRetry = false) => {
     if (!user?.id) return;
@@ -229,17 +277,27 @@ const ProjectSelector = ({ onSelectProject }) => {
 
     let nextProjects = (data || []).map(normalizeProject);
 
-    if (nextProjects.length > 0 && !demoSeededRef.current) {
+    const ownedProjectCount = countOwnedProjects(nextProjects, user.id);
+    const hasOwnedProjects = ownedProjectCount > 0;
+
+    if (hasOwnedProjects && !demoSeededRef.current) {
       markDemoSeeded();
     }
 
-    if (nextProjects.length === 0 && !isSeedingDemoRef.current && !demoSeededRef.current) {
+    if (
+      shouldSeedDemoProject({
+        projects: nextProjects,
+        currentUserId: user.id,
+        demoSeeded: demoSeededRef.current,
+      })
+      && !isSeedingDemoRef.current
+    ) {
       isSeedingDemoRef.current = true;
       setLoadingMessage('Setting up your workspace...');
       const seeded = await seedDemoProject();
       isSeedingDemoRef.current = false;
       if (seeded) {
-        nextProjects = [seeded];
+        nextProjects = [seeded, ...nextProjects];
       }
     }
 
@@ -252,6 +310,12 @@ const ProjectSelector = ({ onSelectProject }) => {
       fetchProjects();
     }
   }, [fetchProjects, user?.id]);
+
+  useEffect(() => {
+    setShareProjectId((currentId) => (
+      currentId && projects.some((project) => project.id === currentId) ? currentId : null
+    ));
+  }, [projects]);
 
   // Bug A fix: use a separate handler that doesn't trigger re-renders during typing
   const handleNameChange = useCallback((e) => {
@@ -342,7 +406,8 @@ const ProjectSelector = ({ onSelectProject }) => {
         {/* Project count and plan info */}
         <div className="flex items-center justify-between mb-3 px-1">
           <span className="text-xs text-slate-500">
-            {projects.length} of {limits.maxProjects === 999 ? '∞' : limits.maxProjects} projects
+            Owned {accessSummary.ownedCount} of {limits.maxProjects === 999 ? '∞' : limits.maxProjects}
+            {accessSummary.sharedCount > 0 ? ` · ${accessSummary.sharedCount} shared` : ''}
             <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-slate-100 text-slate-500 border-slate-200">
               {limits.label}
             </span>
@@ -442,28 +507,53 @@ const ProjectSelector = ({ onSelectProject }) => {
                           Demo
                         </span>
                       )}
+                      {project.isSharedWithMe && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 font-semibold">
+                          Shared with you
+                        </span>
+                      )}
+                      {project.isSharedByMe && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border border-sky-200 text-sky-700 bg-sky-50 font-semibold">
+                          Shared
+                        </span>
+                      )}
                     </div>
                     <p className="text-slate-400 text-xs mt-1">
                       Last updated: {formatDate(project.updated_at)}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
+                    {supportsProjectMembersRef.current && project.isOwned && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShareProjectId(project.id);
+                        }}
+                        className="text-xs font-semibold text-slate-500 hover:text-indigo-600 px-2 py-1 rounded-lg hover:bg-indigo-50 transition-colors"
+                        title="Share project"
+                        type="button"
+                      >
+                        Share
+                      </button>
+                    )}
                     <span className="text-slate-400 group-hover:text-indigo-500 text-sm">Open →</span>
-                    <button
-                      onClick={(e) => deleteProject(project.id, e)}
-                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 p-1 transition-all"
-                      title="Delete project"
-                      type="button"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
+                    {project.isOwned && (
+                      <button
+                        onClick={(e) => deleteProject(project.id, e)}
+                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 p-1 transition-all"
+                        title="Delete project"
+                        type="button"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -471,6 +561,12 @@ const ProjectSelector = ({ onSelectProject }) => {
           )}
         </div>
       </div>
+      <ProjectShareModal
+        isOpen={Boolean(shareProject)}
+        project={shareProject}
+        onClose={() => setShareProjectId(null)}
+        onMembershipChanged={fetchProjects}
+      />
     </div>
   );
 };

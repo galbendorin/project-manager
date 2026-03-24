@@ -67,7 +67,6 @@ export const useProjectData = (projectId, userId = null) => {
       .from('projects')
       .select('tasks, registers, baseline, tracker, status_report, version')
       .eq('id', projectId);
-    if (userId) loadQuery = loadQuery.eq('user_id', userId);
     const { data, error } = await loadQuery.single();
 
     if (!error && data) {
@@ -82,7 +81,6 @@ export const useProjectData = (projectId, userId = null) => {
         const { data: todoRows, error: todoError } = await supabase
           .from('manual_todos')
           .select(MANUAL_TODO_SELECT)
-          .eq('user_id', userId)
           .order('created_at', { ascending: true });
 
         if (!todoError) {
@@ -140,7 +138,6 @@ export const useProjectData = (projectId, userId = null) => {
         .eq('id', projectId)
         .eq('version', expectedVersion)
         .select('version');
-      if (userId) saveQuery = saveQuery.eq('user_id', userId);
       const { data, error } = await saveQuery.maybeSingle();
 
       if (!error && data && Number.isInteger(data.version)) {
@@ -428,7 +425,6 @@ export const useProjectData = (projectId, userId = null) => {
       .from('manual_todos')
       .update(patch)
       .eq('id', todoId)
-      .eq('user_id', userId)
       .select(MANUAL_TODO_SELECT)
       .single();
 
@@ -440,7 +436,6 @@ export const useProjectData = (projectId, userId = null) => {
 
     if (updateError || !updatedRow) {
       console.error('Failed to update manual todo:', updateError);
-      setTodos(prev => applyTodoUpdateToState(prev, todoId, localUpdated, followUpLocal));
       return;
     }
 
@@ -479,6 +474,7 @@ export const useProjectData = (projectId, userId = null) => {
   }, [todos, userId]);
 
   const deleteTodo = useCallback(async (todoId) => {
+    const previousTodos = todos;
     setTodos(prev => prev.filter(todo => todo._id !== todoId));
 
     if (!userId || !supportsManualTodosTableRef.current) return;
@@ -486,8 +482,7 @@ export const useProjectData = (projectId, userId = null) => {
     const { error } = await supabase
       .from('manual_todos')
       .delete()
-      .eq('id', todoId)
-      .eq('user_id', userId);
+      .eq('id', todoId);
 
     if (error && isMissingRelationError(error, 'manual_todos')) {
       supportsManualTodosTableRef.current = false;
@@ -495,8 +490,9 @@ export const useProjectData = (projectId, userId = null) => {
     }
     if (error) {
       console.error('Failed to delete manual todo:', error);
+      setTodos(previousTodos);
     }
-  }, [userId]);
+  }, [todos, userId]);
 
   const completeTodoFromView = useCallback(async (todo) => {
     const completion = getTodoCompletionDescriptor(todo, getCurrentDate(), now());

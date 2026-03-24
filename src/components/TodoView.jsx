@@ -349,7 +349,6 @@ const TodoView = ({
       const { data, error } = await supabase
         .from('projects')
         .select('id, name')
-        .eq('user_id', currentUserId)
         .order('updated_at', { ascending: false });
 
       if (cancelled) return;
@@ -378,7 +377,6 @@ const TodoView = ({
       const { data, error } = await supabase
         .from('projects')
         .select('id, name, tasks, registers, tracker')
-        .eq('user_id', currentUserId)
         .order('updated_at', { ascending: false });
 
       if (cancelled) return;
