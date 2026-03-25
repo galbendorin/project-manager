@@ -557,8 +557,8 @@ export default function TimesheetPanel({
               <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">This week</p>
-                  <h3 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-slate-950">Calendar-style week view</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                  <h3 className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-slate-950 lg:mt-2 lg:text-2xl">Calendar-style week view</h3>
+                  <p className="mt-2 hidden text-sm leading-6 text-slate-500 lg:block">
                     Entries are grouped by day and colored by project, so the week reads more like a time product than a register.
                   </p>
                 </div>
@@ -612,28 +612,25 @@ export default function TimesheetPanel({
                       </div>
                     </div>
 
-                    <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3.5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Selected day</div>
-                          <div className="mt-1 text-lg font-bold text-slate-950">
-                            {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'This week'}
+                    {selectedDayEntries.length > 0 ? (
+                      <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3.5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Selected day</div>
+                            <div className="mt-1 text-lg font-bold text-slate-950">
+                              {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'This week'}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {selectedDay?.iso || composer.entryDate} · {formatHoursFromMinutes(selectedDayTotalMinutes)}
+                            </div>
                           </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {selectedDay?.iso || composer.entryDate} · {formatHoursFromMinutes(selectedDayTotalMinutes)}
-                          </div>
+                          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600">
+                            {selectedDayEntries.length} items
+                          </span>
                         </div>
-                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600">
-                          {selectedDayEntries.length} items
-                        </span>
-                      </div>
 
-                      <div className="mt-3 space-y-2.5">
-                        {selectedDayEntries.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-center text-sm text-slate-500">
-                            No entries yet for this day. Choose a project and add time above.
-                          </div>
-                        ) : selectedDayEntries.map((entry) => {
+                        <div className="mt-3 space-y-2.5">
+                          {selectedDayEntries.map((entry) => {
                           const project = projects.find((item) => item.id === entry.project_id);
                           const color = getTrackProjectColor(entry.project_id);
                           const isSelected = activeEntry?.id === entry.id;
@@ -669,8 +666,9 @@ export default function TimesheetPanel({
                             </button>
                           );
                         })}
+                        </div>
                       </div>
-                    </div>
+                    ) : null}
 
                     <div className="rounded-[24px] border border-slate-200 bg-white p-3.5 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
@@ -682,6 +680,11 @@ export default function TimesheetPanel({
                           <div className="mt-1 text-xs text-slate-500">
                             Pick a project, enter duration, and keep the week view focused on one day at a time.
                           </div>
+                          {selectedDayEntries.length === 0 ? (
+                            <div className="mt-2 text-xs font-medium text-slate-500">
+                              No entries yet for {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'this day'}.
+                            </div>
+                          ) : null}
                         </div>
                         {selectedProject ? (
                           <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${getTrackProjectColor(selectedProject.id).chip}`}>
