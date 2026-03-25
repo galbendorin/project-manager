@@ -202,7 +202,15 @@ function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onS
       </div>
 
       <div className="flex-1 min-h-0">
-        <TimesheetView currentUserId={currentUserId} />
+        <Suspense
+          fallback={(
+            <div className="flex h-full min-h-[320px] items-center justify-center px-4 py-10 text-sm font-medium text-slate-500">
+              Loading Track...
+            </div>
+          )}
+        >
+          <TimesheetView currentUserId={currentUserId} />
+        </Suspense>
       </div>
 
       <AuthenticatedFooter className="flex-none" />
