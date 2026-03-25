@@ -15,6 +15,23 @@ const hourLabel = (minutes) => {
   return `${twelveHour}:00 ${suffix}`;
 };
 
+const clockLabel = (minutes) => {
+  const safeMinutes = Math.max(0, Number(minutes) || 0);
+  const hours = Math.floor(safeMinutes / 60);
+  const mins = safeMinutes % 60;
+  const suffix = hours >= 12 ? 'PM' : 'AM';
+  const twelveHour = hours % 12 === 0 ? 12 : hours % 12;
+  return `${twelveHour}:${String(mins).padStart(2, '0')} ${suffix}`;
+};
+
+const formatEntryWindow = (entry) => {
+  const start = Number(entry?.start_minutes);
+  const duration = Number(entry?.duration_minutes);
+  if (!Number.isFinite(start)) return '';
+  const end = Number.isFinite(duration) ? start + duration : start;
+  return `${clockLabel(start)} - ${clockLabel(end)}`;
+};
+
 const getEntryProjectLabel = (entry, project, currentUserId) => {
   if (entry.user_id === currentUserId) return 'You';
   if (project?.collaborator?.user_id === entry.user_id) {
@@ -69,6 +86,21 @@ export default function TimesheetPanel({
       return acc;
     }, {})
   ), [visibleEntries, weekDays]);
+  const selectedDay = useMemo(
+    () => weekDays.find((day) => day.iso === composer.entryDate) || weekDays[0] || null,
+    [composer.entryDate, weekDays]
+  );
+  const selectedDayEntries = selectedDay ? (entriesByDay[selectedDay.iso] || []) : [];
+  const selectedDayTotalMinutes = useMemo(
+    () => selectedDayEntries.reduce((total, entry) => total + (Number(entry.duration_minutes) || 0), 0),
+    [selectedDayEntries]
+  );
+  const handleSelectMobileDay = (dayIso) => {
+    if (activeEntry?.user_id === currentUserId && activeEntry.entry_date !== dayIso) {
+      onResetComposer();
+    }
+    onComposerChange('entryDate', dayIso);
+  };
 
   return (
     <div className="h-full overflow-auto bg-[#f6f2ea]">
@@ -254,7 +286,7 @@ export default function TimesheetPanel({
           </aside>
 
           <section className="space-y-4">
-            <div className="rounded-[30px] border border-slate-200/90 bg-white/95 p-5 shadow-[0_35px_90px_-60px_rgba(15,23,42,0.4)]">
+            <div className="hidden rounded-[30px] border border-slate-200/90 bg-white/95 p-5 shadow-[0_35px_90px_-60px_rgba(15,23,42,0.4)] lg:block">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Quick add</p>
@@ -285,111 +317,238 @@ export default function TimesheetPanel({
                 </div>
               ) : null}
 
-              <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_repeat(3,minmax(0,160px))]">
-                <label className="block">
-                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</span>
-                  <select
-                    value={composer.projectId}
-                    onChange={(event) => onComposerChange('projectId', event.target.value)}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="">Select a project</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Date</span>
-                  <input
-                    type="date"
-                    value={composer.entryDate}
-                    onChange={(event) => onComposerChange('entryDate', event.target.value)}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start</span>
-                  <input
-                    type="time"
-                    value={composer.startTime}
-                    onChange={(event) => onComposerChange('startTime', event.target.value)}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Minutes</span>
-                  <input
-                    type="number"
-                    min="15"
-                    step="15"
-                    value={composer.durationMinutes}
-                    onChange={(event) => onComposerChange('durationMinutes', event.target.value)}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                    placeholder="60"
-                  />
-                </label>
-              </div>
-
-              <label className="mt-3 block">
-                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Description</span>
-                <input
-                  type="text"
-                  value={composer.description}
-                  onChange={(event) => onComposerChange('description', event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                  placeholder="Planning, delivery follow-up, stakeholder review..."
-                />
-              </label>
-
-              <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="flex flex-wrap gap-2">
-                  {recentProjects.map((project) => (
-                    <button
-                      key={project.id}
-                      type="button"
-                      onClick={() => {
-                        onSelectProject(project.id);
-                        onComposerChange('projectId', project.id);
-                      }}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${getTrackProjectColor(project.id).chip}`}
+              <div className="hidden lg:block">
+                <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_repeat(3,minmax(0,160px))]">
+                  <label className="block">
+                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</span>
+                    <select
+                      value={composer.projectId}
+                      onChange={(event) => onComposerChange('projectId', event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                     >
-                      {project.name}
-                    </button>
-                  ))}
+                      <option value="">Select a project</option>
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Date</span>
+                    <input
+                      type="date"
+                      value={composer.entryDate}
+                      onChange={(event) => onComposerChange('entryDate', event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start</span>
+                    <input
+                      type="time"
+                      value={composer.startTime}
+                      onChange={(event) => onComposerChange('startTime', event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Minutes</span>
+                    <input
+                      type="number"
+                      min="15"
+                      step="15"
+                      value={composer.durationMinutes}
+                      onChange={(event) => onComposerChange('durationMinutes', event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      placeholder="60"
+                    />
+                  </label>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {activeEntry?.user_id === currentUserId ? (
+                <label className="mt-3 block">
+                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Description</span>
+                  <input
+                    type="text"
+                    value={composer.description}
+                    onChange={(event) => onComposerChange('description', event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                    placeholder="Planning, delivery follow-up, stakeholder review..."
+                  />
+                </label>
+
+                <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    {recentProjects.map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectProject(project.id);
+                          onComposerChange('projectId', project.id);
+                        }}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${getTrackProjectColor(project.id).chip}`}
+                      >
+                        {project.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {activeEntry?.user_id === currentUserId ? (
+                      <button
+                        type="button"
+                        onClick={onDeleteEntry}
+                        disabled={deletingEntryId === activeEntry.id}
+                        className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {deletingEntryId === activeEntry.id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
-                      onClick={onDeleteEntry}
-                      disabled={deletingEntryId === activeEntry.id}
-                      className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={onResetComposer}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                     >
-                      {deletingEntryId === activeEntry.id ? 'Deleting...' : 'Delete'}
+                      Reset
                     </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={onResetComposer}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onSubmit}
-                    disabled={!schemaReady || saving}
-                    className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {saving ? 'Saving...' : activeEntry?.user_id === currentUserId ? 'Update entry' : 'Add entry'}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={onSubmit}
+                      disabled={!schemaReady || saving}
+                      className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {saving ? 'Saving...' : activeEntry?.user_id === currentUserId ? 'Update entry' : 'Add entry'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-4 lg:hidden">
+                <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Selected day</div>
+                      <div className="mt-1 text-lg font-bold text-slate-950">
+                        {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'This week'}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {selectedDay?.iso || composer.entryDate} · {formatHoursFromMinutes(selectedDayTotalMinutes)} logged
+                      </div>
+                    </div>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600">
+                      {selectedDayEntries.length} {selectedDayEntries.length === 1 ? 'entry' : 'entries'}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-3">
+                    <label className="block">
+                      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</span>
+                      <select
+                        value={composer.projectId}
+                        onChange={(event) => onComposerChange('projectId', event.target.value)}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      >
+                        <option value="">Select a project</option>
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="block">
+                        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start</span>
+                        <input
+                          type="time"
+                          value={composer.startTime}
+                          onChange={(event) => onComposerChange('startTime', event.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Minutes</span>
+                        <input
+                          type="number"
+                          min="15"
+                          step="15"
+                          value={composer.durationMinutes}
+                          onChange={(event) => onComposerChange('durationMinutes', event.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          placeholder="60"
+                        />
+                      </label>
+                    </div>
+
+                    <label className="block">
+                      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Description</span>
+                      <input
+                        type="text"
+                        value={composer.description}
+                        onChange={(event) => onComposerChange('description', event.target.value)}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        placeholder="Planning, delivery follow-up, stakeholder review..."
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {recentProjects.map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectProject(project.id);
+                          onComposerChange('projectId', project.id);
+                        }}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${getTrackProjectColor(project.id).chip}`}
+                      >
+                        {project.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={onSubmit}
+                      disabled={!schemaReady || saving}
+                      className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {saving ? 'Saving...' : activeEntry?.user_id === currentUserId ? 'Update entry' : 'Add entry'}
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={onResetComposer}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                      >
+                        Reset
+                      </button>
+
+                      {activeEntry?.user_id === currentUserId ? (
+                        <button
+                          type="button"
+                          onClick={onDeleteEntry}
+                          disabled={deletingEntryId === activeEntry.id}
+                          className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletingEntryId === activeEntry.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      ) : (
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center text-xs font-medium text-slate-500">
+                          Pick a day below to change where this saves
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -421,7 +580,231 @@ export default function TimesheetPanel({
                 </div>
               ) : (
                 <>
-                  <div className="mt-5 overflow-x-auto">
+                  <div className="mt-5 lg:hidden space-y-4">
+                    <div className="overflow-x-auto">
+                      <div className="grid min-w-[560px] grid-cols-7 gap-2">
+                        {weekDays.map((day) => {
+                          const dayTotalMinutes = entriesByDay[day.iso].reduce((total, entry) => total + entry.duration_minutes, 0);
+                          const isSelectedDay = selectedDay?.iso === day.iso;
+                          return (
+                            <button
+                              key={day.iso}
+                              type="button"
+                              onClick={() => handleSelectMobileDay(day.iso)}
+                              className={`rounded-2xl border px-3 py-3 text-left transition ${
+                                isSelectedDay
+                                  ? 'border-slate-950 bg-slate-950 text-white shadow-md'
+                                  : day.isToday
+                                    ? 'border-indigo-200 bg-indigo-50 text-slate-900'
+                                    : 'border-slate-200 bg-slate-50 text-slate-700'
+                              }`}
+                            >
+                              <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isSelectedDay ? 'text-slate-300' : 'text-slate-400'}`}>
+                                {day.weekday}
+                              </div>
+                              <div className="mt-2 text-lg font-bold">{day.dayLabel}</div>
+                              <div className={`mt-2 text-xs ${isSelectedDay ? 'text-slate-300' : 'text-slate-500'}`}>
+                                {dayTotalMinutes > 0 ? formatDurationMinutes(dayTotalMinutes) : 'No time'}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Selected day</div>
+                          <div className="mt-1 text-lg font-bold text-slate-950">
+                            {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'This week'}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {selectedDay?.iso || composer.entryDate} · {formatHoursFromMinutes(selectedDayTotalMinutes)}
+                          </div>
+                        </div>
+                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600">
+                          {selectedDayEntries.length} items
+                        </span>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {selectedDayEntries.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                            No entries yet for this day. Choose a project and add time above.
+                          </div>
+                        ) : selectedDayEntries.map((entry) => {
+                          const project = projects.find((item) => item.id === entry.project_id);
+                          const color = getTrackProjectColor(entry.project_id);
+                          const isSelected = activeEntry?.id === entry.id;
+
+                          return (
+                            <button
+                              key={entry.id}
+                              type="button"
+                              onClick={() => onSelectEntry(entry)}
+                              className={`w-full rounded-2xl border px-4 py-3 text-left shadow-sm transition ${color.bg} ${color.border} ${isSelected ? 'ring-2 ring-slate-950/70' : ''}`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className={`truncate text-sm font-semibold ${color.text}`}>
+                                    {entry.description || 'Untitled entry'}
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-600">
+                                    {formatEntryWindow(entry)}
+                                  </div>
+                                </div>
+                                <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                                  {formatDurationMinutes(entry.duration_minutes)}
+                                </span>
+                              </div>
+
+                              <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-600">
+                                <span className={`inline-block h-2 w-10 rounded-full ${color.accent}`} />
+                                <span className="truncate">{project?.name || 'Project'}</span>
+                              </div>
+                              <div className="mt-1 text-[11px] text-slate-500">
+                                {getEntryProjectLabel(entry, project, currentUserId)}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Add time for this day</div>
+                          <div className="mt-1 text-lg font-bold text-slate-950">
+                            {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'Selected day'}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            Pick a project, enter duration, and keep the week view focused on one day at a time.
+                          </div>
+                        </div>
+                        {selectedProject ? (
+                          <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${getTrackProjectColor(selectedProject.id).chip}`}>
+                            {selectedProject.name}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {!schemaReady ? (
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                          Track entries are not available in this environment yet. Apply the new `time_entries` SQL migration to enable the Track product.
+                        </div>
+                      ) : null}
+
+                      <div className="mt-4 grid gap-3">
+                        <label className="block">
+                          <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</span>
+                          <select
+                            value={composer.projectId}
+                            onChange={(event) => onComposerChange('projectId', event.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          >
+                            <option value="">Select a project</option>
+                            {projects.map((project) => (
+                              <option key={project.id} value={project.id}>
+                                {project.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start</span>
+                            <input
+                              type="time"
+                              value={composer.startTime}
+                              onChange={(event) => onComposerChange('startTime', event.target.value)}
+                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                            />
+                          </label>
+
+                          <label className="block">
+                            <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Minutes</span>
+                            <input
+                              type="number"
+                              min="15"
+                              step="15"
+                              value={composer.durationMinutes}
+                              onChange={(event) => onComposerChange('durationMinutes', event.target.value)}
+                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                              placeholder="60"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="block">
+                          <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Description</span>
+                          <input
+                            type="text"
+                            value={composer.description}
+                            onChange={(event) => onComposerChange('description', event.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                            placeholder="Planning, delivery follow-up, stakeholder review..."
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {recentProjects.map((project) => (
+                          <button
+                            key={project.id}
+                            type="button"
+                            onClick={() => {
+                              onSelectProject(project.id);
+                              onComposerChange('projectId', project.id);
+                            }}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${getTrackProjectColor(project.id).chip}`}
+                          >
+                            {project.name}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={onSubmit}
+                          disabled={!schemaReady || saving}
+                          className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                        >
+                          {saving ? 'Saving...' : activeEntry?.user_id === currentUserId ? 'Update entry' : 'Add entry'}
+                        </button>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={onResetComposer}
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                          >
+                            Reset
+                          </button>
+
+                          {activeEntry?.user_id === currentUserId ? (
+                            <button
+                              type="button"
+                              onClick={onDeleteEntry}
+                              disabled={deletingEntryId === activeEntry.id}
+                              className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {deletingEntryId === activeEntry.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                          ) : (
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs font-medium text-slate-500">
+                              Tap an entry above to edit it
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 hidden lg:block overflow-x-auto">
                     <div className="min-w-[920px]">
                       <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))] border-b border-slate-200">
                         <div className="px-3 pb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Time</div>
@@ -509,7 +892,7 @@ export default function TimesheetPanel({
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">How Track reads this week</div>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
-                        Use the week navigator to move through time, project chips to focus a workspace, and the calendar blocks to jump straight into editing your own entries.
+                        On phone, tap a day in the week strip to focus it and log time underneath. On larger screens, use the calendar blocks to jump straight into editing your own entries.
                       </p>
                     </div>
 
