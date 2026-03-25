@@ -466,10 +466,6 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
     setIsOpeningTrack(true);
     if (typeof onOpenTrack === 'function') {
       onOpenTrack();
-      return;
-    }
-    if (typeof window !== 'undefined') {
-      window.location.assign('/track');
     }
   }, [onOpenTrack]);
 
@@ -515,15 +511,15 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                     </div>
                   </div>
 
-                  <a
-                    href="/track"
+                  <button
+                    type="button"
                     onClick={handleOpenTrack}
                     onTouchEnd={handleOpenTrack}
                     aria-disabled={isOpeningTrack}
                     className={`mt-5 block w-full rounded-2xl bg-white px-5 py-3 text-center text-sm font-semibold text-slate-950 transition hover:bg-slate-100 ${isOpeningTrack ? 'pointer-events-none opacity-70' : ''}`}
                   >
                     {isOpeningTrack ? 'Opening Track…' : 'Open Track'}
-                  </a>
+                  </button>
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">

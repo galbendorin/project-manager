@@ -81,8 +81,7 @@ function App() {
       try {
         window.history.pushState({}, '', nextPath);
       } catch {
-        window.location.assign(nextPath);
-        return;
+        // Keep SPA navigation working even in environments where pushState is blocked.
       }
     }
     setCurrentPath(nextPath);
