@@ -582,7 +582,7 @@ export default function TimesheetPanel({
                 <>
                   <div className="mt-5 lg:hidden space-y-4">
                     <div className="overflow-x-auto">
-                      <div className="grid min-w-[560px] grid-cols-7 gap-2">
+                      <div className="grid min-w-[520px] grid-cols-7 gap-1.5">
                         {weekDays.map((day) => {
                           const dayTotalMinutes = entriesByDay[day.iso].reduce((total, entry) => total + entry.duration_minutes, 0);
                           const isSelectedDay = selectedDay?.iso === day.iso;
@@ -591,7 +591,7 @@ export default function TimesheetPanel({
                               key={day.iso}
                               type="button"
                               onClick={() => handleSelectMobileDay(day.iso)}
-                              className={`rounded-2xl border px-3 py-3 text-left transition ${
+                              className={`rounded-2xl border px-2.5 py-2.5 text-left transition ${
                                 isSelectedDay
                                   ? 'border-slate-950 bg-slate-950 text-white shadow-md'
                                   : day.isToday
@@ -602,8 +602,8 @@ export default function TimesheetPanel({
                               <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isSelectedDay ? 'text-slate-300' : 'text-slate-400'}`}>
                                 {day.weekday}
                               </div>
-                              <div className="mt-2 text-lg font-bold">{day.dayLabel}</div>
-                              <div className={`mt-2 text-xs ${isSelectedDay ? 'text-slate-300' : 'text-slate-500'}`}>
+                              <div className="mt-1.5 text-base font-bold">{day.dayLabel}</div>
+                              <div className={`mt-1 text-[11px] ${isSelectedDay ? 'text-slate-300' : 'text-slate-500'}`}>
                                 {dayTotalMinutes > 0 ? formatDurationMinutes(dayTotalMinutes) : 'No time'}
                               </div>
                             </button>
@@ -612,7 +612,7 @@ export default function TimesheetPanel({
                       </div>
                     </div>
 
-                    <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4">
+                    <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3.5">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Selected day</div>
@@ -628,9 +628,9 @@ export default function TimesheetPanel({
                         </span>
                       </div>
 
-                      <div className="mt-4 space-y-3">
+                      <div className="mt-3 space-y-2.5">
                         {selectedDayEntries.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                          <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-center text-sm text-slate-500">
                             No entries yet for this day. Choose a project and add time above.
                           </div>
                         ) : selectedDayEntries.map((entry) => {
@@ -643,7 +643,7 @@ export default function TimesheetPanel({
                               key={entry.id}
                               type="button"
                               onClick={() => onSelectEntry(entry)}
-                              className={`w-full rounded-2xl border px-4 py-3 text-left shadow-sm transition ${color.bg} ${color.border} ${isSelected ? 'ring-2 ring-slate-950/70' : ''}`}
+                              className={`w-full rounded-2xl border px-3.5 py-3 text-left shadow-sm transition ${color.bg} ${color.border} ${isSelected ? 'ring-2 ring-slate-950/70' : ''}`}
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -659,7 +659,7 @@ export default function TimesheetPanel({
                                 </span>
                               </div>
 
-                              <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-600">
+                              <div className="mt-2.5 flex items-center gap-2 text-[11px] text-slate-600">
                                 <span className={`inline-block h-2 w-10 rounded-full ${color.accent}`} />
                                 <span className="truncate">{project?.name || 'Project'}</span>
                               </div>
@@ -672,7 +672,7 @@ export default function TimesheetPanel({
                       </div>
                     </div>
 
-                    <div className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-3.5 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Add time for this day</div>
@@ -696,13 +696,13 @@ export default function TimesheetPanel({
                         </div>
                       ) : null}
 
-                      <div className="mt-4 grid gap-3">
+                      <div className="mt-3 grid gap-2.5">
                         <label className="block">
                           <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</span>
                           <select
                             value={composer.projectId}
                             onChange={(event) => onComposerChange('projectId', event.target.value)}
-                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                           >
                             <option value="">Select a project</option>
                             {projects.map((project) => (
@@ -713,14 +713,14 @@ export default function TimesheetPanel({
                           </select>
                         </label>
 
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-2.5">
                           <label className="block">
                             <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start</span>
                             <input
                               type="time"
                               value={composer.startTime}
                               onChange={(event) => onComposerChange('startTime', event.target.value)}
-                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                             />
                           </label>
 
@@ -732,7 +732,7 @@ export default function TimesheetPanel({
                               step="15"
                               value={composer.durationMinutes}
                               onChange={(event) => onComposerChange('durationMinutes', event.target.value)}
-                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                               placeholder="60"
                             />
                           </label>
@@ -744,43 +744,45 @@ export default function TimesheetPanel({
                             type="text"
                             value={composer.description}
                             onChange={(event) => onComposerChange('description', event.target.value)}
-                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                             placeholder="Planning, delivery follow-up, stakeholder review..."
                           />
                         </label>
                       </div>
 
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {recentProjects.map((project) => (
-                          <button
-                            key={project.id}
-                            type="button"
-                            onClick={() => {
-                              onSelectProject(project.id);
-                              onComposerChange('projectId', project.id);
-                            }}
-                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${getTrackProjectColor(project.id).chip}`}
-                          >
-                            {project.name}
-                          </button>
-                        ))}
+                      <div className="mt-3 overflow-x-auto">
+                        <div className="flex min-w-max gap-2 pb-1">
+                          {recentProjects.map((project) => (
+                            <button
+                              key={project.id}
+                              type="button"
+                              onClick={() => {
+                                onSelectProject(project.id);
+                                onComposerChange('projectId', project.id);
+                              }}
+                              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${getTrackProjectColor(project.id).chip}`}
+                            >
+                              {project.name}
+                            </button>
+                          ))}
+                        </div>
                       </div>
 
-                      <div className="mt-4 flex flex-col gap-2">
+                      <div className="mt-3 flex flex-col gap-2">
                         <button
                           type="button"
                           onClick={onSubmit}
                           disabled={!schemaReady || saving}
-                          className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                          className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
                           {saving ? 'Saving...' : activeEntry?.user_id === currentUserId ? 'Update entry' : 'Add entry'}
                         </button>
 
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className={`${activeEntry?.user_id === currentUserId ? 'grid grid-cols-2 gap-2' : 'flex'}`}>
                           <button
                             type="button"
                             onClick={onResetComposer}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                           >
                             Reset
                           </button>
@@ -790,15 +792,11 @@ export default function TimesheetPanel({
                               type="button"
                               onClick={onDeleteEntry}
                               disabled={deletingEntryId === activeEntry.id}
-                              className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {deletingEntryId === activeEntry.id ? 'Deleting...' : 'Delete'}
                             </button>
-                          ) : (
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs font-medium text-slate-500">
-                              Tap an entry above to edit it
-                            </div>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -888,7 +886,7 @@ export default function TimesheetPanel({
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                  <div className="mt-5 hidden gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_280px]">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">How Track reads this week</div>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
