@@ -475,7 +475,29 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-[28px] bg-[linear-gradient(155deg,#0f172a_0%,#162347_48%,#2f3f8c_100%)] p-5 text-white shadow-[0_30px_80px_-44px_rgba(15,23,42,0.95)]">
+                <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50/90 p-4 lg:hidden">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(155deg,#0f172a_0%,#162347_48%,#2f3f8c_100%)] text-sm font-bold text-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.85)]">
+                      T
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Track</p>
+                      <h2 className="truncate text-base font-bold tracking-[-0.03em] text-slate-950">Open your week</h2>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Log time across owned and shared work.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onOpenTrack}
+                      className="shrink-0 rounded-xl bg-slate-950 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                      Open
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-5 hidden rounded-[28px] bg-[linear-gradient(155deg,#0f172a_0%,#162347_48%,#2f3f8c_100%)] p-5 text-white shadow-[0_30px_80px_-44px_rgba(15,23,42,0.95)] lg:block">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">Track</p>
                   <h2 className="mt-2 text-[28px] font-bold leading-[1.05] tracking-[-0.05em]">
                     A cleaner way to run your week
