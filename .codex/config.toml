@@ -1,0 +1,24 @@
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
+plan_mode_reasoning_effort = "high"
+model_verbosity = "medium"
+
+[agents]
+max_threads = 4
+max_depth = 1
+
+[agents.repo_explorer]
+description = "Map PM Workspace features to their owning files, hooks, APIs, and persistence flow before edits."
+config_file = "./.codex/agents/repo_explorer.toml"
+
+[agents.design_partner]
+description = "Critique hierarchy, spacing, responsiveness, and product clarity before or after UI changes."
+config_file = "./.codex/agents/design_partner.toml"
+
+[agents.reviewer]
+description = "Review diffs for correctness, regressions, security, and missing verification."
+config_file = "./.codex/agents/reviewer.toml"
+
+[agents.browser_debugger]
+description = "Reproduce UI issues, gather browser evidence, and summarize likely causes."
+config_file = "./.codex/agents/browser_debugger.toml"
