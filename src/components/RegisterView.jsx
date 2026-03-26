@@ -419,8 +419,8 @@ const RegisterView = ({
                     )}
                   </th>
                 ))}
-                <th className={`px-3 py-3 border-b text-center ${allowRowColor ? 'w-40' : 'w-12'}`}>
-                  {allowRowColor ? 'Actions' : <IconTrash />}
+                <th className={`px-3 py-3 border-b text-center ${allowRowColor ? 'w-24' : 'w-12'}`}>
+                  {allowRowColor ? 'Color' : <IconTrash />}
                 </th>
               </tr>
             </thead>
@@ -436,7 +436,7 @@ const RegisterView = ({
                   {visibleCols.map(col => (
                     <EditableCell key={col} item={item} colName={col} />
                   ))}
-                  <td className={`px-3 py-2.5 text-center ${allowRowColor ? 'w-40' : 'w-12'}`}>
+                  <td className={`px-3 py-2.5 text-center ${allowRowColor ? 'w-24' : 'w-12'}`}>
                     <div className="flex items-center justify-center gap-2">
                       {allowRowColor && (
                         <RowColorControl
