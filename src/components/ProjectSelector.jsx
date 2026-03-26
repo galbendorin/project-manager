@@ -475,28 +475,6 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-[22px] border border-slate-200 bg-white/95 p-3.5 lg:hidden">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700">
-                      TS
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Timesheets</p>
-                      <h2 className="truncate text-[15px] font-semibold tracking-[-0.02em] text-slate-950">Log hours for the week</h2>
-                      <p className="mt-0.5 text-[11px] text-slate-500">
-                        Owned and shared projects in one place.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={onOpenTrack}
-                      className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                    >
-                      Open
-                    </button>
-                  </div>
-                </div>
-
                 <div className="mt-5 hidden rounded-[28px] bg-[linear-gradient(155deg,#0f172a_0%,#162347_48%,#2f3f8c_100%)] p-5 text-white shadow-[0_30px_80px_-44px_rgba(15,23,42,0.95)] lg:block">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">Timesheets</p>
                   <h2 className="mt-2 text-[28px] font-bold leading-[1.05] tracking-[-0.05em]">
@@ -530,7 +508,7 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                   </button>
                 </div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <div className="mt-4 hidden gap-3 sm:grid-cols-2 lg:grid lg:grid-cols-1">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Owned</div>
                     <div className="mt-1 text-2xl font-bold text-slate-950">
@@ -580,7 +558,7 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                   </div>
                 )}
 
-                <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="mt-5 hidden flex-col gap-3 lg:flex lg:flex-row lg:items-center lg:justify-between">
                   <div className="text-sm text-slate-500">
                     Owned {accessSummary.ownedCount} of {limits.maxProjects === 999 ? '∞' : limits.maxProjects}
                     {accessSummary.sharedCount > 0 ? ` · ${accessSummary.sharedCount} shared` : ''}
@@ -609,6 +587,28 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                     </button>
                   </div>
                 )}
+
+                <div className="mt-5 rounded-[22px] border border-slate-200 bg-white/95 p-3.5 lg:hidden">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700">
+                      TS
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Timesheets</p>
+                      <h2 className="truncate text-[15px] font-semibold tracking-[-0.02em] text-slate-950">Log hours for the week</h2>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        Owned and shared projects in one place.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onOpenTrack}
+                      className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                    >
+                      Open
+                    </button>
+                  </div>
+                </div>
 
                 <form
                   onSubmit={handleCreateSubmit}
