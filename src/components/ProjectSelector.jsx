@@ -591,8 +591,7 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                 <div className="rounded-[22px] border border-slate-200 bg-white/95 px-3.5 py-3 lg:hidden">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Timesheets</p>
-                      <h2 className="truncate text-base font-semibold text-slate-900">Log hours</h2>
+                      <h2 className="truncate text-base font-semibold text-slate-900">Timesheets</h2>
                     </div>
                     <button
                       type="button"
