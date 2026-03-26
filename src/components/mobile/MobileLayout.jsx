@@ -35,6 +35,7 @@ const MobileLayout = ({
   toggleTrackTask,
   removeFromTracker,
   updateTrackerItem,
+  reorderTrackerItems,
   isInTracker,
   updateStatusReport,
   addTodo,
@@ -140,6 +141,7 @@ const MobileLayout = ({
                 tasks={projectData}
                 onUpdateItem={updateTrackerItem}
                 onRemoveItem={removeFromTracker}
+                onReorderItems={reorderTrackerItems}
                 onNavigateToSchedule={() => { setActiveTab('plan'); setMoreSubView(null); }}
               />
             </Suspense>

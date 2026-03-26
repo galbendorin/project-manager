@@ -343,6 +343,22 @@ export const useProjectData = (projectId, userId = null) => {
     ));
   }, []);
 
+  const reorderTrackerItems = useCallback((sourceId, targetId) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+
+    setTracker((prev) => {
+      const sourceIndex = prev.findIndex((item) => item._id === sourceId);
+      const targetIndex = prev.findIndex((item) => item._id === targetId);
+
+      if (sourceIndex === -1 || targetIndex === -1) return prev;
+
+      const next = [...prev];
+      const [movedItem] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, movedItem);
+      return next;
+    });
+  }, []);
+
   const isInTracker = useCallback((taskId) => {
     return tracker.some(t => t.taskId === taskId);
   }, [tracker]);
@@ -604,6 +620,7 @@ export const useProjectData = (projectId, userId = null) => {
     addManualTrackerItem,
     removeFromTracker,
     updateTrackerItem,
+    reorderTrackerItems,
     isInTracker,
     updateStatusReport,
     addTodo,

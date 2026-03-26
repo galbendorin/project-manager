@@ -104,10 +104,12 @@ const MobileTrackerCard = ({ item, progress, onOpen }) => {
 
 const TrackerDetailSheet = ({
   item,
+  trackerItems,
   tasks,
   onClose,
   onRemoveItem,
   onUpdateItem,
+  onReorderItems,
   onNavigateToSchedule,
   onPatchCurrent,
 }) => {
@@ -120,6 +122,12 @@ const TrackerDetailSheet = ({
     onUpdateItem(item._id, key, value);
     onPatchCurrent(key, value);
   };
+
+  const trackerIndex = trackerItems.findIndex((entry) => entry._id === item._id);
+  const previousItem = trackerIndex > 0 ? trackerItems[trackerIndex - 1] : null;
+  const nextItem = trackerIndex >= 0 && trackerIndex < trackerItems.length - 1
+    ? trackerItems[trackerIndex + 1]
+    : null;
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col">
@@ -206,6 +214,30 @@ const TrackerDetailSheet = ({
           </div>
 
           <div className="mt-4 space-y-4">
+            <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Order
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => previousItem && onReorderItems?.(item._id, previousItem._id)}
+                  disabled={!previousItem}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
+                >
+                  Move up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => nextItem && onReorderItems?.(item._id, nextItem._id)}
+                  disabled={!nextItem}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
+                >
+                  Move down
+                </button>
+              </div>
+            </div>
+
             <div className="rounded-[24px] border border-slate-200 bg-white p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                 Row color
@@ -335,6 +367,7 @@ const MobileTrackerView = ({
   onUpdateItem,
   onRemoveItem,
   onAddManualItem,
+  onReorderItems,
   onNavigateToSchedule,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -438,10 +471,12 @@ const MobileTrackerView = ({
       {selectedItem && (
         <TrackerDetailSheet
           item={selectedItem}
+          trackerItems={trackerItems}
           tasks={tasks}
           onClose={() => setSelectedItem(null)}
           onRemoveItem={onRemoveItem}
           onUpdateItem={onUpdateItem}
+          onReorderItems={onReorderItems}
           onNavigateToSchedule={onNavigateToSchedule}
           onPatchCurrent={(key, value) => {
             setSelectedItem((current) => (

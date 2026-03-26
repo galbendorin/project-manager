@@ -276,6 +276,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
     addManualTrackerItem,
     removeFromTracker,
     updateTrackerItem,
+    reorderTrackerItems,
     isInTracker,
     updateStatusReport,
     addTodo,
@@ -1003,6 +1004,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
               onUpdateItem={updateTrackerItem}
               onRemoveItem={removeFromTracker}
               onAddManualItem={addManualTrackerItem}
+              onReorderItems={reorderTrackerItems}
               onNavigateToSchedule={handleNavigateToSchedule}
             />
           ) : activeTab === 'statusreport' ? (

@@ -75,6 +75,7 @@ const TrackerView = ({
   onUpdateItem,
   onRemoveItem,
   onAddManualItem,
+  onReorderItems,
   onNavigateToSchedule
 }) => {
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -82,6 +83,8 @@ const TrackerView = ({
   const [editingCell, setEditingCell] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [expandedCell, setExpandedCell] = useState(null);
+  const [draggedItemId, setDraggedItemId] = useState(null);
+  const [dropTargetId, setDropTargetId] = useState(null);
   const expandAnchorRef = useRef(null);
   const closePopover = useCallback(() => setExpandedCell(null), []);
 
@@ -115,6 +118,7 @@ const TrackerView = ({
         onUpdateItem={onUpdateItem}
         onRemoveItem={onRemoveItem}
         onAddManualItem={onAddManualItem}
+        onReorderItems={onReorderItems}
         onNavigateToSchedule={onNavigateToSchedule}
       />
     );
@@ -129,6 +133,37 @@ const TrackerView = ({
   const handleCellEdit = (itemId, key, value) => {
     onUpdateItem(itemId, key, value);
     setEditingCell(null);
+  };
+
+  const handleDragStart = (event, itemId) => {
+    if (!onReorderItems) return;
+    setDraggedItemId(itemId);
+    setDropTargetId(itemId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', itemId);
+  };
+
+  const handleDragOver = (event, itemId) => {
+    if (!draggedItemId || !onReorderItems) return;
+    event.preventDefault();
+    if (dropTargetId !== itemId) {
+      setDropTargetId(itemId);
+    }
+  };
+
+  const handleDrop = (event, itemId) => {
+    if (!draggedItemId || !onReorderItems) return;
+    event.preventDefault();
+    if (draggedItemId !== itemId) {
+      onReorderItems(draggedItemId, itemId);
+    }
+    setDraggedItemId(null);
+    setDropTargetId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItemId(null);
+    setDropTargetId(null);
   };
 
   const EditableCell = ({ item, col }) => {
@@ -160,37 +195,54 @@ const TrackerView = ({
         }
 
         return (
-          <td className={`px-4 py-3 ${hasLongName ? 'cell-with-tooltip' : ''} ${isManual ? 'editable cursor-pointer' : ''}`}
+          <td
+            className={`px-4 py-3 ${hasLongName ? 'cell-with-tooltip' : ''} ${isManual ? 'editable cursor-pointer' : ''}`}
             onClick={isManual ? () => setEditingCell(cellId) : undefined}
           >
-            {isManual ? (
-              <span className="text-slate-800 font-medium text-[12.5px] block max-w-full">
-                <span className="cell-clamp">{value}</span>
-                <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded border border-slate-200 text-slate-400 font-semibold">Manual</span>
-              </span>
-            ) : (
+            <div className="flex items-start gap-2">
               <button
-                onClick={() => onNavigateToSchedule && onNavigateToSchedule(item.taskId)}
-                className="text-left text-indigo-600 hover:text-indigo-800 font-medium text-[12.5px] hover:underline block max-w-full"
-                title="Go to task in Project Plan"
+                type="button"
+                draggable={!!onReorderItems}
+                onDragStart={(event) => handleDragStart(event, item._id)}
+                onDragEnd={handleDragEnd}
+                onClick={(event) => event.stopPropagation()}
+                className="mt-0.5 inline-flex h-6 w-5 flex-shrink-0 cursor-grab items-center justify-center rounded text-slate-300 transition hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing"
+                title="Drag to reorder"
               >
-                <span className="cell-clamp">{value}</span>
+                ⋮⋮
               </button>
-            )}
-            {getTaskProgress(item.taskId) !== null && (
-              <div className="flex items-center gap-1.5 mt-1">
-                <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${getTaskProgress(item.taskId) === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-                    style={{ width: `${getTaskProgress(item.taskId)}%` }}
-                  />
-                </div>
-                <span className="text-[10px] text-slate-400">{getTaskProgress(item.taskId)}%</span>
+
+              <div className="min-w-0 flex-1">
+                {isManual ? (
+                  <span className="text-slate-800 font-medium text-[12.5px] block max-w-full">
+                    <span className="cell-clamp">{value}</span>
+                    <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded border border-slate-200 text-slate-400 font-semibold">Manual</span>
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => onNavigateToSchedule && onNavigateToSchedule(item.taskId)}
+                    className="text-left text-indigo-600 hover:text-indigo-800 font-medium text-[12.5px] hover:underline block max-w-full"
+                    title="Go to task in Project Plan"
+                  >
+                    <span className="cell-clamp">{value}</span>
+                  </button>
+                )}
+                {getTaskProgress(item.taskId) !== null && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${getTaskProgress(item.taskId) === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                        style={{ width: `${getTaskProgress(item.taskId)}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-slate-400">{getTaskProgress(item.taskId)}%</span>
+                  </div>
+                )}
+                {hasLongName && (
+                  <div className="cell-tooltip">{value}</div>
+                )}
               </div>
-            )}
-            {hasLongName && (
-              <div className="cell-tooltip">{value}</div>
-            )}
+            </div>
           </td>
         );
       }
@@ -427,11 +479,18 @@ const TrackerView = ({
                     key={item._id}
                     className="border-b border-slate-100 hover:bg-slate-50 transition-all group"
                     style={item.rowColor ? { backgroundColor: getRowColorBackground(item.rowColor) } : undefined}
+                    onDragOver={(event) => handleDragOver(event, item._id)}
+                    onDrop={(event) => handleDrop(event, item._id)}
                   >
                     {TRACKER_COLS.map(col => (
                       <EditableCell key={col.key} item={item} col={col} />
                     ))}
-                    <td className="px-4 py-3 text-center">
+                    <td
+                      className="px-4 py-3 text-center"
+                      style={dropTargetId === item._id && draggedItemId !== item._id
+                        ? { boxShadow: 'inset 0 2px 0 #4f46e5' }
+                        : undefined}
+                    >
                       <div className="flex items-center justify-center gap-2 opacity-75 transition-all group-hover:opacity-100">
                         <RowColorControl
                           value={item.rowColor || null}
