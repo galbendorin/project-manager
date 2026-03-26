@@ -5,6 +5,8 @@ import { applyRegisterView, getRegisterViewConfig } from '../utils/registerViewU
 import { IconEyeOpen, IconEyeClosed, IconTrash } from './Icons';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import MobileRegisterList from './mobile/MobileRegisterList';
+import RowColorControl from './RowColorControl';
+import { getRowColorBackground } from '../utils/rowColors';
 
 // Columns that are short/fixed — don't need clamp/tooltip
 const SHORT_COLS = ['visible', 'number', 'status', 'level', 'raised', 'target', 'completed', 'date', 'updated', 'complete', 'cost', 'billing', 'mobile', 'phone'];
@@ -139,6 +141,7 @@ const RegisterView = ({
 
   const schema = SCHEMAS[registerType];
   if (!schema) return null;
+  const allowRowColor = registerType === 'actions';
 
   const visibleCols = isExternalView 
     ? schema.cols.filter(c => c !== "Visible") 
@@ -184,6 +187,7 @@ const RegisterView = ({
         schema={schema}
         items={items}
         isExternalView={isExternalView}
+        allowRowColor={allowRowColor}
         onUpdateItem={(itemId, key, value) => onUpdateItem(registerType, itemId, key, value)}
         onDeleteItem={(itemId) => onDeleteItem(registerType, itemId)}
       />
@@ -415,8 +419,8 @@ const RegisterView = ({
                     )}
                   </th>
                 ))}
-                <th className="px-3 py-3 border-b w-12 text-center">
-                  <IconTrash />
+                <th className={`px-3 py-3 border-b text-center ${allowRowColor ? 'w-40' : 'w-12'}`}>
+                  {allowRowColor ? 'Actions' : <IconTrash />}
                 </th>
               </tr>
             </thead>
@@ -424,20 +428,30 @@ const RegisterView = ({
               {filteredItems.map(item => (
                 <tr
                   key={item._id}
-                  className={`border-b border-slate-100 hover:bg-slate-50/80 transition-colors ${
-                    !item.public ? 'bg-slate-50/50' : ''
+                  className={`group border-b border-slate-100 hover:bg-slate-50/80 transition-colors ${
+                    !item.public && !item.rowColor ? 'bg-slate-50/50' : ''
                   }`}
+                  style={item.rowColor ? { backgroundColor: getRowColorBackground(item.rowColor) } : undefined}
                 >
                   {visibleCols.map(col => (
                     <EditableCell key={col} item={item} colName={col} />
                   ))}
-                  <td className="px-3 py-2.5 text-center w-12">
-                    <button
-                      onClick={() => onDeleteItem(registerType, item._id)}
-                      className="text-slate-300 hover:text-rose-500 transition-colors"
-                    >
-                      <IconTrash />
-                    </button>
+                  <td className={`px-3 py-2.5 text-center ${allowRowColor ? 'w-40' : 'w-12'}`}>
+                    <div className="flex items-center justify-center gap-2">
+                      {allowRowColor && (
+                        <RowColorControl
+                          value={item.rowColor || null}
+                          onChange={(nextColor) => onUpdateItem(registerType, item._id, 'rowColor', nextColor)}
+                          className="opacity-75 transition group-hover:opacity-100"
+                        />
+                      )}
+                      <button
+                        onClick={() => onDeleteItem(registerType, item._id)}
+                        className="text-slate-300 hover:text-rose-500 transition-colors"
+                      >
+                        <IconTrash />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

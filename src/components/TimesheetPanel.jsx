@@ -306,6 +306,14 @@ export default function TimesheetPanel({
                       Cross-project view
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={onDownloadReport}
+                    disabled={loading || downloadingReport || !schemaReady}
+                    className="rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_30px_-18px_rgba(2,132,199,0.9)] transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                  >
+                    {downloadingReport ? 'Downloading...' : 'Download report'}
+                  </button>
                 </div>
               </div>
 
@@ -569,7 +577,7 @@ export default function TimesheetPanel({
                     type="button"
                     onClick={onDownloadReport}
                     disabled={loading || downloadingReport || !schemaReady}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 lg:hidden"
                   >
                     {downloadingReport ? 'Downloading...' : 'Download report'}
                   </button>

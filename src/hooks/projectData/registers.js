@@ -8,6 +8,7 @@ const createTrackedAction = (taskId, task, nowIso) => ({
   number: 'Lnk',
   visible: true,
   public: true,
+  rowColor: task.rowColor || null,
   category: 'Task',
   actionassignedto: 'PM',
   description: task.name,
@@ -44,6 +45,7 @@ export const syncTrackedActionFromTask = (registers, task, nowIso) => {
     return {
       ...action,
       description: task.name,
+      rowColor: action.rowColor ?? task.rowColor ?? null,
       raised: task.start,
       target: getFinishDate(task.start, task.dur),
       status: task.pct === 100 ? 'Completed' : 'In Progress',
@@ -62,6 +64,7 @@ export const addRegisterItemToState = (registers, registerType, itemData, nowIso
     _id: Date.now().toString(),
     public: true,
     visible: true,
+    rowColor: itemData.rowColor || null,
     createdAt: nowIso,
     updatedAt: nowIso
   };

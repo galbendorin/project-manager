@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { keyGen } from '../../utils/helpers';
 import { applyRegisterView, getRegisterFieldValue, getRegisterViewConfig } from '../../utils/registerViewUtils';
+import RowColorControl from '../RowColorControl';
+import { getRowColorSurfaceStyle } from '../../utils/rowColors';
 
 const TITLE_SKIP_COLUMNS = new Set([
   'Visible',
@@ -81,7 +83,7 @@ const badgeTone = (value, type) => {
   return 'bg-slate-100 text-slate-600 border-slate-200';
 };
 
-const RegisterDetailSheet = ({ item, schema, onClose, onDeleteItem, onUpdateItem }) => {
+const RegisterDetailSheet = ({ item, schema, allowRowColor, onClose, onDeleteItem, onUpdateItem }) => {
   const [editingColumn, setEditingColumn] = useState(null);
   const [draftValue, setDraftValue] = useState('');
   const [showEmptyFields, setShowEmptyFields] = useState(false);
@@ -232,7 +234,10 @@ const RegisterDetailSheet = ({ item, schema, onClose, onDeleteItem, onUpdateItem
 
         <div className="h-full overflow-y-auto pb-16">
           <div className="space-y-4 px-4 py-4">
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+            <div
+              className="rounded-[24px] border border-slate-200 bg-slate-50 p-4"
+              style={allowRowColor ? getRowColorSurfaceStyle(item.rowColor) || undefined : undefined}
+            >
               <div className="flex flex-wrap items-center gap-2">
                 {summaryColumns.map((column) => {
                   const value = getColumnValue(item, column);
@@ -264,6 +269,19 @@ const RegisterDetailSheet = ({ item, schema, onClose, onDeleteItem, onUpdateItem
                 </div>
               )}
             </div>
+
+            {allowRowColor && (
+              <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white px-4 py-4">
+                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Row color
+                </div>
+                <RowColorControl
+                  value={item.rowColor || null}
+                  onChange={(nextColor) => onUpdateItem(item._id || item.id, 'rowColor', nextColor)}
+                  mode="pills"
+                />
+              </div>
+            )}
 
             <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
               {detailColumns.length > 0 ? (
@@ -302,7 +320,7 @@ const RegisterDetailSheet = ({ item, schema, onClose, onDeleteItem, onUpdateItem
   );
 };
 
-const MobileRegisterCard = ({ item, schema, onOpen }) => {
+const MobileRegisterCard = ({ item, schema, allowRowColor, onOpen }) => {
   const titleColumn = schema.cols.find((column) => {
     if (TITLE_SKIP_COLUMNS.has(column) || OWNER_COLUMNS.includes(column) || DATE_COLUMNS.includes(column)) return false;
     return hasValue(getColumnValue(item, column));
@@ -325,6 +343,7 @@ const MobileRegisterCard = ({ item, schema, onOpen }) => {
     <button
       onClick={() => onOpen(item)}
       className="w-full rounded-[24px] border border-slate-200 bg-white p-4 text-left shadow-sm transition active:scale-[0.99]"
+      style={allowRowColor ? getRowColorSurfaceStyle(item.rowColor) || undefined : undefined}
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
@@ -382,6 +401,7 @@ const MobileRegisterList = ({
   schema,
   items,
   isExternalView,
+  allowRowColor = false,
   onUpdateItem,
   onDeleteItem,
 }) => {
@@ -479,6 +499,7 @@ const MobileRegisterList = ({
                 key={item._id || item.id || `${schema.title}-${index}`}
                 item={item}
                 schema={schema}
+                allowRowColor={allowRowColor}
                 onOpen={setSelectedItem}
               />
             ))}
@@ -494,6 +515,7 @@ const MobileRegisterList = ({
         <RegisterDetailSheet
           item={selectedItem}
           schema={schema}
+          allowRowColor={allowRowColor}
           onClose={() => setSelectedItem(null)}
           onDeleteItem={onDeleteItem}
           onUpdateItem={(itemId, key, value) => {

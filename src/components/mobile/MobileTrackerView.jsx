@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { filterBySearch } from '../../utils/helpers';
+import RowColorControl from '../RowColorControl';
+import { getRowColorSurfaceStyle } from '../../utils/rowColors';
 
 const STATUS_OPTIONS = ['Not Started', 'In Progress', 'On Hold', 'Completed', 'Cancelled'];
 const RAG_OPTIONS = ['Green', 'Amber', 'Red'];
@@ -39,6 +41,7 @@ const MobileTrackerCard = ({ item, progress, onOpen }) => {
     <button
       onClick={() => onOpen(item)}
       className="w-full rounded-[24px] border border-slate-200 bg-white p-4 text-left shadow-sm transition active:scale-[0.99]"
+      style={getRowColorSurfaceStyle(item.rowColor) || undefined}
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${ragTone.bg} ${ragTone.text} ${ragTone.border}`}>
@@ -143,7 +146,10 @@ const TrackerDetailSheet = ({
         </div>
 
         <div className="h-full overflow-y-auto px-4 pb-16 pt-4">
-          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+          <div
+            className="rounded-[24px] border border-slate-200 bg-slate-50 p-4"
+            style={getRowColorSurfaceStyle(item.rowColor) || undefined}
+          >
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${ragTone.bg} ${ragTone.text} ${ragTone.border}`}>
                 {item.rag || 'Green'}
@@ -200,6 +206,19 @@ const TrackerDetailSheet = ({
           </div>
 
           <div className="mt-4 space-y-4">
+            <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Row color
+              </div>
+              <div className="mt-3">
+                <RowColorControl
+                  value={item.rowColor || null}
+                  onChange={(nextColor) => applyUpdate('rowColor', nextColor)}
+                  mode="pills"
+                />
+              </div>
+            </div>
+
             <div className="rounded-[24px] border border-slate-200 bg-white p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                 Status

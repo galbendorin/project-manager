@@ -4,6 +4,8 @@ import { filterBySearch } from '../utils/helpers';
 import { IconTrash } from './Icons';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import MobileTrackerView from './mobile/MobileTrackerView';
+import RowColorControl from './RowColorControl';
+import { getRowColorBackground } from '../utils/rowColors';
 
 // ── Viewport-aware popover (shared pattern) ────────────────────────
 
@@ -416,7 +418,7 @@ const TrackerView = ({
                       {col.label}
                     </th>
                   ))}
-                  <th className="px-4 py-4 border-b w-16 text-center">Act</th>
+                  <th className="px-4 py-4 border-b w-40 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="text-xs">
@@ -424,18 +426,25 @@ const TrackerView = ({
                   <tr
                     key={item._id}
                     className="border-b border-slate-100 hover:bg-slate-50 transition-all group"
+                    style={item.rowColor ? { backgroundColor: getRowColorBackground(item.rowColor) } : undefined}
                   >
                     {TRACKER_COLS.map(col => (
                       <EditableCell key={col.key} item={item} col={col} />
                     ))}
                     <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => onRemoveItem(item._id)}
-                        className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Remove from tracker"
-                      >
-                        <IconTrash />
-                      </button>
+                      <div className="flex items-center justify-center gap-2 opacity-75 transition-all group-hover:opacity-100">
+                        <RowColorControl
+                          value={item.rowColor || null}
+                          onChange={(nextColor) => onUpdateItem(item._id, 'rowColor', nextColor)}
+                        />
+                        <button
+                          onClick={() => onRemoveItem(item._id)}
+                          className="text-slate-300 hover:text-rose-500 transition-all"
+                          title="Remove from tracker"
+                        >
+                          <IconTrash />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
