@@ -577,8 +577,8 @@ export default function TimesheetPanel({
               ) : (
                 <>
                   <div className="mt-5 lg:hidden space-y-4">
-                    <div className="overflow-x-auto">
-                      <div className="grid min-w-[520px] grid-cols-7 gap-1.5">
+                    <div>
+                      <div className="grid grid-cols-7 gap-1">
                         {weekDays.map((day) => {
                           const dayTotalMinutes = entriesByDay[day.iso].reduce((total, entry) => total + entry.duration_minutes, 0);
                           const isSelectedDay = selectedDay?.iso === day.iso;
@@ -587,7 +587,7 @@ export default function TimesheetPanel({
                               key={day.iso}
                               type="button"
                               onClick={() => handleSelectMobileDay(day.iso)}
-                              className={`rounded-2xl border px-2.5 py-2.5 text-left transition ${
+                              className={`min-w-0 rounded-xl border px-1.5 py-2 text-left transition ${
                                 isSelectedDay
                                   ? 'border-slate-950 bg-slate-950 text-white shadow-md'
                                   : day.isToday
@@ -595,11 +595,11 @@ export default function TimesheetPanel({
                                     : 'border-slate-200 bg-slate-50 text-slate-700'
                               }`}
                             >
-                              <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isSelectedDay ? 'text-slate-300' : 'text-slate-400'}`}>
+                              <div className={`text-[9px] font-semibold uppercase tracking-[0.12em] ${isSelectedDay ? 'text-slate-300' : 'text-slate-400'}`}>
                                 {day.weekday}
                               </div>
-                              <div className="mt-1.5 text-base font-bold">{day.dayLabel}</div>
-                              <div className={`mt-1 text-[11px] ${isSelectedDay ? 'text-slate-300' : 'text-slate-500'}`}>
+                              <div className="mt-1 text-sm font-bold leading-none">{day.dayLabel}</div>
+                              <div className={`mt-1 truncate text-[10px] leading-tight ${isSelectedDay ? 'text-slate-300' : 'text-slate-500'}`}>
                                 {dayTotalMinutes > 0 ? formatDurationMinutes(dayTotalMinutes) : 'No time'}
                               </div>
                             </button>
