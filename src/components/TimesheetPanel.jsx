@@ -577,7 +577,7 @@ export default function TimesheetPanel({
                     type="button"
                     onClick={onDownloadReport}
                     disabled={loading || downloadingReport || !schemaReady}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 lg:hidden"
+                    className="rounded-full !bg-emerald-600 px-3 py-1.5 font-semibold !text-white shadow-[0_14px_26px_-16px_rgba(5,150,105,0.9)] transition hover:!bg-emerald-700 disabled:cursor-not-allowed disabled:!bg-slate-300 disabled:!text-slate-500 disabled:shadow-none lg:hidden"
                   >
                     {downloadingReport ? 'Downloading...' : 'Download report'}
                   </button>
