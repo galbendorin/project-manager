@@ -125,7 +125,7 @@ export const DEFAULT_TASK = {
 
 // Tab configurations
 export const TABS = [
-  { id: 'timesheets', label: 'Track' },
+  { id: 'timesheets', label: 'Timesheet' },
   { id: 'statusreport', label: 'Status Report' },
   { id: 'schedule', label: 'Project Plan' },
   { id: 'tracker', label: 'Master Tracker' },

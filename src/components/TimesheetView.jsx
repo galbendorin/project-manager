@@ -141,7 +141,7 @@ export default function TimesheetView({
     }
 
     if (error) {
-      setProjectLoadError('Unable to load accessible projects for Track right now.');
+      setProjectLoadError('Unable to load accessible projects for Timesheet right now.');
       setProjects([]);
       setLoadingProjects(false);
       return;
@@ -175,7 +175,7 @@ export default function TimesheetView({
         return;
       }
 
-      setEntryError('Unable to load Track entries for this week right now.');
+      setEntryError('Unable to load Timesheet entries for this week right now.');
       setLoadingEntries(false);
       return;
     }
@@ -334,7 +334,7 @@ export default function TimesheetView({
 
     const { start, endInclusive } = getWeekDateRange(weekStart);
     if (payload.entry_date < start || payload.entry_date > endInclusive) {
-      setEntryError('Track works week by week. Choose a date inside the visible week before saving.');
+      setEntryError('Timesheet works week by week. Choose a date inside the visible week before saving.');
       return;
     }
 
@@ -351,13 +351,13 @@ export default function TimesheetView({
 
       if (error) {
         setSaving(false);
-        setEntryError('Unable to update this Track entry right now.');
+        setEntryError('Unable to update this Timesheet entry right now.');
         return;
       }
 
       await loadEntries();
       setSaving(false);
-      setSuccessMessage('Track entry updated.');
+      setSuccessMessage('Timesheet entry updated.');
       resetComposer();
       return;
     }
@@ -368,13 +368,13 @@ export default function TimesheetView({
 
     if (error) {
       setSaving(false);
-      setEntryError('Unable to save this Track entry right now.');
+      setEntryError('Unable to save this Timesheet entry right now.');
       return;
     }
 
     await loadEntries();
     setSaving(false);
-    setSuccessMessage('Track entry added.');
+    setSuccessMessage('Timesheet entry added.');
     resetComposer();
   }, [activeEntry, composer, currentUserId, editingOwnEntry, loadEntries, resetComposer, saving, schemaReady]);
 
@@ -393,13 +393,13 @@ export default function TimesheetView({
 
     if (error) {
       setDeletingEntryId('');
-      setEntryError('Unable to delete this Track entry right now.');
+      setEntryError('Unable to delete this Timesheet entry right now.');
       return;
     }
 
     await loadEntries();
     setDeletingEntryId('');
-    setSuccessMessage('Track entry deleted.');
+    setSuccessMessage('Timesheet entry deleted.');
     resetComposer();
   }, [activeEntry?.id, currentUserId, deletingEntryId, editingOwnEntry, loadEntries, resetComposer]);
 

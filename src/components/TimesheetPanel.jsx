@@ -126,11 +126,11 @@ export default function TimesheetPanel({
         )}
 
         <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="rounded-[30px] bg-slate-950 px-5 py-5 text-white shadow-[0_38px_90px_-52px_rgba(15,23,42,0.95)]">
+          <aside className="rounded-[26px] bg-slate-950 px-4 py-4 text-white shadow-[0_38px_90px_-52px_rgba(15,23,42,0.95)] sm:rounded-[30px] sm:px-5 sm:py-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Track</p>
-                <h2 className="mt-2 text-2xl font-bold tracking-[-0.04em]">Weekly time view</h2>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Timesheet</p>
+                <h2 className="mt-1 text-xl font-bold tracking-[-0.04em] sm:mt-2 sm:text-2xl">This week</h2>
               </div>
               {currentProject && onBackToProject ? (
                 <button
@@ -143,11 +143,11 @@ export default function TimesheetPanel({
               ) : null}
             </div>
 
-            <p className="mt-3 text-sm leading-6 text-slate-300">
+            <p className="mt-3 hidden text-sm leading-6 text-slate-300 lg:block">
               Manual entries first, with owned-project visibility for team time. Shared projects stay personal unless you own them.
             </p>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Visible this week</div>
                 <div className="mt-2 text-3xl font-bold">{formatHoursFromMinutes(totalMinutes)}</div>
@@ -156,7 +156,7 @@ export default function TimesheetPanel({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+              <div className="hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 lg:block">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Context</div>
                 <div className="mt-2 text-sm font-semibold text-white">
                   {selectedProjectId === 'all' ? 'All accessible projects' : (selectedProject?.name || 'Selected project')}
@@ -167,28 +167,24 @@ export default function TimesheetPanel({
               </div>
             </div>
 
-            <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Week</div>
-                  <div className="mt-1 text-sm font-semibold text-white">{formatWeekRange(weekStart)}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={onThisWeek}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
-                >
-                  This week
-                </button>
-              </div>
+            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:mt-5">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Week</div>
+              <div className="mt-1 text-sm font-semibold text-white">{formatWeekRange(weekStart)}</div>
 
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="mt-3 grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={onPreviousWeek}
                   className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
                 >
                   Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={onThisWeek}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                >
+                  This week
                 </button>
                 <button
                   type="button"
@@ -200,7 +196,7 @@ export default function TimesheetPanel({
               </div>
             </div>
 
-            <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+            <div className="mt-5 hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 lg:block">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Recent projects</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
@@ -235,7 +231,7 @@ export default function TimesheetPanel({
             </div>
 
             {selectedProject && selectedProject.isOwned ? (
-              <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+              <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:mt-5">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">View</div>
                 <div className="mt-3 inline-flex rounded-full border border-white/10 bg-slate-900/60 p-1">
                   <button
@@ -253,13 +249,13 @@ export default function TimesheetPanel({
                     Team entries
                   </button>
                 </div>
-                <p className="mt-3 text-xs leading-5 text-slate-400">
+                <p className="mt-3 hidden text-xs leading-5 text-slate-400 lg:block">
                   Owners can review all time logged against this project. Collaborators still manage only their own entries.
                 </p>
               </div>
             ) : null}
 
-            <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+            <div className="mt-5 hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 lg:block">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Selection</div>
               {activeEntry ? (
                 <div className="mt-3 space-y-2 text-sm text-slate-200">
@@ -279,7 +275,7 @@ export default function TimesheetPanel({
                 </div>
               ) : (
                 <p className="mt-3 text-sm leading-6 text-slate-400">
-                  Select a block in the week view to inspect it, or use the composer to add a new Track entry.
+                  Select a block in the week view to inspect it, or use the composer to add a new Timesheet entry.
                 </p>
               )}
             </div>
@@ -294,7 +290,7 @@ export default function TimesheetPanel({
                     What are you working on?
                   </h3>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Add real entries against owned or shared projects. This is the Track surface, so time stays separate from your project forms.
+                    Add real entries against owned or shared projects. This is the Timesheet surface, so time stays separate from your project forms.
                   </p>
                 </div>
 
@@ -313,7 +309,7 @@ export default function TimesheetPanel({
 
               {!schemaReady ? (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  Track entries are not available in this environment yet. Apply the new `time_entries` SQL migration to enable the Track product.
+                  Timesheet entries are not available in this environment yet. Apply the new `time_entries` SQL migration to enable the Timesheet product.
                 </div>
               ) : null}
 
@@ -572,11 +568,11 @@ export default function TimesheetPanel({
 
               {loading ? (
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-12 text-center text-sm text-slate-500">
-                  Loading Track...
+                  Loading Timesheet...
                 </div>
               ) : projects.length === 0 ? (
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-12 text-center text-sm text-slate-500">
-                  Create or join a non-demo project to start using Track.
+                  Create or join a non-demo project to start using Timesheet.
                 </div>
               ) : (
                 <>
@@ -671,31 +667,28 @@ export default function TimesheetPanel({
                     ) : null}
 
                     <div className="rounded-[24px] border border-slate-200 bg-white p-3.5 shadow-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Add time for this day</div>
-                          <div className="mt-1 text-lg font-bold text-slate-950">
-                            {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'Selected day'}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            Pick a project, enter duration, and keep the week view focused on one day at a time.
-                          </div>
-                          {selectedDayEntries.length === 0 ? (
-                            <div className="mt-2 text-xs font-medium text-slate-500">
-                              No entries yet for {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'this day'}.
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Add time</div>
+                            <div className="mt-1 text-lg font-bold text-slate-950">
+                              {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'Selected day'}
                             </div>
+                            {selectedDayEntries.length === 0 ? (
+                              <div className="mt-1 text-xs font-medium text-slate-500">
+                                No entries yet for {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'this day'}.
+                              </div>
+                            ) : null}
+                          </div>
+                          {selectedProject ? (
+                            <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${getTrackProjectColor(selectedProject.id).chip}`}>
+                              {selectedProject.name}
+                            </span>
                           ) : null}
                         </div>
-                        {selectedProject ? (
-                          <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${getTrackProjectColor(selectedProject.id).chip}`}>
-                            {selectedProject.name}
-                          </span>
-                        ) : null}
-                      </div>
 
                       {!schemaReady ? (
                         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                          Track entries are not available in this environment yet. Apply the new `time_entries` SQL migration to enable the Track product.
+                          Timesheet entries are not available in this environment yet. Apply the new `time_entries` SQL migration to enable the Timesheet product.
                         </div>
                       ) : null}
 
@@ -891,7 +884,7 @@ export default function TimesheetPanel({
 
                   <div className="mt-5 hidden gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_280px]">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">How Track reads this week</div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">How Timesheet works this week</div>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
                         On phone, tap a day in the week strip to focus it and log time underneath. On larger screens, use the calendar blocks to jump straight into editing your own entries.
                       </p>
