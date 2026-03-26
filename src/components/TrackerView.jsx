@@ -110,6 +110,22 @@ const TrackerView = ({
     return { total, completed, inProgress, redItems, amberItems };
   }, [trackerItems]);
 
+  const getTrackerIndex = useCallback((itemId) => (
+    trackerItems.findIndex((item) => item._id === itemId)
+  ), [trackerItems]);
+
+  const moveTrackerItem = useCallback((itemId, delta) => {
+    if (!onReorderItems) return;
+    const currentIndex = getTrackerIndex(itemId);
+    const targetIndex = currentIndex + delta;
+
+    if (currentIndex === -1 || targetIndex < 0 || targetIndex >= trackerItems.length) return;
+
+    const targetItem = trackerItems[targetIndex];
+    if (!targetItem) return;
+    onReorderItems(itemId, targetItem._id);
+  }, [getTrackerIndex, onReorderItems, trackerItems]);
+
   if (isMobile) {
     return (
       <MobileTrackerView
@@ -475,6 +491,12 @@ const TrackerView = ({
               </thead>
               <tbody className="text-xs">
                 {filteredItems.map(item => (
+                  (() => {
+                    const currentIndex = getTrackerIndex(item._id);
+                    const canMoveUp = currentIndex > 0;
+                    const canMoveDown = currentIndex >= 0 && currentIndex < trackerItems.length - 1;
+
+                    return (
                   <tr
                     key={item._id}
                     className="border-b border-slate-100 hover:bg-slate-50 transition-all group"
@@ -492,6 +514,24 @@ const TrackerView = ({
                         : undefined}
                     >
                       <div className="flex items-center justify-center gap-2 opacity-75 transition-all group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => moveTrackerItem(item._id, -1)}
+                          disabled={!canMoveUp}
+                          className="rounded-md border border-slate-200 px-1.5 py-1 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
+                          title="Move up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveTrackerItem(item._id, 1)}
+                          disabled={!canMoveDown}
+                          className="rounded-md border border-slate-200 px-1.5 py-1 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
                         <RowColorControl
                           value={item.rowColor || null}
                           onChange={(nextColor) => onUpdateItem(item._id, 'rowColor', nextColor)}
@@ -506,6 +546,8 @@ const TrackerView = ({
                       </div>
                     </td>
                   </tr>
+                    );
+                  })()
                 ))}
               </tbody>
             </table>
