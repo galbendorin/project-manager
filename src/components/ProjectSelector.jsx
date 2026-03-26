@@ -95,9 +95,11 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
   const [shareProjectId, setShareProjectId] = useState(null);
+  const [isOpeningTrack, setIsOpeningTrack] = useState(false);
   const supportsIsDemoRef = useRef(true);
   const supportsProjectMembersRef = useRef(true);
   const isSeedingDemoRef = useRef(false);
+  const isOpeningTrackRef = useRef(false);
   const demoSeededRef = useRef(
     Boolean(user?.user_metadata?.[DEMO_SEED_FLAG]) || readLocalDemoSeedFlag(user?.id)
   );
@@ -457,6 +459,16 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
     });
   };
 
+  const handleOpenTrack = useCallback((event) => {
+    event?.preventDefault?.();
+    if (isOpeningTrackRef.current) return;
+    isOpeningTrackRef.current = true;
+    setIsOpeningTrack(true);
+    if (typeof onOpenTrack === 'function') {
+      onOpenTrack();
+    }
+  }, [onOpenTrack]);
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f5f0e8_100%)] flex flex-col">
       <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -501,10 +513,12 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
 
                   <button
                     type="button"
-                    onClick={onOpenTrack}
-                    className="mt-5 w-full rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
+                    onClick={handleOpenTrack}
+                    onTouchEnd={handleOpenTrack}
+                    aria-disabled={isOpeningTrack}
+                    className={`mt-5 block w-full rounded-2xl bg-white px-5 py-3 text-center text-sm font-semibold text-slate-950 transition hover:bg-slate-100 ${isOpeningTrack ? 'pointer-events-none opacity-70' : ''}`}
                   >
-                    Open Track
+                    {isOpeningTrack ? 'Opening Track…' : 'Open Track'}
                   </button>
                 </div>
 

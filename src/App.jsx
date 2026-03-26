@@ -78,7 +78,11 @@ function App() {
   const navigateToPath = useCallback((path) => {
     const nextPath = normalizeAppPath(path);
     if (typeof window !== 'undefined' && normalizeAppPath(window.location.pathname) !== nextPath) {
-      window.history.pushState({}, '', nextPath);
+      try {
+        window.history.pushState({}, '', nextPath);
+      } catch {
+        // Keep SPA navigation working even in environments where pushState is blocked.
+      }
     }
     setCurrentPath(nextPath);
   }, []);
