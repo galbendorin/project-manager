@@ -61,6 +61,7 @@ export default function TimesheetPanel({
   schemaReady,
   loading,
   saving,
+  downloadingReport,
   deletingEntryId,
   projectLoadError,
   entryError,
@@ -70,6 +71,7 @@ export default function TimesheetPanel({
   onSubmit,
   onResetComposer,
   onDeleteEntry,
+  onDownloadReport,
   onSelectEntry,
   onBackToProject,
 }) {
@@ -559,10 +561,18 @@ export default function TimesheetPanel({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 text-xs text-slate-500">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 font-semibold">
                     {selectedProjectId === 'all' ? 'My entries across all projects' : `${viewMode === 'team' ? 'Team' : 'My'} entries for ${selectedProject?.name || 'selected project'}`}
                   </span>
+                  <button
+                    type="button"
+                    onClick={onDownloadReport}
+                    disabled={loading || downloadingReport || !schemaReady}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    {downloadingReport ? 'Downloading...' : 'Download report'}
+                  </button>
                 </div>
               </div>
 

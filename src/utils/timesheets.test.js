@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   addWeeks,
   buildProjectDurationSummary,
+  buildTimesheetReportFileName,
+  buildTimesheetReportRows,
   buildTimeEntryPayload,
   formatDurationMinutes,
   formatHoursFromMinutes,
@@ -105,6 +107,33 @@ test('buildTimeEntryPayload validates the required fields', () => {
     durationMinutes: '90',
     description: '',
   }), null);
+});
+
+test('buildTimesheetReportRows returns spreadsheet-friendly rows in date order', () => {
+  const rows = buildTimesheetReportRows([
+    { id: 'b', project_id: 'beta', entry_date: '2026-03-25', start_minutes: 600, duration_minutes: 30, description: 'Follow-up call' },
+    { id: 'a', project_id: 'alpha', entry_date: '2026-03-24', start_minutes: 540, duration_minutes: 90, description: 'Weekly planning' },
+  ], [
+    { id: 'alpha', name: 'Alpha' },
+    { id: 'beta', name: 'Beta' },
+  ]);
+
+  assert.deepEqual(rows, [
+    { Date: '2026-03-24', Project: 'Alpha', Duration: 1.5, 'Task Worked On': 'Weekly planning' },
+    { Date: '2026-03-25', Project: 'Beta', Duration: 0.5, 'Task Worked On': 'Follow-up call' },
+  ]);
+});
+
+test('buildTimesheetReportFileName includes the week, project scope, and view', () => {
+  assert.equal(
+    buildTimesheetReportFileName({
+      weekStart: '2026-03-23',
+      selectedProject: { name: 'Alpha Launch' },
+      selectedProjectId: 'project_1',
+      viewMode: 'team',
+    }),
+    'timesheet-report_2026-03-23_to_2026-03-29_alpha-launch_team.xlsx'
+  );
 });
 
 test('getTrackProjectColor is stable for a given project id', () => {

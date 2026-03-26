@@ -185,6 +185,54 @@ export const buildProjectDurationSummary = (entries = [], projects = []) => {
     .sort((a, b) => b.totalMinutes - a.totalMinutes);
 };
 
+export const TIMESHEET_REPORT_COLUMNS = ['Date', 'Project', 'Duration', 'Task Worked On'];
+
+const sanitizeReportToken = (value = '', fallback = 'all-projects') => {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalized || fallback;
+};
+
+export const buildTimesheetReportRows = (entries = [], projects = []) => {
+  const projectMap = new Map((projects || []).map((project) => [project.id, project]));
+
+  return [...(entries || [])]
+    .sort((a, b) => {
+      const dateCompare = String(a?.entry_date || '').localeCompare(String(b?.entry_date || ''));
+      if (dateCompare !== 0) return dateCompare;
+
+      const startCompare = (Number(a?.start_minutes) || 0) - (Number(b?.start_minutes) || 0);
+      if (startCompare !== 0) return startCompare;
+
+      return String(a?.id || '').localeCompare(String(b?.id || ''));
+    })
+    .map((entry) => ({
+      Date: entry?.entry_date || '',
+      Project: projectMap.get(entry?.project_id)?.name || 'Project',
+      Duration: Number((((Number(entry?.duration_minutes) || 0) / 60)).toFixed(2)),
+      'Task Worked On': String(entry?.description || '').trim() || 'Untitled entry',
+    }));
+};
+
+export const buildTimesheetReportFileName = ({
+  weekStart,
+  selectedProject = null,
+  selectedProjectId = 'all',
+  viewMode = 'mine',
+} = {}) => {
+  const { start, endInclusive } = getWeekDateRange(weekStart);
+  const projectToken = selectedProjectId === 'all'
+    ? 'all-projects'
+    : sanitizeReportToken(selectedProject?.name || selectedProjectId, 'project');
+  const viewToken = viewMode === 'team' ? 'team' : 'mine';
+
+  return `timesheet-report_${start}_to_${endInclusive}_${projectToken}_${viewToken}.xlsx`;
+};
+
 export const getTrackProjectColor = (projectId = '') => {
   const source = String(projectId || 'track');
   const hash = Array.from(source).reduce((total, char) => total + char.charCodeAt(0), 0);

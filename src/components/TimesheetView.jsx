@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import TimesheetPanel from './TimesheetPanel';
+import { loadXLSX } from '../utils/importParsers';
 import { normalizeProjectRecord } from '../utils/projectSharing';
 import {
   addWeeks,
   buildProjectDurationSummary,
+  buildTimesheetReportFileName,
+  buildTimesheetReportRows,
   buildTimeEntryPayload,
   filterTimesheetProjects,
   getWeekDateRange,
   sumEntryDurationMinutes,
+  TIMESHEET_REPORT_COLUMNS,
   toWeekStartIso,
 } from '../utils/timesheets';
 
@@ -63,6 +67,7 @@ export default function TimesheetView({
   const [successMessage, setSuccessMessage] = useState('');
   const [schemaReady, setSchemaReady] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState(false);
   const [deletingEntryId, setDeletingEntryId] = useState('');
   const [weekStart, setWeekStart] = useState(() => toWeekStartIso(new Date()));
   const initialProjectId = currentProject?.is_demo ? '' : (currentProject?.id || '');
@@ -403,6 +408,61 @@ export default function TimesheetView({
     resetComposer();
   }, [activeEntry?.id, currentUserId, deletingEntryId, editingOwnEntry, loadEntries, resetComposer]);
 
+  const handleDownloadReport = useCallback(async () => {
+    if (downloadingReport || loadingProjects || loadingEntries || !schemaReady) return;
+
+    setEntryError('');
+    setSuccessMessage('');
+    setDownloadingReport(true);
+
+    try {
+      const rows = buildTimesheetReportRows(visibleEntries, trackProjects);
+      const XLSX = await loadXLSX();
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet([TIMESHEET_REPORT_COLUMNS]);
+
+      if (rows.length > 0) {
+        XLSX.utils.sheet_add_json(worksheet, rows, {
+          origin: 'A2',
+          skipHeader: true,
+        });
+      }
+
+      worksheet['!cols'] = [
+        { wch: 14 },
+        { wch: 28 },
+        { wch: 12 },
+        { wch: 48 },
+      ];
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Timesheet Report');
+      XLSX.writeFile(workbook, buildTimesheetReportFileName({
+        weekStart,
+        selectedProject,
+        selectedProjectId,
+        viewMode,
+      }));
+
+      setSuccessMessage(`Timesheet report downloaded${rows.length ? ` (${rows.length} ${rows.length === 1 ? 'row' : 'rows'})` : ''}.`);
+    } catch (error) {
+      console.error('Timesheet report export error:', error);
+      setEntryError('Unable to download the Timesheet report right now.');
+    } finally {
+      setDownloadingReport(false);
+    }
+  }, [
+    downloadingReport,
+    loadingProjects,
+    loadingEntries,
+    schemaReady,
+    visibleEntries,
+    trackProjects,
+    weekStart,
+    selectedProject,
+    selectedProjectId,
+    viewMode,
+  ]);
+
   return (
     <TimesheetPanel
       currentUserId={currentUserId}
@@ -425,6 +485,7 @@ export default function TimesheetView({
       schemaReady={schemaReady}
       loading={loadingProjects || loadingEntries}
       saving={saving}
+      downloadingReport={downloadingReport}
       deletingEntryId={deletingEntryId}
       projectLoadError={projectLoadError}
       entryError={entryError}
@@ -434,6 +495,7 @@ export default function TimesheetView({
       onSubmit={handleSubmit}
       onResetComposer={resetComposer}
       onDeleteEntry={handleDeleteEntry}
+      onDownloadReport={handleDownloadReport}
       onSelectEntry={handleSelectEntry}
       onBackToProject={onBackToProject}
     />
