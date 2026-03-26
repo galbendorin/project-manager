@@ -535,7 +535,7 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
 
             <main className="min-w-0">
               <div className="rounded-[30px] border border-slate-200/80 bg-white/94 p-5 shadow-[0_24px_70px_-52px_rgba(15,23,42,0.55)] backdrop-blur sm:p-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="hidden lg:flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Project home</p>
                     <h2 className="mt-2 text-3xl font-bold tracking-[-0.04em] text-slate-950">Manage your workspace</h2>
@@ -588,17 +588,11 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                   </div>
                 )}
 
-                <div className="mt-5 rounded-[22px] border border-slate-200 bg-white/95 p-3.5 lg:hidden">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700">
-                      TS
-                    </div>
-                    <div className="min-w-0 flex-1">
+                <div className="rounded-[22px] border border-slate-200 bg-white/95 px-3.5 py-3 lg:hidden">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Timesheets</p>
-                      <h2 className="truncate text-[15px] font-semibold tracking-[-0.02em] text-slate-950">Log hours for the week</h2>
-                      <p className="mt-0.5 text-[11px] text-slate-500">
-                        Owned and shared projects in one place.
-                      </p>
+                      <h2 className="truncate text-[16px] font-semibold tracking-[-0.02em] text-slate-950">Log hours</h2>
                     </div>
                     <button
                       type="button"
