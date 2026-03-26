@@ -475,22 +475,22 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50/90 p-4 lg:hidden">
+                <div className="mt-5 rounded-[22px] border border-slate-200 bg-white/95 p-3.5 lg:hidden">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(155deg,#0f172a_0%,#162347_48%,#2f3f8c_100%)] text-sm font-bold text-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.85)]">
-                      T
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700">
+                      TS
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Track</p>
-                      <h2 className="truncate text-base font-bold tracking-[-0.03em] text-slate-950">Open your week</h2>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Log time across owned and shared work.
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Timesheets</p>
+                      <h2 className="truncate text-[15px] font-semibold tracking-[-0.02em] text-slate-950">Log hours for the week</h2>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        Owned and shared projects in one place.
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={onOpenTrack}
-                      className="shrink-0 rounded-xl bg-slate-950 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                      className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
                     >
                       Open
                     </button>
@@ -498,12 +498,12 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                 </div>
 
                 <div className="mt-5 hidden rounded-[28px] bg-[linear-gradient(155deg,#0f172a_0%,#162347_48%,#2f3f8c_100%)] p-5 text-white shadow-[0_30px_80px_-44px_rgba(15,23,42,0.95)] lg:block">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">Track</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">Timesheets</p>
                   <h2 className="mt-2 text-[28px] font-bold leading-[1.05] tracking-[-0.05em]">
                     A cleaner way to run your week
                   </h2>
                   <p className="mt-3 text-sm leading-6 text-slate-300">
-                    Open Track to log time separately from project editing, jump across owned and shared work, and keep a calmer weekly view.
+                    Open Timesheets to log time separately from project editing, jump across owned and shared work, and keep a calmer weekly view.
                   </p>
 
                   <div className="mt-4 space-y-2 text-xs text-slate-300">
@@ -517,7 +517,7 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="inline-block h-2 w-2 rounded-full bg-amber-300" />
-                      <span>Weekly calendar surface inspired by Track tools</span>
+                      <span>Weekly calendar surface inspired by time tracking tools</span>
                     </div>
                   </div>
 
@@ -526,7 +526,7 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                     onClick={onOpenTrack}
                     className="mt-5 w-full rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
                   >
-                    Open Track
+                    Open Timesheets
                   </button>
                 </div>
 
@@ -562,13 +562,13 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                     <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Project home</p>
                     <h2 className="mt-2 text-3xl font-bold tracking-[-0.04em] text-slate-950">Manage your workspace</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
-                      Create a new workspace project, open shared work, or jump into Track when you want a separate weekly view.
+                      Create a new workspace project, open shared work, or jump into Timesheets when you want a separate weekly view.
                     </p>
                   </div>
 
                   <button
                     onClick={signOut}
-                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                    className="hidden lg:inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
                   >
                     Sign Out
                   </button>
@@ -745,6 +745,15 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                       ))
                     )}
                   </div>
+                </div>
+
+                <div className="mt-6 lg:hidden">
+                  <button
+                    onClick={signOut}
+                    className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                  >
+                    Sign Out
+                  </button>
                 </div>
               </div>
             </main>
