@@ -32,8 +32,9 @@ const Header = ({
   const baselineMenuRef = useRef(null);
   const [showBaselineMenu, setShowBaselineMenu] = useState(false);
   const [baselineMenuStyle, setBaselineMenuStyle] = useState({ top: 0, left: 0 });
-  const { canBaseline, canExport, canImport, hasTabAccess } = usePlan();
+  const { canBaseline, canExport, canImport, hasTabAccess, isPaid } = usePlan();
   const isTimesheetTab = activeTab === 'timesheets';
+  const showBillingButton = Boolean(onOpenBilling) && !isPaid;
 
   const updateBaselineMenuPosition = () => {
     if (typeof window === 'undefined' || !baselineButtonRef.current) return;
@@ -322,7 +323,7 @@ const Header = ({
         )}
 
         {/* Billing / Upgrade button */}
-        {onOpenBilling && (
+        {showBillingButton && (
           <button
             onClick={onOpenBilling}
             className="shrink-0 text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-all"
