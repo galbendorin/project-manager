@@ -12,6 +12,49 @@ import { normalizeProjectRecord } from '../utils/projectSharing';
 import ProjectShareModal from './ProjectShareModal';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
+const SPACE_SPLIT_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'also',
+  'buy',
+  'for',
+  'from',
+  'get',
+  'into',
+  'my',
+  'need',
+  'needs',
+  'our',
+  'please',
+  'plus',
+  'put',
+  'remember',
+  'some',
+  'the',
+  'then',
+  'to',
+  'with',
+]);
+const KNOWN_GROCERY_PHRASES = [
+  ['olive', 'oil'],
+  ['ice', 'cream'],
+  ['spring', 'onions'],
+  ['spring', 'onion'],
+  ['red', 'onion'],
+  ['green', 'beans'],
+  ['bell', 'pepper'],
+  ['soy', 'sauce'],
+  ['brown', 'bread'],
+  ['white', 'bread'],
+  ['coconut', 'milk'],
+  ['peanut', 'butter'],
+  ['tomato', 'sauce'],
+  ['paper', 'towels'],
+  ['toilet', 'roll'],
+  ['kitchen', 'roll'],
+  ['washing', 'up', 'liquid'],
+];
 
 const IconBase = ({ children, className = '', viewBox = '0 0 24 24' }) => (
   <svg
@@ -152,6 +195,34 @@ const sortTodos = (items = []) => (
   })
 );
 
+const mergeKnownGroceryPhrases = (tokens = []) => {
+  const merged = [];
+  let index = 0;
+
+  while (index < tokens.length) {
+    let matchedPhrase = null;
+
+    for (const phrase of KNOWN_GROCERY_PHRASES) {
+      const slice = tokens.slice(index, index + phrase.length);
+      if (slice.length === phrase.length && slice.every((token, tokenIndex) => token.toLowerCase() === phrase[tokenIndex])) {
+        matchedPhrase = slice.join(' ');
+        index += phrase.length;
+        break;
+      }
+    }
+
+    if (matchedPhrase) {
+      merged.push(matchedPhrase);
+      continue;
+    }
+
+    merged.push(tokens[index]);
+    index += 1;
+  }
+
+  return merged;
+};
+
 const splitVoiceTranscript = (value = '') => {
   const cleaned = String(value || '')
     .replace(/^(add|put|remember|buy|get)\s+/i, '')
@@ -168,6 +239,22 @@ const splitVoiceTranscript = (value = '') => {
     .split(/\s*[,;]\s*/)
     .map((item) => item.trim())
     .filter(Boolean);
+
+  if (items.length > 1) {
+    return items;
+  }
+
+  const bareTokens = normalized
+    .split(/\s+/)
+    .map((token) => token.trim().replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, ''))
+    .filter(Boolean);
+  const canFallbackSplitBySpaces = bareTokens.length >= 3
+    && bareTokens.length <= 8
+    && bareTokens.every((token) => /^[a-zA-Z][a-zA-Z'-]*$/.test(token) && !SPACE_SPLIT_STOPWORDS.has(token.toLowerCase()));
+
+  if (canFallbackSplitBySpaces) {
+    return mergeKnownGroceryPhrases(bareTokens);
+  }
 
   return items.length > 0 ? items : [cleaned];
 };
