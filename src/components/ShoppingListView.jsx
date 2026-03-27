@@ -161,7 +161,8 @@ const splitVoiceTranscript = (value = '') => {
   if (!cleaned) return [];
 
   const normalized = cleaned
-    .replace(/\s+(and then|then|plus)\s+/gi, ', ')
+    .replace(/\s+(and then|then|plus|also)\s+/gi, ', ')
+    .replace(/\s+and\s+/gi, ', ')
     .replace(/\s*\n+\s*/g, ', ');
   const items = normalized
     .split(/\s*[,;]\s*/)
