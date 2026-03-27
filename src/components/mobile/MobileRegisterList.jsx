@@ -409,6 +409,7 @@ const MobileRegisterList = ({
   const [columnFilters, setColumnFilters] = useState({});
   const [sortKey, setSortKey] = useState('default');
   const [selectedItem, setSelectedItem] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
 
   const viewConfig = useMemo(
     () => getRegisterViewConfig(schema, items, isExternalView),
@@ -421,6 +422,7 @@ const MobileRegisterList = ({
     setColumnFilters(viewConfig.defaultFilters);
     setSortKey(viewConfig.defaultSort);
     setSelectedItem(null);
+    setShowFilters(false);
   }, [schema.title, filterColumnsKey, viewConfig.defaultSort]);
 
   const filteredItems = useMemo(() => applyRegisterView({
@@ -439,6 +441,21 @@ const MobileRegisterList = ({
     viewConfig
   ]);
 
+  const activeFilterCount = useMemo(
+    () => viewConfig.filterColumns.reduce(
+      (count, column) => count + ((columnFilters[column] || 'all') !== 'all' ? 1 : 0),
+      0
+    ),
+    [columnFilters, viewConfig.filterColumns]
+  );
+  const hasCustomSort = sortKey !== (viewConfig.defaultSort || 'default');
+  const totalActiveControls = activeFilterCount + (hasCustomSort ? 1 : 0);
+
+  const clearMobileControls = useCallback(() => {
+    setColumnFilters(viewConfig.defaultFilters);
+    setSortKey(viewConfig.defaultSort);
+  }, [viewConfig.defaultFilters, viewConfig.defaultSort]);
+
   return (
     <div className="flex h-full flex-col bg-slate-50">
       <div className="border-b border-slate-200 bg-white px-4 py-3">
@@ -454,6 +471,17 @@ const MobileRegisterList = ({
               Public only
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => setShowFilters(true)}
+            className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+              showFilters || totalActiveControls > 0
+                ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                : 'border-slate-200 bg-white text-slate-600'
+            }`}
+          >
+            Filters{totalActiveControls > 0 ? ` (${totalActiveControls})` : ''}
+          </button>
         </div>
 
         <input
@@ -464,30 +492,26 @@ const MobileRegisterList = ({
           className="mt-3 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:bg-white"
         />
 
-        <div className="mt-3 space-y-3">
-          {viewConfig.filterColumns.map((column) => (
-            <select
-              key={column}
-              value={columnFilters[column] || 'all'}
-              onChange={(event) => setColumnFilters((current) => ({ ...current, [column]: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:bg-white"
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {totalActiveControls > 0 ? (
+            <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700">
+              {totalActiveControls} active control{totalActiveControls !== 1 ? 's' : ''}
+            </span>
+          ) : null}
+          {hasCustomSort ? (
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+              Custom sort
+            </span>
+          ) : null}
+          {totalActiveControls > 0 ? (
+            <button
+              type="button"
+              onClick={clearMobileControls}
+              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
             >
-              <option value="all">All {column.toLowerCase()}</option>
-              {(viewConfig.filterOptionsByColumn[column] || []).map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          ))}
-
-          <select
-            value={sortKey}
-            onChange={(event) => setSortKey(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:bg-white"
-          >
-            {viewConfig.sortOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
+              Clear
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -527,6 +551,70 @@ const MobileRegisterList = ({
             ));
           }}
         />
+      )}
+
+      {showFilters && (
+        <div className="fixed inset-0 z-[65] flex flex-col">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/45"
+            onClick={() => setShowFilters(false)}
+            aria-label="Close filters"
+          />
+          <div className="relative mt-16 flex-1 overflow-hidden rounded-t-[28px] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Filter {schema.title}</div>
+                <div className="mt-0.5 text-[11px] text-slate-400">
+                  Keep the log focused and open the controls only when you need them.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFilters(false)}
+                className="text-sm font-semibold text-indigo-600"
+              >
+                Done
+              </button>
+            </div>
+
+            <div className="h-full overflow-y-auto px-4 py-4 pb-16 space-y-3">
+              <select
+                value={sortKey}
+                onChange={(event) => setSortKey(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:bg-white"
+              >
+                {viewConfig.sortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+
+              {viewConfig.filterColumns.map((column) => (
+                <select
+                  key={column}
+                  value={columnFilters[column] || 'all'}
+                  onChange={(event) => setColumnFilters((current) => ({ ...current, [column]: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:bg-white"
+                >
+                  <option value="all">All {column.toLowerCase()}</option>
+                  {(viewConfig.filterOptionsByColumn[column] || []).map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              ))}
+
+              {totalActiveControls > 0 ? (
+                <button
+                  type="button"
+                  onClick={clearMobileControls}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-600"
+                >
+                  Clear filters and sort
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

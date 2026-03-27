@@ -702,24 +702,16 @@ const TodoView = ({
 
           {isMobile ? (
             <div className="space-y-3">
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                <select
-                  value={scope}
-                  onChange={(e) => {
-                    const nextScope = e.target.value;
-                    setScope(nextScope);
-                    setProjectFilter([]);
-                  }}
-                  className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white"
-                >
-                  <option value="project">This Project + Other</option>
-                  <option value="all">All Projects + Other</option>
-                </select>
-
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-500">
+                    {visibleOpenTodos.length} active item{visibleOpenTodos.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setShowMobileFilters((prev) => !prev)}
-                  className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                  onClick={() => setShowMobileFilters(true)}
+                  className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
                     showMobileFilters || activeFilterCount > 0
                       ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
                       : 'border-slate-200 bg-white text-slate-600'
@@ -734,52 +726,108 @@ const TodoView = ({
                   {scope === 'project' ? 'This project + Other' : 'All projects + Other'}
                 </span>
                 {activeFilterCount > 0 ? (
+                  <span className="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700">
+                    {activeFilterCount} active filter{activeFilterCount !== 1 ? 's' : ''}
+                  </span>
+                ) : null}
+                {activeFilterCount > 0 ? (
                   <button
                     type="button"
                     onClick={clearAllFilters}
                     className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
                   >
-                    Clear filters
+                    Clear
                   </button>
                 ) : null}
               </div>
 
               {showMobileFilters ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 space-y-2">
-                  <MultiSelectFilter
-                    allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
-                    options={projectSelectOptions}
-                    selectedValues={projectFilter}
-                    onChange={setProjectFilter}
+                <div className="fixed inset-0 z-[70] flex flex-col sm:hidden">
+                  <button
+                    type="button"
+                    className="absolute inset-0 bg-slate-950/45"
+                    onClick={() => setShowMobileFilters(false)}
+                    aria-label="Close filters"
                   />
+                  <div className="relative mt-16 flex-1 overflow-hidden rounded-t-[28px] bg-white shadow-2xl">
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">Task filters</div>
+                        <div className="mt-0.5 text-[11px] text-slate-400">
+                          Keep the list clear until you need to refine it.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileFilters(false)}
+                        className="text-sm font-semibold text-indigo-600"
+                      >
+                        Done
+                      </button>
+                    </div>
 
-                  <MultiSelectFilter
-                    allLabel="All Sources"
-                    options={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
-                    selectedValues={sourceFilter}
-                    onChange={setSourceFilter}
-                  />
+                    <div className="h-full overflow-y-auto px-4 py-4 pb-16 space-y-3">
+                      <MobileField label="Scope">
+                        <select
+                          value={scope}
+                          onChange={(e) => {
+                            const nextScope = e.target.value;
+                            setScope(nextScope);
+                            setProjectFilter([]);
+                          }}
+                          className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white w-full"
+                        >
+                          <option value="project">This Project + Other</option>
+                          <option value="all">All Projects + Other</option>
+                        </select>
+                      </MobileField>
 
-                  <MultiSelectFilter
-                    allLabel="All Owners"
-                    options={ownerOptions}
-                    selectedValues={ownerFilter}
-                    onChange={setOwnerFilter}
-                  />
+                      <MultiSelectFilter
+                        allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
+                        options={projectSelectOptions}
+                        selectedValues={projectFilter}
+                        onChange={setProjectFilter}
+                      />
 
-                  <MultiSelectFilter
-                    allLabel="All Recurrence"
-                    options={RECURRENCE_OPTIONS}
-                    selectedValues={recurrenceFilter}
-                    onChange={setRecurrenceFilter}
-                  />
+                      <MultiSelectFilter
+                        allLabel="All Sources"
+                        options={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
+                        selectedValues={sourceFilter}
+                        onChange={setSourceFilter}
+                      />
 
-                  <MultiSelectFilter
-                    allLabel="All Buckets"
-                    options={TODO_BUCKETS.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
-                    selectedValues={bucketFilter}
-                    onChange={setBucketFilter}
-                  />
+                      <MultiSelectFilter
+                        allLabel="All Owners"
+                        options={ownerOptions}
+                        selectedValues={ownerFilter}
+                        onChange={setOwnerFilter}
+                      />
+
+                      <MultiSelectFilter
+                        allLabel="All Recurrence"
+                        options={RECURRENCE_OPTIONS}
+                        selectedValues={recurrenceFilter}
+                        onChange={setRecurrenceFilter}
+                      />
+
+                      <MultiSelectFilter
+                        allLabel="All Buckets"
+                        options={TODO_BUCKETS.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
+                        selectedValues={bucketFilter}
+                        onChange={setBucketFilter}
+                      />
+
+                      {activeFilterCount > 0 ? (
+                        <button
+                          type="button"
+                          onClick={clearAllFilters}
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-600"
+                        >
+                          Clear all filters
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               ) : null}
             </div>
