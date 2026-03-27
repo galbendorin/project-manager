@@ -459,56 +459,30 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f5f0e8_100%)] flex flex-col">
+    <div className="min-h-screen pm-shell-bg flex flex-col">
       <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <div className="mx-auto max-w-7xl">
           <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
             <aside className="lg:sticky lg:top-6 lg:self-start">
-              <div className="rounded-[30px] border border-slate-200/80 bg-white/92 p-5 shadow-[0_24px_70px_-52px_rgba(15,23,42,0.55)] backdrop-blur">
-                <div className="flex items-center gap-3">
+              <div className="pm-workspace-panel rounded-[30px] p-5">
+                <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
+                    <p className="pm-kicker">Workspace</p>
                     <PmWorkspaceLogo size="sm" />
-                    <h1 className="mt-4 truncate text-xl font-bold tracking-[-0.03em] text-slate-950">Your Projects</h1>
+                    <h1 className="mt-4 truncate text-[1.55rem] font-bold tracking-[-0.04em] text-slate-950">Your projects</h1>
                     <p className="mt-1 truncate text-sm text-slate-500">{user.email}</p>
+                    <p className="mt-3 max-w-[22rem] text-sm leading-6 text-slate-500">
+                      Keep projects, shared work, and weekly time in one calmer workspace.
+                    </p>
+                  </div>
+                  <div className="hidden rounded-full border border-white/60 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-500 shadow-sm lg:block">
+                    {limits.label}
                   </div>
                 </div>
 
-                <div className="mt-5 hidden rounded-[28px] bg-[linear-gradient(155deg,#0f172a_0%,#162347_48%,#2f3f8c_100%)] p-5 text-white shadow-[0_30px_80px_-44px_rgba(15,23,42,0.95)] lg:block">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">Timesheets</p>
-                  <h2 className="mt-2 text-[28px] font-bold leading-[1.05] tracking-[-0.05em]">
-                    A cleaner way to run your week
-                  </h2>
-                  <p className="mt-3 text-sm leading-6 text-slate-300">
-                    Open Timesheets to log time separately from project editing, jump across owned and shared work, and keep a calmer weekly view.
-                  </p>
-
-                  <div className="mt-4 space-y-2 text-xs text-slate-300">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                      <span>Real time entries across accessible projects</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="inline-block h-2 w-2 rounded-full bg-sky-400" />
-                      <span>Owner view for team time on owned projects</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="inline-block h-2 w-2 rounded-full bg-amber-300" />
-                      <span>Weekly calendar surface inspired by time tracking tools</span>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={onOpenTrack}
-                    className="mt-5 w-full rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
-                  >
-                    Open Timesheets
-                  </button>
-                </div>
-
-                <div className="mt-4 hidden gap-3 sm:grid-cols-2 lg:grid lg:grid-cols-1">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Owned</div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  <div className="pm-metric-card rounded-2xl px-4 py-3">
+                    <div className="pm-kicker">Owned</div>
                     <div className="mt-1 text-2xl font-bold text-slate-950">
                       {accessSummary.ownedCount}
                       <span className="ml-1 text-sm font-medium text-slate-400">
@@ -516,35 +490,62 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                       </span>
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Plan</div>
+                  <div className="pm-metric-card rounded-2xl px-4 py-3">
+                    <div className="pm-kicker">Shared</div>
                     <div className="mt-1 flex items-center gap-2">
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">
-                        {limits.label}
-                      </span>
-                      {accessSummary.sharedCount > 0 ? (
-                        <span className="text-xs font-medium text-slate-500">{accessSummary.sharedCount} shared</span>
-                      ) : null}
+                      <span className="text-2xl font-bold text-slate-950">{accessSummary.sharedCount}</span>
+                      <span className="text-xs font-medium text-slate-500">projects visible to you</span>
                     </div>
+                  </div>
+                </div>
+
+                <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="pm-kicker">Timesheets</p>
+                      <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Log hours</h2>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        Track time across owned and shared work without leaving the workspace.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onOpenTrack}
+                      className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
+                    >
+                      Open
+                    </button>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                      Weekly view
+                    </span>
+                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                      Owned + shared
+                    </span>
+                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                      Excel export
+                    </span>
                   </div>
                 </div>
               </div>
             </aside>
 
             <main className="min-w-0">
-              <div className="rounded-[30px] border border-slate-200/80 bg-white/94 p-5 shadow-[0_24px_70px_-52px_rgba(15,23,42,0.55)] backdrop-blur sm:p-6">
+              <div className="pm-home-panel rounded-[30px] p-5 sm:p-6">
                 <div className="hidden lg:flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Project home</p>
-                    <h2 className="mt-2 text-3xl font-bold tracking-[-0.04em] text-slate-950">Manage your workspace</h2>
+                    <p className="pm-kicker">Project home</p>
+                    <h2 className="mt-2 text-3xl font-bold tracking-[-0.04em] text-slate-950">Projects</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
-                      Create a new workspace project, open shared work, or jump into Timesheets when you want a separate weekly view.
+                      Create a workspace project, open shared work, and keep active projects close at hand.
                     </p>
                   </div>
 
                   <button
                     onClick={signOut}
-                    className="hidden lg:inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                    className="pm-subtle-button hidden lg:inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors"
                   >
                     Sign Out
                   </button>
@@ -579,22 +580,23 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                     </p>
                     <button
                       onClick={() => window.open('/pricing', '_blank')}
-                      className="mt-3 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-700"
+                      className="pm-toolbar-primary mt-3 rounded-xl px-4 py-2 text-xs font-bold text-white transition-colors"
                     >
                       Upgrade to Pro — £7.99/mo
                     </button>
                   </div>
                 )}
 
-                <div className="rounded-[22px] border border-slate-200 bg-white/95 px-3.5 py-3 lg:hidden">
+                <div className="pm-utility-card rounded-[22px] px-3.5 py-3 lg:hidden">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="truncate text-base font-semibold text-slate-900">Timesheets</h2>
+                      <p className="pm-kicker mb-1">Timesheets</p>
+                      <h2 className="truncate text-base font-semibold text-slate-900">Log hours</h2>
                     </div>
                     <button
                       type="button"
                       onClick={onOpenTrack}
-                      className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                      className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
                     >
                       Open
                     </button>
@@ -603,13 +605,16 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
 
                 <form
                   onSubmit={handleCreateSubmit}
-                  className="mt-5 rounded-[26px] border border-slate-200 bg-[#fbfaf7] p-4 shadow-[0_20px_60px_-50px_rgba(15,23,42,0.35)]"
+                  className="pm-surface-soft mt-5 rounded-[28px] p-4 sm:p-5"
                 >
-                  <div className="flex flex-col gap-3 md:flex-row">
+                  <div className="mb-4">
+                    <p className="pm-kicker">Create project</p>
+                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">Start a new workspace</h3>
+                    <p className="mt-1 text-sm text-slate-500">Add a project and keep it ready for planning, logs, and reporting.</p>
+                  </div>
+
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end">
                     <div className="min-w-0 flex-1">
-                      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                        Create project
-                      </label>
                       <input
                         ref={inputRef}
                         type="text"
@@ -620,14 +625,14 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                         autoCorrect="off"
                         spellCheck="false"
                         enterKeyHint="go"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        className="pm-input w-full rounded-2xl px-4 py-3 text-base text-slate-900 placeholder-slate-400 sm:text-sm"
                       />
                     </div>
                     <div className="md:self-end">
                       <button
                         type="submit"
                         disabled={creating || !newProjectName.trim() || !canCreateProject}
-                        className="w-full rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 md:w-auto"
+                        className="pm-toolbar-primary w-full rounded-2xl px-5 py-3 text-sm font-semibold text-white transition disabled:bg-slate-200 disabled:text-slate-400 md:w-auto"
                       >
                         {!canCreateProject ? 'Limit reached' : creating ? '...' : '+ Create'}
                       </button>
@@ -640,18 +645,18 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
 
                 <div className="mt-6">
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Projects</h3>
+                    <h3 className="pm-kicker text-sm">Projects</h3>
                     <span className="text-xs text-slate-400">{loading ? loadingMessage : `${projects.length} visible`}</span>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="pm-list-shell space-y-3 rounded-[28px] p-3 sm:p-4">
                     {loading ? (
-                      <div className="text-center py-12 bg-slate-50 rounded-[26px] border border-slate-200 shadow-sm">
+                      <div className="pm-surface-card text-center py-12 rounded-[24px] shadow-sm">
                         <div className="inline-block w-8 h-8 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3" style={{ borderWidth: '3px' }}></div>
                         <p className="text-slate-500 text-sm">{loadingMessage}</p>
                       </div>
                     ) : projects.length === 0 ? (
-                      <div className="text-center py-12 bg-slate-50 rounded-[26px] border border-slate-200 shadow-sm">
+                      <div className="pm-surface-card text-center py-12 rounded-[24px] shadow-sm">
                         <div className="text-4xl mb-3">📋</div>
                         <p className="text-slate-700 font-medium mb-1">Your workspace is ready for its first project</p>
                         <p className="text-slate-400 text-sm">Create a project above or wait a moment if your demo workspace is still being prepared.</p>
@@ -705,14 +710,16 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                                     e.stopPropagation();
                                     setShareProjectId(project.id);
                                   }}
-                                  className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                                  className="pm-subtle-button rounded-full px-3 py-1.5 text-xs font-semibold transition"
                                   title="Share project"
                                   type="button"
                                 >
                                   Share
                                 </button>
                               )}
-                              <span className="text-slate-400 group-hover:text-indigo-500 text-sm">Open →</span>
+                              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition group-hover:border-violet-200 group-hover:text-violet-700">
+                                Open
+                              </span>
                               {project.isOwned && (
                                 <button
                                   onClick={(e) => deleteProject(project.id, e)}
@@ -741,7 +748,7 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                 <div className="mt-6 lg:hidden">
                   <button
                     onClick={signOut}
-                    className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                    className="pm-subtle-button inline-flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition-colors"
                   >
                     Sign Out
                   </button>
