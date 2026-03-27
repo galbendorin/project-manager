@@ -1,0 +1,32 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pmworkspace-mark-gradient" x1="178" y1="164" x2="838" y2="844" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF3B8D" />
+      <stop offset="0.5" stop-color="#C020C2" />
+      <stop offset="1" stop-color="#7E22CE" />
+    </linearGradient>
+  </defs>
+  <g transform="translate(164 160) scale(6.25)">
+    <path
+      d="M18 78V16H52C66 16 78 22 87 34L77 47C70 39 61 35 50 35H34V78"
+      stroke="url(#pmworkspace-mark-gradient)"
+      stroke-width="10"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M35 67V35C46 35 54 38 61 44L72 53C64 61 54 66 42 66H35"
+      stroke="url(#pmworkspace-mark-gradient)"
+      stroke-width="10"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M88 78V36L64 78"
+      stroke="url(#pmworkspace-mark-gradient)"
+      stroke-width="10"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+</svg>

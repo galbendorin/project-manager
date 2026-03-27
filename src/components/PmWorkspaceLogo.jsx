@@ -33,21 +33,20 @@ export default function PmWorkspaceLogo({
 }) {
   const sizeConfig = SIZE_MAP[size] || SIZE_MAP.sm;
   const workspaceColor = variant === 'dark' ? '#d8d4ea' : '#4f4a67';
-  const ringClass = variant === 'dark' ? 'ring-1 ring-white/10' : 'ring-1 ring-slate-950/6';
   const shadowClass = variant === 'dark'
-    ? 'shadow-[0_16px_30px_-18px_rgba(0,0,0,0.75)]'
-    : 'shadow-[0_18px_34px_-22px_rgba(15,23,42,0.45)]';
+    ? 'drop-shadow-[0_10px_18px_rgba(0,0,0,0.28)]'
+    : 'drop-shadow-[0_8px_14px_rgba(124,58,237,0.16)]';
 
   return (
     <div className={`inline-flex min-w-0 items-center ${sizeConfig.gapClass} ${className}`.trim()}>
       <span
-        className={`inline-flex shrink-0 overflow-hidden bg-black ${ringClass} ${shadowClass} ${sizeConfig.markClass}`.trim()}
+        className={`inline-flex shrink-0 ${shadowClass} ${sizeConfig.markClass}`.trim()}
       >
         <img
-          src="/pmworkspace-mark-dark.png"
+          src="/pmworkspace-mark.svg"
           alt={iconOnly ? 'PM Workspace' : ''}
           aria-hidden={iconOnly ? undefined : 'true'}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
         />
       </span>
       {!iconOnly && (
