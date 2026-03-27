@@ -30,6 +30,42 @@
   --pm-focus-ring: 0 0 0 3px rgba(124, 58, 237, 0.16);
 }
 
+:root[data-accent="ocean"] {
+  --pm-accent: #2563eb;
+  --pm-accent-strong: #1d4ed8;
+  --pm-accent-soft: #dbeafe;
+  --pm-accent-tint: #eef5ff;
+  --pm-accent-gradient: linear-gradient(135deg, #1d4ed8 0%, #0ea5e9 58%, #22c55e 100%);
+  --pm-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+:root[data-accent="emerald"] {
+  --pm-accent: #059669;
+  --pm-accent-strong: #047857;
+  --pm-accent-soft: #d1fae5;
+  --pm-accent-tint: #ecfdf5;
+  --pm-accent-gradient: linear-gradient(135deg, #047857 0%, #10b981 56%, #34d399 100%);
+  --pm-focus-ring: 0 0 0 3px rgba(5, 150, 105, 0.16);
+}
+
+:root[data-accent="sunset"] {
+  --pm-accent: #ea580c;
+  --pm-accent-strong: #c2410c;
+  --pm-accent-soft: #ffedd5;
+  --pm-accent-tint: #fff7ed;
+  --pm-accent-gradient: linear-gradient(135deg, #c2410c 0%, #f97316 52%, #fb7185 100%);
+  --pm-focus-ring: 0 0 0 3px rgba(234, 88, 12, 0.16);
+}
+
+:root[data-accent="rose"] {
+  --pm-accent: #e11d48;
+  --pm-accent-strong: #be123c;
+  --pm-accent-soft: #ffe4eb;
+  --pm-accent-tint: #fff1f5;
+  --pm-accent-gradient: linear-gradient(135deg, #be123c 0%, #db2777 52%, #8b5cf6 100%);
+  --pm-focus-ring: 0 0 0 3px rgba(225, 29, 72, 0.16);
+}
+
 .theme-dark,
 [data-theme="dark"] {
   color-scheme: dark;
@@ -252,6 +288,110 @@ body {
 .pm-ai-banner {
   background: linear-gradient(135deg, #1a1830 0%, #24274a 48%, #4f46a8 100%);
   border-bottom: 1px solid rgba(129, 140, 248, 0.22);
+}
+
+.pm-accent-scope .text-indigo-600,
+.pm-accent-scope .text-indigo-700,
+.pm-accent-scope .text-violet-600,
+.pm-accent-scope .text-violet-700,
+.pm-accent-scope .text-purple-600,
+.pm-accent-scope .text-purple-700 {
+  color: var(--pm-accent-strong) !important;
+}
+
+.pm-accent-scope .text-indigo-500,
+.pm-accent-scope .text-violet-500,
+.pm-accent-scope .text-purple-500,
+.pm-accent-scope .text-indigo-400,
+.pm-accent-scope .text-violet-400,
+.pm-accent-scope .text-purple-400 {
+  color: var(--pm-accent) !important;
+}
+
+.pm-accent-scope .hover\:text-indigo-600:hover,
+.pm-accent-scope .hover\:text-indigo-700:hover,
+.pm-accent-scope .hover\:text-violet-600:hover,
+.pm-accent-scope .hover\:text-violet-700:hover,
+.pm-accent-scope .hover\:text-purple-600:hover,
+.pm-accent-scope .hover\:text-purple-700:hover {
+  color: var(--pm-accent-strong) !important;
+}
+
+.pm-accent-scope .bg-indigo-600,
+.pm-accent-scope .bg-violet-600,
+.pm-accent-scope .bg-purple-600 {
+  background: var(--pm-accent-gradient) !important;
+  border-color: transparent !important;
+  color: white !important;
+}
+
+.pm-accent-scope .hover\:bg-indigo-700:hover,
+.pm-accent-scope .hover\:bg-violet-700:hover,
+.pm-accent-scope .hover\:bg-purple-700:hover {
+  background: var(--pm-accent-gradient) !important;
+  filter: brightness(0.96);
+  border-color: transparent !important;
+  color: white !important;
+}
+
+.pm-accent-scope .bg-indigo-50,
+.pm-accent-scope .bg-indigo-100,
+.pm-accent-scope .bg-violet-50,
+.pm-accent-scope .bg-violet-100,
+.pm-accent-scope .bg-purple-50,
+.pm-accent-scope .bg-purple-100 {
+  background: var(--pm-accent-tint) !important;
+}
+
+.pm-accent-scope .hover\:bg-indigo-50:hover,
+.pm-accent-scope .hover\:bg-indigo-100:hover,
+.pm-accent-scope .hover\:bg-violet-50:hover,
+.pm-accent-scope .hover\:bg-violet-100:hover,
+.pm-accent-scope .hover\:bg-purple-50:hover,
+.pm-accent-scope .hover\:bg-purple-100:hover {
+  background: var(--pm-accent-tint) !important;
+}
+
+.pm-accent-scope .border-indigo-100,
+.pm-accent-scope .border-indigo-200,
+.pm-accent-scope .border-indigo-300,
+.pm-accent-scope .border-violet-100,
+.pm-accent-scope .border-violet-200,
+.pm-accent-scope .border-violet-300,
+.pm-accent-scope .border-purple-100,
+.pm-accent-scope .border-purple-200,
+.pm-accent-scope .border-purple-300 {
+  border-color: var(--pm-accent-soft) !important;
+}
+
+.pm-accent-scope .hover\:border-indigo-300:hover,
+.pm-accent-scope .hover\:border-indigo-200:hover,
+.pm-accent-scope .hover\:border-violet-300:hover,
+.pm-accent-scope .hover\:border-violet-200:hover,
+.pm-accent-scope .hover\:border-purple-300:hover,
+.pm-accent-scope .hover\:border-purple-200:hover {
+  border-color: var(--pm-accent-soft) !important;
+}
+
+.pm-accent-scope .border-t-indigo-600 {
+  border-top-color: var(--pm-accent) !important;
+}
+
+.pm-accent-scope .accent-indigo-600 {
+  accent-color: var(--pm-accent) !important;
+}
+
+.pm-accent-scope .focus\:border-indigo-300:focus,
+.pm-accent-scope .focus\:border-indigo-400:focus,
+.pm-accent-scope .focus\:border-indigo-500:focus {
+  border-color: var(--pm-accent) !important;
+  box-shadow: var(--pm-focus-ring) !important;
+}
+
+.pm-accent-scope .focus\:ring-indigo-200:focus,
+.pm-accent-scope .focus\:ring-indigo-300:focus,
+.pm-accent-scope .focus\:ring-indigo-500\/20:focus {
+  box-shadow: var(--pm-focus-ring) !important;
 }
 
 @media (max-width: 768px) {

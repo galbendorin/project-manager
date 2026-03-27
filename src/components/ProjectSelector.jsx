@@ -7,6 +7,7 @@ import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
 import AuthenticatedFooter from './AuthenticatedFooter';
 import ProjectShareModal from './ProjectShareModal';
 import PmWorkspaceLogo from './PmWorkspaceLogo';
+import AccentThemePicker from './AccentThemePicker';
 import {
   countOwnedProjects,
   normalizeProjectRecord,
@@ -86,7 +87,7 @@ const getFriendlyProjectCreateErrorMessage = (error) => {
   return message;
 };
 
-const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
+const ProjectSelector = ({ onSelectProject, onOpenTrack, accentTheme, onAccentThemeChange }) => {
   const { user, signOut } = useAuth();
   const { canCreateProject, limits, isReadOnly, refreshProjectCount } = usePlan();
   const [projects, setProjects] = useState([]);
@@ -459,7 +460,7 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
   };
 
   return (
-    <div className="min-h-screen pm-shell-bg flex flex-col">
+    <div className="pm-accent-scope min-h-screen pm-shell-bg flex flex-col">
       <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <div className="mx-auto max-w-7xl">
           <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -498,6 +499,16 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
                     </div>
                   </div>
                 </div>
+
+                {onAccentThemeChange && (
+                  <div className="pm-surface-soft mt-5 rounded-[24px] px-4 py-4">
+                    <AccentThemePicker
+                      value={accentTheme}
+                      onChange={onAccentThemeChange}
+                      mode="inline"
+                    />
+                  </div>
+                )}
 
                 <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
                   <div className="flex items-start justify-between gap-3">

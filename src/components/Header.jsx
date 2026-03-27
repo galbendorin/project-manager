@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import ModuleHeader from './ModuleHeader';
 import PmWorkspaceLogo from './PmWorkspaceLogo';
 import { usePlan } from '../contexts/PlanContext';
+import AccentThemePicker from './AccentThemePicker';
 
 const Header = ({ 
   projectName = 'Project Management OS',
@@ -26,7 +27,9 @@ const Header = ({
   viewMode,
   onViewModeChange,
   onOpenPricing,
-  onOpenBilling
+  onOpenBilling,
+  accentTheme,
+  onAccentThemeChange
 }) => {
   const fileInputRef = useRef(null);
   const baselineButtonRef = useRef(null);
@@ -319,6 +322,13 @@ const Header = ({
           >
             Export
           </button>
+        )}
+
+        {onAccentThemeChange && (
+          <AccentThemePicker
+            value={accentTheme}
+            onChange={onAccentThemeChange}
+          />
         )}
 
         {/* Billing / Upgrade button */}

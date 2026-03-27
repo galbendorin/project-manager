@@ -41,6 +41,8 @@ import {
   getEmailDigestSystemPrompt
 } from './utils/aiPrompts';
 import { openFeedbackEmail } from './utils/feedback';
+import AccentThemePicker from './components/AccentThemePicker';
+import { applyAccentTheme, loadAccentTheme, saveAccentTheme } from './utils/appearance';
 
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
@@ -61,9 +63,15 @@ function App() {
   const { user, loading: authLoading, signOut } = useAuth();
   const checkoutStatus = useCheckoutStatus();
   const [currentProject, setCurrentProject] = useState(null);
+  const [accentTheme, setAccentTheme] = useState(() => loadAccentTheme());
   const [currentPath, setCurrentPath] = useState(() => (
     typeof window !== 'undefined' ? normalizeAppPath(window.location.pathname) : '/'
   ));
+
+  useEffect(() => {
+    applyAccentTheme(accentTheme);
+    saveAccentTheme(accentTheme);
+  }, [accentTheme]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -137,6 +145,8 @@ function App() {
             userEmail={user.email}
             onGoToProjects={() => navigateToPath('/')}
             onSignOut={signOut}
+            accentTheme={accentTheme}
+            onAccentThemeChange={setAccentTheme}
           />
         ) : (
           <ProjectSelector
@@ -145,6 +155,8 @@ function App() {
               navigateToPath('/');
             }}
             onOpenTrack={() => navigateToPath('/track')}
+            accentTheme={accentTheme}
+            onAccentThemeChange={setAccentTheme}
           />
         )}
         <CheckoutToast status={checkoutStatus} />
@@ -157,6 +169,8 @@ function App() {
       <MainApp
         project={currentProject}
         currentUserId={user.id}
+        accentTheme={accentTheme}
+        onAccentThemeChange={setAccentTheme}
         onBackToProjects={() => {
           setCurrentProject(null);
           navigateToPath('/');
@@ -167,9 +181,9 @@ function App() {
   );
 }
 
-function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onSignOut }) {
+function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onSignOut, accentTheme, onAccentThemeChange }) {
   return (
-    <div className="min-h-screen bg-[#f6f2ea] flex flex-col">
+    <div className="pm-shell-bg pm-accent-scope min-h-screen flex flex-col">
       <div className="border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-start justify-between gap-3 px-4 py-3 sm:items-center sm:px-6 sm:py-4">
           <div className="min-w-0">
@@ -183,6 +197,7 @@ function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onS
           </div>
 
           <div className="flex items-center gap-2">
+            <AccentThemePicker value={accentTheme} onChange={onAccentThemeChange} />
             <button
               onClick={onGoToProjects}
               className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 sm:px-4 sm:text-sm"
@@ -216,7 +231,7 @@ function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onS
   );
 }
 
-function MainApp({ project, currentUserId, onBackToProjects }) {
+function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onBackToProjects }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const {
     canUseAiReport, aiReportsRemaining, incrementAiReports,
@@ -830,7 +845,7 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
    * On mobile: same layout, ScheduleView hides Gantt
    * ─────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen h-[100dvh] flex flex-col overflow-hidden bg-slate-50">
+    <div className="pm-shell-bg pm-accent-scope min-h-screen h-[100dvh] flex flex-col overflow-hidden">
       {/* Plan banners */}
       <TrialBanner onUpgrade={handleOpenPricing} />
       <CancellationBanner onUpgrade={handleOpenPricing} />
@@ -947,6 +962,8 @@ function MainApp({ project, currentUserId, onBackToProjects }) {
         isDemoProject={!!project?.is_demo}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        accentTheme={accentTheme}
+        onAccentThemeChange={onAccentThemeChange}
       />
 
       <Navigation
