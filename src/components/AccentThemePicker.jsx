@@ -2,26 +2,57 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ACCENT_THEMES, DEFAULT_ACCENT_THEME, getAccentTheme } from '../utils/appearance';
 
 const themeList = Object.values(ACCENT_THEMES);
+const barGradient = `linear-gradient(90deg, ${themeList.map((theme) => theme.accent).join(', ')})`;
 
-const Swatch = ({ theme, active, onClick, compact = false }) => (
-  <button
-    type="button"
-    onClick={() => onClick(theme.key)}
-    className={`relative transition-transform hover:scale-105 ${
-      compact ? 'h-7 w-7 rounded-full' : 'h-8 w-8 rounded-full'
-    } ${active ? 'ring-2 ring-offset-2 ring-slate-300' : ''}`}
-    style={{ background: theme.gradient }}
-    title={theme.label}
-    aria-label={`Use ${theme.label} accent`}
-    aria-pressed={active}
-  >
-    {active && (
-      <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black text-white drop-shadow-sm">
-        ✓
-      </span>
-    )}
-  </button>
-);
+const AccentBar = ({ value, onChange, compact = false, interactive = true }) => {
+  const activeIndex = Math.max(0, themeList.findIndex((theme) => theme.key === value));
+  const activeTheme = themeList[activeIndex] || themeList[0];
+  const position = themeList.length > 1
+    ? (activeIndex / (themeList.length - 1)) * 100
+    : 0;
+
+  return (
+    <div className="relative">
+      <div
+        className={`${compact ? 'h-4' : 'h-5'} rounded-full border border-white/80 shadow-inner`}
+        style={{ background: barGradient }}
+        aria-hidden="true"
+      />
+
+      <div
+        className={`pointer-events-none absolute top-1/2 z-[1] rounded-full border-2 border-white bg-white shadow-lg transition-all ${
+          compact ? 'h-5 w-5' : 'h-6 w-6'
+        }`}
+        style={{
+          left: `calc(${position}% - ${compact ? 10 : 12}px)`,
+          transform: 'translateY(-50%)',
+          boxShadow: '0 10px 24px -14px rgba(15, 23, 42, 0.45)',
+        }}
+      >
+        <span
+          className="absolute inset-[2px] rounded-full"
+          style={{ background: activeTheme.gradient }}
+        />
+      </div>
+
+      {interactive && (
+        <input
+          type="range"
+          min="0"
+          max={String(themeList.length - 1)}
+          step="1"
+          value={activeIndex}
+          onChange={(event) => {
+            const nextTheme = themeList[Number(event.target.value)] || themeList[0];
+            onChange(nextTheme.key);
+          }}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          aria-label="Accent color"
+        />
+      )}
+    </div>
+  );
+};
 
 const AccentThemePicker = ({
   value = DEFAULT_ACCENT_THEME,
@@ -57,15 +88,8 @@ const AccentThemePicker = ({
     return (
       <div className={className}>
         <div className="pm-kicker">Accent color</div>
-        <div className="mt-3 flex flex-wrap gap-2.5">
-          {themeList.map((theme) => (
-            <Swatch
-              key={theme.key}
-              theme={theme}
-              active={theme.key === activeTheme.key}
-              onClick={onChange}
-            />
-          ))}
+        <div className="mt-3">
+          <AccentBar value={activeTheme.key} onChange={onChange} />
         </div>
         <div className="mt-3 text-xs text-slate-500">
           {activeTheme.label} is active across your main workspace surfaces.
@@ -83,34 +107,43 @@ const AccentThemePicker = ({
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <span
-          className="h-4 w-4 rounded-full border border-white/70 shadow-sm"
-          style={{ background: activeTheme.gradient }}
-          aria-hidden="true"
-        />
+        <span className="w-14" aria-hidden="true">
+          <AccentBar value={activeTheme.key} onChange={() => {}} compact interactive={false} />
+        </span>
         <span className="hidden sm:inline">Accent</span>
         <span className="text-[10px] text-slate-400">▾</span>
       </button>
 
       {open && (
-        <div className="pm-surface-card absolute right-0 z-[90] mt-2 w-56 rounded-2xl p-3">
+        <div className="pm-surface-card absolute right-0 z-[90] mt-2 w-64 rounded-2xl p-3">
           <div className="px-1">
             <div className="pm-kicker">Accent color</div>
             <div className="mt-1 text-xs text-slate-500">Choose a workspace accent.</div>
           </div>
 
-          <div className="mt-3 grid grid-cols-5 gap-2">
+          <div className="mt-3 px-1">
+            <AccentBar
+              value={activeTheme.key}
+              onChange={(nextTheme) => {
+                onChange(nextTheme);
+              }}
+            />
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 px-1">
             {themeList.map((theme) => (
-              <Swatch
+              <button
                 key={theme.key}
-                theme={theme}
-                active={theme.key === activeTheme.key}
-                onClick={(nextTheme) => {
-                  onChange(nextTheme);
-                  setOpen(false);
-                }}
-                compact
-              />
+                type="button"
+                onClick={() => onChange(theme.key)}
+                className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                  theme.key === activeTheme.key
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white/80 text-slate-500 hover:bg-white hover:text-slate-800'
+                }`}
+              >
+                {theme.label}
+              </button>
             ))}
           </div>
 
