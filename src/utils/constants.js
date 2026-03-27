@@ -125,17 +125,17 @@ export const DEFAULT_TASK = {
 
 // Tab configurations
 export const TABS = [
-  { id: 'timesheets', label: 'Timesheet' },
-  { id: 'statusreport', label: 'Status Report' },
-  { id: 'schedule', label: 'Project Plan' },
-  { id: 'tracker', label: 'Master Tracker' },
+  { id: 'statusreport', label: 'Status Report', compactPrimary: true },
+  { id: 'schedule', label: 'Project Plan', compactPrimary: true },
+  { id: 'tracker', label: 'Master Tracker', compactPrimary: true },
+  { id: 'actions', label: 'Action Log', compactPrimary: true },
   { id: 'todo', label: 'Tasks' },
   { id: 'risks', label: 'Risk Log' },
   { id: 'issues', label: 'Issue Log' },
-  { id: 'actions', label: 'Action Log' },
-  { id: 'minutes', label: 'Meeting Log' },
   { id: 'financials', label: 'Project Controls' },
+  { id: 'minutes', label: 'Meeting Log' },
   { id: 'stakeholdersmgmt', label: 'Stakeholders' },
   { id: 'lessons', label: 'Lessons Learned' },
-  { id: 'raci', label: 'RACI' }
+  { id: 'raci', label: 'RACI' },
+  { id: 'timesheets', label: 'Timesheet' }
 ];
