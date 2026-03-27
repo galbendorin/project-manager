@@ -143,20 +143,28 @@ body {
 
 .pm-workspace-panel::before {
   content: "";
-  display: block;
+  position: absolute;
+  inset: 0 0 auto 0;
   height: 84px;
-  margin: -20px -20px 18px;
   border-top-left-radius: 30px;
   border-top-right-radius: 30px;
   background: linear-gradient(135deg, rgba(237, 233, 254, 0.85) 0%, rgba(252, 231, 243, 0.75) 52%, rgba(255, 255, 255, 0.25) 100%);
   border-bottom: 1px solid rgba(124, 58, 237, 0.08);
+  pointer-events: none;
 }
 
 .pm-workspace-panel {
+  position: relative;
+  overflow: hidden;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(250, 246, 239, 0.96) 100%);
   border: 1px solid var(--pm-border);
   box-shadow: var(--pm-shadow-card);
   backdrop-filter: blur(18px);
+}
+
+.pm-workspace-panel > * {
+  position: relative;
+  z-index: 1;
 }
 
 .pm-utility-card {
