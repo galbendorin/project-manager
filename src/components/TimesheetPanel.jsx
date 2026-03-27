@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   formatDurationMinutes,
   formatHoursFromMinutes,
@@ -15,6 +16,18 @@ const HOUR_HEIGHT = 40;
 const QUARTER_HOUR_MINUTES = 15;
 const QUARTER_HOUR_HEIGHT = HOUR_HEIGHT / 4;
 const MIN_ENTRY_HEIGHT = 10;
+
+const getEntryBlockMetrics = (startMinutes, durationMinutes) => {
+  const safeStart = Math.max(DAY_START_MINUTES, Number(startMinutes) || 0);
+  const safeDuration = Math.max(QUARTER_HOUR_MINUTES, Number(durationMinutes) || QUARTER_HOUR_MINUTES);
+  const top = ((safeStart - DAY_START_MINUTES) / 60) * HOUR_HEIGHT;
+  const rawHeight = (safeDuration / 60) * HOUR_HEIGHT;
+  const height = Math.max(rawHeight - 2, Math.max(QUARTER_HOUR_HEIGHT - 1, MIN_ENTRY_HEIGHT));
+  const isCompactEntry = height < 32;
+  const isMicroEntry = height < 18;
+
+  return { top, height, isCompactEntry, isMicroEntry };
+};
 
 const hourLabel = (minutes) => {
   const hours = Math.floor(minutes / 60);
@@ -63,6 +76,7 @@ export default function TimesheetPanel({
   viewMode,
   onViewModeChange,
   activeEntry,
+  duplicateDraft,
   visibleEntries,
   summaryRows,
   totalMinutes,
@@ -81,11 +95,15 @@ export default function TimesheetPanel({
   onDeleteEntry,
   onDownloadReport,
   onSelectEntry,
+  onDuplicateEntry,
+  onPlaceDuplicateDraft,
   onBackToProject,
 }) {
   const weekDays = useMemo(() => getWeekDates(weekStart), [weekStart]);
   const desktopTimelineRef = useRef(null);
+  const contextMenuRef = useRef(null);
   const [showWeekend, setShowWeekend] = useState(false);
+  const [entryContextMenu, setEntryContextMenu] = useState(null);
   const totalGridHours = (DAY_END_MINUTES - DAY_START_MINUTES) / 60;
   const gridHeight = totalGridHours * HOUR_HEIGHT;
   const defaultTimelineHeight = ((DEFAULT_VISIBLE_END_MINUTES - DEFAULT_VISIBLE_START_MINUTES) / 60) * HOUR_HEIGHT;
@@ -128,6 +146,101 @@ export default function TimesheetPanel({
     }
     onComposerChange('entryDate', dayIso);
   };
+
+  const closeEntryContextMenu = useCallback(() => {
+    setEntryContextMenu(null);
+  }, []);
+
+  useEffect(() => {
+    if (!entryContextMenu) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (contextMenuRef.current?.contains(event.target)) return;
+      closeEntryContextMenu();
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        closeEntryContextMenu();
+      }
+    };
+
+    window.addEventListener('resize', closeEntryContextMenu);
+    window.addEventListener('scroll', closeEntryContextMenu, true);
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('resize', closeEntryContextMenu);
+      window.removeEventListener('scroll', closeEntryContextMenu, true);
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [closeEntryContextMenu, entryContextMenu]);
+
+  const openEntryContextMenu = useCallback((event, entry) => {
+    if (!entry || entry.user_id !== currentUserId) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectEntry(entry);
+
+    const menuWidth = 220;
+    const menuHeight = 64;
+    const left = Math.max(12, Math.min(event.clientX, window.innerWidth - menuWidth - 12));
+    const top = Math.max(12, Math.min(event.clientY, window.innerHeight - menuHeight - 12));
+
+    setEntryContextMenu({ entry, left, top });
+  }, [currentUserId, onSelectEntry]);
+
+  const handleDuplicateEntry = useCallback(() => {
+    if (!entryContextMenu?.entry) return;
+    onDuplicateEntry(entryContextMenu.entry);
+    closeEntryContextMenu();
+  }, [closeEntryContextMenu, entryContextMenu, onDuplicateEntry]);
+
+  const handleDesktopDraftPlacement = useCallback((dayIso, event) => {
+    if (!duplicateDraft || typeof onPlaceDuplicateDraft !== 'function') return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const offsetY = Math.max(0, event.clientY - rect.top);
+    const rawMinutes = DAY_START_MINUTES + ((offsetY / HOUR_HEIGHT) * 60);
+    const snappedMinutes = Math.round(rawMinutes / QUARTER_HOUR_MINUTES) * QUARTER_HOUR_MINUTES;
+    const durationMinutes = Math.max(
+      QUARTER_HOUR_MINUTES,
+      Number(duplicateDraft.duration_minutes) || QUARTER_HOUR_MINUTES
+    );
+    const maxStart = Math.max(DAY_START_MINUTES, DAY_END_MINUTES - durationMinutes);
+    const nextStartMinutes = Math.max(
+      DAY_START_MINUTES,
+      Math.min(snappedMinutes, maxStart)
+    );
+
+    onPlaceDuplicateDraft(dayIso, nextStartMinutes);
+  }, [duplicateDraft, onPlaceDuplicateDraft]);
+
+  const entryContextMenuNode = entryContextMenu && typeof document !== 'undefined'
+    ? createPortal(
+        <div
+          ref={contextMenuRef}
+          className="fixed z-[90] w-[220px] rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_24px_55px_-28px_rgba(15,23,42,0.35)]"
+          style={{ left: `${entryContextMenu.left}px`, top: `${entryContextMenu.top}px` }}
+        >
+          <button
+            type="button"
+            onClick={handleDuplicateEntry}
+            className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-indigo-50"
+          >
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Duplicate entry</div>
+              <div className="text-xs text-slate-500">Create a copy and move it to another slot</div>
+            </div>
+            <span className="text-indigo-600">+</span>
+          </button>
+        </div>,
+        document.body
+      )
+    : null;
 
   useEffect(() => {
     const timeline = desktopTimelineRef.current;
@@ -602,7 +715,9 @@ export default function TimesheetPanel({
                   <p className={sectionLabelClass}>This week</p>
                   <h3 className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-slate-950 lg:mt-2 lg:text-2xl">Week view</h3>
                   <p className="mt-2 hidden text-sm leading-6 text-slate-500 lg:block">
-                    See time by day and project.
+                    {duplicateDraft
+                      ? 'Click a slot in the grid to place the duplicate, then save it.'
+                      : 'See time by day and project.'}
                   </p>
                 </div>
 
@@ -895,7 +1010,8 @@ export default function TimesheetPanel({
                         {desktopWeekDays.map((day) => (
                           <div
                             key={day.iso}
-                            className={`relative border-l border-slate-200 ${day.iso === composer.entryDate ? 'bg-slate-50/70' : ''}`}
+                            onClick={(event) => handleDesktopDraftPlacement(day.iso, event)}
+                            className={`relative border-l border-slate-200 ${day.iso === composer.entryDate ? 'bg-slate-50/70' : ''} ${duplicateDraft ? 'cursor-copy' : ''}`}
                             style={{ height: `${gridHeight}px` }}
                           >
                             {quarterMarks.slice(0, -1).map((mark) => (
@@ -909,18 +1025,21 @@ export default function TimesheetPanel({
                             {entriesByDay[day.iso].map((entry) => {
                               const project = projects.find((item) => item.id === entry.project_id);
                               const color = getTrackProjectColor(entry.project_id);
-                              const top = ((entry.start_minutes - DAY_START_MINUTES) / 60) * HOUR_HEIGHT;
-                              const rawHeight = (entry.duration_minutes / 60) * HOUR_HEIGHT;
-                              const height = Math.max(rawHeight - 2, Math.max(QUARTER_HOUR_HEIGHT - 1, MIN_ENTRY_HEIGHT));
-                              const isCompactEntry = height < 32;
-                              const isMicroEntry = height < 18;
+                              const { top, height, isCompactEntry, isMicroEntry } = getEntryBlockMetrics(
+                                entry.start_minutes,
+                                entry.duration_minutes
+                              );
                               const isSelected = activeEntry?.id === entry.id;
 
                               return (
                                 <button
                                   key={entry.id}
                                   type="button"
-                                  onClick={() => onSelectEntry(entry)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onSelectEntry(entry);
+                                  }}
+                                  onContextMenu={(event) => openEntryContextMenu(event, entry)}
                                   className={`absolute left-1 right-1 overflow-hidden border text-left shadow-sm transition hover:shadow-md ${isCompactEntry ? 'rounded-xl px-2 py-1' : 'rounded-2xl px-3 py-2'} ${color.bg} ${color.border} ${isSelected ? 'ring-2 ring-slate-950/70' : ''}`}
                                   style={{ top: `${top + 1}px`, height: `${height}px` }}
                                   title={`${entry.description || 'Untitled entry'} · ${formatEntryWindow(entry)} · ${formatDurationMinutes(entry.duration_minutes)}`}
@@ -963,6 +1082,63 @@ export default function TimesheetPanel({
                                 </button>
                               );
                             })}
+
+                            {duplicateDraft && duplicateDraft.entry_date === day.iso ? (() => {
+                              const draftProject = projects.find((item) => item.id === duplicateDraft.project_id);
+                              const draftColor = getTrackProjectColor(duplicateDraft.project_id);
+                              const { top, height, isCompactEntry, isMicroEntry } = getEntryBlockMetrics(
+                                duplicateDraft.start_minutes,
+                                duplicateDraft.duration_minutes
+                              );
+                              const draftTitle = duplicateDraft.description || draftProject?.name || 'Draft copy';
+
+                              return (
+                                <button
+                                  key="duplicate-draft"
+                                  type="button"
+                                  onClick={(event) => event.stopPropagation()}
+                                  className={`absolute left-1 right-1 overflow-hidden border-2 border-dashed text-left shadow-sm ${isCompactEntry ? 'rounded-xl px-2 py-1' : 'rounded-2xl px-3 py-2'} ${draftColor.bg} ${draftColor.border} ring-2 ring-indigo-200/80`}
+                                  style={{ top: `${top + 1}px`, height: `${height}px` }}
+                                  title={`Draft duplicate · ${draftTitle} · ${formatEntryWindow(duplicateDraft)} · ${formatDurationMinutes(duplicateDraft.duration_minutes)}`}
+                                >
+                                  {isMicroEntry ? (
+                                    <div className="flex h-full items-center gap-1 overflow-hidden">
+                                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${draftColor.accent}`} />
+                                      <span className={`truncate text-[9px] font-semibold ${draftColor.text}`}>
+                                        Draft
+                                      </span>
+                                    </div>
+                                  ) : isCompactEntry ? (
+                                    <div className="flex h-full items-center justify-between gap-2">
+                                      <div className={`min-w-0 truncate text-[10px] font-semibold ${draftColor.text}`}>
+                                        {draftTitle}
+                                      </div>
+                                      <span className="shrink-0 text-[9px] font-semibold text-slate-600">
+                                        Draft
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className={`min-w-0 text-sm font-semibold ${draftColor.text}`}>
+                                          {draftTitle}
+                                        </div>
+                                        <span className="rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                                          Draft
+                                        </span>
+                                      </div>
+                                      <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-600">
+                                        <span className={`inline-block h-2 w-10 rounded-full ${draftColor.accent}`} />
+                                        <span className="truncate">{draftProject?.name || 'Project'}</span>
+                                      </div>
+                                      <div className="mt-1 text-[11px] text-slate-500">
+                                        Click another slot to move it
+                                      </div>
+                                    </>
+                                  )}
+                                </button>
+                              );
+                            })() : null}
                           </div>
                         ))}
                       </div>
@@ -1009,6 +1185,7 @@ export default function TimesheetPanel({
           </section>
         </div>
       </div>
+      {entryContextMenuNode}
     </div>
   );
 }

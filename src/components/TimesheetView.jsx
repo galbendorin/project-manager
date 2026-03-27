@@ -11,6 +11,8 @@ import {
   buildTimeEntryPayload,
   filterTimesheetProjects,
   getWeekDateRange,
+  minutesToTimeInput,
+  parseTimeInputToMinutes,
   sumEntryDurationMinutes,
   TIMESHEET_REPORT_COLUMNS,
   toWeekStartIso,
@@ -74,6 +76,7 @@ export default function TimesheetView({
   const [selectedProjectId, setSelectedProjectId] = useState(() => initialProjectId || 'all');
   const [viewMode, setViewMode] = useState('mine');
   const [activeEntryId, setActiveEntryId] = useState('');
+  const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
   const [composer, setComposer] = useState(() => createDefaultComposer(initialProjectId, toWeekStartIso(new Date())));
 
   const trackProjects = useMemo(() => filterTimesheetProjects(projects), [projects]);
@@ -87,6 +90,26 @@ export default function TimesheetView({
     [entries, activeEntryId]
   );
   const editingOwnEntry = Boolean(activeEntry && activeEntry.user_id === currentUserId);
+  const duplicateDraft = useMemo(() => {
+    if (!duplicateDraftActive) return null;
+    const startMinutes = parseTimeInputToMinutes(composer.startTime);
+    const durationMinutes = Number(composer.durationMinutes);
+
+    if (!composer.projectId || !composer.entryDate || startMinutes == null || !Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+      return null;
+    }
+
+    return {
+      id: 'duplicate-draft',
+      project_id: composer.projectId,
+      user_id: currentUserId,
+      entry_date: composer.entryDate,
+      start_minutes: startMinutes,
+      duration_minutes: Math.round(durationMinutes),
+      description: composer.description || '',
+      isDraft: true,
+    };
+  }, [composer.description, composer.durationMinutes, composer.entryDate, composer.projectId, composer.startTime, currentUserId, duplicateDraftActive]);
 
   const loadProjects = useCallback(async () => {
     if (!currentUserId) return;
@@ -278,6 +301,7 @@ export default function TimesheetView({
   }, []);
 
   const resetComposer = useCallback(() => {
+    setDuplicateDraftActive(false);
     setActiveEntryId('');
     setEntryError('');
     setSuccessMessage('');
@@ -305,6 +329,7 @@ export default function TimesheetView({
   const handleSelectEntry = useCallback((entry) => {
     if (!entry) return;
 
+    setDuplicateDraftActive(false);
     setActiveEntryId(entry.id);
     setEntryError('');
     setSuccessMessage('');
@@ -319,6 +344,35 @@ export default function TimesheetView({
       description: entry.description || '',
     });
   }, [currentUserId]);
+
+  const handleDuplicateEntry = useCallback((entry) => {
+    if (!entry || entry.user_id !== currentUserId) return;
+
+    setDuplicateDraftActive(true);
+    setActiveEntryId('');
+    setEntryError('');
+    setSuccessMessage('Duplicate ready. Click a new slot in the week view, then save it as a new entry.');
+    setSelectedProjectId(entry.project_id || 'all');
+    setComposer({
+      projectId: entry.project_id,
+      entryDate: entry.entry_date,
+      startTime: entry.start_minutes != null ? `${String(Math.floor(entry.start_minutes / 60)).padStart(2, '0')}:${String(entry.start_minutes % 60).padStart(2, '0')}` : '09:00',
+      durationMinutes: String(entry.duration_minutes || 60),
+      description: entry.description || '',
+    });
+  }, [currentUserId]);
+
+  const handlePlaceDuplicateDraft = useCallback((entryDate, startMinutes) => {
+    if (!duplicateDraftActive) return;
+
+    setEntryError('');
+    setSuccessMessage('Duplicate moved. Save to create the new entry.');
+    setComposer((current) => ({
+      ...current,
+      entryDate,
+      startTime: minutesToTimeInput(startMinutes),
+    }));
+  }, [duplicateDraftActive]);
 
   const handleSubmit = useCallback(async () => {
     if (!currentUserId || saving || !schemaReady) return;
@@ -380,6 +434,7 @@ export default function TimesheetView({
     await loadEntries();
     setSaving(false);
     setSuccessMessage('Timesheet entry added.');
+    setDuplicateDraftActive(false);
     resetComposer();
   }, [activeEntry, composer, currentUserId, editingOwnEntry, loadEntries, resetComposer, saving, schemaReady]);
 
@@ -479,6 +534,7 @@ export default function TimesheetView({
       viewMode={viewMode}
       onViewModeChange={setViewMode}
       activeEntry={activeEntry}
+      duplicateDraft={duplicateDraft}
       visibleEntries={visibleEntries}
       summaryRows={summaryRows}
       totalMinutes={weeklyTotalMinutes}
@@ -497,6 +553,8 @@ export default function TimesheetView({
       onDeleteEntry={handleDeleteEntry}
       onDownloadReport={handleDownloadReport}
       onSelectEntry={handleSelectEntry}
+      onDuplicateEntry={handleDuplicateEntry}
+      onPlaceDuplicateDraft={handlePlaceDuplicateDraft}
       onBackToProject={onBackToProject}
     />
   );
