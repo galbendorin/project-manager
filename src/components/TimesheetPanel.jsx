@@ -1,12 +1,20 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   formatDurationMinutes,
   formatHoursFromMinutes,
   formatWeekRange,
   getTrackProjectColor,
-  getVisibleHourRange,
   getWeekDates,
 } from '../utils/timesheets';
+
+const DAY_START_MINUTES = 0;
+const DAY_END_MINUTES = 24 * 60;
+const DEFAULT_VISIBLE_START_MINUTES = 8 * 60;
+const DEFAULT_VISIBLE_END_MINUTES = 18 * 60;
+const HOUR_HEIGHT = 40;
+const QUARTER_HOUR_MINUTES = 15;
+const QUARTER_HOUR_HEIGHT = HOUR_HEIGHT / 4;
+const MIN_ENTRY_HEIGHT = 10;
 
 const hourLabel = (minutes) => {
   const hours = Math.floor(minutes / 60);
@@ -76,11 +84,16 @@ export default function TimesheetPanel({
   onBackToProject,
 }) {
   const weekDays = useMemo(() => getWeekDates(weekStart), [weekStart]);
-  const hourRange = useMemo(() => getVisibleHourRange(visibleEntries), [visibleEntries]);
-  const hourHeight = 68;
-  const totalGridHours = Math.max(1, (hourRange.endMinutes - hourRange.startMinutes) / 60);
-  const gridHeight = totalGridHours * hourHeight;
-  const hourMarks = Array.from({ length: totalGridHours + 1 }, (_, index) => hourRange.startMinutes + (index * 60));
+  const desktopTimelineRef = useRef(null);
+  const [showWeekend, setShowWeekend] = useState(false);
+  const totalGridHours = (DAY_END_MINUTES - DAY_START_MINUTES) / 60;
+  const gridHeight = totalGridHours * HOUR_HEIGHT;
+  const defaultTimelineHeight = ((DEFAULT_VISIBLE_END_MINUTES - DEFAULT_VISIBLE_START_MINUTES) / 60) * HOUR_HEIGHT;
+  const hourMarks = Array.from({ length: totalGridHours + 1 }, (_, index) => DAY_START_MINUTES + (index * 60));
+  const quarterMarks = Array.from(
+    { length: ((DAY_END_MINUTES - DAY_START_MINUTES) / QUARTER_HOUR_MINUTES) + 1 },
+    (_, index) => DAY_START_MINUTES + (index * QUARTER_HOUR_MINUTES)
+  );
 
   const entriesByDay = useMemo(() => (
     weekDays.reduce((acc, day) => {
@@ -93,16 +106,40 @@ export default function TimesheetPanel({
     [composer.entryDate, weekDays]
   );
   const selectedDayEntries = selectedDay ? (entriesByDay[selectedDay.iso] || []) : [];
+  const selectedDayIndex = selectedDay ? weekDays.findIndex((day) => day.iso === selectedDay.iso) : -1;
+  const desktopWeekDays = useMemo(
+    () => (showWeekend ? weekDays : weekDays.slice(0, 5)),
+    [showWeekend, weekDays]
+  );
+  const desktopGridTemplate = `56px repeat(${desktopWeekDays.length}, minmax(0, 1fr))`;
   const selectedDayTotalMinutes = useMemo(
     () => selectedDayEntries.reduce((total, entry) => total + (Number(entry.duration_minutes) || 0), 0),
     [selectedDayEntries]
   );
+  const fieldClass = 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200';
+  const compactFieldClass = 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200';
+  const secondaryButtonClass = 'pm-subtle-button rounded-2xl px-4 py-2.5 text-sm font-semibold transition hover:text-slate-900';
+  const primaryButtonClass = 'rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_20px_42px_-24px_rgba(79,70,229,0.86)] transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none';
+  const sectionLabelClass = 'text-[11px] font-semibold text-slate-500';
+  const fieldLabelClass = 'mb-2 block text-[11px] font-semibold text-slate-500';
   const handleSelectMobileDay = (dayIso) => {
     if (activeEntry?.user_id === currentUserId && activeEntry.entry_date !== dayIso) {
       onResetComposer();
     }
     onComposerChange('entryDate', dayIso);
   };
+
+  useEffect(() => {
+    const timeline = desktopTimelineRef.current;
+    if (!timeline) return;
+    timeline.scrollTop = (DEFAULT_VISIBLE_START_MINUTES / 60) * HOUR_HEIGHT;
+  }, [weekStart]);
+
+  useEffect(() => {
+    if (selectedDayIndex >= 5) {
+      setShowWeekend(true);
+    }
+  }, [selectedDayIndex]);
 
   return (
     <div className="h-full overflow-auto bg-[#f6f2ea]">
@@ -128,86 +165,86 @@ export default function TimesheetPanel({
         )}
 
         <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="rounded-[26px] bg-slate-950 px-4 py-4 text-white shadow-[0_38px_90px_-52px_rgba(15,23,42,0.95)] sm:rounded-[30px] sm:px-5 sm:py-5">
+          <aside className="pm-home-panel rounded-[26px] px-4 py-4 text-slate-900 sm:rounded-[30px] sm:px-5 sm:py-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Timesheet</p>
-                <h2 className="mt-1 text-xl font-bold tracking-[-0.04em] sm:mt-2 sm:text-2xl">This week</h2>
+                <p className={sectionLabelClass}>Timesheet</p>
+                <h2 className="mt-1 text-xl font-bold tracking-[-0.04em] text-slate-950 sm:mt-2 sm:text-2xl">Log hours</h2>
               </div>
               {currentProject && onBackToProject ? (
                 <button
                   type="button"
                   onClick={onBackToProject}
-                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                  className="pm-subtle-button rounded-xl px-3 py-2 text-xs font-semibold transition"
                 >
                   Back to project
                 </button>
               ) : null}
             </div>
 
-            <p className="mt-3 hidden text-sm leading-6 text-slate-300 lg:block">
-              Manual entries first, with owned-project visibility for team time. Shared projects stay personal unless you own them.
+            <p className="mt-4 hidden max-w-[25ch] text-sm leading-6 text-slate-600 lg:block">
+              Keep weekly time close to the work.
             </p>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Visible this week</div>
-                <div className="mt-2 text-3xl font-bold">{formatHoursFromMinutes(totalMinutes)}</div>
-                <div className="mt-1 text-xs text-slate-400">
+              <div className="pm-metric-card rounded-2xl px-4 py-4">
+                <div className={sectionLabelClass}>Visible this week</div>
+                <div className="mt-2 text-3xl font-bold text-slate-950">{formatHoursFromMinutes(totalMinutes)}</div>
+                <div className="mt-1 text-xs text-slate-500">
                   {visibleEntries.length} {visibleEntries.length === 1 ? 'entry' : 'entries'}
                 </div>
               </div>
 
-              <div className="hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 lg:block">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Context</div>
-                <div className="mt-2 text-sm font-semibold text-white">
+              <div className="hidden pm-metric-card rounded-2xl px-4 py-4 lg:block">
+                <div className={sectionLabelClass}>Context</div>
+                <div className="mt-2 text-sm font-semibold text-slate-950">
                   {selectedProjectId === 'all' ? 'All accessible projects' : (selectedProject?.name || 'Selected project')}
                 </div>
-                <div className="mt-1 text-xs text-slate-400">
+                <div className="mt-1 text-xs text-slate-500">
                   {viewMode === 'team' ? 'Team entries' : 'My entries'}
                 </div>
               </div>
             </div>
 
-            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:mt-5">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Week</div>
-              <div className="mt-1 text-sm font-semibold text-white">{formatWeekRange(weekStart)}</div>
+            <div className="pm-accent-panel mt-3 rounded-2xl px-4 py-4 sm:mt-5">
+              <div className={sectionLabelClass}>Week</div>
+              <div className="mt-1 text-sm font-semibold text-slate-950">{formatWeekRange(weekStart)}</div>
 
               <div className="mt-3 grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={onPreviousWeek}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                  className="pm-subtle-button rounded-xl px-3 py-2 text-sm font-semibold transition"
                 >
                   Previous
                 </button>
                 <button
                   type="button"
                   onClick={onThisWeek}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                  className="rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-50"
                 >
                   This week
                 </button>
                 <button
                   type="button"
                   onClick={onNextWeek}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                  className="pm-subtle-button rounded-xl px-3 py-2 text-sm font-semibold transition"
                 >
                   Next
                 </button>
               </div>
             </div>
 
-            <div className="mt-5 hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 lg:block">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Recent projects</div>
+            <div className="pm-surface-soft mt-5 hidden rounded-2xl px-4 py-4 lg:block">
+              <div className={sectionLabelClass}>Recent projects</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => onSelectProject('all')}
                   className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                     selectedProjectId === 'all'
-                      ? 'border-white bg-white text-slate-950'
-                      : 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10'
+                      ? 'border-slate-200 bg-white text-slate-950 shadow-sm'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
                   }`}
                 >
                   All projects
@@ -233,50 +270,50 @@ export default function TimesheetPanel({
             </div>
 
             {selectedProject && selectedProject.isOwned ? (
-              <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:mt-5">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">View</div>
-                <div className="mt-3 inline-flex rounded-full border border-white/10 bg-slate-900/60 p-1">
+              <div className="pm-surface-soft mt-3 rounded-2xl px-4 py-4 sm:mt-5">
+                <div className={sectionLabelClass}>View</div>
+                <div className="mt-3 inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm">
                   <button
                     type="button"
                     onClick={() => onViewModeChange('mine')}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${viewMode === 'mine' ? 'bg-white text-slate-950' : 'text-slate-300'}`}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${viewMode === 'mine' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     My entries
                   </button>
                   <button
                     type="button"
                     onClick={() => onViewModeChange('team')}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${viewMode === 'team' ? 'bg-white text-slate-950' : 'text-slate-300'}`}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${viewMode === 'team' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
                   >
                     Team entries
                   </button>
                 </div>
-                <p className="mt-3 hidden text-xs leading-5 text-slate-400 lg:block">
+                <p className="mt-3 hidden text-xs leading-5 text-slate-500 lg:block">
                   Owners can review all time logged against this project. Collaborators still manage only their own entries.
                 </p>
               </div>
             ) : null}
 
-            <div className="mt-5 hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 lg:block">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Selection</div>
+            <div className="pm-home-panel mt-5 hidden rounded-2xl px-4 py-4 lg:block">
+              <div className={sectionLabelClass}>Selection</div>
               {activeEntry ? (
-                <div className="mt-3 space-y-2 text-sm text-slate-200">
-                  <div className="font-semibold text-white">{activeEntry.description || 'Untitled time entry'}</div>
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  <div className="font-semibold text-slate-950">{activeEntry.description || 'Untitled time entry'}</div>
                   <div>{activeEntry.entry_date}</div>
                   <div>{formatDurationMinutes(activeEntry.duration_minutes)}</div>
                   <div>{getEntryProjectLabel(activeEntry, selectedProject, currentUserId)}</div>
                   {activeEntry.user_id !== currentUserId ? (
-                    <p className="text-xs leading-5 text-slate-400">
+                    <p className="text-xs leading-5 text-slate-500">
                       This entry is visible because you own the selected project. Only the original author can change it.
                     </p>
                   ) : (
-                    <p className="text-xs leading-5 text-slate-400">
+                    <p className="text-xs leading-5 text-slate-500">
                       Editing mode is active. Update the composer to change this entry or remove it entirely.
                     </p>
                   )}
                 </div>
               ) : (
-                <p className="mt-3 text-sm leading-6 text-slate-400">
+                <p className="mt-3 text-sm leading-6 text-slate-500">
                   Select a block in the week view to inspect it, or use the composer to add a new Timesheet entry.
                 </p>
               )}
@@ -284,15 +321,15 @@ export default function TimesheetPanel({
           </aside>
 
           <section className="space-y-4">
-            <div className="hidden rounded-[30px] border border-slate-200/90 bg-white/95 p-5 shadow-[0_35px_90px_-60px_rgba(15,23,42,0.4)] lg:block">
+            <div className="pm-home-panel hidden rounded-[30px] p-5 lg:block">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Quick add</p>
+                  <p className={sectionLabelClass}>Quick add</p>
                   <h3 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-slate-950">
-                    What are you working on?
+                    Track work for the week
                   </h3>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Add real entries against owned or shared projects. This is the Timesheet surface, so time stays separate from your project forms.
+                    Log time against owned and shared projects in the same calm workspace style as the rest of PM Workspace.
                   </p>
                 </div>
 
@@ -310,7 +347,7 @@ export default function TimesheetPanel({
                     type="button"
                     onClick={onDownloadReport}
                     disabled={loading || downloadingReport || !schemaReady}
-                    className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_30px_-18px_rgba(5,150,105,0.9)] transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                    className={primaryButtonClass}
                   >
                     {downloadingReport ? 'Downloading...' : 'Download report'}
                   </button>
@@ -323,14 +360,14 @@ export default function TimesheetPanel({
                 </div>
               ) : null}
 
-              <div className="hidden lg:block">
-                <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_repeat(3,minmax(0,160px))]">
+                <div className="hidden lg:block">
+                  <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_repeat(3,minmax(0,160px))]">
                   <label className="block">
-                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</span>
+                    <span className={fieldLabelClass}>Project</span>
                     <select
                       value={composer.projectId}
                       onChange={(event) => onComposerChange('projectId', event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      className={fieldClass}
                     >
                       <option value="">Select a project</option>
                       {projects.map((project) => (
@@ -342,46 +379,46 @@ export default function TimesheetPanel({
                   </label>
 
                   <label className="block">
-                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Date</span>
+                    <span className={fieldLabelClass}>Date</span>
                     <input
                       type="date"
                       value={composer.entryDate}
                       onChange={(event) => onComposerChange('entryDate', event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      className={fieldClass}
                     />
                   </label>
 
                   <label className="block">
-                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start</span>
+                    <span className={fieldLabelClass}>Start</span>
                     <input
                       type="time"
                       value={composer.startTime}
                       onChange={(event) => onComposerChange('startTime', event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      className={fieldClass}
                     />
                   </label>
 
                   <label className="block">
-                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Minutes</span>
+                    <span className={fieldLabelClass}>Minutes</span>
                     <input
                       type="number"
                       min="15"
                       step="15"
                       value={composer.durationMinutes}
                       onChange={(event) => onComposerChange('durationMinutes', event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                      className={fieldClass}
                       placeholder="60"
                     />
                   </label>
                 </div>
 
                 <label className="mt-3 block">
-                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Description</span>
+                  <span className={fieldLabelClass}>Description</span>
                   <input
                     type="text"
                     value={composer.description}
                     onChange={(event) => onComposerChange('description', event.target.value)}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                    className={fieldClass}
                     placeholder="Planning, delivery follow-up, stakeholder review..."
                   />
                 </label>
@@ -406,10 +443,10 @@ export default function TimesheetPanel({
                   <div className="flex flex-wrap items-center gap-2">
                     {activeEntry?.user_id === currentUserId ? (
                       <button
-                        type="button"
-                        onClick={onDeleteEntry}
-                        disabled={deletingEntryId === activeEntry.id}
-                        className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                      onClick={onDeleteEntry}
+                      disabled={deletingEntryId === activeEntry.id}
+                      className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {deletingEntryId === activeEntry.id ? 'Deleting...' : 'Delete'}
                       </button>
@@ -417,7 +454,7 @@ export default function TimesheetPanel({
                     <button
                       type="button"
                       onClick={onResetComposer}
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                      className={secondaryButtonClass}
                     >
                       Reset
                     </button>
@@ -425,7 +462,7 @@ export default function TimesheetPanel({
                       type="button"
                       onClick={onSubmit}
                       disabled={!schemaReady || saving}
-                      className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className={primaryButtonClass}
                     >
                       {saving ? 'Saving...' : activeEntry?.user_id === currentUserId ? 'Update entry' : 'Add entry'}
                     </button>
@@ -433,11 +470,11 @@ export default function TimesheetPanel({
                 </div>
               </div>
 
-              <div className="mt-5 space-y-4 lg:hidden">
-                <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4">
+                <div className="mt-5 space-y-4 lg:hidden">
+                <div className="pm-home-panel rounded-[26px] p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Selected day</div>
+                      <div className={sectionLabelClass}>Selected day</div>
                       <div className="mt-1 text-lg font-bold text-slate-950">
                         {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'This week'}
                       </div>
@@ -452,11 +489,11 @@ export default function TimesheetPanel({
 
                   <div className="mt-4 grid gap-3">
                     <label className="block">
-                      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</span>
+                      <span className={fieldLabelClass}>Project</span>
                       <select
                         value={composer.projectId}
                         onChange={(event) => onComposerChange('projectId', event.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        className={fieldClass}
                       >
                         <option value="">Select a project</option>
                         {projects.map((project) => (
@@ -469,36 +506,36 @@ export default function TimesheetPanel({
 
                     <div className="grid grid-cols-2 gap-3">
                       <label className="block">
-                        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start</span>
+                        <span className={fieldLabelClass}>Start</span>
                         <input
                           type="time"
                           value={composer.startTime}
                           onChange={(event) => onComposerChange('startTime', event.target.value)}
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          className={fieldClass}
                         />
                       </label>
 
                       <label className="block">
-                        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Minutes</span>
+                        <span className={fieldLabelClass}>Minutes</span>
                         <input
                           type="number"
                           min="15"
                           step="15"
                           value={composer.durationMinutes}
                           onChange={(event) => onComposerChange('durationMinutes', event.target.value)}
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          className={fieldClass}
                           placeholder="60"
                         />
                       </label>
                     </div>
 
                     <label className="block">
-                      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Description</span>
+                      <span className={fieldLabelClass}>Description</span>
                       <input
                         type="text"
                         value={composer.description}
                         onChange={(event) => onComposerChange('description', event.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        className={fieldClass}
                         placeholder="Planning, delivery follow-up, stakeholder review..."
                       />
                     </label>
@@ -525,7 +562,7 @@ export default function TimesheetPanel({
                       type="button"
                       onClick={onSubmit}
                       disabled={!schemaReady || saving}
-                      className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className={primaryButtonClass}
                     >
                       {saving ? 'Saving...' : activeEntry?.user_id === currentUserId ? 'Update entry' : 'Add entry'}
                     </button>
@@ -534,7 +571,7 @@ export default function TimesheetPanel({
                       <button
                         type="button"
                         onClick={onResetComposer}
-                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                        className={secondaryButtonClass}
                       >
                         Reset
                       </button>
@@ -559,25 +596,32 @@ export default function TimesheetPanel({
               </div>
             </div>
 
-            <div className="rounded-[30px] border border-slate-200/90 bg-white/95 p-5 shadow-[0_35px_90px_-60px_rgba(15,23,42,0.4)]">
+            <div className="pm-home-panel rounded-[30px] p-5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">This week</p>
-                  <h3 className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-slate-950 lg:mt-2 lg:text-2xl">Calendar-style week view</h3>
+                  <p className={sectionLabelClass}>This week</p>
+                  <h3 className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-slate-950 lg:mt-2 lg:text-2xl">Week view</h3>
                   <p className="mt-2 hidden text-sm leading-6 text-slate-500 lg:block">
-                    Entries are grouped by day and colored by project, so the week reads more like a time product than a register.
+                    See time by day and project.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 font-semibold">
-                    {selectedProjectId === 'all' ? 'My entries across all projects' : `${viewMode === 'team' ? 'Team' : 'My'} entries for ${selectedProject?.name || 'selected project'}`}
+                    {selectedProjectId === 'all' ? 'All projects' : `${viewMode === 'team' ? 'Team' : 'My'} · ${selectedProject?.name || 'Selected project'}`}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowWeekend((current) => !current)}
+                    className="hidden rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 lg:inline-flex"
+                  >
+                    {showWeekend ? 'Hide weekend' : '+ Weekend'}
+                  </button>
                   <button
                     type="button"
                     onClick={onDownloadReport}
                     disabled={loading || downloadingReport || !schemaReady}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 lg:hidden"
+                    className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 lg:hidden"
                   >
                     {downloadingReport ? 'Downloading...' : 'Download report'}
                   </button>
@@ -627,10 +671,10 @@ export default function TimesheetPanel({
                     </div>
 
                     {selectedDayEntries.length > 0 ? (
-                      <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3.5">
+                      <div className="pm-home-panel rounded-[24px] p-3.5">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Selected day</div>
+                            <div className={sectionLabelClass}>Selected day</div>
                             <div className="mt-1 text-lg font-bold text-slate-950">
                               {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'This week'}
                             </div>
@@ -684,10 +728,10 @@ export default function TimesheetPanel({
                       </div>
                     ) : null}
 
-                    <div className="rounded-[24px] border border-slate-200 bg-white p-3.5 shadow-sm">
+                    <div className="pm-accent-panel rounded-[24px] p-3.5">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Add time</div>
+                            <div className={sectionLabelClass}>Add time</div>
                             <div className="mt-1 text-lg font-bold text-slate-950">
                               {selectedDay ? `${selectedDay.weekday} ${selectedDay.dayLabel}` : 'Selected day'}
                             </div>
@@ -712,11 +756,11 @@ export default function TimesheetPanel({
 
                       <div className="mt-3 grid gap-2.5">
                         <label className="block">
-                          <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</span>
+                          <span className={fieldLabelClass}>Project</span>
                           <select
                             value={composer.projectId}
                             onChange={(event) => onComposerChange('projectId', event.target.value)}
-                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                            className={compactFieldClass}
                           >
                             <option value="">Select a project</option>
                             {projects.map((project) => (
@@ -729,36 +773,36 @@ export default function TimesheetPanel({
 
                         <div className="grid grid-cols-2 gap-2.5">
                           <label className="block">
-                            <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start</span>
+                            <span className={fieldLabelClass}>Start</span>
                             <input
                               type="time"
                               value={composer.startTime}
                               onChange={(event) => onComposerChange('startTime', event.target.value)}
-                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                              className={compactFieldClass}
                             />
                           </label>
 
                           <label className="block">
-                            <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Minutes</span>
+                            <span className={fieldLabelClass}>Minutes</span>
                             <input
                               type="number"
                               min="15"
                               step="15"
                               value={composer.durationMinutes}
                               onChange={(event) => onComposerChange('durationMinutes', event.target.value)}
-                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                              className={compactFieldClass}
                               placeholder="60"
                             />
                           </label>
                         </div>
 
                         <label className="block">
-                          <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Description</span>
+                          <span className={fieldLabelClass}>Description</span>
                           <input
                             type="text"
                             value={composer.description}
                             onChange={(event) => onComposerChange('description', event.target.value)}
-                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                            className={compactFieldClass}
                             placeholder="Planning, delivery follow-up, stakeholder review..."
                           />
                         </label>
@@ -787,7 +831,7 @@ export default function TimesheetPanel({
                           type="button"
                           onClick={onSubmit}
                           disabled={!schemaReady || saving}
-                          className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                          className={primaryButtonClass}
                         >
                           {saving ? 'Saving...' : activeEntry?.user_id === currentUserId ? 'Update entry' : 'Add entry'}
                         </button>
@@ -796,7 +840,7 @@ export default function TimesheetPanel({
                           <button
                             type="button"
                             onClick={onResetComposer}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                            className={secondaryButtonClass}
                           >
                             Reset
                           </button>
@@ -817,16 +861,16 @@ export default function TimesheetPanel({
                   </div>
 
                   <div className="mt-5 hidden lg:block overflow-x-auto">
-                    <div className="min-w-[920px]">
-                      <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))] border-b border-slate-200">
-                        <div className="px-3 pb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Time</div>
-                        {weekDays.map((day) => (
+                    <div className="w-full min-w-0">
+                      <div className="grid border-b border-slate-200" style={{ gridTemplateColumns: desktopGridTemplate }}>
+                        <div className="px-2 pb-3 text-[11px] font-semibold text-slate-500">Time</div>
+                        {desktopWeekDays.map((day) => (
                           <div
                             key={day.iso}
-                            className={`border-l border-slate-200 px-3 pb-3 ${day.iso === composer.entryDate ? 'bg-slate-50/80' : ''}`}
+                            className={`border-l border-slate-200 px-2 pb-3 ${day.iso === composer.entryDate ? 'bg-slate-50/80' : ''}`}
                           >
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{day.weekday}</div>
-                            <div className="mt-1 text-lg font-bold text-slate-950">{day.dayLabel}</div>
+                            <div className="text-[11px] font-semibold text-slate-500">{day.weekday}</div>
+                            <div className="mt-1 text-base font-bold text-slate-950">{day.dayLabel}</div>
                             <div className="mt-1 text-xs text-slate-500">
                               {formatDurationMinutes(entriesByDay[day.iso].reduce((total, entry) => total + entry.duration_minutes, 0))}
                             </div>
@@ -834,38 +878,42 @@ export default function TimesheetPanel({
                         ))}
                       </div>
 
-                      <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))]">
-                        <div className="relative border-r border-slate-200" style={{ height: `${gridHeight}px` }}>
+                      <div ref={desktopTimelineRef} className="overflow-y-auto rounded-b-[26px]" style={{ height: `${defaultTimelineHeight}px` }}>
+                        <div className="grid" style={{ gridTemplateColumns: desktopGridTemplate }}>
+                        <div className="relative border-r border-slate-200 bg-white/70" style={{ height: `${gridHeight}px` }}>
                           {hourMarks.slice(0, -1).map((mark) => (
                             <div
                               key={mark}
-                              className="absolute left-0 right-0 -translate-y-1/2 px-3 text-[11px] text-slate-400"
-                              style={{ top: `${((mark - hourRange.startMinutes) / 60) * hourHeight}px` }}
+                              className="absolute left-0 right-0 -translate-y-1/2 px-2 text-[10px] text-slate-400"
+                              style={{ top: `${((mark - DAY_START_MINUTES) / 60) * HOUR_HEIGHT}px` }}
                             >
                               {hourLabel(mark)}
                             </div>
                           ))}
                         </div>
 
-                        {weekDays.map((day) => (
+                        {desktopWeekDays.map((day) => (
                           <div
                             key={day.iso}
                             className={`relative border-l border-slate-200 ${day.iso === composer.entryDate ? 'bg-slate-50/70' : ''}`}
                             style={{ height: `${gridHeight}px` }}
                           >
-                            {hourMarks.slice(0, -1).map((mark) => (
+                            {quarterMarks.slice(0, -1).map((mark) => (
                               <div
                                 key={`${day.iso}_${mark}`}
-                                className="absolute left-0 right-0 border-t border-slate-100"
-                                style={{ top: `${((mark - hourRange.startMinutes) / 60) * hourHeight}px` }}
+                                className={`absolute left-0 right-0 border-t ${mark % 60 === 0 ? 'border-slate-200' : 'border-slate-100/90'}`}
+                                style={{ top: `${((mark - DAY_START_MINUTES) / 60) * HOUR_HEIGHT}px` }}
                               />
                             ))}
 
                             {entriesByDay[day.iso].map((entry) => {
                               const project = projects.find((item) => item.id === entry.project_id);
                               const color = getTrackProjectColor(entry.project_id);
-                              const top = ((entry.start_minutes - hourRange.startMinutes) / 60) * hourHeight;
-                              const height = Math.max((entry.duration_minutes / 60) * hourHeight, 44);
+                              const top = ((entry.start_minutes - DAY_START_MINUTES) / 60) * HOUR_HEIGHT;
+                              const rawHeight = (entry.duration_minutes / 60) * HOUR_HEIGHT;
+                              const height = Math.max(rawHeight - 2, Math.max(QUARTER_HOUR_HEIGHT - 1, MIN_ENTRY_HEIGHT));
+                              const isCompactEntry = height < 32;
+                              const isMicroEntry = height < 18;
                               const isSelected = activeEntry?.id === entry.id;
 
                               return (
@@ -873,43 +921,65 @@ export default function TimesheetPanel({
                                   key={entry.id}
                                   type="button"
                                   onClick={() => onSelectEntry(entry)}
-                                  className={`absolute left-2 right-2 overflow-hidden rounded-2xl border px-3 py-2 text-left shadow-sm transition hover:shadow-md ${color.bg} ${color.border} ${isSelected ? 'ring-2 ring-slate-950/70' : ''}`}
-                                  style={{ top: `${top + 6}px`, height: `${height - 8}px` }}
+                                  className={`absolute left-1 right-1 overflow-hidden border text-left shadow-sm transition hover:shadow-md ${isCompactEntry ? 'rounded-xl px-2 py-1' : 'rounded-2xl px-3 py-2'} ${color.bg} ${color.border} ${isSelected ? 'ring-2 ring-slate-950/70' : ''}`}
+                                  style={{ top: `${top + 1}px`, height: `${height}px` }}
+                                  title={`${entry.description || 'Untitled entry'} · ${formatEntryWindow(entry)} · ${formatDurationMinutes(entry.duration_minutes)}`}
                                 >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className={`min-w-0 text-sm font-semibold ${color.text}`}>
-                                      {entry.description || 'Untitled entry'}
+                                  {isMicroEntry ? (
+                                    <div className="flex h-full items-center gap-1 overflow-hidden">
+                                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${color.accent}`} />
+                                      <span className={`truncate text-[9px] font-semibold ${color.text}`}>
+                                        {formatDurationMinutes(entry.duration_minutes)}
+                                      </span>
                                     </div>
-                                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                                      {formatDurationMinutes(entry.duration_minutes)}
-                                    </span>
-                                  </div>
-                                  <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-600">
-                                    <span className={`inline-block h-2 w-10 rounded-full ${color.accent}`} />
-                                    <span className="truncate">{project?.name || 'Project'}</span>
-                                  </div>
-                                  <div className="mt-1 text-[11px] text-slate-500">
-                                    {getEntryProjectLabel(entry, project, currentUserId)}
-                                  </div>
+                                  ) : isCompactEntry ? (
+                                    <div className="flex h-full items-center justify-between gap-2">
+                                      <div className={`min-w-0 truncate text-[10px] font-semibold ${color.text}`}>
+                                        {entry.description || project?.name || 'Entry'}
+                                      </div>
+                                      <span className="shrink-0 text-[9px] font-semibold text-slate-600">
+                                        {formatDurationMinutes(entry.duration_minutes)}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className={`min-w-0 text-sm font-semibold ${color.text}`}>
+                                          {entry.description || 'Untitled entry'}
+                                        </div>
+                                        <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                          {formatDurationMinutes(entry.duration_minutes)}
+                                        </span>
+                                      </div>
+                                      <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-600">
+                                        <span className={`inline-block h-2 w-10 rounded-full ${color.accent}`} />
+                                        <span className="truncate">{project?.name || 'Project'}</span>
+                                      </div>
+                                      <div className="mt-1 text-[11px] text-slate-500">
+                                        {getEntryProjectLabel(entry, project, currentUserId)}
+                                      </div>
+                                    </>
+                                  )}
                                 </button>
                               );
                             })}
                           </div>
                         ))}
                       </div>
+                      </div>
                     </div>
                   </div>
 
                   <div className="mt-5 hidden gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_280px]">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">How Timesheet works this week</div>
+                    <div className="pm-surface-soft rounded-2xl px-4 py-4">
+                      <div className={sectionLabelClass}>How Timesheet works</div>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
                         On phone, tap a day in the week strip to focus it and log time underneath. On larger screens, use the calendar blocks to jump straight into editing your own entries.
                       </p>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project totals</div>
+                    <div className="pm-surface-soft rounded-2xl px-4 py-4">
+                      <div className={sectionLabelClass}>Project totals</div>
                       <div className="mt-3 space-y-3">
                         {summaryRows.length === 0 ? (
                           <div className="text-sm text-slate-500">No entries in this view yet.</div>
