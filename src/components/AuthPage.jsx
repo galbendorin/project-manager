@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import PmWorkspaceLogo from './PmWorkspaceLogo';
 import {
   TRIAL_FULL_ACCESS_LABEL,
   TRIAL_OFFER_LABEL,
@@ -275,13 +276,12 @@ export default function AuthPage() {
                   <button
                     type="button"
                     onClick={() => jumpToSection('landing-hero')}
-                    className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-lg font-extrabold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.9)] transition hover:bg-slate-800 ${LANDING_FOCUS_CLASS}`}
+                    className={`inline-flex transition hover:opacity-90 ${LANDING_FOCUS_CLASS}`}
                     aria-label="Back to top"
                   >
-                    PM
+                    <PmWorkspaceLogo size="sm" />
                   </button>
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-teal-700">PM Workspace</p>
                     <h1 className="text-lg font-semibold text-slate-950 sm:text-xl">Project Delivery Workspace</h1>
                   </div>
                 </div>

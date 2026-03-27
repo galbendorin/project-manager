@@ -99,7 +99,7 @@ export default function PricingPage({ onClose }) {
             Upgrade to Pro
           </h2>
           <p className="text-gray-500 mt-2 text-lg">
-            Unlock the full power of PM OS
+            Unlock the full power of PM Workspace
           </p>
 
           {/* Billing toggle */}

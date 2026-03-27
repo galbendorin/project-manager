@@ -1,6 +1,6 @@
 {
-  "name": "PM OS - Project Delivery Workspace",
-  "short_name": "PM OS",
+  "name": "PM Workspace - Project Delivery Workspace",
+  "short_name": "PM Workspace",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

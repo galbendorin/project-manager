@@ -6,6 +6,7 @@ import { buildDemoProjectPayload } from '../utils/demoProjectBuilder';
 import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
 import AuthenticatedFooter from './AuthenticatedFooter';
 import ProjectShareModal from './ProjectShareModal';
+import PmWorkspaceLogo from './PmWorkspaceLogo';
 import {
   countOwnedProjects,
   normalizeProjectRecord,
@@ -465,13 +466,10 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack }) => {
             <aside className="lg:sticky lg:top-6 lg:self-start">
               <div className="rounded-[30px] border border-slate-200/80 bg-white/92 p-5 shadow-[0_24px_70px_-52px_rgba(15,23,42,0.55)] backdrop-blur">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-gradient-to-br from-indigo-600 to-indigo-800 text-xl font-bold text-white shadow-[0_18px_40px_-20px_rgba(79,70,229,0.75)]">
-                    P
-                  </div>
                   <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Workspace</p>
-                    <h1 className="truncate text-xl font-bold tracking-[-0.03em] text-slate-950">Your Projects</h1>
-                    <p className="truncate text-sm text-slate-500">{user.email}</p>
+                    <PmWorkspaceLogo size="sm" />
+                    <h1 className="mt-4 truncate text-xl font-bold tracking-[-0.03em] text-slate-950">Your Projects</h1>
+                    <p className="mt-1 truncate text-sm text-slate-500">{user.email}</p>
                   </div>
                 </div>
 

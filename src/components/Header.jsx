@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ModuleHeader from './ModuleHeader';
+import PmWorkspaceLogo from './PmWorkspaceLogo';
 import { usePlan } from '../contexts/PlanContext';
 
 const Header = ({ 
@@ -180,9 +181,7 @@ const Header = ({
     <>
     <header className="flex-none bg-white border-b border-slate-200 px-2.5 sm:px-4 py-2 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-2 z-30">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-          P
-        </div>
+        <PmWorkspaceLogo iconOnly size="xs" />
         <ModuleHeader
           projectName={projectName}
           moduleType={moduleType}

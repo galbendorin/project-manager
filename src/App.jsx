@@ -13,6 +13,7 @@ import DemoBenefitsModal from './components/DemoBenefitsModal';
 import BlurOverlay from './components/BlurOverlay';
 import PricingPage from './components/PricingPage';
 import BillingScreen from './components/BillingScreen';
+import PmWorkspaceLogo from './components/PmWorkspaceLogo';
 import { TrialBanner, CancellationBanner, ReadOnlyBanner } from './components/UpgradeBanner';
 import { useProjectData } from './hooks/useProjectData';
 import { useCheckoutStatus, CheckoutToast } from './hooks/useCheckoutStatus.jsx';
@@ -173,9 +174,7 @@ function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onS
         <div className="mx-auto flex max-w-7xl items-start justify-between gap-3 px-4 py-3 sm:items-center sm:px-6 sm:py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-xs font-bold text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.7)] sm:h-10 sm:w-10 sm:rounded-2xl sm:text-sm">
-                T
-              </div>
+              <PmWorkspaceLogo iconOnly size="xs" />
               <div className="min-w-0">
                 <h1 className="truncate text-base font-bold text-slate-950 sm:text-lg">Timesheet</h1>
               </div>
