@@ -46,11 +46,17 @@ const Navigation = ({ activeTab, onTabChange }) => {
     <div className="relative flex-none z-20">
       {/* Left fade */}
       {canScrollLeft && (
-        <div className="absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none" />
+        <div
+          className="absolute left-0 top-0 bottom-0 z-10 w-10 pointer-events-none"
+          style={{ background: 'linear-gradient(to right, var(--pm-shell-bg-solid), transparent)' }}
+        />
       )}
       {/* Right fade */}
       {canScrollRight && (
-        <div className="absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none" />
+        <div
+          className="absolute right-0 top-0 bottom-0 z-10 w-10 pointer-events-none"
+          style={{ background: 'linear-gradient(to left, var(--pm-shell-bg-solid), transparent)' }}
+        />
       )}
 
       <nav ref={scrollRef} className="nav-tabs">

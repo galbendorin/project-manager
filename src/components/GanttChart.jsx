@@ -19,10 +19,10 @@ const rowStripesPlugin = {
       const halfRow = Math.abs(rowHeight) / 2;
       const top = y - halfRow;
       if (i % 2 === 1) {
-        ctx.fillStyle = '#f8fafc';
+        ctx.fillStyle = '#faf6ef';
         ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, Math.abs(rowHeight));
       }
-      ctx.strokeStyle = '#f1f5f9'; ctx.lineWidth = 1;
+      ctx.strokeStyle = '#ece7df'; ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(chartArea.left, top + Math.abs(rowHeight));
       ctx.lineTo(chartArea.right, top + Math.abs(rowHeight));
@@ -42,7 +42,7 @@ const weekendShadingPlugin = {
     if (!xScale || !chartArea) return;
 
     ctx.save();
-    ctx.fillStyle = 'rgba(241, 245, 249, 0.6)';
+    ctx.fillStyle = 'rgba(124, 58, 237, 0.05)';
 
     const minTime = xScale.min;
     const maxTime = xScale.max;
@@ -103,7 +103,7 @@ const ganttOverlayPlugin = {
       const width = endX - startX;
       if (width <= 0) return;
 
-      const barColor = '#1e293b';
+      const barColor = '#1f2940';
       const barThickness = 5;
       const triangleSize = 7;
       const barY = y - barThickness / 2;
@@ -143,8 +143,8 @@ const ganttOverlayPlugin = {
         if (blStartX == null || blEndX == null) return;
         const ghostHeight = halfBar * 0.6;
         const ghostY = y + halfBar + 2;
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.3)';
-        ctx.strokeStyle = 'rgba(148, 163, 184, 0.5)';
+        ctx.fillStyle = 'rgba(167, 139, 250, 0.18)';
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.42)';
         ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
         const w = blEndX - blStartX;
         if (w > 0) {
@@ -199,7 +199,7 @@ const ganttOverlayPlugin = {
         if (fromX == null || toX == null) return;
 
         const isCriticalLink = criticalIds.has(task.id) && criticalIds.has(predTask.id);
-        ctx.strokeStyle = isCriticalLink ? '#7C3AED' : '#94a3b8';
+        ctx.strokeStyle = isCriticalLink ? '#7c3aed' : '#b3bdce';
         ctx.lineWidth = isCriticalLink ? 2 : 1;
         ctx.setLineDash([]);
 
@@ -229,7 +229,7 @@ const ganttOverlayPlugin = {
 
         const arrowX = Math.abs(succY - predY) < 2 ? toX - 2 : eX - 2;
         const arrowY = Math.abs(succY - predY) < 2 ? predY : eY;
-        ctx.fillStyle = isCriticalLink ? '#7C3AED' : '#94a3b8';
+        ctx.fillStyle = isCriticalLink ? '#7c3aed' : '#b3bdce';
         ctx.beginPath();
         ctx.moveTo(arrowX, arrowY);
         ctx.lineTo(arrowX - 6, arrowY - 3);
@@ -332,10 +332,10 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
         type: 'bar', data: taskData,
         backgroundColor: (ctx) => {
           const raw = ctx.raw;
-          if (!raw) return '#e2e8f0';
-          if (raw.pct === 100) return '#34d399';
-          if (raw.pct > 0) return '#6366f1';
-          return '#cbd5e1';
+          if (!raw) return '#e6e0d7';
+          if (raw.pct === 100) return '#1fa971';
+          if (raw.pct > 0) return '#7c3aed';
+          return '#d4cff8';
         },
         borderRadius: 4, barPercentage: 0.5
       });
@@ -360,7 +360,7 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
           legend: { display: false },
           tooltip: {
             enabled: !compactMode,
-            backgroundColor: '#1e293b', titleFont: { size: 11 }, bodyFont: { size: 11 }, padding: 8, cornerRadius: 6,
+            backgroundColor: '#171923', titleFont: { size: 11 }, bodyFont: { size: 11 }, padding: 8, cornerRadius: 8,
             callbacks: {
               label: (context) => {
                 const taskId = context.raw?.taskId;
@@ -396,8 +396,8 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
         scales: {
           x: { type: 'time', min: minDate.getTime(), max: maxDate.getTime(), position: 'bottom',
             time: { unit: viewMode === 'week' ? 'day' : (viewMode === '2week' ? 'week' : 'month'), displayFormats: { day: 'MMM d', week: 'MMM d', month: 'MMM yyyy' } },
-            ticks: { font: { size: 12, weight: '600' }, color: '#64748b', maxRotation: 0, autoSkip: true },
-            grid: { color: '#e2e8f0', lineWidth: 1 } },
+            ticks: { font: { size: 12, weight: '600' }, color: '#7b879b', maxRotation: 0, autoSkip: true },
+            grid: { color: '#e8e2d8', lineWidth: 1 } },
           y: { display: false }
         }
       }
@@ -420,8 +420,8 @@ const GanttChart = ({ tasks, viewMode = 'week', baseline = null }) => {
   }, [tasks, viewMode, criticalPathIds, baseline]);
 
   return (
-    <div className="flex-grow flex flex-col bg-white relative min-w-0 overflow-hidden">
-      <div ref={axisContainerRef} className="flex-none overflow-hidden bg-slate-50 border-b-2 border-slate-200" style={{ height: `${HEADER_HEIGHT}px` }}>
+    <div className="flex-grow flex flex-col bg-white/80 relative min-w-0 overflow-hidden">
+      <div ref={axisContainerRef} className="flex-none overflow-hidden bg-[var(--pm-surface-soft)] border-b border-[var(--pm-border-strong)]" style={{ height: `${HEADER_HEIGHT}px` }}>
         <div className="relative" style={{ height: `${HEADER_HEIGHT}px`, minWidth: '100%' }}>
           <canvas ref={axisCanvasRef} style={{ height: `${HEADER_HEIGHT}px` }} />
           {showTodayMarker && todayMarkerX !== null && (

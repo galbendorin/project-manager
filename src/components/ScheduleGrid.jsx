@@ -121,18 +121,18 @@ const TaskRow = React.memo(({
 
   const getRowColor = () => {
     if (task.rowColor) {
-      const colorMap = { red: '#fee2e2', amber: '#fef3c7', brown: '#d6c5b0' };
+      const colorMap = { red: '#ffe8eb', amber: '#fbf0cf', brown: '#e8dccb' };
       return colorMap[task.rowColor] || null;
     }
-    if (isDragging) return '#EEF2FF';
-    if (isParentRow) return '#f1f5f9';
+    if (isDragging) return '#f3eeff';
+    if (isParentRow) return '#f8f4ec';
     const taskFinish = new Date(finishDate);
     taskFinish.setHours(0, 0, 0, 0);
     const isPastDeadline = taskFinish.getTime() < todayMidnightTs && task.pct < 100;
-    if (isPastDeadline) return '#fee2e2';
-    if (task.pct === 100) return '#d1fae5';
-    if (task.pct > 0 && task.pct < 100) return '#ecfdf5';
-    return isEven ? '#ffffff' : '#fafbfc';
+    if (isPastDeadline) return '#fff0f3';
+    if (task.pct === 100) return '#e8f7ef';
+    if (task.pct > 0 && task.pct < 100) return '#f7f1ff';
+    return isEven ? '#ffffff' : '#fcfbf8';
   };
 
   const ecProps = { editingCell, setEditingCell, onCellEdit };
@@ -154,7 +154,7 @@ const TaskRow = React.memo(({
         opacity: isDragging ? 0.5 : 1
       }}
     >
-      <td style={{ textAlign: 'center', cursor: 'grab', padding: '0 2px', userSelect: 'none' }} className="text-slate-300 hover:text-slate-500 text-[11px]" title="Drag to reorder">⠿</td>
+      <td style={{ textAlign: 'center', cursor: 'grab', padding: '0 2px', userSelect: 'none' }} className="text-slate-300 hover:text-violet-500 text-[11px]" title="Drag to reorder">⠿</td>
 
       <td className="text-center text-slate-400 font-mono text-[11px]">{task.id}</td>
 
@@ -163,7 +163,7 @@ const TaskRow = React.memo(({
           {isParentRow ? (
             <button
               onClick={(e) => { e.stopPropagation(); onToggleCollapse(origIdx); }}
-              className="text-slate-400 hover:text-indigo-600 w-4 h-4 flex items-center justify-center flex-shrink-0"
+              className="text-slate-400 hover:text-violet-600 w-4 h-4 flex items-center justify-center flex-shrink-0"
               style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
               title={isCollapsed ? 'Expand' : 'Collapse'}
             >
@@ -176,16 +176,16 @@ const TaskRow = React.memo(({
                 : <span className="text-slate-300 text-[10px]">–</span>}
             </span>
           )}
-          <span className={`truncate text-[12.5px] ${isParentRow ? 'font-semibold text-slate-800' : 'font-medium'}`}>
-            {task.name}
-          </span>
+            <span className={`truncate text-[12.5px] ${isParentRow ? 'font-semibold text-slate-800' : 'font-medium text-slate-700'}`}>
+              {task.name}
+            </span>
           {isParentRow && isCollapsed && childCount > 0 && (
             <span className="text-[8px] text-slate-400 bg-slate-200 px-1 py-px rounded flex-shrink-0">
               +{childCount}
             </span>
           )}
           {isCritical && (
-            <span className="text-[7px] font-bold text-purple-600 bg-purple-50 border border-purple-200 px-1 py-px rounded flex-shrink-0">CP</span>
+            <span className="text-[7px] font-bold text-violet-700 bg-violet-50 border border-violet-200 px-1 py-px rounded flex-shrink-0">CP</span>
           )}
         </div>
       </EditableCell>
@@ -234,7 +234,7 @@ const TaskRow = React.memo(({
             isInTracker && isInTracker(task.id) ? (
               <button
                 onClick={() => onRemoveFromTracker && onRemoveFromTracker(task.id)}
-                className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-indigo-700 border-indigo-200 bg-indigo-50 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+                className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-violet-700 border-violet-200 bg-violet-50 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
                 title="Remove from Master Tracker"
               >
                 MT✓
@@ -242,7 +242,7 @@ const TaskRow = React.memo(({
             ) : (
               <button
                 onClick={() => onSendToTracker(task.id)}
-                className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-slate-500 border-slate-200 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50"
+                className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-slate-500 border-slate-200 hover:text-violet-600 hover:border-violet-300 hover:bg-violet-50"
                 title="Send to Master Tracker"
               >
                 MT+
@@ -272,9 +272,9 @@ const TaskRow = React.memo(({
                 e.stopPropagation();
                 setColorPickerOpen(colorPickerOpen === task.id ? null : task.id);
               }}
-              className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]"
-              title="Set row color"
-            >
+                className="p-0.5 text-slate-400 hover:text-violet-600 text-[11px]"
+                title="Set row color"
+              >
               🎨
             </button>
           </>
@@ -284,11 +284,11 @@ const TaskRow = React.memo(({
               onClick={() => setColorPickerOpen(null)}
             >
               <div
-                className="bg-white border border-slate-300 rounded-lg shadow-2xl p-3"
+                className="pm-surface-card rounded-xl p-3"
                 onClick={(e) => e.stopPropagation()}
                 style={{ minWidth: '160px' }}
               >
-                <div className="text-sm font-semibold text-slate-700 mb-2 pb-2 border-b">Choose Row Color</div>
+                <div className="mb-2 border-b border-slate-200 pb-2 text-sm font-semibold text-slate-700">Choose Row Color</div>
                 <button
                   onClick={(e) => { e.stopPropagation(); onUpdateTask(task.id, { rowColor: null }); setColorPickerOpen(null); }}
                   className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-100 rounded mb-1"

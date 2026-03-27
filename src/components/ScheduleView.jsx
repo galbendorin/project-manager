@@ -145,9 +145,9 @@ const ScheduleView = ({
   ];
 
   return (
-    <div className="h-full w-full min-w-0 bg-white flex flex-col overflow-hidden">
+    <div className="h-full w-full min-w-0 pm-surface-card flex flex-col overflow-hidden rounded-t-[26px]">
       {showLegend && (
-        <div className="flex-none border-b border-slate-200 bg-slate-50 px-3 py-3 text-[11px] text-slate-600">
+        <div className="flex-none border-b border-slate-200 bg-[var(--pm-surface-soft)] px-3 py-3 text-[11px] text-slate-600">
           <div className="flex flex-wrap items-start gap-4">
             <div className="min-w-[200px] flex-1">
               <div className="font-semibold text-slate-800">Legend</div>
@@ -196,11 +196,11 @@ const ScheduleView = ({
 
       {/* AI Assistant banner — only for plans with AI access */}
       {canUseAiAssistant && (
-        <div className="flex-none px-3 sm:px-4 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 border-b border-indigo-700 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="pm-ai-banner flex-none px-3 sm:px-4 py-2.5 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4 min-w-0">
             <button
               onClick={() => setShowAiPanel(true)}
-              className="flex w-full items-center justify-center gap-2.5 px-4 py-2.5 bg-white hover:bg-indigo-50 text-indigo-700 text-[13px] font-bold rounded-lg shadow-md hover:shadow-lg transition-all sm:w-auto sm:justify-start"
+              className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-white px-4 py-2.5 text-[13px] font-bold text-indigo-700 shadow-md transition-all hover:bg-indigo-50 hover:shadow-lg sm:w-auto sm:justify-start"
             >
               <span className="text-[16px]">🤖</span>
               AI Plan Assistant
@@ -231,8 +231,8 @@ const ScheduleView = ({
         usePlatformKey={usePlatformKey}
       />
 
-      {isMobile && (
-        <div className="sm:hidden flex-none px-3 py-1.5 border-b border-slate-200 bg-slate-50 text-[11px] text-slate-500">
+          {isMobile && (
+        <div className="sm:hidden flex-none border-b border-slate-200 bg-[var(--pm-surface-soft)] px-3 py-1.5 text-[11px] text-slate-500">
           Swipe sideways in the schedule grid to see all columns.
         </div>
       )}
@@ -240,7 +240,7 @@ const ScheduleView = ({
       {/* Always side-by-side on desktop; grid-only on mobile */}
       <div className="flex-grow min-h-0 min-w-0 flex flex-row overflow-x-auto overflow-y-hidden">
         <div
-          className="flex-none min-w-0 bg-white flex flex-col overflow-hidden z-20 border-r border-slate-200"
+          className="flex-none min-w-0 bg-white/75 flex flex-col overflow-hidden z-20 border-r border-slate-200"
           style={{
             width: isMobile ? '100%' : `${leftPaneWidthPct}%`,
             minWidth: isMobile ? 'auto' : '480px',

@@ -194,6 +194,21 @@ const MultiSelectFilter = ({
   );
 };
 
+const MobileField = ({ label, children }) => (
+  <label className="block">
+    <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+      {label}
+    </span>
+    {children}
+  </label>
+);
+
+const MobileValue = ({ children }) => (
+  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] text-slate-700">
+    {children}
+  </div>
+);
+
 const TodoView = ({
   todos,
   projectData,
@@ -222,6 +237,7 @@ const TodoView = ({
   const [loadingAllProjects, setLoadingAllProjects] = useState(false);
   const [draftEdits, setDraftEdits] = useState({});
   const [mobileEditingTitleTodoId, setMobileEditingTitleTodoId] = useState(null);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [quickAddValues, setQuickAddValues] = useState({});
   const [pendingCompletedTodos, setPendingCompletedTodos] = useState({});
   const draftEditsRef = useRef({});
@@ -260,6 +276,12 @@ const TodoView = ({
   useEffect(() => {
     draftEditsRef.current = draftEdits;
   }, [draftEdits]);
+
+  useEffect(() => {
+    if (!isMobile && showMobileFilters) {
+      setShowMobileFilters(false);
+    }
+  }, [isMobile, showMobileFilters]);
 
   useEffect(() => () => {
     completionTimeoutsRef.current.forEach((timeoutId) => {
@@ -645,6 +667,18 @@ const TodoView = ({
 
   const showCompletionTick = !isExternalView;
   const showQuickAdd = !isExternalView;
+  const activeFilterCount = useMemo(() => (
+    [projectFilter, sourceFilter, ownerFilter, recurrenceFilter, bucketFilter]
+      .reduce((count, values) => count + (values.length > 0 ? 1 : 0), 0)
+  ), [bucketFilter, ownerFilter, projectFilter, recurrenceFilter, sourceFilter]);
+
+  const clearAllFilters = useCallback(() => {
+    setProjectFilter([]);
+    setSourceFilter([]);
+    setOwnerFilter([]);
+    setRecurrenceFilter([]);
+    setBucketFilter([]);
+  }, []);
 
   return (
     <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
@@ -666,55 +700,140 @@ const TodoView = ({
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
-            <select
-              value={scope}
-              onChange={(e) => {
-                const nextScope = e.target.value;
-                setScope(nextScope);
-                setProjectFilter([]);
-              }}
-              className="px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-lg bg-white"
-            >
-              <option value="project">This Project + Other</option>
-              <option value="all">All Projects + Other</option>
-            </select>
+          {isMobile ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                <select
+                  value={scope}
+                  onChange={(e) => {
+                    const nextScope = e.target.value;
+                    setScope(nextScope);
+                    setProjectFilter([]);
+                  }}
+                  className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white"
+                >
+                  <option value="project">This Project + Other</option>
+                  <option value="all">All Projects + Other</option>
+                </select>
 
-            <MultiSelectFilter
-              allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
-              options={projectSelectOptions}
-              selectedValues={projectFilter}
-              onChange={setProjectFilter}
-            />
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFilters((prev) => !prev)}
+                  className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                    showMobileFilters || activeFilterCount > 0
+                      ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                      : 'border-slate-200 bg-white text-slate-600'
+                  }`}
+                >
+                  Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+                </button>
+              </div>
 
-            <MultiSelectFilter
-              allLabel="All Sources"
-              options={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
-              selectedValues={sourceFilter}
-              onChange={setSourceFilter}
-            />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                  {scope === 'project' ? 'This project + Other' : 'All projects + Other'}
+                </span>
+                {activeFilterCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
+              </div>
 
-            <MultiSelectFilter
-              allLabel="All Owners"
-              options={ownerOptions}
-              selectedValues={ownerFilter}
-              onChange={setOwnerFilter}
-            />
+              {showMobileFilters ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 space-y-2">
+                  <MultiSelectFilter
+                    allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
+                    options={projectSelectOptions}
+                    selectedValues={projectFilter}
+                    onChange={setProjectFilter}
+                  />
 
-            <MultiSelectFilter
-              allLabel="All Recurrence"
-              options={RECURRENCE_OPTIONS}
-              selectedValues={recurrenceFilter}
-              onChange={setRecurrenceFilter}
-            />
+                  <MultiSelectFilter
+                    allLabel="All Sources"
+                    options={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
+                    selectedValues={sourceFilter}
+                    onChange={setSourceFilter}
+                  />
 
-            <MultiSelectFilter
-              allLabel="All Buckets"
-              options={TODO_BUCKETS.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
-              selectedValues={bucketFilter}
-              onChange={setBucketFilter}
-            />
-          </div>
+                  <MultiSelectFilter
+                    allLabel="All Owners"
+                    options={ownerOptions}
+                    selectedValues={ownerFilter}
+                    onChange={setOwnerFilter}
+                  />
+
+                  <MultiSelectFilter
+                    allLabel="All Recurrence"
+                    options={RECURRENCE_OPTIONS}
+                    selectedValues={recurrenceFilter}
+                    onChange={setRecurrenceFilter}
+                  />
+
+                  <MultiSelectFilter
+                    allLabel="All Buckets"
+                    options={TODO_BUCKETS.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
+                    selectedValues={bucketFilter}
+                    onChange={setBucketFilter}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
+              <select
+                value={scope}
+                onChange={(e) => {
+                  const nextScope = e.target.value;
+                  setScope(nextScope);
+                  setProjectFilter([]);
+                }}
+                className="px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-lg bg-white"
+              >
+                <option value="project">This Project + Other</option>
+                <option value="all">All Projects + Other</option>
+              </select>
+
+              <MultiSelectFilter
+                allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
+                options={projectSelectOptions}
+                selectedValues={projectFilter}
+                onChange={setProjectFilter}
+              />
+
+              <MultiSelectFilter
+                allLabel="All Sources"
+                options={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
+                selectedValues={sourceFilter}
+                onChange={setSourceFilter}
+              />
+
+              <MultiSelectFilter
+                allLabel="All Owners"
+                options={ownerOptions}
+                selectedValues={ownerFilter}
+                onChange={setOwnerFilter}
+              />
+
+              <MultiSelectFilter
+                allLabel="All Recurrence"
+                options={RECURRENCE_OPTIONS}
+                selectedValues={recurrenceFilter}
+                onChange={setRecurrenceFilter}
+              />
+
+              <MultiSelectFilter
+                allLabel="All Buckets"
+                options={TODO_BUCKETS.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
+                selectedValues={bucketFilter}
+                onChange={setBucketFilter}
+              />
+            </div>
+          )}
 
           {scope === 'all' && loadingAllProjects && (
             <div className="text-[11px] text-slate-400">Loading all-project derived tasks...</div>
@@ -741,6 +860,199 @@ const TodoView = ({
 
               {displayItems.length === 0 ? (
                 <div className="px-4 py-5 text-[12px] text-slate-400">No items yet</div>
+              ) : isMobile ? (
+                <div className="space-y-3 p-3 sm:p-4">
+                  {displayItems.map((todo, displayIndex) => {
+                    const canEditManualRow = !isExternalView && !todo.isDerived && todo.status !== 'Done';
+                    const isMobileTitleEditing = mobileEditingTitleTodoId === todo._id && canEditManualRow;
+                    const isCompleted = todo.status === 'Done';
+                    const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id);
+
+                    return (
+                      <article
+                        key={todo._id || todo.id || `${bucket.key}-${displayIndex}`}
+                        className={`rounded-2xl border px-3.5 py-3 shadow-sm transition-all ${
+                          isCompleted
+                            ? 'border-emerald-200 bg-emerald-50/80'
+                            : 'border-slate-200 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          {showCompletionTick ? (
+                            <div className="pt-0.5">
+                              <CompletionTickButton
+                                checked={isCompleted}
+                                disabled={false}
+                                onClick={() => handleCompleteTodo(todo, bucket.key, displayIndex)}
+                                label={
+                                  isPendingCompletion
+                                    ? `Undo completion for ${todo.title || 'task'}`
+                                    : isCompleted
+                                      ? `${todo.title || 'Task'} completed`
+                                      : `Mark ${todo.title || 'task'} complete`
+                                }
+                              />
+                            </div>
+                          ) : null}
+
+                          <div className="min-w-0 flex-1 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                {isMobileTitleEditing ? (
+                                  <input
+                                    type="text"
+                                    ref={(element) => setTitleInputRef(todo._id, element)}
+                                    value={getDraftValue(todo, 'title')}
+                                    onChange={(e) => setDraftValue(todo._id, 'title', e.target.value)}
+                                    onBlur={() => {
+                                      commitDraftValue(todo, 'title');
+                                      setMobileEditingTitleTodoId((currentId) => (currentId === todo._id ? null : currentId));
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        commitDraftValue(todo, 'title');
+                                        setMobileEditingTitleTodoId((currentId) => (currentId === todo._id ? null : currentId));
+                                        e.currentTarget.blur();
+                                      }
+                                    }}
+                                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-[15px] font-semibold text-slate-900 outline-none focus:border-indigo-300"
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!todo.isDerived && !isExternalView) {
+                                        setMobileEditingTitleTodoId(todo._id);
+                                      }
+                                    }}
+                                    className={`w-full text-left text-[15px] font-semibold leading-5 ${
+                                      !todo.isDerived && !isExternalView ? 'cursor-text' : 'cursor-default'
+                                    } ${isCompleted ? 'line-through text-slate-400' : 'text-slate-900'}`}
+                                  >
+                                    {todo.title || 'Untitled'}
+                                  </button>
+                                )}
+
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                                    {todo.source || 'Manual'}
+                                  </span>
+                                  <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass(todo.status)}`}>
+                                    {isPendingCompletion ? 'Completing...' : (todo.status || 'Open')}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {!todo.isDerived && !isExternalView ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onDeleteTodo(todo._id)}
+                                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition-colors hover:border-rose-200 hover:text-rose-500"
+                                  title="Delete Task"
+                                >
+                                  <IconTrash />
+                                </button>
+                              ) : null}
+                            </div>
+
+                            {isPendingCompletion ? (
+                              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700">
+                                Tap the tick again to undo before completion is applied.
+                              </div>
+                            ) : null}
+
+                            <div className="grid gap-2">
+                              <MobileField label="Project">
+                                {canEditManualRow ? (
+                                  <select
+                                    value={todo.projectId || 'other'}
+                                    onChange={(e) => onUpdateTodo(todo._id, 'projectId', e.target.value === 'other' ? null : e.target.value)}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
+                                  >
+                                    <option value="other">Other</option>
+                                    {projectOptions.map((project) => (
+                                      <option key={project.id} value={project.id}>{project.name}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <MobileValue>{todo.projectName || 'Other'}</MobileValue>
+                                )}
+                              </MobileField>
+
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <MobileField label="Due Date">
+                                  {canEditManualRow ? (
+                                    <input
+                                      type="date"
+                                      value={todo.dueDate || ''}
+                                      onChange={(e) => onUpdateTodo(todo._id, 'dueDate', e.target.value)}
+                                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
+                                    />
+                                  ) : (
+                                    <MobileValue>{todo.dueDate ? formatDate(todo.dueDate) : 'No deadline'}</MobileValue>
+                                  )}
+                                </MobileField>
+
+                                <MobileField label="Recurring">
+                                  {canEditManualRow ? (
+                                    <select
+                                      value={todo.recurrence?.type || 'none'}
+                                      onChange={(e) => onUpdateTodo(
+                                        todo._id,
+                                        'recurrence',
+                                        e.target.value === 'none' ? null : { type: e.target.value, interval: 1 }
+                                      )}
+                                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
+                                    >
+                                      {RECURRENCE_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <MobileValue>{recurrenceLabel(todo.recurrence)}</MobileValue>
+                                  )}
+                                </MobileField>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <MobileField label="Owner">
+                                  {canEditManualRow ? (
+                                    <input
+                                      type="text"
+                                      value={getDraftValue(todo, 'owner')}
+                                      onChange={(e) => setDraftValue(todo._id, 'owner', e.target.value)}
+                                      onBlur={() => commitDraftValue(todo, 'owner')}
+                                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
+                                    />
+                                  ) : (
+                                    <MobileValue>{todo.owner || 'Unassigned'}</MobileValue>
+                                  )}
+                                </MobileField>
+
+                                <MobileField label="Status">
+                                  {canEditManualRow ? (
+                                    <select
+                                      value={todo.status || 'Open'}
+                                      onChange={(e) => onUpdateTodo(todo._id, 'status', e.target.value)}
+                                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
+                                    >
+                                      {STATUS_OPTIONS.map((status) => (
+                                        <option key={status} value={status}>{status}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <MobileValue>{todo.status || 'Open'}</MobileValue>
+                                  )}
+                                </MobileField>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
@@ -936,7 +1248,7 @@ const TodoView = ({
 
               {showQuickAdd && (
                 <div className="border-t border-slate-200 bg-slate-50/80 px-4 py-3">
-                  <div className={`flex ${isMobile ? 'flex-col items-stretch gap-2' : 'items-center gap-3'}`}>
+                  <div className={`flex ${isMobile ? 'flex-col items-stretch gap-2.5' : 'items-center gap-3'}`}>
                     <input
                       type="text"
                       ref={(element) => setQuickAddInputRef(bucket.key, element)}
@@ -948,11 +1260,22 @@ const TodoView = ({
                           handleQuickAddSubmit(bucket.key);
                         }
                       }}
-                      placeholder={`Add a task to ${bucket.label.toLowerCase()} and press Enter`}
+                      placeholder={isMobile ? `Quick add to ${bucket.label.toLowerCase()}` : `Add a task to ${bucket.label.toLowerCase()} and press Enter`}
                       className="flex-1 px-3 py-2 text-base sm:text-[12px] border border-slate-200 rounded-lg bg-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
                     />
-                    <div className="text-[11px] text-slate-500 whitespace-nowrap">
-                      {formatQuickAddDueHint(bucket.key)}
+                    <div className={`${isMobile ? 'flex items-center justify-between gap-3' : ''}`}>
+                      <div className="text-[11px] text-slate-500 whitespace-nowrap">
+                        {formatQuickAddDueHint(bucket.key)}
+                      </div>
+                      {isMobile ? (
+                        <button
+                          type="button"
+                          onClick={() => handleQuickAddSubmit(bucket.key)}
+                          className="rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800"
+                        >
+                          Add task
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </div>
