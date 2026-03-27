@@ -9,12 +9,6 @@
   "description": "Project delivery workspace for plans, tasks, logs, and reporting.",
   "icons": [
     {
-      "src": "/pmworkspace-mark.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
-    {
       "src": "/pmworkspace-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",

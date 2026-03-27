@@ -43,7 +43,7 @@ export default function PmWorkspaceLogo({
         className={`inline-flex shrink-0 ${shadowClass} ${sizeConfig.markClass}`.trim()}
       >
         <img
-          src="/pmworkspace-mark.svg"
+          src="/pmworkspace-mark-light.png"
           alt={iconOnly ? 'PM Workspace' : ''}
           aria-hidden={iconOnly ? undefined : 'true'}
           className="h-full w-full object-contain"
