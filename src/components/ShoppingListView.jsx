@@ -16,7 +16,6 @@ const VOICE_GRACE_PERIOD_MS = 2000;
 const VOICE_RESTART_DELAY_MS = 150;
 const VOICE_EARLY_SESSION_MS = 6000;
 const VOICE_MAX_RESTARTS = 4;
-const SHOPPING_REFRESH_POLL_MS = 3000;
 const SPACE_SPLIT_STOPWORDS = new Set([
   'a',
   'an',
@@ -452,48 +451,6 @@ export default function ShoppingListView({ currentUserId }) {
   useEffect(() => {
     loadTodos();
   }, [loadTodos]);
-
-  useEffect(() => {
-    if (!selectedProject?.id) return undefined;
-
-    const channel = supabase
-      .channel(`shopping-list-${selectedProject.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'manual_todos',
-          filter: `project_id=eq.${selectedProject.id}`,
-        },
-        () => {
-          loadTodos();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [loadTodos, selectedProject?.id]);
-
-  useEffect(() => {
-    if (!selectedProject?.id || typeof window === 'undefined') return undefined;
-
-    const pollIfVisible = () => {
-      if (document.visibilityState === 'visible') {
-        loadTodos();
-      }
-    };
-
-    const intervalId = window.setInterval(pollIfVisible, SHOPPING_REFRESH_POLL_MS);
-    document.addEventListener('visibilitychange', pollIfVisible);
-
-    return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', pollIfVisible);
-    };
-  }, [loadTodos, selectedProject?.id]);
 
   useEffect(() => {
     return () => {
