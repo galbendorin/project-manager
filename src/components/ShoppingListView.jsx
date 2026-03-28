@@ -12,6 +12,10 @@ import { normalizeProjectRecord } from '../utils/projectSharing';
 import ProjectShareModal from './ProjectShareModal';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
+const VOICE_GRACE_PERIOD_MS = 2000;
+const VOICE_RESTART_DELAY_MS = 150;
+const VOICE_EARLY_SESSION_MS = 6000;
+const VOICE_MAX_RESTARTS = 4;
 const SPACE_SPLIT_STOPWORDS = new Set([
   'a',
   'an',
@@ -289,6 +293,14 @@ export default function ShoppingListView({ currentUserId }) {
   const supportsProjectMembersRef = useRef(true);
   const ensuringProjectRef = useRef(false);
   const recognitionRef = useRef(null);
+  const pendingVoiceTranscriptRef = useRef('');
+  const voiceSessionActiveRef = useRef(false);
+  const manualVoiceStopRef = useRef(false);
+  const voiceFinalizeTimeoutRef = useRef(null);
+  const voiceRestartTimeoutRef = useRef(null);
+  const lastVoiceActivityAtRef = useRef(0);
+  const voiceSessionStartedAtRef = useRef(0);
+  const voiceRestartCountRef = useRef(0);
   const completionTimeoutRef = useRef(null);
   const completionIntervalRef = useRef(null);
 
@@ -443,6 +455,12 @@ export default function ShoppingListView({ currentUserId }) {
   useEffect(() => {
     return () => {
       recognitionRef.current?.abort();
+      if (voiceFinalizeTimeoutRef.current) {
+        window.clearTimeout(voiceFinalizeTimeoutRef.current);
+      }
+      if (voiceRestartTimeoutRef.current) {
+        window.clearTimeout(voiceRestartTimeoutRef.current);
+      }
       if (completionTimeoutRef.current) {
         window.clearTimeout(completionTimeoutRef.current);
       }
@@ -463,6 +481,17 @@ export default function ShoppingListView({ currentUserId }) {
     }
     setPendingCompleteId('');
     setPendingCompleteSeconds(2);
+  }, []);
+
+  const clearVoiceTimers = useCallback(() => {
+    if (voiceFinalizeTimeoutRef.current) {
+      window.clearTimeout(voiceFinalizeTimeoutRef.current);
+      voiceFinalizeTimeoutRef.current = null;
+    }
+    if (voiceRestartTimeoutRef.current) {
+      window.clearTimeout(voiceRestartTimeoutRef.current);
+      voiceRestartTimeoutRef.current = null;
+    }
   }, []);
 
   const addItems = useCallback(async (titles) => {
@@ -604,14 +633,42 @@ export default function ShoppingListView({ currentUserId }) {
     setVoiceMessage(items.length === 1 ? `Added ${items[0]}.` : `Added ${items.length} groceries.`);
   }, [addItems]);
 
-  const startListening = useCallback(() => {
-    const recognition = getSpeechRecognition();
-    if (!recognition) return;
-
-    recognitionRef.current = recognition;
-    setIsListening(true);
+  const finalizeVoiceCapture = useCallback(async () => {
+    clearVoiceTimers();
+    recognitionRef.current = null;
+    voiceSessionActiveRef.current = false;
+    manualVoiceStopRef.current = false;
+    voiceRestartCountRef.current = 0;
+    setIsListening(false);
     setInterimText('');
-    setVoiceMessage('Listening… say one item or a short comma-separated list.');
+
+    const transcript = pendingVoiceTranscriptRef.current.trim();
+    pendingVoiceTranscriptRef.current = '';
+
+    if (transcript) {
+      await handleVoiceItems(transcript);
+    } else if (!voiceMessage) {
+      setVoiceMessage('Voice input stopped.');
+    }
+  }, [clearVoiceTimers, handleVoiceItems, voiceMessage]);
+
+  const scheduleVoiceFinalize = useCallback(() => {
+    if (!voiceSessionActiveRef.current) return;
+    if (voiceFinalizeTimeoutRef.current) {
+      window.clearTimeout(voiceFinalizeTimeoutRef.current);
+    }
+    voiceFinalizeTimeoutRef.current = window.setTimeout(() => {
+      void finalizeVoiceCapture();
+    }, VOICE_GRACE_PERIOD_MS);
+  }, [finalizeVoiceCapture]);
+
+  const startRecognitionSession = useCallback(() => {
+    const recognition = getSpeechRecognition();
+    if (!recognition) return false;
+
+    recognition.continuous = true;
+    recognition.maxAlternatives = 1;
+    recognitionRef.current = recognition;
 
     recognition.onresult = (event) => {
       let interim = '';
@@ -620,38 +677,109 @@ export default function ShoppingListView({ currentUserId }) {
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const transcript = event.results[index][0]?.transcript || '';
         if (event.results[index].isFinal) {
-          finalTranscript += transcript;
+          finalTranscript += ` ${transcript}`;
         } else {
           interim += transcript;
         }
       }
 
       if (finalTranscript.trim()) {
-        setInterimText('');
-        void handleVoiceItems(finalTranscript.trim());
+        pendingVoiceTranscriptRef.current = `${pendingVoiceTranscriptRef.current} ${finalTranscript}`.trim();
+      }
+
+      if (interim.trim()) {
+        setInterimText(interim.trim());
       } else {
-        setInterimText(interim);
+        setInterimText('');
+      }
+
+      if (finalTranscript.trim() || interim.trim()) {
+        lastVoiceActivityAtRef.current = Date.now();
+        voiceRestartCountRef.current = 0;
+        scheduleVoiceFinalize();
       }
     };
 
-    recognition.onerror = () => {
-      setIsListening(false);
-      setInterimText('');
-      setVoiceMessage('Voice input was interrupted. Please try again.');
+    recognition.onerror = (event) => {
+      if (manualVoiceStopRef.current || !voiceSessionActiveRef.current) {
+        return;
+      }
+
+      const isRecoverable = event?.error === 'no-speech' || event?.error === 'aborted' || event?.error === 'audio-capture';
+      if (!isRecoverable) {
+        setVoiceMessage('Voice input is unavailable right now. Please try again.');
+        void finalizeVoiceCapture();
+      }
     };
 
     recognition.onend = () => {
-      setIsListening(false);
-      setInterimText('');
+      recognitionRef.current = null;
+
+      if (manualVoiceStopRef.current || !voiceSessionActiveRef.current) {
+        void finalizeVoiceCapture();
+        return;
+      }
+
+      const now = Date.now();
+      const hasBufferedTranscript = pendingVoiceTranscriptRef.current.trim().length > 0;
+      const hasRecentSpeech = now - lastVoiceActivityAtRef.current < VOICE_GRACE_PERIOD_MS;
+      const isEarlySession = now - voiceSessionStartedAtRef.current < VOICE_EARLY_SESSION_MS;
+      const canRestart = voiceRestartCountRef.current < VOICE_MAX_RESTARTS && (hasRecentSpeech || (!hasBufferedTranscript && isEarlySession));
+
+      if (canRestart) {
+        voiceRestartCountRef.current += 1;
+        voiceRestartTimeoutRef.current = window.setTimeout(() => {
+          if (voiceSessionActiveRef.current && !manualVoiceStopRef.current) {
+            startRecognitionSession();
+          }
+        }, VOICE_RESTART_DELAY_MS);
+        return;
+      }
+
+      if (hasBufferedTranscript) {
+        scheduleVoiceFinalize();
+        return;
+      }
+
+      void finalizeVoiceCapture();
     };
 
-    recognition.start();
-  }, [handleVoiceItems]);
+    try {
+      recognition.start();
+      return true;
+    } catch {
+      return false;
+    }
+  }, [finalizeVoiceCapture, scheduleVoiceFinalize]);
+
+  const startListening = useCallback(() => {
+    clearVoiceTimers();
+    pendingVoiceTranscriptRef.current = '';
+    manualVoiceStopRef.current = false;
+    voiceSessionActiveRef.current = true;
+    voiceSessionStartedAtRef.current = Date.now();
+    lastVoiceActivityAtRef.current = Date.now();
+    voiceRestartCountRef.current = 0;
+    setIsListening(true);
+    setInterimText('');
+    setVoiceMessage('Listening… keep talking, and I will wait a little before adding the items.');
+
+    const started = startRecognitionSession();
+    if (!started) {
+      voiceSessionActiveRef.current = false;
+      setIsListening(false);
+      setVoiceMessage('Voice input is unavailable right now. Please try again.');
+    }
+  }, [clearVoiceTimers, startRecognitionSession]);
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-    setInterimText('');
+    manualVoiceStopRef.current = true;
+    clearVoiceTimers();
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    } else {
+      void finalizeVoiceCapture();
+    }
     setVoiceMessage('Voice input stopped.');
   }, []);
 
