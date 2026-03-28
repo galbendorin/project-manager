@@ -453,6 +453,30 @@ export default function ShoppingListView({ currentUserId }) {
   }, [loadTodos]);
 
   useEffect(() => {
+    if (!selectedProject?.id) return undefined;
+
+    const channel = supabase
+      .channel(`shopping-list-${selectedProject.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'manual_todos',
+          filter: `project_id=eq.${selectedProject.id}`,
+        },
+        () => {
+          loadTodos();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadTodos, selectedProject?.id]);
+
+  useEffect(() => {
     return () => {
       recognitionRef.current?.abort();
       if (voiceFinalizeTimeoutRef.current) {
