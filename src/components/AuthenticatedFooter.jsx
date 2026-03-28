@@ -1,12 +1,7 @@
 import React from 'react';
 import { LEGAL_NAV_ITEMS } from '../utils/legalContent';
-import { PRIVACY_EMAIL, SUPPORT_EMAIL } from '../utils/feedback';
 
-const FOOTER_LINKS = [
-  ...LEGAL_NAV_ITEMS,
-  { id: 'support', label: SUPPORT_EMAIL, href: `mailto:${SUPPORT_EMAIL}` },
-  { id: 'privacy-email', label: PRIVACY_EMAIL, href: `mailto:${PRIVACY_EMAIL}` },
-];
+const FOOTER_LINKS = [...LEGAL_NAV_ITEMS];
 
 export default function AuthenticatedFooter({
   compact = false,

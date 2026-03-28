@@ -3,7 +3,7 @@ export const PRODUCT_NAME = 'PM Workspace';
 export const INTERNAL_PRODUCT_NAME = 'PM OS';
 export const SUPPORT_EMAIL = 'support@pmworkspace.com';
 export const PRIVACY_EMAIL = 'privacy@pmworkspace.com';
-export const FEEDBACK_EMAIL = SUPPORT_EMAIL;
+export const FEEDBACK_EMAIL = 'galben.dorin@yahoo.com';
 
 const TAB_LABELS = {
   schedule: 'Project Plan',

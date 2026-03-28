@@ -61,7 +61,7 @@ const normalizeAppPath = (value = '/') => {
 };
 
 function App() {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading, signOut, isPasswordRecovery } = useAuth();
   const checkoutStatus = useCheckoutStatus();
   const [currentProject, setCurrentProject] = useState(null);
   const [accentTheme, setAccentTheme] = useState(() => loadAccentTheme());
@@ -128,7 +128,7 @@ function App() {
     );
   }
 
-  if (!user) {
+  if (!user || isPasswordRecovery) {
     return (
       <>
         <AuthPage />

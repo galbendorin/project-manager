@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import PmWorkspaceLogo from './PmWorkspaceLogo';
 import {
@@ -107,6 +107,25 @@ const LEGAL_LINKS = [
   { label: 'Subprocessors', href: '/subprocessors' },
 ];
 
+const AUTH_MODES = {
+  SIGN_IN: 'sign-in',
+  SIGN_UP: 'sign-up',
+  RESET_REQUEST: 'reset-request',
+  RESET_COMPLETE: 'reset-complete',
+};
+
+const RESET_REQUEST_STEPS = [
+  'Enter the email you use for PM Workspace',
+  'Open the recovery email from PM Workspace',
+  'Return here to set a new password',
+];
+
+const RESET_COMPLETE_STEPS = [
+  'Create a new password with at least 6 characters',
+  'Save it from this same screen',
+  'Sign in again with the updated password',
+];
+
 function HeroFeatureIcon({ type }) {
   const shared = {
     className: 'h-5 w-5 text-slate-900',
@@ -181,25 +200,98 @@ function HeroFeatureIcon({ type }) {
 }
 
 export default function AuthPage() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [authMode, setAuthMode] = useState(AUTH_MODES.SIGN_IN);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
   const [acceptedLegal, setAcceptedLegal] = useState(false);
 
-  const { signIn, signUp } = useAuth();
+  const {
+    user,
+    loading: authLoading,
+    signIn,
+    signUp,
+    requestPasswordReset,
+    updatePassword,
+    isPasswordRecovery,
+    clearPasswordRecovery,
+  } = useAuth();
 
-  const switchMode = (nextIsLogin) => {
-    setIsLogin(nextIsLogin);
+  const isLogin = authMode === AUTH_MODES.SIGN_IN;
+  const isSignup = authMode === AUTH_MODES.SIGN_UP;
+  const isResetRequest = authMode === AUTH_MODES.RESET_REQUEST;
+  const isResetComplete = authMode === AUTH_MODES.RESET_COMPLETE;
+  const isRecoveryMode = isResetRequest || isResetComplete;
+  const panelTitle = isResetComplete
+    ? 'Set a new password'
+    : isResetRequest
+      ? 'Reset your password'
+      : isLogin
+        ? 'Welcome back'
+        : 'Open your workspace';
+  const panelEyebrow = isRecoveryMode ? 'Password recovery' : 'Access PM Workspace';
+  const panelBadge = isRecoveryMode ? 'Secure access' : TRIAL_OFFER_LABEL;
+  const panelDescription = isResetComplete
+    ? 'Choose a new password for your workspace account and save it here.'
+    : isResetRequest
+      ? 'Enter your email address and we will send a recovery link if an account exists.'
+      : isLogin
+        ? 'Sign in to continue planning, reporting, and managing billing from your workspace.'
+        : 'Create an account to start with full Pro access first, then decide later whether you want to stay on a paid plan.';
+  const helperItems = isResetComplete
+    ? RESET_COMPLETE_STEPS
+    : isResetRequest
+      ? RESET_REQUEST_STEPS
+      : ONBOARDING_STEPS;
+
+  useEffect(() => {
+    if (isPasswordRecovery) {
+      setAuthMode(AUTH_MODES.RESET_COMPLETE);
+      setError(null);
+      setSuccessMessage('');
+      setPassword('');
+      setConfirmPassword('');
+      if (user?.email) {
+        setEmail(user.email);
+      }
+      return;
+    }
+
+    setAuthMode((currentMode) => (
+      currentMode === AUTH_MODES.RESET_COMPLETE
+        ? AUTH_MODES.SIGN_IN
+        : currentMode
+    ));
+  }, [isPasswordRecovery, user?.email]);
+
+  useEffect(() => {
+    if (isPasswordRecovery && !authLoading && !user) {
+      setError('This password reset link is invalid or expired. Request a new one and try again.');
+    }
+  }, [authLoading, isPasswordRecovery, user]);
+
+  const setCardMode = async (nextMode) => {
+    if (isPasswordRecovery) {
+      const { error: clearError } = await clearPasswordRecovery({ signOutSession: true });
+      if (clearError) {
+        setError(clearError.message || 'Unable to leave password recovery right now.');
+        return;
+      }
+    }
+
+    setAuthMode(nextMode);
     setError(null);
+    setSuccessMessage('');
+    setPassword('');
+    setConfirmPassword('');
   };
 
-  const jumpToAuth = (nextIsLogin) => {
-    switchMode(nextIsLogin);
-    setSuccessMessage('');
+  const jumpToAuth = (nextMode) => {
+    void setCardMode(nextMode);
 
     window.requestAnimationFrame(() => {
       document.getElementById('auth-panel')?.scrollIntoView({
@@ -210,7 +302,7 @@ export default function AuthPage() {
   };
 
   const jumpToSignup = () => {
-    jumpToAuth(false);
+    jumpToAuth(AUTH_MODES.SIGN_UP);
   };
 
   const jumpToSection = (sectionId) => {
@@ -236,7 +328,7 @@ export default function AuthPage() {
       if (isLogin) {
         const { error: signInError } = await signIn(email, password);
         if (signInError) throw signInError;
-      } else {
+      } else if (isSignup) {
         if (!acceptedLegal) {
           throw new Error('Please accept the Terms of Service and Privacy Notice to create an account.');
         }
@@ -248,13 +340,57 @@ export default function AuthPage() {
           setSuccessMessage('Your account is ready. Opening your workspace now.');
         } else {
           setSuccessMessage(`Check ${email} for your confirmation email if verification is enabled, then sign in to enter your workspace.`);
-          setIsLogin(true);
+          setAuthMode(AUTH_MODES.SIGN_IN);
         }
         setPassword('');
         setFullName('');
+      } else if (isResetRequest) {
+        const trimmedEmail = email.trim();
+        if (!trimmedEmail) {
+          throw new Error('Enter your email address to request a password reset link.');
+        }
+
+        const { error: resetError } = await requestPasswordReset(trimmedEmail);
+        if (resetError) throw resetError;
+        setSuccessMessage('If an account exists for this email, a password reset link has been sent.');
+      } else if (isResetComplete) {
+        if (!password.trim()) {
+          throw new Error('Enter a new password.');
+        }
+        if (password.length < 6) {
+          throw new Error('Use a password with at least 6 characters.');
+        }
+        if (password !== confirmPassword) {
+          throw new Error('Passwords do not match.');
+        }
+        if (!user) {
+          throw new Error('This password reset link is invalid or expired. Request a new one and try again.');
+        }
+
+        const resetEmail = user.email || email;
+        const { error: updateError } = await updatePassword(password);
+        if (updateError) {
+          const updateMessage = String(updateError.message || '').toLowerCase();
+          if (updateMessage.includes('session') || updateMessage.includes('expired')) {
+            throw new Error('This password reset link is invalid or expired. Request a new one and try again.');
+          }
+          throw updateError;
+        }
+
+        await clearPasswordRecovery({ signOutSession: true });
+        setAuthMode(AUTH_MODES.SIGN_IN);
+        setEmail(resetEmail);
+        setPassword('');
+        setConfirmPassword('');
+        setSuccessMessage('Password updated. Sign in with your new password.');
       }
     } catch (err) {
-      setError(err.message);
+      const message = String(err?.message || 'Unable to complete this request right now.');
+      if (message.toLowerCase().includes('rate limit')) {
+        setError('Too many password reset emails were requested. Please wait a moment and try again.');
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -496,30 +632,34 @@ export default function AuthPage() {
             <div id="auth-panel" className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-indigo-600">Access PM Workspace</p>
+                  <p className="text-sm font-semibold text-indigo-600">{panelEyebrow}</p>
                   <h3 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
-                    {isLogin ? 'Welcome back' : 'Open your workspace'}
+                    {panelTitle}
                   </h3>
                 </div>
-                <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                  {TRIAL_OFFER_LABEL}
+                <div className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  isRecoveryMode
+                    ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
+                    : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                }`}>
+                  {panelBadge}
                 </div>
               </div>
 
-              <div className="mt-5 grid grid-cols-3 gap-2 rounded-[22px] border border-slate-200 bg-slate-50 p-2 text-center">
-                <div className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">Free setup</div>
-                <div className="rounded-2xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm">Trial access</div>
-                <div className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">Upgrade in app</div>
-              </div>
+              {!isRecoveryMode ? (
+                <div className="mt-5 grid grid-cols-3 gap-2 rounded-[22px] border border-slate-200 bg-slate-50 p-2 text-center">
+                  <div className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">Free setup</div>
+                  <div className="rounded-2xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm">Trial access</div>
+                  <div className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">Upgrade in app</div>
+                </div>
+              ) : null}
 
               <p className="mt-5 text-sm leading-7 text-slate-600">
-                {isLogin
-                  ? 'Sign in to continue planning, reporting, and managing billing from your workspace.'
-                  : 'Create an account to start with full Pro access first, then decide later whether you want to stay on a paid plan.'}
+                {panelDescription}
               </p>
 
               <div className="mt-5 space-y-2 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                {AUTH_BENEFITS.map((item) => (
+                {(isRecoveryMode ? helperItems : AUTH_BENEFITS).map((item) => (
                   <div key={item} className="flex items-start gap-3 text-sm text-slate-600">
                     <span className="mt-1 inline-flex h-2.5 w-2.5 rounded-full bg-emerald-600" />
                     <span>{item}</span>
@@ -527,29 +667,31 @@ export default function AuthPage() {
                 ))}
               </div>
 
-              <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
-                <button
-                  type="button"
-                  onClick={() => switchMode(true)}
-                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${LANDING_FOCUS_CLASS} ${
-                    isLogin ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  Sign in
-                </button>
-                <button
-                  type="button"
-                  onClick={() => switchMode(false)}
-                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${LANDING_FOCUS_CLASS} ${
-                    !isLogin ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  Start trial
-                </button>
-              </div>
+              {!isRecoveryMode ? (
+                <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => void setCardMode(AUTH_MODES.SIGN_IN)}
+                    className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${LANDING_FOCUS_CLASS} ${
+                      isLogin ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Sign in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void setCardMode(AUTH_MODES.SIGN_UP)}
+                    className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${LANDING_FOCUS_CLASS} ${
+                      isSignup ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Start trial
+                  </button>
+                </div>
+              ) : null}
 
               <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-                {!isLogin && (
+                {isSignup ? (
                   <div>
                     <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
                       Full name
@@ -563,48 +705,81 @@ export default function AuthPage() {
                       className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                     />
                   </div>
-                )}
+                ) : null}
 
-                <div>
-                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                    Email address
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@company.com"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
+                {!isResetComplete ? (
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                      Email address
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                ) : null}
 
-                <div>
-                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Minimum 6 characters"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
+                {!isResetRequest ? (
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                      {isResetComplete ? 'New password' : 'Password'}
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={isResetComplete ? 'Create a new password' : 'Minimum 6 characters'}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                ) : null}
 
-                {successMessage && (
+                {isResetComplete ? (
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                      Confirm password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat your new password"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                ) : null}
+
+                {isLogin ? (
+                  <div className="-mt-1 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void setCardMode(AUTH_MODES.RESET_REQUEST)}
+                      className={`text-sm font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-4 transition hover:text-indigo-800 ${LANDING_FOCUS_CLASS}`}
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                ) : null}
+
+                {successMessage ? (
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                     {successMessage}
                   </div>
-                )}
+                ) : null}
 
-                {error && (
+                {error ? (
                   <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                     {error}
                   </div>
-                )}
+                ) : null}
 
                 <button
                   type="submit"
@@ -620,15 +795,33 @@ export default function AuthPage() {
                       Processing...
                     </span>
                   ) : (
-                    isLogin ? 'Sign in to workspace' : 'Create account'
+                    isResetComplete
+                      ? 'Save new password'
+                      : isResetRequest
+                        ? 'Send reset link'
+                        : isLogin
+                          ? 'Sign in to workspace'
+                          : 'Create account'
                   )}
                 </button>
+
+                {isRecoveryMode ? (
+                  <button
+                    type="button"
+                    onClick={() => void setCardMode(AUTH_MODES.SIGN_IN)}
+                    className={`w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 ${LANDING_FOCUS_CLASS}`}
+                  >
+                    Back to sign in
+                  </button>
+                ) : null}
               </form>
 
               <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">What happens next</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                  {isRecoveryMode ? 'Reset steps' : 'What happens next'}
+                </div>
                 <div className="mt-3 space-y-2">
-                  {ONBOARDING_STEPS.map((step, index) => (
+                  {helperItems.map((step, index) => (
                     <div key={step} className="flex items-center gap-3 text-sm text-slate-600">
                       <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white">
                         {index + 1}
@@ -639,7 +832,7 @@ export default function AuthPage() {
                 </div>
               </div>
 
-              {!isLogin && (
+              {isSignup ? (
                 <label className="mt-6 flex gap-3 rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
                   <input
                     type="checkbox"
@@ -659,24 +852,28 @@ export default function AuthPage() {
                     . I also understand that the service currently uses only essential cookies and similar storage needed to run the workspace.
                   </span>
                 </label>
-              )}
+              ) : null}
 
-              <div className="mt-6 border-t border-slate-100 pt-5">
-                <p className="text-center text-[13px] text-slate-500">
-                  {isLogin ? "Don't have an account yet?" : 'Already have an account?'}
+              {!isRecoveryMode ? (
+                <div className="mt-6 border-t border-slate-100 pt-5">
+                  <p className="text-center text-[13px] text-slate-500">
+                    {isLogin ? "Don't have an account yet?" : 'Already have an account?'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void setCardMode(isLogin ? AUTH_MODES.SIGN_UP : AUTH_MODES.SIGN_IN)}
+                    className={`mt-3 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 ${LANDING_FOCUS_CLASS}`}
+                  >
+                    {isLogin ? 'Create an account' : 'Sign in instead'}
+                  </button>
+                </div>
+              ) : null}
+
+              {!isRecoveryMode ? (
+                <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">
+                  Your {TRIAL_OFFER_LABEL} begins when your workspace opens. If email confirmation is enabled for your account, you will be asked to verify before signing in.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => switchMode(!isLogin)}
-                  className={`mt-3 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 ${LANDING_FOCUS_CLASS}`}
-                >
-                  {isLogin ? 'Create an account' : 'Sign in instead'}
-                </button>
-              </div>
-
-              <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">
-                Your {TRIAL_OFFER_LABEL} begins when your workspace opens. If email confirmation is enabled for your account, you will be asked to verify before signing in.
-              </p>
+              ) : null}
               <div className="mt-3 text-center text-[11px] leading-5 text-slate-400">
                 Need help or want to report a bug?{' '}
                 <button
