@@ -233,7 +233,9 @@ const splitVoiceTranscript = (value = '') => {
     .replace(/\.$/, '')
     .trim();
 
-  if (!cleaned) return [];
+  if (!cleaned) {
+    return { items: [], confident: false, reviewText: '' };
+  }
 
   const normalized = cleaned
     .replace(/\s+(and then|then|plus|also)\s+/gi, ', ')
@@ -245,7 +247,7 @@ const splitVoiceTranscript = (value = '') => {
     .filter(Boolean);
 
   if (items.length > 1) {
-    return items;
+    return { items, confident: true, reviewText: cleaned };
   }
 
   const bareTokens = normalized
@@ -257,11 +259,25 @@ const splitVoiceTranscript = (value = '') => {
     && bareTokens.every((token) => /^[a-zA-Z][a-zA-Z'-]*$/.test(token) && !SPACE_SPLIT_STOPWORDS.has(token.toLowerCase()));
 
   if (canFallbackSplitBySpaces) {
-    return mergeKnownGroceryPhrases(bareTokens);
+    return { items: mergeKnownGroceryPhrases(bareTokens), confident: true, reviewText: cleaned };
   }
 
-  return items.length > 0 ? items : [cleaned];
+  const fallbackItem = items.length > 0 ? items[0] : cleaned;
+  const looksLikeUncertainVoiceBlob = bareTokens.length >= 5 || fallbackItem.length > 32;
+
+  return {
+    items: [fallbackItem],
+    confident: !looksLikeUncertainVoiceBlob,
+    reviewText: cleaned,
+  };
 };
+
+const splitTypedGroceries = (value = '') => (
+  String(value || '')
+    .split(/\s*[,;\n]\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+);
 
 const describeShoppingProject = (project, index) => {
   if (project.isOwned) return 'Your Shopping List';
@@ -534,7 +550,7 @@ export default function ShoppingListView({ currentUserId }) {
 
   const handleAddSubmit = useCallback(async (event) => {
     event.preventDefault();
-    const items = splitVoiceTranscript(draftTitle);
+    const items = splitTypedGroceries(draftTitle);
     if (items.length === 0) return;
     await addItems(items);
     setDraftTitle('');
@@ -622,10 +638,16 @@ export default function ShoppingListView({ currentUserId }) {
   }, [clearPendingCompletion, pendingCompleteId, todos]);
 
   const handleVoiceItems = useCallback(async (transcript) => {
-    const items = splitVoiceTranscript(transcript);
+    const { items, confident, reviewText } = splitVoiceTranscript(transcript);
     if (items.length === 0) {
       setDraftTitle(transcript);
       setVoiceMessage('Voice captured. Review it and tap Add.');
+      return;
+    }
+
+    if (!confident) {
+      setDraftTitle(reviewText);
+      setVoiceMessage('I heard a longer grocery note. Please review it and split it before adding.');
       return;
     }
 
