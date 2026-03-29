@@ -16,6 +16,7 @@ const VOICE_GRACE_PERIOD_MS = 2000;
 const VOICE_RESTART_DELAY_MS = 150;
 const VOICE_EARLY_SESSION_MS = 6000;
 const VOICE_MAX_RESTARTS = 4;
+const MOBILE_COMPLETE_DELAY_MS = 1000;
 const SPACE_SPLIT_STOPWORDS = new Set([
   'a',
   'an',
@@ -201,6 +202,10 @@ const sortTodos = (items = []) => (
   })
 );
 
+const isOfflineBrowser = () => (
+  typeof navigator !== 'undefined' && navigator.onLine === false
+);
+
 const mergeKnownGroceryPhrases = (tokens = []) => {
   const merged = [];
   let index = 0;
@@ -307,7 +312,9 @@ export default function ShoppingListView({ currentUserId }) {
   const [interimText, setInterimText] = useState('');
   const [voiceMessage, setVoiceMessage] = useState('');
   const [pendingCompleteId, setPendingCompleteId] = useState('');
-  const [pendingCompleteSeconds, setPendingCompleteSeconds] = useState(2);
+  const [pendingCompleteSeconds, setPendingCompleteSeconds] = useState(1);
+  const [savingTodoId, setSavingTodoId] = useState('');
+  const [savingTodoAction, setSavingTodoAction] = useState('');
   const supportsProjectMembersRef = useRef(true);
   const ensuringProjectRef = useRef(false);
   const recognitionRef = useRef(null);
@@ -498,7 +505,7 @@ export default function ShoppingListView({ currentUserId }) {
       completionIntervalRef.current = null;
     }
     setPendingCompleteId('');
-    setPendingCompleteSeconds(2);
+    setPendingCompleteSeconds(1);
   }, []);
 
   const clearVoiceTimers = useCallback(() => {
@@ -562,6 +569,29 @@ export default function ShoppingListView({ currentUserId }) {
   const toggleTodoStatus = useCallback(async (todo) => {
     const nextStatus = todo.status === 'Done' ? 'Open' : 'Done';
     const completedAt = nextStatus === 'Done' ? new Date().toISOString() : null;
+    const actionLabel = nextStatus === 'Done' ? 'complete' : 'reopen';
+
+    if (isOfflineBrowser()) {
+      setTodoError('You appear to be offline. Reconnect and try again.');
+      setSavingTodoId('');
+      setSavingTodoAction('');
+      return;
+    }
+
+    const previous = todos;
+    setTodoError('');
+    setSavingTodoId(todo._id);
+    setSavingTodoAction(actionLabel);
+    setTodos((items) => sortTodos(items.map((item) => (
+      item._id === todo._id
+        ? {
+          ...item,
+          status: nextStatus,
+          completedAt,
+          updatedAt: new Date().toISOString(),
+        }
+        : item
+    ))));
 
     const { data, error } = await supabase
       .from('manual_todos')
@@ -575,14 +605,23 @@ export default function ShoppingListView({ currentUserId }) {
       .single();
 
     if (error) {
-      setTodoError(error.message || 'Unable to update this grocery right now.');
+      setTodos(previous);
+      setTodoError(
+        isOfflineBrowser()
+          ? 'Your connection dropped before this grocery was saved. Please try again.'
+          : (error.message || 'Unable to update this grocery right now.')
+      );
+      setSavingTodoId('');
+      setSavingTodoAction('');
       return;
     }
 
     setTodos((previous) => sortTodos(previous.map((item) => (
       item._id === todo._id ? mapManualTodoRow(data) : item
     ))));
-  }, []);
+    setSavingTodoId('');
+    setSavingTodoAction('');
+  }, [todos]);
 
   const handleToggleTodo = useCallback((todo) => {
     if (todo.status === 'Done' || !isMobile) {
@@ -599,8 +638,8 @@ export default function ShoppingListView({ currentUserId }) {
 
     clearPendingCompletion();
     setPendingCompleteId(todo._id);
-    setPendingCompleteSeconds(2);
-    setVoiceMessage(`Marking ${todo.title} as bought in 2 seconds. Tap again to cancel.`);
+    setPendingCompleteSeconds(1);
+    setVoiceMessage(`Marking ${todo.title} as bought in 1 second. Tap again to cancel.`);
 
     completionIntervalRef.current = window.setInterval(() => {
       setPendingCompleteSeconds((value) => (value > 1 ? value - 1 : 1));
@@ -614,11 +653,11 @@ export default function ShoppingListView({ currentUserId }) {
       }
       const todoToComplete = todos.find((item) => item._id === todo._id);
       setPendingCompleteId('');
-      setPendingCompleteSeconds(2);
+      setPendingCompleteSeconds(1);
       if (todoToComplete) {
         void toggleTodoStatus(todoToComplete);
       }
-    }, 2000);
+    }, MOBILE_COMPLETE_DELAY_MS);
   }, [clearPendingCompletion, isMobile, pendingCompleteId, todos, toggleTodoStatus]);
 
   const deleteTodo = useCallback(async (todoId) => {
@@ -1052,42 +1091,93 @@ export default function ShoppingListView({ currentUserId }) {
                                 className={`rounded-[22px] border bg-white px-4 py-4 shadow-sm transition ${
                                   pendingCompleteId === todo._id
                                     ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-tint)]'
-                                    : 'border-slate-200'
+                                    : savingTodoId === todo._id
+                                      ? 'border-emerald-200 bg-emerald-50/70'
+                                      : 'border-slate-200'
                                 }`}
                               >
                                 <div className="flex items-start gap-3 sm:items-center">
                                   <button
                                     type="button"
                                     onClick={() => handleToggleTodo(todo)}
+                                    disabled={savingTodoId === todo._id}
                                     className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition ${
                                       pendingCompleteId === todo._id
                                         ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent)]'
-                                        : 'border-slate-200 bg-white text-slate-400 hover:border-emerald-300 hover:text-emerald-600'
+                                        : savingTodoId === todo._id
+                                          ? 'border-emerald-300 bg-white text-emerald-600'
+                                          : 'border-slate-200 bg-white text-slate-400 hover:border-emerald-300 hover:text-emerald-600'
                                     }`}
                                     aria-label={`Mark ${todo.title} as bought`}
                                   >
-                                    {pendingCompleteId === todo._id ? (
+                                    {savingTodoId === todo._id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : pendingCompleteId === todo._id ? (
                                       <span className="text-sm font-bold">{pendingCompleteSeconds}</span>
                                     ) : (
                                       <Check className="h-4 w-4" />
                                     )}
                                   </button>
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-base font-semibold leading-6 text-slate-900 sm:text-sm">{todo.title}</p>
-                                    <p className={`mt-1 text-xs ${pendingCompleteId === todo._id ? 'text-[var(--pm-accent-strong)]' : 'text-slate-400'}`}>
-                                      {pendingCompleteId === todo._id
-                                        ? `Marking bought in ${pendingCompleteSeconds}s. Tap again to cancel.`
-                                        : (isMobile ? 'Tap the circle and wait 2 seconds to complete.' : 'Tap the check to mark this item as bought.')}
+                                    <div className="flex items-start justify-between gap-3">
+                                      <p className="text-base font-semibold leading-6 text-slate-900 sm:text-sm">{todo.title}</p>
+                                      {savingTodoId === todo._id ? (
+                                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700 shadow-sm">
+                                          Saving...
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <p className={`mt-1 text-xs ${
+                                      pendingCompleteId === todo._id
+                                        ? 'text-[var(--pm-accent-strong)]'
+                                        : savingTodoId === todo._id
+                                          ? 'text-emerald-700'
+                                          : 'text-slate-400'
+                                    }`}>
+                                      {savingTodoId === todo._id
+                                        ? `Saving ${todo.title}...`
+                                        : pendingCompleteId === todo._id
+                                          ? `Marking bought in ${pendingCompleteSeconds}s. Tap again to cancel.`
+                                          : (isMobile ? 'Tap Bought to move it off the live list.' : 'Tap the check to mark this item as bought.')}
                                     </p>
+                                    {isMobile ? (
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleTodo(todo)}
+                                          disabled={savingTodoId === todo._id}
+                                          className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition ${
+                                            pendingCompleteId === todo._id
+                                              ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent-strong)]'
+                                              : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                          }`}
+                                        >
+                                          <Check className="h-4 w-4" />
+                                          {pendingCompleteId === todo._id ? `Bought in ${pendingCompleteSeconds}s` : 'Bought'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteTodo(todo._id)}
+                                          disabled={savingTodoId === todo._id}
+                                          className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                          Delete
+                                        </button>
+                                      </div>
+                                    ) : null}
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteTodo(todo._id)}
-                                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                                    aria-label={`Delete ${todo.title}`}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
+                                  {!isMobile ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteTodo(todo._id)}
+                                      disabled={savingTodoId === todo._id}
+                                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                      aria-label={`Delete ${todo.title}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  ) : null}
                                 </div>
                               </div>
                             ))}
@@ -1110,23 +1200,51 @@ export default function ShoppingListView({ currentUserId }) {
                                   <button
                                     type="button"
                                     onClick={() => handleToggleTodo(todo)}
+                                    disabled={savingTodoId === todo._id}
                                     className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100"
                                     aria-label={`Move ${todo.title} back to open`}
                                   >
-                                    <Check className="h-4 w-4" />
+                                    {savingTodoId === todo._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                                   </button>
                                   <div className="min-w-0 flex-1">
                                     <p className="text-base font-semibold leading-6 text-slate-400 line-through sm:text-sm">{todo.title}</p>
-                                    <p className="mt-1 text-xs text-slate-400">Tap the check if you need to reopen it.</p>
+                                    <p className={`mt-1 text-xs ${savingTodoId === todo._id ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                      {savingTodoId === todo._id ? 'Saving...' : 'Tap the check if you need to reopen it.'}
+                                    </p>
+                                    {isMobile ? (
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleTodo(todo)}
+                                          disabled={savingTodoId === todo._id}
+                                          className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                        >
+                                          <Check className="h-4 w-4" />
+                                          Reopen
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteTodo(todo._id)}
+                                          disabled={savingTodoId === todo._id}
+                                          className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                          Delete
+                                        </button>
+                                      </div>
+                                    ) : null}
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteTodo(todo._id)}
-                                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                                    aria-label={`Delete ${todo.title}`}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
+                                  {!isMobile ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteTodo(todo._id)}
+                                      disabled={savingTodoId === todo._id}
+                                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                      aria-label={`Delete ${todo.title}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  ) : null}
                                 </div>
                               </div>
                             ))}
