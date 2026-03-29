@@ -195,7 +195,9 @@ const sortTodos = (items = []) => (
     if (left.status !== right.status) {
       return left.status === 'Done' ? 1 : -1;
     }
-    return new Date(left.createdAt || 0).getTime() - new Date(right.createdAt || 0).getTime();
+    const leftTime = new Date(left.createdAt || 0).getTime();
+    const rightTime = new Date(right.createdAt || 0).getTime();
+    return rightTime - leftTime;
   })
 );
 
