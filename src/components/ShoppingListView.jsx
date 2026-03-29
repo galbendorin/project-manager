@@ -158,6 +158,12 @@ const Trash2 = ({ className = '' }) => (
   </IconBase>
 );
 
+const ChevronDown = ({ className = '' }) => (
+  <IconBase className={className}>
+    <path d="m6 9 6 6 6-6" />
+  </IconBase>
+);
+
 const generateProjectId = () => {
   if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
@@ -172,7 +178,7 @@ const getSpeechRecognition = () => {
   const recognition = new SR();
   recognition.continuous = false;
   recognition.interimResults = true;
-  recognition.lang = 'en-GB';
+  recognition.lang = navigator.languages?.[0] || navigator.language || 'en-GB';
   return recognition;
 };
 
@@ -315,6 +321,9 @@ export default function ShoppingListView({ currentUserId }) {
   const [pendingCompleteSeconds, setPendingCompleteSeconds] = useState(1);
   const [savingTodoId, setSavingTodoId] = useState('');
   const [savingTodoAction, setSavingTodoAction] = useState('');
+  const [failedTodoId, setFailedTodoId] = useState('');
+  const [failedTodoMessage, setFailedTodoMessage] = useState('');
+  const [showBought, setShowBought] = useState(false);
   const supportsProjectMembersRef = useRef(true);
   const ensuringProjectRef = useRef(false);
   const recognitionRef = useRef(null);
@@ -336,6 +345,12 @@ export default function ShoppingListView({ currentUserId }) {
   const openTodos = useMemo(() => todos.filter((todo) => todo.status !== 'Done'), [todos]);
   const completedTodos = useMemo(() => todos.filter((todo) => todo.status === 'Done'), [todos]);
   const canShareProject = Boolean(selectedProject?.isOwned && supportsProjectMembersRef.current);
+
+  useEffect(() => {
+    if (!isMobile) {
+      setShowBought(true);
+    }
+  }, [isMobile]);
 
   const createShoppingProject = useCallback(async () => {
     const projectPayload = {
@@ -572,14 +587,16 @@ export default function ShoppingListView({ currentUserId }) {
     const actionLabel = nextStatus === 'Done' ? 'complete' : 'reopen';
 
     if (isOfflineBrowser()) {
-      setTodoError('You appear to be offline. Reconnect and try again.');
+      setFailedTodoId(todo._id);
+      setFailedTodoMessage('You appear to be offline. Reconnect and try again.');
       setSavingTodoId('');
       setSavingTodoAction('');
       return;
     }
 
     const previous = todos;
-    setTodoError('');
+    setFailedTodoId('');
+    setFailedTodoMessage('');
     setSavingTodoId(todo._id);
     setSavingTodoAction(actionLabel);
     setTodos((items) => sortTodos(items.map((item) => (
@@ -606,7 +623,8 @@ export default function ShoppingListView({ currentUserId }) {
 
     if (error) {
       setTodos(previous);
-      setTodoError(
+      setFailedTodoId(todo._id);
+      setFailedTodoMessage(
         isOfflineBrowser()
           ? 'Your connection dropped before this grocery was saved. Please try again.'
           : (error.message || 'Unable to update this grocery right now.')
@@ -621,6 +639,8 @@ export default function ShoppingListView({ currentUserId }) {
     ))));
     setSavingTodoId('');
     setSavingTodoAction('');
+    setFailedTodoId('');
+    setFailedTodoMessage('');
   }, [todos]);
 
   const handleToggleTodo = useCallback((todo) => {
@@ -664,6 +684,10 @@ export default function ShoppingListView({ currentUserId }) {
     if (pendingCompleteId === todoId) {
       clearPendingCompletion();
     }
+    if (failedTodoId === todoId) {
+      setFailedTodoId('');
+      setFailedTodoMessage('');
+    }
     const previous = todos;
     setTodos((items) => items.filter((item) => item._id !== todoId));
 
@@ -676,7 +700,14 @@ export default function ShoppingListView({ currentUserId }) {
       setTodos(previous);
       setTodoError(error.message || 'Unable to remove this grocery right now.');
     }
-  }, [clearPendingCompletion, pendingCompleteId, todos]);
+  }, [clearPendingCompletion, failedTodoId, pendingCompleteId, todos]);
+
+  const retryTodoAction = useCallback((todo) => {
+    setFailedTodoId('');
+    setFailedTodoMessage('');
+    clearPendingCompletion();
+    void toggleTodoStatus(todo);
+  }, [clearPendingCompletion, toggleTodoStatus]);
 
   const handleVoiceItems = useCallback(async (transcript) => {
     const { items, confident, reviewText } = splitVoiceTranscript(transcript);
@@ -989,9 +1020,11 @@ export default function ShoppingListView({ currentUserId }) {
                 >
                   <div className="mb-4">
                     <p className="pm-kicker">Quick add</p>
-                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">Add groceries by text or voice</h3>
+                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">
+                      {isMobile ? 'Quick add groceries' : 'Add groceries by text or voice'}
+                    </h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      Type one item, or say a few items out loud and let the list split them for you.
+                      {isMobile ? 'Type or say a few items for the live list.' : 'Type one item, or say a few items out loud and let the list split them for you.'}
                     </p>
                   </div>
 
@@ -1097,27 +1130,48 @@ export default function ShoppingListView({ currentUserId }) {
                                 }`}
                               >
                                 <div className="flex items-start gap-3 sm:items-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleTodo(todo)}
-                                    disabled={savingTodoId === todo._id}
-                                    className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition ${
-                                      pendingCompleteId === todo._id
-                                        ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent)]'
-                                        : savingTodoId === todo._id
-                                          ? 'border-emerald-300 bg-white text-emerald-600'
-                                          : 'border-slate-200 bg-white text-slate-400 hover:border-emerald-300 hover:text-emerald-600'
-                                    }`}
-                                    aria-label={`Mark ${todo.title} as bought`}
-                                  >
-                                    {savingTodoId === todo._id ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : pendingCompleteId === todo._id ? (
-                                      <span className="text-sm font-bold">{pendingCompleteSeconds}</span>
-                                    ) : (
-                                      <Check className="h-4 w-4" />
-                                    )}
-                                  </button>
+                                  {isMobile ? (
+                                    <span
+                                      className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${
+                                        pendingCompleteId === todo._id
+                                          ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent)]'
+                                          : savingTodoId === todo._id
+                                            ? 'border-emerald-300 bg-white text-emerald-600'
+                                            : 'border-slate-200 bg-white text-slate-400'
+                                      }`}
+                                      aria-hidden="true"
+                                    >
+                                      {savingTodoId === todo._id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : pendingCompleteId === todo._id ? (
+                                        <span className="text-sm font-bold">{pendingCompleteSeconds}</span>
+                                      ) : (
+                                        <Check className="h-4 w-4" />
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleTodo(todo)}
+                                      disabled={savingTodoId === todo._id}
+                                      className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition ${
+                                        pendingCompleteId === todo._id
+                                          ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent)]'
+                                          : savingTodoId === todo._id
+                                            ? 'border-emerald-300 bg-white text-emerald-600'
+                                            : 'border-slate-200 bg-white text-slate-400 hover:border-emerald-300 hover:text-emerald-600'
+                                      }`}
+                                      aria-label={`Mark ${todo.title} as bought`}
+                                    >
+                                      {savingTodoId === todo._id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : pendingCompleteId === todo._id ? (
+                                        <span className="text-sm font-bold">{pendingCompleteSeconds}</span>
+                                      ) : (
+                                        <Check className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                  )}
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-start justify-between gap-3">
                                       <p className="text-base font-semibold leading-6 text-slate-900 sm:text-sm">{todo.title}</p>
@@ -1135,11 +1189,23 @@ export default function ShoppingListView({ currentUserId }) {
                                           : 'text-slate-400'
                                     }`}>
                                       {savingTodoId === todo._id
-                                        ? `Saving ${todo.title}...`
+                                        ? (savingTodoAction === 'complete' ? `Saving ${todo.title} as bought...` : 'Saving...')
                                         : pendingCompleteId === todo._id
                                           ? `Marking bought in ${pendingCompleteSeconds}s. Tap again to cancel.`
                                           : (isMobile ? 'Tap Bought to move it off the live list.' : 'Tap the check to mark this item as bought.')}
                                     </p>
+                                    {failedTodoId === todo._id ? (
+                                      <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3">
+                                        <p className="text-xs font-medium text-rose-700">{failedTodoMessage}</p>
+                                        <button
+                                          type="button"
+                                          onClick={() => retryTodoAction(todo)}
+                                          className="mt-2 inline-flex min-h-9 items-center rounded-full border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                                        >
+                                          Retry
+                                        </button>
+                                      </div>
+                                    ) : null}
                                     {isMobile ? (
                                       <div className="mt-3 flex flex-wrap gap-2">
                                         <button
@@ -1194,23 +1260,58 @@ export default function ShoppingListView({ currentUserId }) {
                               <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-500">
                                 Bought groceries will collect here.
                               </div>
-                            ) : completedTodos.map((todo) => (
-                              <div key={todo._id} className="rounded-[22px] border border-slate-200 bg-white/90 px-4 py-4 shadow-sm">
-                                <div className="flex items-start gap-3 sm:items-center">
+                            ) : null}
+                            {completedTodos.length > 0 ? (
+                              <div className="mb-3 flex items-center justify-between">
+                                {isMobile ? (
                                   <button
                                     type="button"
-                                    onClick={() => handleToggleTodo(todo)}
-                                    disabled={savingTodoId === todo._id}
-                                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100"
-                                    aria-label={`Move ${todo.title} back to open`}
+                                    onClick={() => setShowBought((value) => !value)}
+                                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
                                   >
-                                    {savingTodoId === todo._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                                    {showBought ? 'Hide bought' : `Show bought (${completedTodos.length})`}
+                                    <ChevronDown className={`h-3.5 w-3.5 transition ${showBought ? 'rotate-180' : ''}`} />
                                   </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {completedTodos.length > 0 && (!isMobile || showBought) ? completedTodos.map((todo) => (
+                              <div key={todo._id} className="rounded-[22px] border border-slate-200 bg-white/90 px-4 py-4 shadow-sm">
+                                <div className="flex items-start gap-3 sm:items-center">
+                                  {isMobile ? (
+                                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600" aria-hidden="true">
+                                      {savingTodoId === todo._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleTodo(todo)}
+                                      disabled={savingTodoId === todo._id}
+                                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100"
+                                      aria-label={`Move ${todo.title} back to open`}
+                                    >
+                                      {savingTodoId === todo._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                                    </button>
+                                  )}
                                   <div className="min-w-0 flex-1">
                                     <p className="text-base font-semibold leading-6 text-slate-400 line-through sm:text-sm">{todo.title}</p>
                                     <p className={`mt-1 text-xs ${savingTodoId === todo._id ? 'text-emerald-700' : 'text-slate-400'}`}>
-                                      {savingTodoId === todo._id ? 'Saving...' : 'Tap the check if you need to reopen it.'}
+                                      {savingTodoId === todo._id
+                                        ? (savingTodoAction === 'reopen' ? `Saving ${todo.title}...` : 'Saving...')
+                                        : (isMobile ? 'Use Undo if this needs to go back on the live list.' : 'Tap the check if you need to reopen it.')}
                                     </p>
+                                    {failedTodoId === todo._id ? (
+                                      <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3">
+                                        <p className="text-xs font-medium text-rose-700">{failedTodoMessage}</p>
+                                        <button
+                                          type="button"
+                                          onClick={() => retryTodoAction(todo)}
+                                          className="mt-2 inline-flex min-h-9 items-center rounded-full border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                                        >
+                                          Retry
+                                        </button>
+                                      </div>
+                                    ) : null}
                                     {isMobile ? (
                                       <div className="mt-3 flex flex-wrap gap-2">
                                         <button
@@ -1220,7 +1321,7 @@ export default function ShoppingListView({ currentUserId }) {
                                           className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
                                         >
                                           <Check className="h-4 w-4" />
-                                          Reopen
+                                          Undo
                                         </button>
                                         <button
                                           type="button"
@@ -1247,7 +1348,12 @@ export default function ShoppingListView({ currentUserId }) {
                                   ) : null}
                                 </div>
                               </div>
-                            ))}
+                            )) : null}
+                            {completedTodos.length > 0 && isMobile && !showBought ? (
+                              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-4 text-sm text-slate-500">
+                                {completedTodos.length} bought item{completedTodos.length === 1 ? '' : 's'} hidden while you shop.
+                              </div>
+                            ) : null}
                           </div>
                         </section>
                       </div>
