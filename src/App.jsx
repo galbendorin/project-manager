@@ -776,8 +776,11 @@ function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onB
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.thisPeriodCompletedRows), '02_THIS_PERIOD_COMPLETED');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.keyDeliverablesNextPeriodRows), '03_NEXT_PERIOD_OPEN');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.mainRisksAndIssuesRows), '04_RISK_SIGNALS');
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.additionalNotesRows), '05_ADDITIONAL_NOTES');
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.outputTemplateRows), '06_OUTPUT_TEMPLATE');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.governanceContextRows), '05_GOVERNANCE_CONTEXT');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.controlSignalRows), '06_CONTROL_SIGNALS');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.projectContextRows), '07_PROJECT_CONTEXT');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.additionalNotesRows), '08_ADDITIONAL_NOTES');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reportData.outputTemplateRows), '09_OUTPUT_TEMPLATE');
 
       const fileName = `${reportData.fileNameBase}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, fileName);

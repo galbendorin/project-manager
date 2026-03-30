@@ -91,6 +91,24 @@ export const buildReportPrompt = ({
     ['Signal Type', 'Severity', 'Source', 'Summary', 'Status', 'Due Date']
   ))
 
+  lines.push('=== GOVERNANCE CONTEXT ===')
+  lines.push(formatDataTable(
+    data.governanceContextRows,
+    ['Event Type', 'Source', 'Summary', 'Owner', 'Event Date', 'Status', 'Notes']
+  ))
+
+  lines.push('=== CONTROL SIGNALS ===')
+  lines.push(formatDataTable(
+    data.controlSignalRows,
+    ['Signal Type', 'Severity', 'Source', 'Summary', 'Status', 'Due Date', 'Notes']
+  ))
+
+  lines.push('=== PROJECT CONTEXT ===')
+  lines.push(formatDataTable(
+    data.projectContextRows,
+    ['Context Type', 'Source', 'Summary', 'Owner', 'Context Date', 'Status', 'Notes']
+  ))
+
   lines.push('=== EXISTING NARRATIVE (for context) ===')
   for (const note of data.additionalNotesRows) {
     const val = note.Value?.trim()
