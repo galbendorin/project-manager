@@ -305,6 +305,10 @@ export default function AuthPage() {
     jumpToAuth(AUTH_MODES.SIGN_UP);
   };
 
+  const jumpToSignin = () => {
+    jumpToAuth(AUTH_MODES.SIGN_IN);
+  };
+
   const jumpToSection = (sectionId) => {
     window.requestAnimationFrame(() => {
       document.getElementById(sectionId)?.scrollIntoView({
@@ -430,7 +434,14 @@ export default function AuthPage() {
             ))}
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={jumpToSignin}
+              className={`rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 ${LANDING_FOCUS_CLASS}`}
+            >
+              Log in
+            </button>
             <button
               type="button"
               onClick={jumpToSignup}
