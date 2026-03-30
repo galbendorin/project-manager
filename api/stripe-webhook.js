@@ -98,12 +98,8 @@ async function handleCheckoutCompleted(session) {
   // Safely convert period end to ISO string
   const periodEndISO = safeTimestamp(subscription.current_period_end);
 
-  console.log('Updating user_profiles for:', supabaseUserId, {
-    plan: 'pro',
+  console.log('Updating billing profile after checkout completion.', {
     subscription_status: subscription.status,
-    stripe_customer_id: session.customer,
-    subscription_id: session.subscription,
-    current_period_end: periodEndISO,
     cancel_at_period_end: subscription.cancel_at_period_end || false,
   });
 
@@ -124,7 +120,7 @@ async function handleCheckoutCompleted(session) {
     throw error;
   }
 
-  console.log(`User ${supabaseUserId} upgraded to Pro`);
+  console.log('Checkout completion synced to billing profile.');
 }
 
 // -------------------------------------------------------------------
@@ -171,7 +167,10 @@ async function handleSubscriptionUpdated(subscription) {
     throw error;
   }
 
-  console.log(`Subscription updated for user ${userId}: status=${subscription.status}, cancel_at_period_end=${subscription.cancel_at_period_end}`);
+  console.log('Subscription status updated.', {
+    status: subscription.status,
+    cancel_at_period_end: subscription.cancel_at_period_end || false,
+  });
 }
 
 // -------------------------------------------------------------------
@@ -207,7 +206,7 @@ async function handleSubscriptionDeleted(subscription) {
     throw error;
   }
 
-  console.log(`User ${userId} downgraded to Starter`);
+  console.log('Subscription deleted; billing profile downgraded to Starter.');
 }
 
 // -------------------------------------------------------------------
@@ -238,5 +237,5 @@ async function handlePaymentFailed(invoice) {
     console.error('Failed to mark past_due:', error);
   }
 
-  console.log(`Payment failed for user ${userId} — marked as past_due`);
+  console.log('Payment failed; billing profile marked as past_due.');
 }

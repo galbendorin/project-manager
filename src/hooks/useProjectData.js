@@ -48,6 +48,7 @@ export const useProjectData = (projectId, userId = null) => {
   const [loadingData, setLoadingData] = useState(true);
   const [saveConflict, setSaveConflict] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [remoteUpdateAvailable, setRemoteUpdateAvailable] = useState(false);
 
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef(null);
@@ -62,6 +63,7 @@ export const useProjectData = (projectId, userId = null) => {
     initialLoadDone.current = false;
     setSaveConflict(false);
     setSaveError(null);
+    setRemoteUpdateAvailable(false);
 
     let loadQuery = supabase
       .from('projects')
@@ -144,6 +146,7 @@ export const useProjectData = (projectId, userId = null) => {
         projectVersionRef.current = data.version;
         setLastSaved(new Date());
         setSaveConflict(false);
+        setRemoteUpdateAvailable(false);
       } else if (!error && !data) {
         setSaveConflict(true);
         setSaveError('Save conflict detected. This project was changed in another tab or session. Click Reload Latest.');
@@ -172,6 +175,37 @@ export const useProjectData = (projectId, userId = null) => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
+
+  useEffect(() => {
+    if (!projectId || loadingData) return undefined;
+
+    let cancelled = false;
+
+    const checkForRemoteUpdates = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+      const { data, error } = await supabase
+        .from('projects')
+        .select('version')
+        .eq('id', projectId)
+        .maybeSingle();
+
+      if (cancelled || error || !data || !Number.isInteger(data.version)) return;
+
+      if (data.version > projectVersionRef.current) {
+        setRemoteUpdateAvailable(true);
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void checkForRemoteUpdates();
+    }, 20_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [projectId, loadingData]);
 
   const reloadProject = useCallback(async () => {
     await loadProject();
@@ -601,6 +635,7 @@ export const useProjectData = (projectId, userId = null) => {
     loadingData,
     saveConflict,
     saveError,
+    remoteUpdateAvailable,
     addTask,
     updateTask,
     deleteTask,

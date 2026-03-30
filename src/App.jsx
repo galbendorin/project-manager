@@ -334,6 +334,7 @@ function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onB
     loadingData,
     saveConflict,
     saveError,
+    remoteUpdateAvailable,
     addTask,
     updateTask,
     deleteTask,
@@ -964,6 +965,17 @@ function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onB
                 onClick={reloadProject}
                 className="px-2 py-1 text-[11px] bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors"
                 title="Reload server version to resolve conflict"
+              >
+                Reload Latest
+              </button>
+            </div>
+          ) : remoteUpdateAvailable ? (
+            <div className="shrink-0 flex items-center gap-2">
+              <span className="text-amber-400 whitespace-nowrap">Remote changes available</span>
+              <button
+                onClick={reloadProject}
+                className="px-2 py-1 text-[11px] bg-amber-500 hover:bg-amber-600 text-slate-950 rounded transition-colors"
+                title="Reload the latest server version before making more edits"
               >
                 Reload Latest
               </button>

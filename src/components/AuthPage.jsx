@@ -110,6 +110,7 @@ const LEGAL_LINKS = [
 const AUTH_MODES = {
   SIGN_IN: 'sign-in',
   SIGN_UP: 'sign-up',
+  VERIFY_EMAIL: 'verify-email',
   RESET_REQUEST: 'reset-request',
   RESET_COMPLETE: 'reset-complete',
 };
@@ -124,6 +125,12 @@ const RESET_COMPLETE_STEPS = [
   'Create a new password with at least 6 characters',
   'Save it from this same screen',
   'Sign in again with the updated password',
+];
+
+const VERIFY_EMAIL_STEPS = [
+  'Open the confirmation email from PM Workspace',
+  'Use the link in that email to confirm your account',
+  'Return here and sign in to open your workspace',
 ];
 
 function HeroFeatureIcon({ type }) {
@@ -216,6 +223,7 @@ export default function AuthPage() {
     signIn,
     signUp,
     requestPasswordReset,
+    resendVerificationEmail,
     updatePassword,
     isPasswordRecovery,
     clearPasswordRecovery,
@@ -223,20 +231,34 @@ export default function AuthPage() {
 
   const isLogin = authMode === AUTH_MODES.SIGN_IN;
   const isSignup = authMode === AUTH_MODES.SIGN_UP;
+  const isVerifyEmail = authMode === AUTH_MODES.VERIFY_EMAIL;
   const isResetRequest = authMode === AUTH_MODES.RESET_REQUEST;
   const isResetComplete = authMode === AUTH_MODES.RESET_COMPLETE;
   const isRecoveryMode = isResetRequest || isResetComplete;
+  const isSecondaryAuthMode = isRecoveryMode || isVerifyEmail;
   const panelTitle = isResetComplete
     ? 'Set a new password'
+    : isVerifyEmail
+      ? 'Check your inbox'
     : isResetRequest
       ? 'Reset your password'
       : isLogin
         ? 'Welcome back'
         : 'Open your workspace';
-  const panelEyebrow = isRecoveryMode ? 'Password recovery' : 'Access PM Workspace';
-  const panelBadge = isRecoveryMode ? 'Secure access' : TRIAL_OFFER_LABEL;
+  const panelEyebrow = isRecoveryMode
+    ? 'Password recovery'
+    : isVerifyEmail
+      ? 'Email confirmation'
+      : 'Access PM Workspace';
+  const panelBadge = isRecoveryMode
+    ? 'Secure access'
+    : isVerifyEmail
+      ? 'Check your inbox'
+      : TRIAL_OFFER_LABEL;
   const panelDescription = isResetComplete
     ? 'Choose a new password for your workspace account and save it here.'
+    : isVerifyEmail
+      ? 'Use the confirmation email from PM Workspace to verify your account, then return here to sign in.'
     : isResetRequest
       ? 'Enter your email address and we will send a recovery link if an account exists.'
       : isLogin
@@ -244,6 +266,8 @@ export default function AuthPage() {
         : 'Create an account to start with full Pro access first, then decide later whether you want to stay on a paid plan.';
   const helperItems = isResetComplete
     ? RESET_COMPLETE_STEPS
+    : isVerifyEmail
+      ? VERIFY_EMAIL_STEPS
     : isResetRequest
       ? RESET_REQUEST_STEPS
       : ONBOARDING_STEPS;
@@ -330,7 +354,8 @@ export default function AuthPage() {
 
     try {
       if (isLogin) {
-        const { error: signInError } = await signIn(email, password);
+        const trimmedEmail = email.trim();
+        const { error: signInError } = await signIn(trimmedEmail, password);
         if (signInError) throw signInError;
       } else if (isSignup) {
         if (!acceptedLegal) {
@@ -343,11 +368,20 @@ export default function AuthPage() {
         if (data?.session) {
           setSuccessMessage('Your account is ready. Opening your workspace now.');
         } else {
-          setSuccessMessage(`Check ${email} for your confirmation email if verification is enabled, then sign in to enter your workspace.`);
-          setAuthMode(AUTH_MODES.SIGN_IN);
+          setSuccessMessage(`Check ${email} for your confirmation email, then return here to sign in.`);
+          setAuthMode(AUTH_MODES.VERIFY_EMAIL);
         }
         setPassword('');
         setFullName('');
+      } else if (isVerifyEmail) {
+        const trimmedEmail = email.trim();
+        if (!trimmedEmail) {
+          throw new Error('Enter the email address you used to create the account.');
+        }
+
+        const { error: resendError } = await resendVerificationEmail(trimmedEmail);
+        if (resendError) throw resendError;
+        setSuccessMessage(`Verification email sent again to ${trimmedEmail}.`);
       } else if (isResetRequest) {
         const trimmedEmail = email.trim();
         if (!trimmedEmail) {
@@ -390,8 +424,17 @@ export default function AuthPage() {
       }
     } catch (err) {
       const message = String(err?.message || 'Unable to complete this request right now.');
-      if (message.toLowerCase().includes('rate limit')) {
-        setError('Too many password reset emails were requested. Please wait a moment and try again.');
+      const normalizedMessage = message.toLowerCase();
+      if (normalizedMessage.includes('email not confirmed') || normalizedMessage.includes('email not verified')) {
+        setAuthMode(AUTH_MODES.VERIFY_EMAIL);
+        setSuccessMessage(`Confirm ${email.trim()} from your inbox, then sign in here.`);
+        setError(null);
+      } else if (normalizedMessage.includes('rate limit')) {
+        setError(
+          isVerifyEmail
+            ? 'Too many verification emails were requested. Please wait a moment and try again.'
+            : 'Too many password reset emails were requested. Please wait a moment and try again.'
+        );
       } else {
         setError(message);
       }
@@ -657,7 +700,7 @@ export default function AuthPage() {
                 </div>
               </div>
 
-              {!isRecoveryMode ? (
+              {!isSecondaryAuthMode ? (
                 <div className="mt-5 grid grid-cols-3 gap-2 rounded-[22px] border border-slate-200 bg-slate-50 p-2 text-center">
                   <div className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">Free setup</div>
                   <div className="rounded-2xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm">Trial access</div>
@@ -670,7 +713,7 @@ export default function AuthPage() {
               </p>
 
               <div className="mt-5 space-y-2 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                {(isRecoveryMode ? helperItems : AUTH_BENEFITS).map((item) => (
+                {(isSecondaryAuthMode ? helperItems : AUTH_BENEFITS).map((item) => (
                   <div key={item} className="flex items-start gap-3 text-sm text-slate-600">
                     <span className="mt-1 inline-flex h-2.5 w-2.5 rounded-full bg-emerald-600" />
                     <span>{item}</span>
@@ -678,7 +721,7 @@ export default function AuthPage() {
                 ))}
               </div>
 
-              {!isRecoveryMode ? (
+              {!isSecondaryAuthMode ? (
                 <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
                   <button
                     type="button"
@@ -726,15 +769,16 @@ export default function AuthPage() {
                     <input
                       type="email"
                       required
+                      disabled={isVerifyEmail}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@company.com"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${isVerifyEmail ? 'bg-slate-100 cursor-not-allowed' : 'bg-slate-50/80'}`}
                     />
                   </div>
                 ) : null}
 
-                {!isResetRequest ? (
+                {!isResetRequest && !isVerifyEmail ? (
                   <div>
                     <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
                       {isResetComplete ? 'New password' : 'Password'}
@@ -806,7 +850,9 @@ export default function AuthPage() {
                       Processing...
                     </span>
                   ) : (
-                    isResetComplete
+                    isVerifyEmail
+                      ? 'Resend verification email'
+                      : isResetComplete
                       ? 'Save new password'
                       : isResetRequest
                         ? 'Send reset link'
@@ -816,7 +862,7 @@ export default function AuthPage() {
                   )}
                 </button>
 
-                {isRecoveryMode ? (
+                {isSecondaryAuthMode ? (
                   <button
                     type="button"
                     onClick={() => void setCardMode(AUTH_MODES.SIGN_IN)}
@@ -829,7 +875,7 @@ export default function AuthPage() {
 
               <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
                 <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                  {isRecoveryMode ? 'Reset steps' : 'What happens next'}
+                  {isRecoveryMode ? 'Reset steps' : isVerifyEmail ? 'Verification steps' : 'What happens next'}
                 </div>
                 <div className="mt-3 space-y-2">
                   {helperItems.map((step, index) => (
@@ -865,7 +911,7 @@ export default function AuthPage() {
                 </label>
               ) : null}
 
-              {!isRecoveryMode ? (
+              {!isSecondaryAuthMode ? (
                 <div className="mt-6 border-t border-slate-100 pt-5">
                   <p className="text-center text-[13px] text-slate-500">
                     {isLogin ? "Don't have an account yet?" : 'Already have an account?'}
@@ -880,7 +926,7 @@ export default function AuthPage() {
                 </div>
               ) : null}
 
-              {!isRecoveryMode ? (
+              {!isSecondaryAuthMode ? (
                 <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">
                   Your {TRIAL_OFFER_LABEL} begins when your workspace opens. If email confirmation is enabled for your account, you will be asked to verify before signing in.
                 </p>

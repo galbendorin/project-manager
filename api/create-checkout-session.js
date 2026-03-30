@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import { applyApiCors, getAdminSupabase, requireAuthenticatedUser } from './_auth.js';
+import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://pmworkspace.com';
@@ -24,6 +25,15 @@ export default async function handler(req, res) {
   try {
     const user = await requireAuthenticatedUser(req, res);
     if (!user) return;
+
+    const limitResult = checkRateLimit({
+      key: `checkout:${user.id}:${getClientIp(req)}`,
+      max: 10,
+      windowMs: 60_000,
+    });
+    if (!limitResult.ok) {
+      return sendRateLimitResponse(res, limitResult, 'Too many checkout attempts. Please wait a moment and try again.');
+    }
 
     const { plan } = req.body || {};
     if (!plan) {

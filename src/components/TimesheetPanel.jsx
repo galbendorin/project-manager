@@ -55,8 +55,10 @@ const formatEntryWindow = (entry) => {
 
 const getEntryProjectLabel = (entry, project, currentUserId) => {
   if (entry.user_id === currentUserId) return 'You';
-  if (project?.collaborator?.user_id === entry.user_id) {
-    return project.collaborator.member_email;
+  const members = Array.isArray(project?.project_members) ? project.project_members : [];
+  const matchingMember = members.find((member) => member?.user_id === entry.user_id);
+  if (matchingMember?.member_email) {
+    return matchingMember.member_email;
   }
   return 'Team entry';
 };

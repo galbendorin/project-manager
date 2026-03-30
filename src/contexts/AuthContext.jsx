@@ -55,6 +55,12 @@ const clearRecoveryUrl = () => {
   }
 };
 
+const buildAuthRedirectUrl = () => (
+  typeof window !== 'undefined'
+    ? `${window.location.origin}/`
+    : undefined
+);
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -69,10 +75,29 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    const acceptPendingProjectInvites = async (session) => {
+      const accessToken = session?.access_token;
+      const email = session?.user?.email;
+      if (!accessToken || !email) return;
+
+      try {
+        await fetch('/api/project-members-accept-pending', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`
+          }
+        });
+      } catch (error) {
+        console.warn('Unable to check pending project invites:', error);
+      }
+    };
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setIsPasswordRecovery(isPasswordRecoveryUrl());
+      void acceptPendingProjectInvites(session);
       setLoading(false);
     });
 
@@ -84,6 +109,8 @@ export const AuthProvider = ({ children }) => {
       } else if (event === 'SIGNED_OUT') {
         setIsPasswordRecovery(false);
         clearRecoveryUrl();
+      } else if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user?.email) {
+        void acceptPendingProjectInvites(session);
       }
       // Only set loading false if we're still loading
       setLoading(false);
@@ -115,12 +142,19 @@ export const AuthProvider = ({ children }) => {
   };
 
   const requestPasswordReset = async (email) => {
-    const redirectTo = typeof window !== 'undefined'
-      ? `${window.location.origin}/`
-      : undefined;
-
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo
+      redirectTo: buildAuthRedirectUrl()
+    });
+    return { data, error };
+  };
+
+  const resendVerificationEmail = async (email) => {
+    const { data, error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: {
+        emailRedirectTo: buildAuthRedirectUrl()
+      }
     });
     return { data, error };
   };
@@ -162,6 +196,7 @@ export const AuthProvider = ({ children }) => {
     signIn,
     signOut,
     requestPasswordReset,
+    resendVerificationEmail,
     updatePassword,
     isPasswordRecovery,
     clearPasswordRecovery

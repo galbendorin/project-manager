@@ -516,7 +516,7 @@ const ProjectSelector = ({ onSelectProject, onOpenTrack, onOpenShopping, accentT
                       <p className="pm-kicker">Shopping List</p>
                       <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Share groceries</h2>
                       <p className="mt-2 text-sm leading-6 text-slate-500">
-                        Keep one simple grocery list you can share with your partner and update by voice.
+                        Keep one simple grocery list you can share with your household and update by voice.
                       </p>
                     </div>
                     <button

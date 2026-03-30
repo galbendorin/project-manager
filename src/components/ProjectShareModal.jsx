@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeInviteEmail } from '../utils/projectSharing';
+
+const MAX_PROJECT_EDITORS = 5;
 
 const getApiErrorMessage = async (response, fallbackMessage) => {
   try {
@@ -9,6 +11,12 @@ const getApiErrorMessage = async (response, fallbackMessage) => {
   } catch {
     return fallbackMessage;
   }
+};
+
+const isMissingInviteTableError = (error) => {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+  return code === '42p01' || message.includes('project_member_invites');
 };
 
 const ProjectShareModal = ({
@@ -21,8 +29,16 @@ const ProjectShareModal = ({
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [pendingInvites, setPendingInvites] = useState([]);
+  const [loadingPendingInvites, setLoadingPendingInvites] = useState(false);
+  const [supportsPendingInvites, setSupportsPendingInvites] = useState(true);
 
-  const collaborator = project?.collaborator || null;
+  const members = useMemo(
+    () => (Array.isArray(project?.project_members) ? project.project_members : []),
+    [project?.project_members]
+  );
+  const reservedSeats = members.length + pendingInvites.length;
+  const slotsLeft = Math.max(0, MAX_PROJECT_EDITORS - reservedSeats);
 
   useEffect(() => {
     if (!isOpen) {
@@ -30,12 +46,46 @@ const ProjectShareModal = ({
       setSubmitting(false);
       setErrorMessage('');
       setSuccessMessage('');
+      setPendingInvites([]);
+      setLoadingPendingInvites(false);
+      setSupportsPendingInvites(true);
       return;
     }
 
     setInviteEmail('');
     setErrorMessage('');
     setSuccessMessage('');
+  }, [isOpen, project?.id]);
+
+  const fetchPendingInvites = async () => {
+    if (!project?.id || !isOpen) return;
+    setLoadingPendingInvites(true);
+    const { data, error } = await supabase
+      .from('project_member_invites')
+      .select('id, member_email, role, created_at')
+      .eq('project_id', project.id)
+      .is('accepted_at', null)
+      .is('revoked_at', null)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      if (isMissingInviteTableError(error)) {
+        setSupportsPendingInvites(false);
+        setPendingInvites([]);
+      } else {
+        console.error('Failed to load pending invites:', error);
+        setErrorMessage('Unable to load pending invites right now.');
+      }
+    } else {
+      setSupportsPendingInvites(true);
+      setPendingInvites(data || []);
+    }
+    setLoadingPendingInvites(false);
+  };
+
+  useEffect(() => {
+    if (!isOpen || !project?.id) return;
+    void fetchPendingInvites();
   }, [isOpen, project?.id]);
 
   if (!isOpen || !project) return null;
@@ -71,12 +121,23 @@ const ProjectShareModal = ({
     }
   };
 
+  const refreshMembershipState = async () => {
+    await onMembershipChanged?.();
+    await fetchPendingInvites();
+  };
+
   const handleInviteSubmit = async (event) => {
     event.preventDefault();
     const normalizedEmail = normalizeInviteEmail(inviteEmail);
 
     if (!normalizedEmail) {
       setErrorMessage('Enter the email address for the account you want to add.');
+      setSuccessMessage('');
+      return;
+    }
+
+    if (slotsLeft <= 0) {
+      setErrorMessage(`This project already has ${MAX_PROJECT_EDITORS} active or pending editors.`);
       setSuccessMessage('');
       return;
     }
@@ -92,8 +153,8 @@ const ProjectShareModal = ({
       }, 'Unable to share this project right now.');
 
       setInviteEmail('');
-      setSuccessMessage(`Shared with ${normalizedEmail}.`);
-      await onMembershipChanged?.();
+      setSuccessMessage(`Access is ready for ${normalizedEmail}. If they do not have an account yet, it will attach after signup.`);
+      await refreshMembershipState();
     } catch (error) {
       setErrorMessage(error.message || 'Unable to share this project right now.');
     } finally {
@@ -101,9 +162,9 @@ const ProjectShareModal = ({
     }
   };
 
-  const handleRemove = async () => {
-    if (!collaborator) return;
-    if (!window.confirm(`Remove ${collaborator.member_email} from this project?`)) return;
+  const handleRemoveMember = async (member) => {
+    if (!member?.user_id) return;
+    if (!window.confirm(`Remove ${member.member_email} from this project?`)) return;
 
     setSubmitting(true);
     setErrorMessage('');
@@ -112,11 +173,11 @@ const ProjectShareModal = ({
     try {
       await postToApi('/api/project-members-remove', {
         projectId: project.id,
-        memberUserId: collaborator.user_id,
+        memberUserId: member.user_id,
       }, 'Unable to remove this collaborator right now.');
 
-      setSuccessMessage(`${collaborator.member_email} no longer has access.`);
-      await onMembershipChanged?.();
+      setSuccessMessage(`${member.member_email} no longer has access.`);
+      await refreshMembershipState();
     } catch (error) {
       setErrorMessage(error.message || 'Unable to remove this collaborator right now.');
     } finally {
@@ -124,29 +185,50 @@ const ProjectShareModal = ({
     }
   };
 
+  const handleRemoveInvite = async (invite) => {
+    if (!invite?.id) return;
+    if (!window.confirm(`Remove the pending invite for ${invite.member_email}?`)) return;
+
+    setSubmitting(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      await postToApi('/api/project-members-remove', {
+        projectId: project.id,
+        inviteId: invite.id,
+      }, 'Unable to remove this pending invite right now.');
+
+      setSuccessMessage(`Pending invite removed for ${invite.member_email}.`);
+      await refreshMembershipState();
+    } catch (error) {
+      setErrorMessage(error.message || 'Unable to remove this pending invite right now.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Share Project
-            </p>
-            <h2 className="mt-1 text-xl font-bold text-slate-900">{project.name}</h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Invite one existing PM Workspace account to collaborate across this whole project.
-            </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-2xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+        <div className="border-b border-slate-200 bg-slate-50 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Project access</p>
+              <h2 className="mt-1 text-xl font-bold text-slate-900">{project.name}</h2>
+              <p className="mt-2 text-sm text-slate-500">
+                Add up to {MAX_PROJECT_EDITORS} editors. Existing accounts are added straight away; new accounts can accept access after signup.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            >
+              Close
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Close share dialog"
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
 
         <div className="space-y-4 px-6 py-5">
@@ -154,74 +236,151 @@ const ProjectShareModal = ({
             Owner-only controls stay owner-only: sharing, project deletion, billing, and quota ownership.
           </div>
 
-          {collaborator ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                    Current Collaborator
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">{collaborator.member_email}</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    This MVP supports one collaborator with editor access.
-                  </p>
+          <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Current access</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {members.length} active editor{members.length === 1 ? '' : 's'} · {pendingInvites.length} pending
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+                    {slotsLeft} slot{slotsLeft === 1 ? '' : 's'} left
+                  </span>
                 </div>
-                <span className="rounded-full border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                  Editor
-                </span>
-              </div>
-              <div className="mt-4 flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleRemove}
-                  disabled={submitting}
-                  className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {submitting ? 'Removing...' : 'Remove Access'}
-                </button>
+
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">You</p>
+                        <p className="text-xs text-slate-500">Project owner</p>
+                      </div>
+                      <span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        Owner
+                      </span>
+                    </div>
+                  </div>
+
+                  {members.map((member) => (
+                    <div key={member.id || member.user_id || member.member_email} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{member.member_email}</p>
+                          <p className="mt-1 text-xs text-slate-500">Editor access</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                            Editor
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(member)}
+                            disabled={submitting}
+                            className="rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {loadingPendingInvites ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                      Loading pending invites...
+                    </div>
+                  ) : null}
+
+                  {pendingInvites.map((invite) => (
+                    <div key={invite.id} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{invite.member_email}</p>
+                          <p className="mt-1 text-xs text-slate-500">Pending until this person signs up or signs in</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                            Pending
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveInvite(invite)}
+                            disabled={submitting}
+                            className="rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {!members.length && !pendingInvites.length && !loadingPendingInvites ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                      No editors added yet.
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
-          ) : (
-            <form onSubmit={handleInviteSubmit} className="space-y-3">
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Invite By Email
-                </span>
-                <input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(event) => setInviteEmail(event.target.value)}
-                  placeholder="name@example.com"
-                  autoComplete="email"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                />
-              </label>
-              <p className="text-xs text-slate-500">
-                The invited email must already belong to an existing PM Workspace account.
-              </p>
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                >
-                  {submitting ? 'Sharing...' : 'Share Project'}
-                </button>
-              </div>
-            </form>
-          )}
 
-          {errorMessage && (
+            <div className="space-y-4">
+              <form onSubmit={handleInviteSubmit} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div className="space-y-3">
+                  <div>
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Invite by email
+                    </span>
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(event) => setInviteEmail(event.target.value)}
+                      placeholder="name@example.com"
+                      autoComplete="email"
+                      disabled={submitting || slotsLeft <= 0}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-slate-50"
+                    />
+                  </div>
+                  <p className="text-xs leading-5 text-slate-500">
+                    Existing users get access straight away. If the email has not created an account yet, the access will attach after signup.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={submitting || slotsLeft <= 0}
+                    className="w-full rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {submitting ? 'Saving access...' : slotsLeft <= 0 ? 'Project at capacity' : 'Share Project'}
+                  </button>
+                </div>
+              </form>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Sharing rules</div>
+                <div className="mt-3 space-y-2">
+                  <p>Up to {MAX_PROJECT_EDITORS} editors per project.</p>
+                  <p>Editors can work in the shared project, but owner-only controls remain with you.</p>
+                  {!supportsPendingInvites ? (
+                    <p className="text-amber-700">Pending invite storage is not configured yet. Apply the latest sharing SQL migration before inviting new emails.</p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {errorMessage ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
               {errorMessage}
             </div>
-          )}
+          ) : null}
 
-          {successMessage && (
+          {successMessage ? (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
               {successMessage}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

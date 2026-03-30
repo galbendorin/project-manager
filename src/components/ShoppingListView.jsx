@@ -900,7 +900,7 @@ export default function ShoppingListView({ currentUserId }) {
                     </div>
                     <h1 className="mt-4 text-[1.55rem] font-bold tracking-[-0.04em] text-slate-950">Shopping List</h1>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
-                      Keep one simple grocery list shared with your partner, then add items by typing or voice.
+                      Keep one simple grocery list shared with your household, then add items by typing or voice.
                     </p>
                   </div>
                 </div>
@@ -939,7 +939,7 @@ export default function ShoppingListView({ currentUserId }) {
                         {selectedProject?.project_members?.length ? 'Shared' : 'Private'}
                       </span>
                       <span className="text-xs text-slate-500">
-                        {selectedProject?.project_members?.length ? 'partner access enabled' : 'ready to share'}
+                        {selectedProject?.project_members?.length ? 'shared access enabled' : 'ready to share'}
                       </span>
                     </div>
                     {canShareProject ? (
@@ -985,7 +985,7 @@ export default function ShoppingListView({ currentUserId }) {
                         {selectedProject?.name || SHOPPING_PROJECT_NAME}
                       </h2>
                       <p className="mt-1 text-sm text-slate-500">
-                        {selectedProject?.project_members?.length ? 'Shared with partner' : 'Private for now'}
+                        {selectedProject?.project_members?.length ? 'Shared with team' : 'Private for now'}
                       </p>
                     </div>
                     {canShareProject ? (
@@ -1374,7 +1374,7 @@ export default function ShoppingListView({ currentUserId }) {
                           className="pm-toolbar-primary mt-4 inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold text-white transition"
                         >
                           <Share2 className="h-4 w-4" />
-                          Share with partner
+                          Share with household
                         </button>
                       ) : (
                         <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">

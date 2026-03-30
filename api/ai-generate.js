@@ -8,6 +8,7 @@
  */
 
 import { applyApiCors, requireAuthenticatedUser } from './_auth.js'
+import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js'
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 const OPENAI_API = 'https://api.openai.com/v1/chat/completions'
@@ -32,9 +33,18 @@ export default async function handler(req, res) {
     return res.status(413).json({ error: 'Request body too large' })
   }
 
-  // Accept API key from header (preferred) or body (backward compat)
-  const userApiKey = req.headers['x-api-key'] || req.body?.apiKey
+  // Accept API key from header only.
+  const userApiKey = req.headers['x-api-key']
   const { provider, model, systemPrompt, userMessage, maxTokens = 4096, stream = false, usePlatformKey = false } = req.body || {}
+
+  const limitResult = checkRateLimit({
+    key: `ai:${getClientIp(req)}:${usePlatformKey ? 'platform' : 'byok'}`,
+    max: usePlatformKey ? 24 : 60,
+    windowMs: 60_000
+  })
+  if (!limitResult.ok) {
+    return sendRateLimitResponse(res, limitResult, 'AI requests are coming in too quickly. Please wait a moment and try again.')
+  }
 
   if (usePlatformKey) {
     const user = await requireAuthenticatedUser(req, res)

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PROVIDERS, loadAiSettings, saveAiSettings, clearAiSettings, maskApiKey, isAiConfigured } from '../utils/aiSettings';
+import { supabase } from '../lib/supabase';
 
 const AiSettingsModal = ({ onClose, onSettingsChange }) => {
   const [settings, setSettings] = useState(() => loadAiSettings());
@@ -49,12 +50,17 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
     setTestError('');
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || '';
       const response = await fetch('/api/ai-generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': settings.apiKey,
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        },
         body: JSON.stringify({
           provider: settings.provider,
-          apiKey: settings.apiKey,
           model: settings.model,
           systemPrompt: 'Respond with exactly: OK',
           userMessage: 'Test connection. Respond with exactly one word: OK',
