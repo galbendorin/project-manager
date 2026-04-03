@@ -28,10 +28,107 @@ import {
   isMissingRelationError
 } from './projectData/manualTodoUtils';
 import { getTodoCompletionDescriptor } from './projectData/todoCompletion';
-import { buildProjectSnapshotKey, readOfflineJson, writeLocalJson } from '../utils/offlineState';
+import {
+  buildProjectSnapshotKey,
+  createOfflineTempId,
+  isOfflineTempId,
+  readOfflineJson,
+  writeLocalJson
+} from '../utils/offlineState';
+import {
+  enqueueCreate,
+  enqueueDelete,
+  enqueueUpdate,
+  replaceQueuedTargetId
+} from '../utils/offlineQueue';
 
 // Helper: get ISO timestamp
 const now = () => new Date().toISOString();
+
+const buildManualTodoInsertPayload = (todo, userId) => ({
+  user_id: userId,
+  project_id: todo.projectId || null,
+  title: todo.title || '',
+  due_date: todo.dueDate || null,
+  owner_text: todo.owner || '',
+  assignee_user_id: todo.assigneeUserId || userId || null,
+  status: todo.status === 'Done' ? 'Done' : 'Open',
+  recurrence: todo.recurrence,
+  completed_at: todo.completedAt || null,
+});
+
+const buildManualTodoUpdatePayload = (patch = {}) => {
+  const nextPatch = {};
+  if (Object.prototype.hasOwnProperty.call(patch, 'projectId')) nextPatch.project_id = patch.projectId || null;
+  if (Object.prototype.hasOwnProperty.call(patch, 'title')) nextPatch.title = patch.title || '';
+  if (Object.prototype.hasOwnProperty.call(patch, 'dueDate')) nextPatch.due_date = patch.dueDate || null;
+  if (Object.prototype.hasOwnProperty.call(patch, 'owner')) nextPatch.owner_text = patch.owner || '';
+  if (Object.prototype.hasOwnProperty.call(patch, 'assigneeUserId')) nextPatch.assignee_user_id = patch.assigneeUserId || null;
+  if (Object.prototype.hasOwnProperty.call(patch, 'status')) nextPatch.status = patch.status === 'Done' ? 'Done' : 'Open';
+  if (Object.prototype.hasOwnProperty.call(patch, 'recurrence')) nextPatch.recurrence = patch.recurrence || null;
+  if (Object.prototype.hasOwnProperty.call(patch, 'completedAt')) nextPatch.completed_at = patch.completedAt || null;
+  if (Object.prototype.hasOwnProperty.call(patch, 'updatedAt')) nextPatch.updated_at = patch.updatedAt;
+  return nextPatch;
+};
+
+const buildQueuedManualTodo = (todoId, record = {}) => ({
+  _id: todoId,
+  projectId: record.projectId || null,
+  title: record.title || 'New Task',
+  dueDate: record.dueDate || '',
+  owner: record.owner || 'PM',
+  assigneeUserId: record.assigneeUserId || null,
+  status: record.status === 'Done' ? 'Done' : 'Open',
+  recurrence: record.recurrence || null,
+  createdAt: record.createdAt || now(),
+  updatedAt: record.updatedAt || record.createdAt || now(),
+  completedAt: record.completedAt || ''
+});
+
+const applyManualTodoLocalPatch = (todo, patch = {}) => ({
+  ...todo,
+  projectId: Object.prototype.hasOwnProperty.call(patch, 'projectId') ? (patch.projectId || null) : todo.projectId,
+  title: Object.prototype.hasOwnProperty.call(patch, 'title') ? (patch.title || '') : todo.title,
+  dueDate: Object.prototype.hasOwnProperty.call(patch, 'dueDate') ? (patch.dueDate || '') : todo.dueDate,
+  owner: Object.prototype.hasOwnProperty.call(patch, 'owner') ? (patch.owner || '') : todo.owner,
+  assigneeUserId: Object.prototype.hasOwnProperty.call(patch, 'assigneeUserId') ? (patch.assigneeUserId || null) : todo.assigneeUserId,
+  status: Object.prototype.hasOwnProperty.call(patch, 'status') ? (patch.status === 'Done' ? 'Done' : 'Open') : todo.status,
+  recurrence: Object.prototype.hasOwnProperty.call(patch, 'recurrence') ? (patch.recurrence || null) : todo.recurrence,
+  updatedAt: patch.updatedAt || todo.updatedAt,
+  completedAt: Object.prototype.hasOwnProperty.call(patch, 'completedAt') ? (patch.completedAt || '') : todo.completedAt
+});
+
+const applyQueuedTodoChanges = (baseTodos = [], queue = []) => {
+  let next = Array.isArray(baseTodos) ? [...baseTodos] : [];
+
+  for (const op of Array.isArray(queue) ? queue : []) {
+    if (!op?.kind) continue;
+
+    if (op.kind === 'create') {
+      const queuedTodo = buildQueuedManualTodo(op.targetId, op.record);
+      const existingIndex = next.findIndex((item) => item._id === op.targetId);
+      if (existingIndex === -1) {
+        next.push(queuedTodo);
+      } else {
+        next[existingIndex] = queuedTodo;
+      }
+      continue;
+    }
+
+    if (op.kind === 'update') {
+      next = next.map((item) => (
+        item._id === op.targetId ? applyManualTodoLocalPatch(item, op.patch) : item
+      ));
+      continue;
+    }
+
+    if (op.kind === 'delete') {
+      next = next.filter((item) => item._id !== op.targetId);
+    }
+  }
+
+  return next;
+};
 
 /**
  * Custom hook for managing project data (tasks, registers, tracker, status report, and todos)
@@ -55,12 +152,21 @@ export const useProjectData = (projectId, userId = null) => {
   ));
   const [offlinePendingSync, setOfflinePendingSync] = useState(false);
   const [usingOfflineSnapshot, setUsingOfflineSnapshot] = useState(false);
+  const [todoQueue, setTodoQueue] = useState([]);
+  const [todoQueueRetryToken, setTodoQueueRetryToken] = useState(0);
 
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef(null);
   const projectVersionRef = useRef(1);
   const supportsManualTodosTableRef = useRef(true);
+  const todoQueueRef = useRef([]);
+  const syncingTodoQueueRef = useRef(false);
+  const todoQueueRetryTimeoutRef = useRef(null);
   const snapshotKey = buildProjectSnapshotKey(projectId, userId || 'anon');
+
+  useEffect(() => {
+    todoQueueRef.current = todoQueue;
+  }, [todoQueue]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -75,6 +181,12 @@ export const useProjectData = (projectId, userId = null) => {
     };
   }, []);
 
+  useEffect(() => () => {
+    if (todoQueueRetryTimeoutRef.current) {
+      window.clearTimeout(todoQueueRetryTimeoutRef.current);
+    }
+  }, []);
+
   // Load project data from Supabase
   const loadProject = useCallback(async () => {
     if (!projectId) return;
@@ -86,6 +198,7 @@ export const useProjectData = (projectId, userId = null) => {
     setRemoteUpdateAvailable(false);
 
     const cachedSnapshot = await readOfflineJson(snapshotKey, null);
+    const cachedTodoQueue = Array.isArray(cachedSnapshot?.todoQueue) ? cachedSnapshot.todoQueue : [];
     if (cachedSnapshot) {
       setProjectData(cachedSnapshot.tasks || []);
       setRegisters(cachedSnapshot.registers || createEmptyRegisters());
@@ -93,9 +206,10 @@ export const useProjectData = (projectId, userId = null) => {
       setTracker(cachedSnapshot.tracker || []);
       setStatusReport(cachedSnapshot.statusReport || createEmptyStatusReport());
       setTodos(cachedSnapshot.todos || []);
+      setTodoQueue(cachedTodoQueue);
       projectVersionRef.current = Number.isInteger(cachedSnapshot.version) ? cachedSnapshot.version : 1;
       setUsingOfflineSnapshot(true);
-      setOfflinePendingSync(false);
+      setOfflinePendingSync(cachedTodoQueue.length > 0);
       setLoadingData(false);
     }
 
@@ -107,6 +221,7 @@ export const useProjectData = (projectId, userId = null) => {
 
     if (!error && data) {
       const normalizedState = normalizeLoadedProjectState(data, now);
+      let nextTodos = [];
       setProjectData(normalizedState.tasks);
       setRegisters(normalizedState.registers);
       setBaselineState(normalizedState.baseline);
@@ -117,31 +232,38 @@ export const useProjectData = (projectId, userId = null) => {
         const { data: todoRows, error: todoError } = await supabase
           .from('manual_todos')
           .select(MANUAL_TODO_SELECT)
+          .eq('project_id', projectId)
           .order('created_at', { ascending: true });
 
         if (!todoError) {
-          setTodos((todoRows || []).map(mapManualTodoRow));
+          nextTodos = applyQueuedTodoChanges((todoRows || []).map(mapManualTodoRow), cachedTodoQueue);
+          setTodos(nextTodos);
         } else if (isMissingRelationError(todoError, 'manual_todos')) {
           supportsManualTodosTableRef.current = false;
-          setTodos([]);
+          nextTodos = applyQueuedTodoChanges([], cachedTodoQueue);
+          setTodos(nextTodos);
         } else {
           console.error('Failed to load manual todos:', todoError);
-          setTodos([]);
+          nextTodos = applyQueuedTodoChanges([], cachedTodoQueue);
+          setTodos(nextTodos);
         }
       } else {
-        setTodos([]);
+        nextTodos = applyQueuedTodoChanges([], cachedTodoQueue);
+        setTodos(nextTodos);
       }
 
+      setTodoQueue(cachedTodoQueue);
       projectVersionRef.current = normalizedState.version;
       setUsingOfflineSnapshot(false);
-      setOfflinePendingSync(false);
+      setOfflinePendingSync(cachedTodoQueue.length > 0);
       writeLocalJson(snapshotKey, {
         tasks: normalizedState.tasks,
         registers: normalizedState.registers,
         baseline: normalizedState.baseline,
         tracker: normalizedState.tracker,
         statusReport: normalizedState.statusReport,
-        todos: userId ? [] : [],
+        todos: nextTodos,
+        todoQueue: cachedTodoQueue,
         version: normalizedState.version,
         cachedAt: now(),
       });
@@ -232,10 +354,11 @@ export const useProjectData = (projectId, userId = null) => {
       tracker,
       statusReport,
       todos,
+      todoQueue,
       version: projectVersionRef.current,
       cachedAt: now(),
     });
-  }, [baseline, projectData, projectId, registers, snapshotKey, statusReport, todos, tracker]);
+  }, [baseline, projectData, projectId, registers, snapshotKey, statusReport, todoQueue, todos, tracker]);
 
   // Warn user if they close the tab with unsaved changes
   useEffect(() => {
@@ -279,6 +402,147 @@ export const useProjectData = (projectId, userId = null) => {
       window.clearInterval(intervalId);
     };
   }, [projectId, loadingData, isOnline]);
+
+  useEffect(() => {
+    if (!projectId || !userId || !supportsManualTodosTableRef.current || !isOnline || todoQueue.length === 0) {
+      return undefined;
+    }
+
+    if (syncingTodoQueueRef.current) return undefined;
+
+    let cancelled = false;
+    const scheduleRetry = () => {
+      if (todoQueueRetryTimeoutRef.current) {
+        window.clearTimeout(todoQueueRetryTimeoutRef.current);
+      }
+      todoQueueRetryTimeoutRef.current = window.setTimeout(() => {
+        setTodoQueueRetryToken((value) => value + 1);
+      }, 5000);
+    };
+
+    const syncTodoQueue = async () => {
+      syncingTodoQueueRef.current = true;
+
+      try {
+        while (!cancelled && todoQueueRef.current.length > 0) {
+          const [op] = todoQueueRef.current;
+          if (!op) break;
+
+          if (op.kind === 'create') {
+            const { data, error } = await supabase
+              .from('manual_todos')
+              .insert(buildManualTodoInsertPayload(buildQueuedManualTodo(op.targetId, op.record), userId))
+              .select(MANUAL_TODO_SELECT)
+              .single();
+
+            if (error && isMissingRelationError(error, 'manual_todos')) {
+              supportsManualTodosTableRef.current = false;
+              setTodoQueue([]);
+              break;
+            }
+
+            if (error || !data) {
+              console.error('Failed to sync queued manual todo create:', error);
+              scheduleRetry();
+              break;
+            }
+
+            const savedTodo = mapManualTodoRow(data);
+            const previousId = op.targetId;
+            if (todoQueueRetryTimeoutRef.current) {
+              window.clearTimeout(todoQueueRetryTimeoutRef.current);
+              todoQueueRetryTimeoutRef.current = null;
+            }
+
+            setTodos((prev) => prev.map((item) => (
+              item._id === previousId ? savedTodo : item
+            )));
+            setTodoQueue((prev) => replaceQueuedTargetId(prev.slice(1), previousId, savedTodo._id));
+            setLastSaved(new Date());
+            setUsingOfflineSnapshot(false);
+            continue;
+          }
+
+          if (op.kind === 'update') {
+            const { data, error } = await supabase
+              .from('manual_todos')
+              .update(buildManualTodoUpdatePayload(op.patch))
+              .eq('id', op.targetId)
+              .select(MANUAL_TODO_SELECT)
+              .single();
+
+            if (error && isMissingRelationError(error, 'manual_todos')) {
+              supportsManualTodosTableRef.current = false;
+              setTodoQueue([]);
+              break;
+            }
+
+            if (error || !data) {
+              console.error('Failed to sync queued manual todo update:', error);
+              scheduleRetry();
+              break;
+            }
+
+            const savedTodo = mapManualTodoRow(data);
+            if (todoQueueRetryTimeoutRef.current) {
+              window.clearTimeout(todoQueueRetryTimeoutRef.current);
+              todoQueueRetryTimeoutRef.current = null;
+            }
+            setTodos((prev) => prev.map((item) => (
+              item._id === op.targetId ? savedTodo : item
+            )));
+            setTodoQueue((prev) => prev.slice(1));
+            setLastSaved(new Date());
+            setUsingOfflineSnapshot(false);
+            continue;
+          }
+
+          if (op.kind === 'delete') {
+            const { error } = await supabase
+              .from('manual_todos')
+              .delete()
+              .eq('id', op.targetId);
+
+            if (error && isMissingRelationError(error, 'manual_todos')) {
+              supportsManualTodosTableRef.current = false;
+              setTodoQueue([]);
+              break;
+            }
+
+            if (error) {
+              console.error('Failed to sync queued manual todo delete:', error);
+              scheduleRetry();
+              break;
+            }
+
+            if (todoQueueRetryTimeoutRef.current) {
+              window.clearTimeout(todoQueueRetryTimeoutRef.current);
+              todoQueueRetryTimeoutRef.current = null;
+            }
+            setTodoQueue((prev) => prev.slice(1));
+            setLastSaved(new Date());
+            setUsingOfflineSnapshot(false);
+          }
+        }
+      } finally {
+        syncingTodoQueueRef.current = false;
+      }
+    };
+
+    void syncTodoQueue();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, userId, isOnline, todoQueue.length, todoQueueRetryToken]);
+
+  useEffect(() => {
+    if (todoQueue.length === 0 && !saveTimeoutRef.current && !saving) {
+      setOfflinePendingSync(false);
+    } else if (todoQueue.length > 0) {
+      setOfflinePendingSync(true);
+    }
+  }, [saving, todoQueue.length]);
 
   const reloadProject = useCallback(async () => {
     await loadProject();
@@ -480,10 +744,33 @@ export const useProjectData = (projectId, userId = null) => {
 
   const addTodo = useCallback(async (todoData = {}) => {
     const ts = now();
-    const localTodo = createLocalManualTodo({ todoData, projectId, userId, ts });
+    const localTodoBase = createLocalManualTodo({ todoData, projectId, userId, ts });
 
     if (!userId || !supportsManualTodosTableRef.current) {
+      setTodos(prev => [...prev, localTodoBase]);
+      return localTodoBase;
+    }
+
+    if (!isOnline) {
+      const localTodo = {
+        ...localTodoBase,
+        _id: createOfflineTempId('offline-todo')
+      };
       setTodos(prev => [...prev, localTodo]);
+      setTodoQueue(prev => enqueueCreate(prev, {
+        localId: localTodo._id,
+        projectId: localTodo.projectId,
+        title: localTodo.title,
+        dueDate: localTodo.dueDate,
+        owner: localTodo.owner,
+        assigneeUserId: localTodo.assigneeUserId,
+        status: localTodo.status,
+        recurrence: localTodo.recurrence,
+        createdAt: localTodo.createdAt,
+        updatedAt: localTodo.updatedAt,
+        completedAt: localTodo.completedAt,
+      }));
+      setOfflinePendingSync(true);
       return localTodo;
     }
 
@@ -491,14 +778,14 @@ export const useProjectData = (projectId, userId = null) => {
       .from('manual_todos')
       .insert({
         user_id: userId,
-        project_id: localTodo.projectId,
-        title: localTodo.title,
-        due_date: localTodo.dueDate || null,
-        owner_text: localTodo.owner,
-        assignee_user_id: localTodo.assigneeUserId,
-        status: localTodo.status,
-        recurrence: localTodo.recurrence,
-        completed_at: localTodo.completedAt || null
+        project_id: localTodoBase.projectId,
+        title: localTodoBase.title,
+        due_date: localTodoBase.dueDate || null,
+        owner_text: localTodoBase.owner,
+        assignee_user_id: localTodoBase.assigneeUserId,
+        status: localTodoBase.status,
+        recurrence: localTodoBase.recurrence,
+        completed_at: localTodoBase.completedAt || null
       })
       .select(MANUAL_TODO_SELECT)
       .single();
@@ -511,12 +798,32 @@ export const useProjectData = (projectId, userId = null) => {
 
     if (isMissingRelationError(error, 'manual_todos')) {
       supportsManualTodosTableRef.current = false;
+      setTodos(prev => [...prev, localTodoBase]);
+      return localTodoBase;
     } else if (error) {
       console.error('Failed to create manual todo:', error);
     }
+    const localTodo = {
+      ...localTodoBase,
+      _id: createOfflineTempId('offline-todo')
+    };
     setTodos(prev => [...prev, localTodo]);
+    setTodoQueue(prev => enqueueCreate(prev, {
+      localId: localTodo._id,
+      projectId: localTodo.projectId,
+      title: localTodo.title,
+      dueDate: localTodo.dueDate,
+      owner: localTodo.owner,
+      assigneeUserId: localTodo.assigneeUserId,
+      status: localTodo.status,
+      recurrence: localTodo.recurrence,
+      createdAt: localTodo.createdAt,
+      updatedAt: localTodo.updatedAt,
+      completedAt: localTodo.completedAt,
+    }));
+    setOfflinePendingSync(true);
     return localTodo;
-  }, [projectId, userId]);
+  }, [isOnline, projectId, userId]);
 
   const updateTodo = useCallback(async (todoId, key, value) => {
     const todo = todos.find(item => item._id === todoId);
@@ -534,6 +841,46 @@ export const useProjectData = (projectId, userId = null) => {
 
     if (!userId || !supportsManualTodosTableRef.current) {
       setTodos(prev => applyTodoUpdateToState(prev, todoId, localUpdated, followUpLocal));
+      return;
+    }
+
+    const queuePatch = { updatedAt: localUpdated.updatedAt };
+    if (key === 'title') queuePatch.title = localUpdated.title;
+    if (key === 'dueDate') queuePatch.dueDate = localUpdated.dueDate;
+    if (key === 'owner') queuePatch.owner = localUpdated.owner;
+    if (key === 'projectId') queuePatch.projectId = localUpdated.projectId;
+    if (key === 'assigneeUserId') queuePatch.assigneeUserId = localUpdated.assigneeUserId;
+    if (key === 'recurrence') queuePatch.recurrence = localUpdated.recurrence;
+    if (key === 'status') {
+      queuePatch.status = localUpdated.status;
+      queuePatch.completedAt = localUpdated.completedAt || '';
+    }
+
+    if (!isOnline || isOfflineTempId(todoId)) {
+      const queuedFollowUp = followUpLocal
+        ? { ...followUpLocal, _id: createOfflineTempId('offline-todo') }
+        : null;
+      setTodos(prev => applyTodoUpdateToState(prev, todoId, localUpdated, queuedFollowUp));
+      setTodoQueue((prev) => {
+        let nextQueue = enqueueUpdate(prev, todoId, queuePatch);
+        if (queuedFollowUp) {
+          nextQueue = enqueueCreate(nextQueue, {
+            localId: queuedFollowUp._id,
+            projectId: queuedFollowUp.projectId,
+            title: queuedFollowUp.title,
+            dueDate: queuedFollowUp.dueDate,
+            owner: queuedFollowUp.owner,
+            assigneeUserId: queuedFollowUp.assigneeUserId,
+            status: queuedFollowUp.status,
+            recurrence: queuedFollowUp.recurrence,
+            createdAt: queuedFollowUp.createdAt,
+            updatedAt: queuedFollowUp.updatedAt,
+            completedAt: queuedFollowUp.completedAt,
+          });
+        }
+        return nextQueue;
+      });
+      setOfflinePendingSync(true);
       return;
     }
 
@@ -596,13 +943,19 @@ export const useProjectData = (projectId, userId = null) => {
       }
       return next;
     });
-  }, [todos, userId]);
+  }, [isOnline, todos, userId]);
 
   const deleteTodo = useCallback(async (todoId) => {
     const previousTodos = todos;
     setTodos(prev => prev.filter(todo => todo._id !== todoId));
 
     if (!userId || !supportsManualTodosTableRef.current) return;
+
+    if (!isOnline || isOfflineTempId(todoId)) {
+      setTodoQueue(prev => enqueueDelete(prev, todoId));
+      setOfflinePendingSync(true);
+      return;
+    }
 
     const { error } = await supabase
       .from('manual_todos')
@@ -617,7 +970,7 @@ export const useProjectData = (projectId, userId = null) => {
       console.error('Failed to delete manual todo:', error);
       setTodos(previousTodos);
     }
-  }, [todos, userId]);
+  }, [isOnline, todos, userId]);
 
   const completeTodoFromView = useCallback(async (todo) => {
     const completion = getTodoCompletionDescriptor(todo, getCurrentDate(), now());
@@ -710,7 +1063,7 @@ export const useProjectData = (projectId, userId = null) => {
     saveError,
     remoteUpdateAvailable,
     isOnline,
-    offlinePendingSync,
+    offlinePendingSync: offlinePendingSync || todoQueue.length > 0,
     usingOfflineSnapshot,
     addTask,
     updateTask,

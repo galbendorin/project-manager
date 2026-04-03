@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { SCHEMAS } from '../utils/constants';
+import { getCurrentDate } from '../utils/helpers';
 import AuthenticatedFooter from './AuthenticatedFooter';
 import Header from './Header';
 import Navigation from './Navigation';
@@ -36,6 +37,7 @@ import {
 } from '../utils/aiPrompts';
 import { openFeedbackEmail } from '../utils/feedback';
 import AccentThemePicker from './AccentThemePicker';
+import MobileQuickCapture from './MobileQuickCapture';
 
 const ScheduleView = lazy(() => import('./ScheduleView'));
 const RegisterView = lazy(() => import('./RegisterView'));
@@ -177,6 +179,11 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
   const [showPricing, setShowPricing] = useState(false);
   const [showBilling, setShowBilling] = useState(false);
   const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
+  const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [quickCaptureMode, setQuickCaptureMode] = useState('task');
+  const [quickCaptureText, setQuickCaptureText] = useState('');
+  const [quickCaptureSaving, setQuickCaptureSaving] = useState(false);
+  const [quickCaptureStatus, setQuickCaptureStatus] = useState('');
 
   const hasByok = isAiConfigured(aiSettings);
   const usePlatformKey = effectivePlan && limits.canUseAi && !hasByok;
@@ -261,6 +268,90 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
       subView: activeSubView,
     });
   }, [project?.name, activeSubView, activeTab]);
+
+  useEffect(() => {
+    if (!quickCaptureStatus) return undefined;
+    const timeoutId = window.setTimeout(() => setQuickCaptureStatus(''), 3200);
+    return () => window.clearTimeout(timeoutId);
+  }, [quickCaptureStatus]);
+
+  const handleOpenQuickCapture = useCallback(() => {
+    setQuickCaptureMode(activeTab === 'actions' ? 'action' : 'task');
+    setQuickCaptureStatus('');
+    setIsQuickCaptureOpen(true);
+  }, [activeTab]);
+
+  const handleCloseQuickCapture = useCallback(() => {
+    if (quickCaptureSaving) return;
+    setIsQuickCaptureOpen(false);
+    setQuickCaptureText('');
+  }, [quickCaptureSaving]);
+
+  const handleSubmitQuickCapture = useCallback(async () => {
+    const trimmedText = String(quickCaptureText || '').trim();
+    if (!trimmedText || quickCaptureSaving) return;
+
+    setQuickCaptureSaving(true);
+
+    try {
+      if (quickCaptureMode === 'action') {
+        const today = getCurrentDate();
+        const ts = new Date().toISOString();
+
+        setRegisters((prev) => {
+          const currentActions = Array.isArray(prev.actions) ? prev.actions : [];
+          const nextNumber = currentActions.length + 1;
+          return {
+            ...prev,
+            actions: [
+              ...currentActions,
+              {
+                _id: `quick_action_${Date.now()}`,
+                visible: true,
+                public: true,
+                rowColor: null,
+                number: String(nextNumber),
+                category: 'Quick capture',
+                actionassignedto: '',
+                description: trimmedText,
+                currentstatus: 'Captured on mobile',
+                status: 'Open',
+                raised: today,
+                target: '',
+                update: today,
+                completed: '',
+                createdAt: ts,
+                updatedAt: ts,
+              }
+            ]
+          };
+        });
+
+        setQuickCaptureStatus(
+          isOnline
+            ? 'Action added to the project.'
+            : 'Action saved offline. It will sync when your connection returns.'
+        );
+      } else {
+        await addTodo({
+          title: trimmedText,
+          dueDate: '',
+          owner: '',
+          projectId: project.id,
+        });
+        setQuickCaptureStatus(
+          isOnline
+            ? 'Task added to the project.'
+            : 'Task saved offline. It will sync when your connection returns.'
+        );
+      }
+
+      setQuickCaptureText('');
+      setIsQuickCaptureOpen(false);
+    } finally {
+      setQuickCaptureSaving(false);
+    }
+  }, [addTodo, isOnline, project.id, quickCaptureMode, quickCaptureSaving, quickCaptureText, setRegisters]);
 
   const activeModuleType = activeSubView || activeTab;
   const activeModuleCount = useMemo(() => {
@@ -963,6 +1054,23 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
           )}
         </Suspense>
       </main>
+
+      {isMobile && !showPricing && !showBilling && !isModalOpen ? (
+        <MobileQuickCapture
+          isOpen={isQuickCaptureOpen}
+          mode={quickCaptureMode}
+          value={quickCaptureText}
+          saving={quickCaptureSaving}
+          isOnline={isOnline}
+          projectName={project.name}
+          statusMessage={quickCaptureStatus}
+          onOpen={handleOpenQuickCapture}
+          onClose={handleCloseQuickCapture}
+          onModeChange={setQuickCaptureMode}
+          onValueChange={setQuickCaptureText}
+          onSubmit={handleSubmitQuickCapture}
+        />
+      ) : null}
 
       <AuthenticatedFooter className="flex-none" />
 
