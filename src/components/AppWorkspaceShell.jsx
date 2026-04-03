@@ -38,7 +38,7 @@ import {
 import { openFeedbackEmail } from '../utils/feedback';
 import AccentThemePicker from './AccentThemePicker';
 import MobileQuickCapture from './MobileQuickCapture';
-import ProjectNowSummary from './ProjectNowSummary';
+import { getCaptureRouteMeta, suggestCaptureRoute } from '../utils/smartCapture';
 
 const ScheduleView = lazy(() => import('./ScheduleView'));
 const RegisterView = lazy(() => import('./RegisterView'));
@@ -181,7 +181,7 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
   const [showBilling, setShowBilling] = useState(false);
   const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
-  const [quickCaptureMode, setQuickCaptureMode] = useState('task');
+  const [quickCaptureMode, setQuickCaptureMode] = useState('smart');
   const [quickCaptureText, setQuickCaptureText] = useState('');
   const [quickCaptureSaving, setQuickCaptureSaving] = useState(false);
   const [quickCaptureStatus, setQuickCaptureStatus] = useState('');
@@ -276,11 +276,29 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
     return () => window.clearTimeout(timeoutId);
   }, [quickCaptureStatus]);
 
+  const quickCaptureSuggestion = useMemo(
+    () => suggestCaptureRoute(quickCaptureText, activeTab === 'actions' ? 'action' : 'task'),
+    [activeTab, quickCaptureText]
+  );
+
+  const activeCaptureRoute = useMemo(
+    () => (quickCaptureMode === 'smart'
+      ? quickCaptureSuggestion
+      : {
+          type: quickCaptureMode,
+          cleanedText: String(quickCaptureText || '').trim(),
+          reason: '',
+          viaPrefix: false,
+          meta: getCaptureRouteMeta(quickCaptureMode),
+        }),
+    [quickCaptureMode, quickCaptureSuggestion, quickCaptureText]
+  );
+
   const handleOpenQuickCapture = useCallback(() => {
-    setQuickCaptureMode(activeTab === 'actions' ? 'action' : 'task');
+    setQuickCaptureMode('smart');
     setQuickCaptureStatus('');
     setIsQuickCaptureOpen(true);
-  }, [activeTab]);
+  }, []);
 
   const handleCloseQuickCapture = useCallback(() => {
     if (quickCaptureSaving) return;
@@ -289,13 +307,15 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
   }, [quickCaptureSaving]);
 
   const handleSubmitQuickCapture = useCallback(async () => {
-    const trimmedText = String(quickCaptureText || '').trim();
+    const trimmedText = String(activeCaptureRoute.cleanedText || quickCaptureText || '').trim();
     if (!trimmedText || quickCaptureSaving) return;
 
     setQuickCaptureSaving(true);
 
     try {
-      if (quickCaptureMode === 'action') {
+      const routeType = activeCaptureRoute.type;
+
+      if (routeType === 'action') {
         const today = getCurrentDate();
         const ts = new Date().toISOString();
 
@@ -333,7 +353,7 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
             ? 'Action added to the project.'
             : 'Action saved offline. It will sync when your connection returns.'
         );
-      } else {
+      } else if (routeType === 'task') {
         await addTodo({
           title: trimmedText,
           dueDate: '',
@@ -345,6 +365,97 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
             ? 'Task added to the project.'
             : 'Task saved offline. It will sync when your connection returns.'
         );
+      } else {
+        const today = getCurrentDate();
+        const ts = new Date().toISOString();
+
+        setRegisters((prev) => {
+          const appendItem = (registerType, item) => ({
+            ...prev,
+            [registerType]: [...(prev[registerType] || []), item]
+          });
+
+          if (routeType === 'risk') {
+            const current = Array.isArray(prev.risks) ? prev.risks : [];
+            return appendItem('risks', {
+              _id: `quick_risk_${Date.now()}`,
+              visible: true,
+              public: true,
+              rowColor: null,
+              number: String(current.length + 1),
+              category: 'Quick capture',
+              riskdetails: trimmedText,
+              mitigationaction: '',
+              notes: 'Captured on mobile',
+              raised: today,
+              owner: '',
+              level: 'Medium',
+              createdAt: ts,
+              updatedAt: ts,
+            });
+          }
+
+          if (routeType === 'issue') {
+            const current = Array.isArray(prev.issues) ? prev.issues : [];
+            return appendItem('issues', {
+              _id: `quick_issue_${Date.now()}`,
+              visible: true,
+              public: true,
+              rowColor: null,
+              number: String(current.length + 1),
+              issueassignedto: '',
+              description: trimmedText,
+              currentstatus: 'Captured on mobile',
+              status: 'Open',
+              raised: today,
+              target: '',
+              update: today,
+              completed: '',
+              createdAt: ts,
+              updatedAt: ts,
+            });
+          }
+
+          if (routeType === 'decision') {
+            const current = Array.isArray(prev.decisions) ? prev.decisions : [];
+            return appendItem('decisions', {
+              _id: `quick_decision_${Date.now()}`,
+              visible: true,
+              public: true,
+              rowColor: null,
+              number: String(current.length + 1),
+              decision: trimmedText,
+              decidedby: '',
+              dateraised: today,
+              datedecided: '',
+              rationale: '',
+              impact: '',
+              status: 'Open',
+              createdAt: ts,
+              updatedAt: ts,
+            });
+          }
+
+          const current = Array.isArray(prev.minutes) ? prev.minutes : [];
+          return appendItem('minutes', {
+            _id: `quick_meeting_${Date.now()}`,
+            visible: true,
+            public: true,
+            rowColor: null,
+            number: String(current.length + 1),
+            dateraised: today,
+            minutedescription: trimmedText,
+            status: 'Open',
+            createdAt: ts,
+            updatedAt: ts,
+          });
+        });
+
+        setQuickCaptureStatus(
+          isOnline
+            ? `${activeCaptureRoute.meta.label} added to ${activeCaptureRoute.meta.destination}.`
+            : `${activeCaptureRoute.meta.label} saved offline. It will sync when your connection returns.`
+        );
       }
 
       setQuickCaptureText('');
@@ -352,7 +463,7 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
     } finally {
       setQuickCaptureSaving(false);
     }
-  }, [addTodo, isOnline, project.id, quickCaptureMode, quickCaptureSaving, quickCaptureText, setRegisters]);
+  }, [activeCaptureRoute, addTodo, isOnline, project.id, quickCaptureSaving, quickCaptureText, setRegisters]);
 
   const activeModuleType = activeSubView || activeTab;
   const activeModuleCount = useMemo(() => {
@@ -931,16 +1042,6 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
         }}
       />
 
-      {activeTab !== 'timesheets' ? (
-        <ProjectNowSummary
-          tasks={projectData}
-          registers={registers}
-          tracker={tracker}
-          statusReport={statusReport}
-          todos={todos}
-        />
-      ) : null}
-
       <main className="relative flex-grow min-h-0 overflow-hidden">
         <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-slate-500">Loading view...</div>}>
           {activeTab === 'schedule' ? (
@@ -1075,6 +1176,9 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
           isOnline={isOnline}
           projectName={project.name}
           statusMessage={quickCaptureStatus}
+          routeLabel={activeCaptureRoute.meta.label}
+          routeDestination={activeCaptureRoute.meta.destination}
+          routeReason={quickCaptureMode === 'smart' ? quickCaptureSuggestion.reason : ''}
           onOpen={handleOpenQuickCapture}
           onClose={handleCloseQuickCapture}
           onModeChange={setQuickCaptureMode}

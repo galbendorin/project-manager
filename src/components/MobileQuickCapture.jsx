@@ -8,6 +8,9 @@ export default function MobileQuickCapture({
   isOnline,
   projectName,
   statusMessage,
+  routeLabel,
+  routeDestination,
+  routeReason,
   onOpen,
   onClose,
   onModeChange,
@@ -30,7 +33,7 @@ export default function MobileQuickCapture({
               Quick capture
             </div>
             <div className="truncate text-xs text-slate-600">
-              {statusMessage || `Add a ${mode === 'action' ? 'Action' : 'Task'} to ${projectName}.`}
+              {statusMessage || `Add a ${routeLabel} to ${projectName}.`}
             </div>
           </div>
         </div>
@@ -71,7 +74,18 @@ export default function MobileQuickCapture({
               </button>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+            <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => onModeChange('smart')}
+                className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                  mode === 'smart'
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-slate-500'
+                }`}
+              >
+                Smart
+              </button>
               <button
                 type="button"
                 onClick={() => onModeChange('task')}
@@ -96,6 +110,27 @@ export default function MobileQuickCapture({
               </button>
             </div>
 
+            {mode === 'smart' ? (
+              <div className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-500">
+                    Smart route
+                  </span>
+                  <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                    {routeDestination}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm font-medium text-slate-700">
+                  {routeLabel}
+                </p>
+                {routeReason ? (
+                  <p className="mt-1 text-xs leading-5 text-slate-600">
+                    {routeReason}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             <form
               className="mt-4 space-y-3"
               onSubmit={(event) => {
@@ -105,13 +140,23 @@ export default function MobileQuickCapture({
             >
               <label className="block">
                 <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  {mode === 'action' ? 'Action description' : 'Task title'}
+                  {mode === 'smart'
+                    ? `${routeLabel} text`
+                    : mode === 'action'
+                      ? 'Action description'
+                      : 'Task title'}
                 </span>
                 <textarea
                   autoFocus
                   value={value}
                   onChange={(event) => onValueChange(event.target.value)}
-                  placeholder={mode === 'action' ? 'Follow up on client note' : 'Remember to update the RAID log'}
+                  placeholder={
+                    mode === 'smart'
+                      ? 'Try “risk: supplier delay” or “decision: move pilot to May”'
+                      : mode === 'action'
+                        ? 'Follow up on client note'
+                        : 'Remember to update the RAID log'
+                  }
                   rows={3}
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--pm-accent-soft)] focus:ring-2 focus:ring-[var(--pm-accent-soft)]/35"
                 />
@@ -135,7 +180,7 @@ export default function MobileQuickCapture({
                 disabled={saving || !String(value || '').trim()}
                 className="w-full rounded-2xl bg-[var(--pm-accent)] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {saving ? 'Saving...' : mode === 'action' ? 'Add to Action Log' : 'Add Task'}
+                {saving ? 'Saving...' : `Add to ${routeDestination}`}
               </button>
             </form>
           </div>
