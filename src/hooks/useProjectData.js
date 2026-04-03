@@ -28,7 +28,7 @@ import {
   isMissingRelationError
 } from './projectData/manualTodoUtils';
 import { getTodoCompletionDescriptor } from './projectData/todoCompletion';
-import { buildProjectSnapshotKey, readLocalJson, writeLocalJson } from '../utils/offlineState';
+import { buildProjectSnapshotKey, readOfflineJson, writeLocalJson } from '../utils/offlineState';
 
 // Helper: get ISO timestamp
 const now = () => new Date().toISOString();
@@ -85,6 +85,20 @@ export const useProjectData = (projectId, userId = null) => {
     setSaveError(null);
     setRemoteUpdateAvailable(false);
 
+    const cachedSnapshot = await readOfflineJson(snapshotKey, null);
+    if (cachedSnapshot) {
+      setProjectData(cachedSnapshot.tasks || []);
+      setRegisters(cachedSnapshot.registers || createEmptyRegisters());
+      setBaselineState(cachedSnapshot.baseline || null);
+      setTracker(cachedSnapshot.tracker || []);
+      setStatusReport(cachedSnapshot.statusReport || createEmptyStatusReport());
+      setTodos(cachedSnapshot.todos || []);
+      projectVersionRef.current = Number.isInteger(cachedSnapshot.version) ? cachedSnapshot.version : 1;
+      setUsingOfflineSnapshot(true);
+      setOfflinePendingSync(false);
+      setLoadingData(false);
+    }
+
     let loadQuery = supabase
       .from('projects')
       .select('tasks, registers, baseline, tracker, status_report, version')
@@ -132,16 +146,7 @@ export const useProjectData = (projectId, userId = null) => {
         cachedAt: now(),
       });
     } else if (error) {
-      const cachedSnapshot = readLocalJson(snapshotKey, null);
       if (cachedSnapshot) {
-        setProjectData(cachedSnapshot.tasks || []);
-        setRegisters(cachedSnapshot.registers || createEmptyRegisters());
-        setBaselineState(cachedSnapshot.baseline || null);
-        setTracker(cachedSnapshot.tracker || []);
-        setStatusReport(cachedSnapshot.statusReport || createEmptyStatusReport());
-        setTodos(cachedSnapshot.todos || []);
-        projectVersionRef.current = Number.isInteger(cachedSnapshot.version) ? cachedSnapshot.version : 1;
-        setUsingOfflineSnapshot(true);
         setSaveError(null);
       } else {
         setSaveError(`Unable to load project: ${error.message}`);

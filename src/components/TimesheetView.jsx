@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import TimesheetPanel from './TimesheetPanel';
+import MobileSyncCenter from './MobileSyncCenter';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { createOfflineTempId, isOfflineTempId, readLocalJson, writeLocalJson } from '../utils/offlineState';
+import { createOfflineTempId, isOfflineTempId, readLocalJson, readOfflineJson, writeLocalJson } from '../utils/offlineState';
 import { enqueueCreate, enqueueDelete, enqueueUpdate, replaceQueuedTargetId } from '../utils/offlineQueue';
 import { loadXLSX } from '../utils/importParsers';
 import { normalizeProjectRecord } from '../utils/projectSharing';
@@ -73,6 +74,10 @@ const createEmptyTimesheetOfflineState = () => ({
 
 const loadTimesheetOfflineState = (userId) => (
   readLocalJson(buildTimesheetOfflineKey(userId), createEmptyTimesheetOfflineState())
+);
+
+const loadTimesheetOfflineStateAsync = async (userId) => (
+  readOfflineJson(buildTimesheetOfflineKey(userId), createEmptyTimesheetOfflineState())
 );
 
 const saveTimesheetOfflineState = (userId, state) => {
@@ -217,6 +222,31 @@ export default function TimesheetView({
         setViewMode(cachedState.viewMode);
       }
     }
+
+    let active = true;
+    void loadTimesheetOfflineStateAsync(currentUserId).then((preferredState) => {
+      if (!active || !preferredState) return;
+      if (preferredState.projects?.length) {
+        setProjects(preferredState.projects);
+      }
+      setOfflineQueue(Array.isArray(preferredState.queue) ? preferredState.queue : []);
+      setLastSyncedAt(preferredState.lastSyncedAt || '');
+      if (!currentProject?.id || currentProject?.is_demo) {
+        if (preferredState.weekStart) {
+          setWeekStart(preferredState.weekStart);
+        }
+        if (preferredState.selectedProjectId) {
+          setSelectedProjectId(preferredState.selectedProjectId);
+        }
+        if (preferredState.viewMode) {
+          setViewMode(preferredState.viewMode);
+        }
+      }
+    });
+
+    return () => {
+      active = false;
+    };
   }, [currentProject?.id, currentProject?.is_demo, currentUserId]);
 
   const loadProjects = useCallback(async () => {
@@ -225,7 +255,7 @@ export default function TimesheetView({
     setLoadingProjects(true);
     setProjectLoadError('');
 
-    const cachedState = loadTimesheetOfflineState(currentUserId);
+    const cachedState = await loadTimesheetOfflineStateAsync(currentUserId);
     if (cachedState.projects?.length) {
       setProjects(cachedState.projects);
     }
@@ -316,7 +346,7 @@ export default function TimesheetView({
     setEntryError('');
     setSuccessMessage('');
 
-    const cachedState = loadTimesheetOfflineState(currentUserId);
+    const cachedState = await loadTimesheetOfflineStateAsync(currentUserId);
     const cachedEntries = cachedState.entriesByWeek?.[weekStart] || [];
     if (cachedEntries.length) {
       setEntries(sortEntries(cachedEntries));
@@ -874,48 +904,94 @@ export default function TimesheetView({
       ? 'This week stays cached on this device once it loads.'
       : 'You are working from the last cached copy on this device.';
   }, [isOnline, lastSyncedAt, offlineQueue.length, syncingQueue]);
+  const syncCenterItems = useMemo(() => {
+    const items = [
+      {
+        id: 'connection',
+        label: isOnline ? 'Connection available' : 'Offline mode',
+        detail: isOnline
+          ? 'Queued Timesheet changes will sync now that the connection is back.'
+          : 'You can keep logging time from the cached week on this device.',
+        status: isOnline ? 'ok' : 'offline',
+        statusLabel: isOnline ? 'Online' : 'Offline',
+      },
+    ];
+
+    if (offlineQueue.length > 0) {
+      items.push({
+        id: 'queue',
+        label: `${offlineQueue.length} Timesheet change${offlineQueue.length === 1 ? '' : 's'} waiting`,
+        detail: syncingQueue
+          ? 'The queued entries are being pushed to the server now.'
+          : 'These entries stay on your phone and will sync automatically.',
+        status: syncingQueue ? 'syncing' : 'queue',
+        statusLabel: syncingQueue ? 'Syncing' : 'Queued',
+      });
+    }
+
+    if (lastSyncedAt) {
+      items.push({
+        id: 'last-sync',
+        label: 'Last successful sync',
+        detail: formatSyncTimeLabel(lastSyncedAt),
+        status: 'ok',
+        statusLabel: 'Saved',
+      });
+    }
+
+    return items;
+  }, [isOnline, lastSyncedAt, offlineQueue.length, syncingQueue]);
 
   return (
-    <TimesheetPanel
-      currentUserId={currentUserId}
-      currentProject={currentProject}
-      projects={trackProjects}
-      recentProjects={recentProjects}
-      weekStart={weekStart}
-      onPreviousWeek={() => setWeekStart(toWeekStartIso(addWeeks(weekStart, -1)))}
-      onNextWeek={() => setWeekStart(toWeekStartIso(addWeeks(weekStart, 1)))}
-      onThisWeek={() => setWeekStart(toWeekStartIso(new Date()))}
-      selectedProjectId={selectedProjectId}
-      onSelectProject={handleSelectProject}
-      selectedProject={selectedProject}
-      viewMode={viewMode}
-      onViewModeChange={setViewMode}
-      activeEntry={activeEntry}
-      duplicateDraft={duplicateDraft}
-      visibleEntries={visibleEntries}
-      summaryRows={summaryRows}
-      totalMinutes={weeklyTotalMinutes}
-      schemaReady={schemaReady}
-      loading={loadingProjects || loadingEntries}
-      saving={saving}
-      downloadingReport={downloadingReport}
-      deletingEntryId={deletingEntryId}
-      projectLoadError={projectLoadError}
-      entryError={entryError}
-      successMessage={syncingQueue ? 'Syncing offline Timesheet changes…' : successMessage}
-      offlineStatusLabel={offlineStatusLabel}
-      offlineQueueCount={offlineQueue.length}
-      entrySyncStateById={entrySyncStateById}
-      composer={composer}
-      onComposerChange={handleComposerChange}
-      onSubmit={handleSubmit}
-      onResetComposer={resetComposer}
-      onDeleteEntry={handleDeleteEntry}
-      onDownloadReport={handleDownloadReport}
-      onSelectEntry={handleSelectEntry}
-      onDuplicateEntry={handleDuplicateEntry}
-      onPlaceDuplicateDraft={handlePlaceDuplicateDraft}
-      onBackToProject={onBackToProject}
-    />
+    <>
+      <TimesheetPanel
+        currentUserId={currentUserId}
+        currentProject={currentProject}
+        projects={trackProjects}
+        recentProjects={recentProjects}
+        weekStart={weekStart}
+        onPreviousWeek={() => setWeekStart(toWeekStartIso(addWeeks(weekStart, -1)))}
+        onNextWeek={() => setWeekStart(toWeekStartIso(addWeeks(weekStart, 1)))}
+        onThisWeek={() => setWeekStart(toWeekStartIso(new Date()))}
+        selectedProjectId={selectedProjectId}
+        onSelectProject={handleSelectProject}
+        selectedProject={selectedProject}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        activeEntry={activeEntry}
+        duplicateDraft={duplicateDraft}
+        visibleEntries={visibleEntries}
+        summaryRows={summaryRows}
+        totalMinutes={weeklyTotalMinutes}
+        schemaReady={schemaReady}
+        loading={loadingProjects || loadingEntries}
+        saving={saving}
+        downloadingReport={downloadingReport}
+        deletingEntryId={deletingEntryId}
+        projectLoadError={projectLoadError}
+        entryError={entryError}
+        successMessage={syncingQueue ? 'Syncing offline Timesheet changes…' : successMessage}
+        offlineStatusLabel={offlineStatusLabel}
+        offlineQueueCount={offlineQueue.length}
+        entrySyncStateById={entrySyncStateById}
+        composer={composer}
+        onComposerChange={handleComposerChange}
+        onSubmit={handleSubmit}
+        onResetComposer={resetComposer}
+        onDeleteEntry={handleDeleteEntry}
+        onDownloadReport={handleDownloadReport}
+        onSelectEntry={handleSelectEntry}
+        onDuplicateEntry={handleDuplicateEntry}
+        onPlaceDuplicateDraft={handlePlaceDuplicateDraft}
+        onBackToProject={onBackToProject}
+      />
+      <MobileSyncCenter
+        shouldShow={!isOnline || syncingQueue || offlineQueue.length > 0}
+        title="Timesheet sync"
+        summary={offlineStatusLabel}
+        queueCount={offlineQueue.length}
+        items={syncCenterItems}
+      />
+    </>
   );
 }

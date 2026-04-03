@@ -9,9 +9,10 @@ import {
   mapManualTodoRow,
 } from '../hooks/projectData/manualTodoUtils';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { createOfflineTempId, isOfflineTempId, readLocalJson, writeLocalJson } from '../utils/offlineState';
+import { createOfflineTempId, isOfflineTempId, readLocalJson, readOfflineJson, writeLocalJson } from '../utils/offlineState';
 import { enqueueCreate, enqueueDelete, enqueueUpdate, replaceQueuedTargetId } from '../utils/offlineQueue';
 import { normalizeProjectRecord } from '../utils/projectSharing';
+import MobileSyncCenter from './MobileSyncCenter';
 import ProjectShareModal from './ProjectShareModal';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
@@ -319,6 +320,10 @@ const loadShoppingOfflineState = (userId) => (
   readLocalJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState())
 );
 
+const loadShoppingOfflineStateAsync = async (userId) => (
+  readOfflineJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState())
+);
+
 const saveShoppingOfflineState = (userId, state) => {
   writeLocalJson(buildShoppingOfflineKey(userId), {
     ...createEmptyShoppingOfflineState(),
@@ -428,6 +433,23 @@ export default function ShoppingListView({ currentUserId }) {
     }
     setOfflineQueue(Array.isArray(cachedState.queue) ? cachedState.queue : []);
     setLastSyncedAt(cachedState.lastSyncedAt || '');
+
+    let active = true;
+    void loadShoppingOfflineStateAsync(currentUserId).then((preferredState) => {
+      if (!active || !preferredState) return;
+      if (preferredState.projects?.length) {
+        setProjects(preferredState.projects);
+      }
+      if (preferredState.selectedProjectId) {
+        setSelectedProjectId((current) => current || preferredState.selectedProjectId);
+      }
+      setOfflineQueue(Array.isArray(preferredState.queue) ? preferredState.queue : []);
+      setLastSyncedAt(preferredState.lastSyncedAt || '');
+    });
+
+    return () => {
+      active = false;
+    };
   }, [currentUserId]);
 
   const createShoppingProject = useCallback(async () => {
@@ -476,7 +498,7 @@ export default function ShoppingListView({ currentUserId }) {
     setLoadingProjects(true);
     setProjectError('');
 
-    const cachedState = loadShoppingOfflineState(currentUserId);
+    const cachedState = await loadShoppingOfflineStateAsync(currentUserId);
     if (cachedState.projects?.length) {
       setProjects(cachedState.projects);
       if (cachedState.selectedProjectId) {
@@ -561,7 +583,7 @@ export default function ShoppingListView({ currentUserId }) {
     setLoadingTodos(true);
     setTodoError('');
 
-    const cachedState = loadShoppingOfflineState(currentUserId);
+    const cachedState = await loadShoppingOfflineStateAsync(currentUserId);
     const cachedTodos = cachedState.todosByProject?.[selectedProject.id] || [];
     if (cachedTodos.length > 0) {
       setTodos(sortTodos(cachedTodos));
@@ -1218,6 +1240,56 @@ export default function ShoppingListView({ currentUserId }) {
       ? 'This list stays cached once it has loaded on this device.'
       : 'Using the last cached list on this device.';
   }, [isOnline, lastSyncedAt, offlineQueue.length, syncingQueue]);
+  const syncCenterItems = useMemo(() => {
+    const items = [
+      {
+        id: 'connection',
+        label: isOnline ? 'Connection available' : 'Offline mode',
+        detail: isOnline
+          ? 'Queued grocery changes will sync now that the connection is back.'
+          : 'You can keep adding and ticking off groceries from the cached list.',
+        status: isOnline ? 'ok' : 'offline',
+        statusLabel: isOnline ? 'Online' : 'Offline',
+      },
+    ];
+
+    if (offlineQueue.length > 0) {
+      items.push({
+        id: 'queue',
+        label: `${offlineQueue.length} grocery change${offlineQueue.length === 1 ? '' : 's'} waiting`,
+        detail: syncingQueue
+          ? 'Your queued grocery updates are being pushed to the shared list now.'
+          : 'These grocery changes are safe on this phone and will sync automatically.',
+        status: syncingQueue ? 'syncing' : 'queue',
+        statusLabel: syncingQueue ? 'Syncing' : 'Queued',
+      });
+    }
+
+    if (failedTodoId) {
+      const failedTodo = todos.find((todo) => todo._id === failedTodoId);
+      items.push({
+        id: 'failed',
+        label: failedTodo ? `Could not save ${failedTodo.title}` : 'One grocery needs attention',
+        detail: failedTodoMessage || 'Retry this change when the connection settles.',
+        status: 'error',
+        statusLabel: 'Needs retry',
+        actionLabel: failedTodo ? 'Retry item' : '',
+        onAction: failedTodo ? () => retryTodoAction(failedTodo) : undefined,
+      });
+    }
+
+    if (lastSyncedAt) {
+      items.push({
+        id: 'last-sync',
+        label: 'Last successful sync',
+        detail: formatSyncTimeLabel(lastSyncedAt),
+        status: 'ok',
+        statusLabel: 'Saved',
+      });
+    }
+
+    return items;
+  }, [failedTodoId, failedTodoMessage, isOnline, lastSyncedAt, offlineQueue.length, retryTodoAction, syncingQueue, todos]);
 
   const stopListening = useCallback(() => {
     manualVoiceStopRef.current = true;
@@ -1812,6 +1884,13 @@ export default function ShoppingListView({ currentUserId }) {
         project={selectedProject}
         onClose={() => setShareOpen(false)}
         onMembershipChanged={loadProjects}
+      />
+      <MobileSyncCenter
+        shouldShow={!isOnline || syncingQueue || offlineQueue.length > 0 || Boolean(failedTodoId)}
+        title="Shopping sync"
+        summary={shoppingSyncSummary}
+        queueCount={offlineQueue.length}
+        items={syncCenterItems}
       />
     </>
   );
