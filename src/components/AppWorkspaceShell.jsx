@@ -159,7 +159,7 @@ export function AuthenticatedShoppingShell({
   );
 }
 
-export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onBackToProjects, isOnline }) {
+export function MainApp({ project, currentUserId, currentUserName, accentTheme, onAccentThemeChange, onBackToProjects, isOnline }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const {
     canUseAiReport, aiReportsRemaining, incrementAiReports,
@@ -277,21 +277,25 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
   }, [quickCaptureStatus]);
 
   const quickCaptureSuggestion = useMemo(
-    () => suggestCaptureRoute(quickCaptureText, activeTab === 'actions' ? 'action' : 'task'),
-    [activeTab, quickCaptureText]
+    () => suggestCaptureRoute(
+      quickCaptureText,
+      activeTab === 'actions' ? 'action' : 'task',
+      { today: getCurrentDate(), selfOwnerName: currentUserName }
+    ),
+    [activeTab, currentUserName, quickCaptureText]
   );
 
   const activeCaptureRoute = useMemo(
     () => (quickCaptureMode === 'smart'
       ? quickCaptureSuggestion
       : {
+          ...quickCaptureSuggestion,
           type: quickCaptureMode,
-          cleanedText: String(quickCaptureText || '').trim(),
           reason: '',
           viaPrefix: false,
           meta: getCaptureRouteMeta(quickCaptureMode),
         }),
-    [quickCaptureMode, quickCaptureSuggestion, quickCaptureText]
+    [quickCaptureMode, quickCaptureSuggestion]
   );
 
   const handleOpenQuickCapture = useCallback(() => {
@@ -314,6 +318,12 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
 
     try {
       const routeType = activeCaptureRoute.type;
+      const captureDueDate = ['task', 'action', 'issue'].includes(routeType)
+        ? (activeCaptureRoute.dueDate || '')
+        : '';
+      const captureOwner = ['task', 'action', 'issue', 'risk', 'decision'].includes(routeType)
+        ? (activeCaptureRoute.ownerText || '')
+        : '';
 
       if (routeType === 'action') {
         const today = getCurrentDate();
@@ -333,12 +343,12 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
                 rowColor: null,
                 number: String(nextNumber),
                 category: 'Quick capture',
-                actionassignedto: '',
+                actionassignedto: captureOwner,
                 description: trimmedText,
                 currentstatus: 'Captured on mobile',
                 status: 'Open',
                 raised: today,
-                target: '',
+                target: captureDueDate,
                 update: today,
                 completed: '',
                 createdAt: ts,
@@ -356,8 +366,8 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
       } else if (routeType === 'task') {
         await addTodo({
           title: trimmedText,
-          dueDate: '',
-          owner: '',
+          dueDate: captureDueDate,
+          owner: captureOwner,
           projectId: project.id,
         });
         setQuickCaptureStatus(
@@ -388,7 +398,7 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
               mitigationaction: '',
               notes: 'Captured on mobile',
               raised: today,
-              owner: '',
+              owner: captureOwner,
               level: 'Medium',
               createdAt: ts,
               updatedAt: ts,
@@ -403,12 +413,12 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
               public: true,
               rowColor: null,
               number: String(current.length + 1),
-              issueassignedto: '',
+              issueassignedto: captureOwner,
               description: trimmedText,
               currentstatus: 'Captured on mobile',
               status: 'Open',
               raised: today,
-              target: '',
+              target: captureDueDate,
               update: today,
               completed: '',
               createdAt: ts,
@@ -425,7 +435,7 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
               rowColor: null,
               number: String(current.length + 1),
               decision: trimmedText,
-              decidedby: '',
+              decidedby: captureOwner,
               dateraised: today,
               datedecided: '',
               rationale: '',
@@ -1176,12 +1186,14 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
           isOnline={isOnline}
           projectName={project.name}
           statusMessage={quickCaptureStatus}
-          routeLabel={activeCaptureRoute.meta.label}
-          routeDestination={activeCaptureRoute.meta.destination}
-          routeReason={quickCaptureMode === 'smart' ? quickCaptureSuggestion.reason : ''}
-          onOpen={handleOpenQuickCapture}
-          onClose={handleCloseQuickCapture}
-          onModeChange={setQuickCaptureMode}
+        routeLabel={activeCaptureRoute.meta.label}
+        routeDestination={activeCaptureRoute.meta.destination}
+        routeReason={quickCaptureMode === 'smart' ? quickCaptureSuggestion.reason : ''}
+        routeDueDate={['task', 'action', 'issue'].includes(activeCaptureRoute.type) ? activeCaptureRoute.dueDate : ''}
+        routeOwnerText={['task', 'action', 'issue', 'risk', 'decision'].includes(activeCaptureRoute.type) ? activeCaptureRoute.ownerText : ''}
+        onOpen={handleOpenQuickCapture}
+        onClose={handleCloseQuickCapture}
+        onModeChange={setQuickCaptureMode}
           onValueChange={setQuickCaptureText}
           onSubmit={handleSubmitQuickCapture}
         />

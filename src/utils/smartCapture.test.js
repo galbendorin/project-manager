@@ -29,3 +29,40 @@ test('suggestCaptureRoute falls back to task for general notes', () => {
   assert.equal(task.type, 'task');
   assert.equal(task.cleanedText, 'Update the RAID summary');
 });
+
+test('suggestCaptureRoute extracts due date and self owner details', () => {
+  const action = suggestCaptureRoute(
+    'Chase client sign-off tomorrow for me',
+    'task',
+    { today: '2026-04-03', selfOwnerName: 'Dorin Galben' }
+  );
+
+  assert.equal(action.type, 'action');
+  assert.equal(action.cleanedText, 'Chase client sign-off');
+  assert.equal(action.dueDate, '2026-04-04');
+  assert.equal(action.ownerText, 'Dorin Galben');
+});
+
+test('suggestCaptureRoute extracts weekday due dates from captures', () => {
+  const risk = suggestCaptureRoute(
+    'risk: supplier delay by Friday',
+    'task',
+    { today: '2026-04-01' }
+  );
+
+  assert.equal(risk.type, 'risk');
+  assert.equal(risk.cleanedText, 'supplier delay');
+  assert.equal(risk.dueDate, '2026-04-03');
+});
+
+test('suggestCaptureRoute extracts named owners from captures', () => {
+  const decision = suggestCaptureRoute(
+    'decision: move pilot to May for Alison',
+    'task',
+    { today: '2026-04-03' }
+  );
+
+  assert.equal(decision.type, 'decision');
+  assert.equal(decision.cleanedText, 'move pilot to May');
+  assert.equal(decision.ownerText, 'Alison');
+});

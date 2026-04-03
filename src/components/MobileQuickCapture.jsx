@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDate } from '../utils/helpers';
 
 export default function MobileQuickCapture({
   isOpen,
@@ -11,6 +12,8 @@ export default function MobileQuickCapture({
   routeLabel,
   routeDestination,
   routeReason,
+  routeDueDate,
+  routeOwnerText,
   onOpen,
   onClose,
   onModeChange,
@@ -131,6 +134,21 @@ export default function MobileQuickCapture({
               </div>
             ) : null}
 
+            {routeDueDate || routeOwnerText ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {routeDueDate ? (
+                  <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                    Due {formatDate(routeDueDate)}
+                  </span>
+                ) : null}
+                {routeOwnerText ? (
+                  <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                    Owner {routeOwnerText}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+
             <form
               className="mt-4 space-y-3"
               onSubmit={(event) => {
@@ -152,9 +170,9 @@ export default function MobileQuickCapture({
                   onChange={(event) => onValueChange(event.target.value)}
                   placeholder={
                     mode === 'smart'
-                      ? 'Try “risk: supplier delay” or “decision: move pilot to May”'
+                      ? 'Try “risk: supplier delay by Friday” or “chase sign-off tomorrow for me”'
                       : mode === 'action'
-                        ? 'Follow up on client note'
+                        ? 'Follow up on client note tomorrow'
                         : 'Remember to update the RAID log'
                   }
                   rows={3}

@@ -31,6 +31,20 @@ const renderLazyPage = (node, label) => (
   </Suspense>
 );
 
+const getUserDisplayName = (user) => {
+  const fullName = String(user?.user_metadata?.full_name || '').trim();
+  if (fullName) return fullName;
+
+  const localPart = String(user?.email || '').split('@')[0].trim();
+  if (!localPart) return '';
+
+  return localPart
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
 function App() {
   const { user, loading: authLoading, signOut, isPasswordRecovery } = useAuth();
   const checkoutStatus = useCheckoutStatus();
@@ -174,6 +188,7 @@ function App() {
         <MainApp
           project={currentProject}
           currentUserId={user.id}
+          currentUserName={getUserDisplayName(user)}
           accentTheme={accentTheme}
           onAccentThemeChange={setAccentTheme}
           isOnline={isOnline}
