@@ -38,7 +38,8 @@ import {
 import { openFeedbackEmail } from '../utils/feedback';
 import AccentThemePicker from './AccentThemePicker';
 import MobileQuickCapture from './MobileQuickCapture';
-import { getCaptureRouteMeta, suggestCaptureRoute } from '../utils/smartCapture';
+import MobileSyncCenter from './MobileSyncCenter';
+import { getCaptureRouteMeta, splitSmartCaptureInput, suggestCaptureRoute, summarizeCaptureRoutes } from '../utils/smartCapture';
 
 const ScheduleView = lazy(() => import('./ScheduleView'));
 const RegisterView = lazy(() => import('./RegisterView'));
@@ -185,6 +186,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
   const [quickCaptureText, setQuickCaptureText] = useState('');
   const [quickCaptureSaving, setQuickCaptureSaving] = useState(false);
   const [quickCaptureStatus, setQuickCaptureStatus] = useState('');
+  const [undoAction, setUndoAction] = useState(null);
 
   const hasByok = isAiConfigured(aiSettings);
   const usePlatformKey = effectivePlan && limits.canUseAi && !hasByok;
@@ -205,6 +207,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     remoteUpdateAvailable,
     offlinePendingSync,
     usingOfflineSnapshot,
+    pendingProjectSyncCount,
     addTask,
     updateTask,
     deleteTask,
@@ -215,8 +218,10 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     setBaseline,
     clearBaseline,
     addRegisterItem,
+    addRegisterItems,
     updateRegisterItem,
     deleteRegisterItem,
+    restoreRegisterItem,
     toggleItemPublic,
     sendToTracker,
     addManualTrackerItem,
@@ -229,6 +234,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     updateTodo,
     deleteTodo,
     completeTodoFromView,
+    retryProjectSync,
     reloadProject,
     setProjectData,
     setRegisters
@@ -276,13 +282,28 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     return () => window.clearTimeout(timeoutId);
   }, [quickCaptureStatus]);
 
-  const quickCaptureSuggestion = useMemo(
-    () => suggestCaptureRoute(
+  useEffect(() => {
+    if (!undoAction) return undefined;
+    const timeoutId = window.setTimeout(() => setUndoAction(null), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [undoAction]);
+
+  const quickCaptureItems = useMemo(
+    () => splitSmartCaptureInput(
       quickCaptureText,
       activeTab === 'actions' ? 'action' : 'task',
       { today: getCurrentDate(), selfOwnerName: currentUserName }
     ),
     [activeTab, currentUserName, quickCaptureText]
+  );
+
+  const quickCaptureSuggestion = useMemo(
+    () => quickCaptureItems[0] || suggestCaptureRoute(
+      quickCaptureText,
+      activeTab === 'actions' ? 'action' : 'task',
+      { today: getCurrentDate(), selfOwnerName: currentUserName }
+    ),
+    [activeTab, currentUserName, quickCaptureItems, quickCaptureText]
   );
 
   const activeCaptureRoute = useMemo(
@@ -298,6 +319,11 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     [quickCaptureMode, quickCaptureSuggestion]
   );
 
+  const quickCaptureRouteBreakdown = useMemo(
+    () => (quickCaptureMode === 'smart' && quickCaptureItems.length > 1 ? summarizeCaptureRoutes(quickCaptureItems) : ''),
+    [quickCaptureItems, quickCaptureMode]
+  );
+
   const handleOpenQuickCapture = useCallback(() => {
     setQuickCaptureMode('smart');
     setQuickCaptureStatus('');
@@ -311,169 +337,189 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
   }, [quickCaptureSaving]);
 
   const handleSubmitQuickCapture = useCallback(async () => {
-    const trimmedText = String(activeCaptureRoute.cleanedText || quickCaptureText || '').trim();
-    if (!trimmedText || quickCaptureSaving) return;
+    const captureEntries = (quickCaptureMode === 'smart' ? quickCaptureItems : [activeCaptureRoute])
+      .map((item) => ({
+        ...item,
+        cleanedText: String(item?.cleanedText || '').trim(),
+      }))
+      .filter((item) => item.cleanedText);
+
+    if (captureEntries.length === 0 || quickCaptureSaving) return;
 
     setQuickCaptureSaving(true);
 
     try {
-      const routeType = activeCaptureRoute.type;
-      const captureDueDate = ['task', 'action', 'issue'].includes(routeType)
-        ? (activeCaptureRoute.dueDate || '')
-        : '';
-      const captureOwner = ['task', 'action', 'issue', 'risk', 'decision'].includes(routeType)
-        ? (activeCaptureRoute.ownerText || '')
-        : '';
+      const today = getCurrentDate();
+      const ts = new Date().toISOString();
+      const registerDrafts = {
+        actions: [],
+        risks: [],
+        issues: [],
+        decisions: [],
+        minutes: [],
+      };
+      const createdForUndo = [];
 
-      if (routeType === 'action') {
-        const today = getCurrentDate();
-        const ts = new Date().toISOString();
+      for (const item of captureEntries) {
+        const routeType = item.type;
+        const captureDueDate = ['task', 'action', 'issue'].includes(routeType)
+          ? (item.dueDate || '')
+          : '';
+        const captureOwner = ['task', 'action', 'issue', 'risk', 'decision'].includes(routeType)
+          ? (item.ownerText || '')
+          : '';
 
-        setRegisters((prev) => {
-          const currentActions = Array.isArray(prev.actions) ? prev.actions : [];
-          const nextNumber = currentActions.length + 1;
-          return {
-            ...prev,
-            actions: [
-              ...currentActions,
-              {
-                _id: `quick_action_${Date.now()}`,
-                visible: true,
-                public: true,
-                rowColor: null,
-                number: String(nextNumber),
-                category: 'Quick capture',
-                actionassignedto: captureOwner,
-                description: trimmedText,
-                currentstatus: 'Captured on mobile',
-                status: 'Open',
-                raised: today,
-                target: captureDueDate,
-                update: today,
-                completed: '',
-                createdAt: ts,
-                updatedAt: ts,
-              }
-            ]
-          };
-        });
-
-        setQuickCaptureStatus(
-          isOnline
-            ? 'Action added to the project.'
-            : 'Action saved offline. It will sync when your connection returns.'
-        );
-      } else if (routeType === 'task') {
-        await addTodo({
-          title: trimmedText,
-          dueDate: captureDueDate,
-          owner: captureOwner,
-          projectId: project.id,
-        });
-        setQuickCaptureStatus(
-          isOnline
-            ? 'Task added to the project.'
-            : 'Task saved offline. It will sync when your connection returns.'
-        );
-      } else {
-        const today = getCurrentDate();
-        const ts = new Date().toISOString();
-
-        setRegisters((prev) => {
-          const appendItem = (registerType, item) => ({
-            ...prev,
-            [registerType]: [...(prev[registerType] || []), item]
+        if (routeType === 'task') {
+          const savedTodo = await addTodo({
+            title: item.cleanedText,
+            dueDate: captureDueDate,
+            owner: captureOwner,
+            projectId: project.id,
           });
-
-          if (routeType === 'risk') {
-            const current = Array.isArray(prev.risks) ? prev.risks : [];
-            return appendItem('risks', {
-              _id: `quick_risk_${Date.now()}`,
-              visible: true,
-              public: true,
-              rowColor: null,
-              number: String(current.length + 1),
-              category: 'Quick capture',
-              riskdetails: trimmedText,
-              mitigationaction: '',
-              notes: 'Captured on mobile',
-              raised: today,
-              owner: captureOwner,
-              level: 'Medium',
-              createdAt: ts,
-              updatedAt: ts,
-            });
+          if (savedTodo?._id) {
+            createdForUndo.push({ kind: 'task', item: savedTodo });
           }
+          continue;
+        }
 
-          if (routeType === 'issue') {
-            const current = Array.isArray(prev.issues) ? prev.issues : [];
-            return appendItem('issues', {
-              _id: `quick_issue_${Date.now()}`,
-              visible: true,
-              public: true,
-              rowColor: null,
-              number: String(current.length + 1),
-              issueassignedto: captureOwner,
-              description: trimmedText,
-              currentstatus: 'Captured on mobile',
-              status: 'Open',
-              raised: today,
-              target: captureDueDate,
-              update: today,
-              completed: '',
-              createdAt: ts,
-              updatedAt: ts,
-            });
-          }
-
-          if (routeType === 'decision') {
-            const current = Array.isArray(prev.decisions) ? prev.decisions : [];
-            return appendItem('decisions', {
-              _id: `quick_decision_${Date.now()}`,
-              visible: true,
-              public: true,
-              rowColor: null,
-              number: String(current.length + 1),
-              decision: trimmedText,
-              decidedby: captureOwner,
-              dateraised: today,
-              datedecided: '',
-              rationale: '',
-              impact: '',
-              status: 'Open',
-              createdAt: ts,
-              updatedAt: ts,
-            });
-          }
-
-          const current = Array.isArray(prev.minutes) ? prev.minutes : [];
-          return appendItem('minutes', {
-            _id: `quick_meeting_${Date.now()}`,
+        if (routeType === 'action') {
+          registerDrafts.actions.push({
+            _id: `quick_action_${Date.now()}_${registerDrafts.actions.length}`,
             visible: true,
             public: true,
             rowColor: null,
-            number: String(current.length + 1),
+            category: 'Quick capture',
+            actionassignedto: captureOwner,
+            description: item.cleanedText,
+            currentstatus: 'Captured on mobile',
+            status: 'Open',
+            raised: today,
+            target: captureDueDate,
+            update: today,
+            completed: '',
+            createdAt: ts,
+            updatedAt: ts,
+          });
+          continue;
+        }
+
+        if (routeType === 'risk') {
+          registerDrafts.risks.push({
+            _id: `quick_risk_${Date.now()}_${registerDrafts.risks.length}`,
+            visible: true,
+            public: true,
+            rowColor: null,
+            category: 'Quick capture',
+            riskdetails: item.cleanedText,
+            mitigationaction: '',
+            notes: 'Captured on mobile',
+            raised: today,
+            owner: captureOwner,
+            level: 'Medium',
+            createdAt: ts,
+            updatedAt: ts,
+          });
+          continue;
+        }
+
+        if (routeType === 'issue') {
+          registerDrafts.issues.push({
+            _id: `quick_issue_${Date.now()}_${registerDrafts.issues.length}`,
+            visible: true,
+            public: true,
+            rowColor: null,
+            issueassignedto: captureOwner,
+            description: item.cleanedText,
+            currentstatus: 'Captured on mobile',
+            status: 'Open',
+            raised: today,
+            target: captureDueDate,
+            update: today,
+            completed: '',
+            createdAt: ts,
+            updatedAt: ts,
+          });
+          continue;
+        }
+
+        if (routeType === 'decision') {
+          registerDrafts.decisions.push({
+            _id: `quick_decision_${Date.now()}_${registerDrafts.decisions.length}`,
+            visible: true,
+            public: true,
+            rowColor: null,
+            decision: item.cleanedText,
+            decidedby: captureOwner,
             dateraised: today,
-            minutedescription: trimmedText,
+            datedecided: '',
+            rationale: '',
+            impact: '',
             status: 'Open',
             createdAt: ts,
             updatedAt: ts,
           });
-        });
+          continue;
+        }
 
-        setQuickCaptureStatus(
-          isOnline
-            ? `${activeCaptureRoute.meta.label} added to ${activeCaptureRoute.meta.destination}.`
-            : `${activeCaptureRoute.meta.label} saved offline. It will sync when your connection returns.`
-        );
+        registerDrafts.minutes.push({
+          _id: `quick_meeting_${Date.now()}_${registerDrafts.minutes.length}`,
+          visible: true,
+          public: true,
+          rowColor: null,
+          dateraised: today,
+          minutedescription: item.cleanedText,
+          status: 'Open',
+          createdAt: ts,
+          updatedAt: ts,
+        });
       }
+
+      Object.entries(registerDrafts).forEach(([registerType, entries]) => {
+        if (!entries.length) return;
+        const created = addRegisterItems(registerType, entries);
+        created.forEach((item) => {
+          createdForUndo.push({ kind: 'register', registerType, item });
+        });
+      });
+
+      if (createdForUndo.length > 0) {
+        setUndoAction({
+          message: createdForUndo.length === 1
+            ? 'Item captured.'
+            : `${createdForUndo.length} items captured.`,
+          actionLabel: 'Undo',
+          onUndo: async () => {
+            for (const created of [...createdForUndo].reverse()) {
+              if (created.kind === 'task') {
+                await deleteTodo(created.item._id);
+              } else if (created.kind === 'register') {
+                deleteRegisterItem(created.registerType, created.item._id);
+              }
+            }
+            setQuickCaptureStatus('Capture undone.');
+            setUndoAction(null);
+          },
+        });
+      }
+
+      const statusBase = quickCaptureMode === 'smart' && quickCaptureItems.length > 1
+        ? `Captured ${quickCaptureRouteBreakdown}.`
+        : isOnline
+          ? `${activeCaptureRoute.meta.label} added to ${activeCaptureRoute.meta.destination}.`
+          : `${activeCaptureRoute.meta.label} saved offline. It will sync when your connection returns.`;
+
+      setQuickCaptureStatus(
+        isOnline || quickCaptureMode !== 'smart' || quickCaptureItems.length <= 1
+          ? statusBase
+          : `Saved offline: ${quickCaptureRouteBreakdown}.`
+      );
 
       setQuickCaptureText('');
       setIsQuickCaptureOpen(false);
     } finally {
       setQuickCaptureSaving(false);
     }
-  }, [activeCaptureRoute, addTodo, isOnline, project.id, quickCaptureSaving, quickCaptureText, setRegisters]);
+  }, [activeCaptureRoute, addRegisterItems, addTodo, deleteRegisterItem, deleteTodo, isOnline, project.id, quickCaptureItems, quickCaptureMode, quickCaptureRouteBreakdown, quickCaptureSaving]);
 
   const activeModuleType = activeSubView || activeTab;
   const activeModuleCount = useMemo(() => {
@@ -483,6 +529,79 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     if (SCHEMAS[activeModuleType]) return (registers[activeModuleType] || []).length;
     return null;
   }, [activeModuleType, projectData.length, registers, todos.length, tracker.length]);
+
+  const handleAddRegisterEntry = useCallback(() => {
+    if (activeTab === 'todo') {
+      addTodo().then((createdTodo) => {
+        if (createdTodo?._id) {
+          setPendingTodoFocusId(createdTodo._id);
+          setUndoAction({
+            message: 'Task added.',
+            actionLabel: 'Undo',
+            onUndo: async () => {
+              await deleteTodo(createdTodo._id);
+              setUndoAction(null);
+            },
+          });
+        }
+      });
+      return;
+    }
+
+    if (activeTab === 'raci' || activeTab === 'tracker' || activeTab === 'statusreport') return;
+    const target = activeSubView || activeTab;
+    const createdItem = addRegisterItem(target);
+    if (createdItem?._id) {
+      setUndoAction({
+        message: `${SCHEMAS[target]?.title || 'Entry'} added.`,
+        actionLabel: 'Undo',
+        onUndo: () => {
+          deleteRegisterItem(target, createdItem._id);
+          setUndoAction(null);
+        },
+      });
+    }
+  }, [activeSubView, activeTab, addRegisterItem, addTodo, deleteRegisterItem, deleteTodo]);
+
+  const handleDeleteRegisterItemWithUndo = useCallback((registerType, itemId) => {
+    const deletedItem = deleteRegisterItem(registerType, itemId);
+    if (!deletedItem) return;
+
+    setUndoAction({
+      message: `${SCHEMAS[registerType]?.title || 'Entry'} removed.`,
+      actionLabel: 'Undo',
+      onUndo: () => {
+        restoreRegisterItem(registerType, deletedItem);
+        setUndoAction(null);
+      },
+    });
+  }, [deleteRegisterItem, restoreRegisterItem]);
+
+  const mobileProjectSyncItems = useMemo(() => {
+    const queueItem = pendingProjectSyncCount > 0 ? [{
+      id: 'project-queue',
+      label: `${pendingProjectSyncCount} project change${pendingProjectSyncCount === 1 ? '' : 's'} waiting`,
+      detail: isOnline
+        ? 'Your project edits will be pushed up as soon as the save completes.'
+        : 'These project edits are stored on this phone and will sync when signal returns.',
+      status: saving && isOnline ? 'syncing' : isOnline ? 'queue' : 'offline',
+      statusLabel: saving && isOnline ? 'Syncing' : isOnline ? 'Queued' : 'Offline',
+      actionLabel: isOnline && !saving ? 'Retry sync' : '',
+      onAction: isOnline && !saving ? retryProjectSync : undefined,
+    }] : [];
+
+    const errorItem = saveError && pendingProjectSyncCount > 0 ? [{
+      id: 'project-error',
+      label: 'Project sync needs attention',
+      detail: saveError,
+      status: 'error',
+      statusLabel: 'Error',
+      actionLabel: saveConflict ? 'Reload latest' : 'Retry sync',
+      onAction: saveConflict ? reloadProject : retryProjectSync,
+    }] : [];
+
+    return [...errorItem, ...queueItem];
+  }, [isOnline, pendingProjectSyncCount, reloadProject, retryProjectSync, saveConflict, saveError, saving]);
 
   const handleLoadDemoData = useCallback(() => {
     const proceed = window.confirm(
@@ -955,8 +1074,10 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
             <span className={`shrink-0 flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' || importStatus === 'Exporting...' || importStatus === 'Exporting AI report...' ? 'text-blue-400' : 'text-amber-400'}`}>
               {importStatus}
             </span>
-          ) : !isOnline && offlinePendingSync ? (
-            <span className="shrink-0 text-amber-300 whitespace-nowrap">Offline changes queued</span>
+          ) : pendingProjectSyncCount > 0 && !isOnline ? (
+            <span className="shrink-0 text-amber-300 whitespace-nowrap">
+              {pendingProjectSyncCount} project change{pendingProjectSyncCount === 1 ? '' : 's'} queued
+            </span>
           ) : saveConflict ? (
             <div className="shrink-0 flex items-center gap-2">
               <span className="text-rose-400 whitespace-nowrap">Save conflict detected</span>
@@ -978,6 +1099,32 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
               >
                 Reload Latest
               </button>
+            </div>
+          ) : pendingProjectSyncCount > 0 && isOnline && !saving && !saveError ? (
+            <div className="shrink-0 flex items-center gap-2">
+              <span className="text-sky-300 whitespace-nowrap">
+                {pendingProjectSyncCount} project change{pendingProjectSyncCount === 1 ? '' : 's'} ready to sync
+              </span>
+              <button
+                onClick={retryProjectSync}
+                className="px-2 py-1 text-[11px] bg-sky-500 hover:bg-sky-600 text-slate-950 rounded transition-colors"
+                title="Push the queued project changes now"
+              >
+                Retry sync
+              </button>
+            </div>
+          ) : saveError && pendingProjectSyncCount > 0 ? (
+            <div className="shrink-0 flex items-center gap-2">
+              <span className="text-rose-400 whitespace-nowrap" title={saveError}>Project sync failed</span>
+              {!saveConflict ? (
+                <button
+                  onClick={retryProjectSync}
+                  className="px-2 py-1 text-[11px] bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors"
+                  title="Retry syncing your queued project changes"
+                >
+                  Retry sync
+                </button>
+              ) : null}
             </div>
           ) : saveError ? (
             <span className="shrink-0 text-rose-400 whitespace-nowrap" title={saveError}>Save failed</span>
@@ -1011,19 +1158,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
         onNewTask={() => handleOpenModal()}
         onOpenPricing={handleOpenPricing}
         onOpenBilling={handleOpenBilling}
-        onAddRegisterItem={() => {
-          if (activeTab === 'todo') {
-            addTodo().then((createdTodo) => {
-              if (createdTodo?._id) {
-                setPendingTodoFocusId(createdTodo._id);
-              }
-            });
-            return;
-          }
-          if (activeTab === 'raci' || activeTab === 'tracker' || activeTab === 'statusreport') return;
-          const target = activeSubView || activeTab;
-          addRegisterItem(target);
-        }}
+        onAddRegisterItem={handleAddRegisterEntry}
         addEntryLabel={
           activeTab === 'todo'
             ? 'Add Task'
@@ -1138,7 +1273,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
                 registers={registers}
                 isExternalView={isExternalView}
                 onUpdateItem={updateRegisterItem}
-                onDeleteItem={deleteRegisterItem}
+                onDeleteItem={handleDeleteRegisterItemWithUndo}
                 onTogglePublic={toggleItemPublic}
                 onSubViewChange={setActiveSubView}
               />
@@ -1149,7 +1284,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
                 registers={registers}
                 isExternalView={isExternalView}
                 onUpdateItem={updateRegisterItem}
-                onDeleteItem={deleteRegisterItem}
+                onDeleteItem={handleDeleteRegisterItemWithUndo}
                 onTogglePublic={toggleItemPublic}
                 onSubViewChange={setActiveSubView}
               />
@@ -1169,7 +1304,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
                 items={registers[activeTab] || []}
                 isExternalView={isExternalView}
                 onUpdateItem={updateRegisterItem}
-                onDeleteItem={deleteRegisterItem}
+                onDeleteItem={handleDeleteRegisterItemWithUndo}
                 onTogglePublic={toggleItemPublic}
               />
             </BlurOverlay>
@@ -1189,6 +1324,8 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
         routeLabel={activeCaptureRoute.meta.label}
         routeDestination={activeCaptureRoute.meta.destination}
         routeReason={quickCaptureMode === 'smart' ? quickCaptureSuggestion.reason : ''}
+        routeBreakdown={quickCaptureRouteBreakdown}
+        routeConfidenceLabel={quickCaptureMode === 'smart' ? activeCaptureRoute.confidenceMeta?.label : ''}
         routeDueDate={['task', 'action', 'issue'].includes(activeCaptureRoute.type) ? activeCaptureRoute.dueDate : ''}
         routeOwnerText={['task', 'action', 'issue', 'risk', 'decision'].includes(activeCaptureRoute.type) ? activeCaptureRoute.ownerText : ''}
         onOpen={handleOpenQuickCapture}
@@ -1197,6 +1334,33 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
           onValueChange={setQuickCaptureText}
           onSubmit={handleSubmitQuickCapture}
         />
+      ) : null}
+
+      <MobileSyncCenter
+        shouldShow={isMobile && (pendingProjectSyncCount > 0 || (saveError && pendingProjectSyncCount > 0))}
+        title="Project sync"
+        summary={
+          pendingProjectSyncCount > 0
+            ? `${pendingProjectSyncCount} project change${pendingProjectSyncCount === 1 ? '' : 's'} waiting to sync.`
+            : ''
+        }
+        queueCount={pendingProjectSyncCount}
+        items={mobileProjectSyncItems}
+      />
+
+      {undoAction ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[75] flex justify-center px-4">
+          <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-[0_24px_48px_-28px_rgba(15,23,42,0.4)] backdrop-blur">
+            <div className="min-w-0 flex-1 text-sm text-slate-700">{undoAction.message}</div>
+            <button
+              type="button"
+              onClick={undoAction.onUndo}
+              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700"
+            >
+              {undoAction.actionLabel || 'Undo'}
+            </button>
+          </div>
+        </div>
       ) : null}
 
       <AuthenticatedFooter className="flex-none" />

@@ -12,6 +12,8 @@ export default function MobileQuickCapture({
   routeLabel,
   routeDestination,
   routeReason,
+  routeBreakdown,
+  routeConfidenceLabel,
   routeDueDate,
   routeOwnerText,
   onOpen,
@@ -119,9 +121,16 @@ export default function MobileQuickCapture({
                   <span className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-500">
                     Smart route
                   </span>
-                  <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-700">
-                    {routeDestination}
-                  </span>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {routeConfidenceLabel ? (
+                      <span className="rounded-full border border-indigo-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        {routeConfidenceLabel}
+                      </span>
+                    ) : null}
+                    <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                      {routeDestination}
+                    </span>
+                  </div>
                 </div>
                 <p className="mt-1 text-sm font-medium text-slate-700">
                   {routeLabel}
@@ -129,6 +138,11 @@ export default function MobileQuickCapture({
                 {routeReason ? (
                   <p className="mt-1 text-xs leading-5 text-slate-600">
                     {routeReason}
+                  </p>
+                ) : null}
+                {routeBreakdown ? (
+                  <p className="mt-1 text-xs leading-5 text-indigo-700">
+                    Will split into {routeBreakdown}.
                   </p>
                 ) : null}
               </div>

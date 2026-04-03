@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { suggestCaptureRoute } from './smartCapture.js';
+import { splitSmartCaptureInput, suggestCaptureRoute, summarizeCaptureRoutes } from './smartCapture.js';
 
 test('suggestCaptureRoute respects explicit prefixes', () => {
   const decision = suggestCaptureRoute('decision: move pilot to May');
@@ -65,4 +65,41 @@ test('suggestCaptureRoute extracts named owners from captures', () => {
   assert.equal(decision.type, 'decision');
   assert.equal(decision.cleanedText, 'move pilot to May');
   assert.equal(decision.ownerText, 'Alison');
+});
+
+test('suggestCaptureRoute detects richer date and owner defaults', () => {
+  const action = suggestCaptureRoute(
+    'Chase supplier next Monday for team',
+    'task',
+    { today: '2026-04-03' }
+  );
+
+  assert.equal(action.type, 'action');
+  assert.equal(action.dueDate, '2026-04-06');
+  assert.equal(action.ownerText, 'Team');
+  assert.equal(action.confidence, 'medium');
+
+  const task = suggestCaptureRoute(
+    'Update launch checklist in 2 weeks for client',
+    'task',
+    { today: '2026-04-03' }
+  );
+
+  assert.equal(task.type, 'task');
+  assert.equal(task.dueDate, '2026-04-17');
+  assert.equal(task.ownerText, 'Client');
+  assert.equal(task.confidence, 'low');
+});
+
+test('splitSmartCaptureInput breaks rough notes into structured items', () => {
+  const items = splitSmartCaptureInput(
+    'meeting: weekly steerco\nrisk: supplier delay by Friday\ndecision: move pilot to May\nChase client sign-off tomorrow',
+    'task',
+    { today: '2026-04-03' }
+  );
+
+  assert.equal(items.length, 4);
+  assert.deepEqual(items.map((item) => item.type), ['meeting', 'risk', 'decision', 'action']);
+  assert.equal(items[1].dueDate, '2026-04-03');
+  assert.equal(summarizeCaptureRoutes(items), '1 Meeting note, 1 Risk, 1 Decision, 1 Action');
 });

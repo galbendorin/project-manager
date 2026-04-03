@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { calculateSchedule, getNextId, getCurrentDate, getFinishDate } from '../utils/helpers';
-import { DEFAULT_TASK } from '../utils/constants';
+import { DEFAULT_TASK, SCHEMAS } from '../utils/constants';
 import { buildDemoProjectPayload, buildDemoScheduleTasks } from '../utils/demoProjectBuilder';
 import { supabase } from '../lib/supabase';
 import { createEmptyRegisters, createEmptyStatusReport } from './projectData/defaults';
@@ -9,7 +9,7 @@ import {
   addTrackedActionIfMissing,
   removeTrackedAction,
   syncTrackedActionFromTask,
-  addRegisterItemToState,
+  buildRegisterItem,
   updateRegisterItemInState,
   patchRegisterItemInState,
   deleteRegisterItemFromState,
@@ -130,6 +130,51 @@ const applyQueuedTodoChanges = (baseTodos = [], queue = []) => {
   return next;
 };
 
+const STATUS_REPORT_FIELD_LABELS = {
+  overallRag: 'Overall RAG',
+  overallNarrative: 'Overall narrative',
+  mainRisks: 'Main risks',
+  mainIssues: 'Main issues',
+  deliverablesThisPeriod: 'Deliverables this period',
+  deliverablesNextPeriod: 'Deliverables next period',
+  additionalNotes: 'Additional notes',
+};
+
+const createProjectSyncOpId = () => (
+  typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID
+    ? globalThis.crypto.randomUUID()
+    : `project-sync-${Date.now()}-${Math.random().toString(16).slice(2)}`
+);
+
+const buildProjectSyncOp = ({ kind, targetKey, label, detail = '', createdAt = now() }) => ({
+  id: createProjectSyncOpId(),
+  kind,
+  targetKey,
+  label,
+  detail,
+  createdAt,
+});
+
+const enqueueProjectSyncOp = (queue = [], op) => {
+  const nextQueue = Array.isArray(queue) ? [...queue] : [];
+  if (!op?.targetKey) return [...nextQueue, op];
+
+  const replaceableKinds = new Set(['register-update', 'status-update']);
+  if (replaceableKinds.has(op.kind)) {
+    const existingIndex = nextQueue.findIndex((item) => item.targetKey === op.targetKey && item.kind === op.kind);
+    if (existingIndex !== -1) {
+      nextQueue[existingIndex] = {
+        ...nextQueue[existingIndex],
+        ...op,
+        id: nextQueue[existingIndex].id,
+      };
+      return nextQueue;
+    }
+  }
+
+  return [...nextQueue, op];
+};
+
 /**
  * Custom hook for managing project data (tasks, registers, tracker, status report, and todos)
  * With Supabase persistence, baseline support, and timestamps
@@ -154,6 +199,8 @@ export const useProjectData = (projectId, userId = null) => {
   const [usingOfflineSnapshot, setUsingOfflineSnapshot] = useState(false);
   const [todoQueue, setTodoQueue] = useState([]);
   const [todoQueueRetryToken, setTodoQueueRetryToken] = useState(0);
+  const [projectSyncQueue, setProjectSyncQueue] = useState([]);
+  const [projectSyncRetryToken, setProjectSyncRetryToken] = useState(0);
 
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef(null);
@@ -162,11 +209,16 @@ export const useProjectData = (projectId, userId = null) => {
   const todoQueueRef = useRef([]);
   const syncingTodoQueueRef = useRef(false);
   const todoQueueRetryTimeoutRef = useRef(null);
+  const projectSyncQueueRef = useRef([]);
   const snapshotKey = buildProjectSnapshotKey(projectId, userId || 'anon');
 
   useEffect(() => {
     todoQueueRef.current = todoQueue;
   }, [todoQueue]);
+
+  useEffect(() => {
+    projectSyncQueueRef.current = projectSyncQueue;
+  }, [projectSyncQueue]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -199,6 +251,7 @@ export const useProjectData = (projectId, userId = null) => {
 
     const cachedSnapshot = await readOfflineJson(snapshotKey, null);
     const cachedTodoQueue = Array.isArray(cachedSnapshot?.todoQueue) ? cachedSnapshot.todoQueue : [];
+    const cachedProjectSyncQueue = Array.isArray(cachedSnapshot?.projectSyncQueue) ? cachedSnapshot.projectSyncQueue : [];
     if (cachedSnapshot) {
       setProjectData(cachedSnapshot.tasks || []);
       setRegisters(cachedSnapshot.registers || createEmptyRegisters());
@@ -207,9 +260,10 @@ export const useProjectData = (projectId, userId = null) => {
       setStatusReport(cachedSnapshot.statusReport || createEmptyStatusReport());
       setTodos(cachedSnapshot.todos || []);
       setTodoQueue(cachedTodoQueue);
+      setProjectSyncQueue(cachedProjectSyncQueue);
       projectVersionRef.current = Number.isInteger(cachedSnapshot.version) ? cachedSnapshot.version : 1;
       setUsingOfflineSnapshot(true);
-      setOfflinePendingSync(cachedTodoQueue.length > 0);
+      setOfflinePendingSync(cachedTodoQueue.length > 0 || cachedProjectSyncQueue.length > 0);
       setLoadingData(false);
     }
 
@@ -253,9 +307,10 @@ export const useProjectData = (projectId, userId = null) => {
       }
 
       setTodoQueue(cachedTodoQueue);
+      setProjectSyncQueue(cachedProjectSyncQueue);
       projectVersionRef.current = normalizedState.version;
       setUsingOfflineSnapshot(false);
-      setOfflinePendingSync(cachedTodoQueue.length > 0);
+      setOfflinePendingSync(cachedTodoQueue.length > 0 || cachedProjectSyncQueue.length > 0);
       writeLocalJson(snapshotKey, {
         tasks: normalizedState.tasks,
         registers: normalizedState.registers,
@@ -264,6 +319,7 @@ export const useProjectData = (projectId, userId = null) => {
         statusReport: normalizedState.statusReport,
         todos: nextTodos,
         todoQueue: cachedTodoQueue,
+        projectSyncQueue: cachedProjectSyncQueue,
         version: normalizedState.version,
         cachedAt: now(),
       });
@@ -327,6 +383,7 @@ export const useProjectData = (projectId, userId = null) => {
         setRemoteUpdateAvailable(false);
         setOfflinePendingSync(false);
         setUsingOfflineSnapshot(false);
+        setProjectSyncQueue([]);
       } else if (!error && !data) {
         setSaveConflict(true);
         setSaveError('Save conflict detected. This project was changed in another tab or session. Click Reload Latest.');
@@ -342,7 +399,7 @@ export const useProjectData = (projectId, userId = null) => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict, isOnline]);
+  }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict, isOnline, projectSyncRetryToken]);
 
   useEffect(() => {
     if (!projectId || !initialLoadDone.current) return;
@@ -355,10 +412,11 @@ export const useProjectData = (projectId, userId = null) => {
       statusReport,
       todos,
       todoQueue,
+      projectSyncQueue,
       version: projectVersionRef.current,
       cachedAt: now(),
     });
-  }, [baseline, projectData, projectId, registers, snapshotKey, statusReport, todoQueue, todos, tracker]);
+  }, [baseline, projectData, projectId, projectSyncQueue, registers, snapshotKey, statusReport, todoQueue, todos, tracker]);
 
   // Warn user if they close the tab with unsaved changes
   useEffect(() => {
@@ -537,16 +595,27 @@ export const useProjectData = (projectId, userId = null) => {
   }, [projectId, userId, isOnline, todoQueue.length, todoQueueRetryToken]);
 
   useEffect(() => {
-    if (todoQueue.length === 0 && !saveTimeoutRef.current && !saving) {
+    if (todoQueue.length === 0 && projectSyncQueue.length === 0 && !saveTimeoutRef.current && !saving) {
       setOfflinePendingSync(false);
-    } else if (todoQueue.length > 0) {
+    } else if (todoQueue.length > 0 || projectSyncQueue.length > 0) {
       setOfflinePendingSync(true);
     }
-  }, [saving, todoQueue.length]);
+  }, [projectSyncQueue.length, saving, todoQueue.length]);
 
   const reloadProject = useCallback(async () => {
     await loadProject();
   }, [loadProject]);
+
+  const retryProjectSync = useCallback(() => {
+    setSaveConflict(false);
+    setSaveError(null);
+    setProjectSyncRetryToken((value) => value + 1);
+  }, []);
+
+  const queueProjectSyncOp = useCallback((op) => {
+    setProjectSyncQueue((prev) => enqueueProjectSyncOp(prev, op));
+    setOfflinePendingSync(true);
+  }, []);
 
   // Set baseline
   const setBaseline = useCallback(() => {
@@ -738,7 +807,13 @@ export const useProjectData = (projectId, userId = null) => {
 
   const updateStatusReport = useCallback((key, value) => {
     setStatusReport(prev => ({ ...prev, [key]: value }));
-  }, []);
+    queueProjectSyncOp(buildProjectSyncOp({
+      kind: 'status-update',
+      targetKey: `status:${key}`,
+      label: `Updated ${STATUS_REPORT_FIELD_LABELS[key] || key}`,
+      detail: 'Will sync to the project summary when saved.',
+    }));
+  }, [queueProjectSyncOp]);
 
   // ==================== TODO FUNCTIONS ====================
 
@@ -1033,21 +1108,128 @@ export const useProjectData = (projectId, userId = null) => {
 
   // Add register item — with timestamps
   const addRegisterItem = useCallback((registerType, itemData = {}) => {
-    setRegisters(prev => addRegisterItemToState(prev, registerType, itemData, now()));
-  }, []);
+    const ts = now();
+    const existingItems = Array.isArray(registers[registerType]) ? registers[registerType] : [];
+    const createdItem = buildRegisterItem(registerType, existingItems, itemData, ts);
+    if (!createdItem) return null;
+
+    setRegisters(prev => ({
+      ...prev,
+      [registerType]: [...(prev[registerType] || []), createdItem]
+    }));
+
+    const title = SCHEMAS[registerType]?.title || 'Register';
+    queueProjectSyncOp(buildProjectSyncOp({
+      kind: 'register-add',
+      targetKey: `register:${registerType}:${createdItem._id}`,
+      label: `Added ${title} item`,
+      detail: createdItem.description || createdItem.riskdetails || createdItem.decision || createdItem.minutedescription || createdItem.issue || '',
+      createdAt: ts,
+    }));
+
+    return createdItem;
+  }, [queueProjectSyncOp, registers]);
+
+  const addRegisterItems = useCallback((registerType, itemsData = []) => {
+    const entries = Array.isArray(itemsData) ? itemsData : [];
+    if (entries.length === 0) return [];
+
+    const ts = now();
+    const existingItems = Array.isArray(registers[registerType]) ? [...registers[registerType]] : [];
+    const createdItems = [];
+
+    for (const itemData of entries) {
+      const nextItem = buildRegisterItem(registerType, [...existingItems, ...createdItems], itemData, ts);
+      if (nextItem) createdItems.push(nextItem);
+    }
+
+    if (createdItems.length === 0) return [];
+
+    setRegisters(prev => ({
+      ...prev,
+      [registerType]: [...(prev[registerType] || []), ...createdItems]
+    }));
+
+    const title = SCHEMAS[registerType]?.title || 'Register';
+    queueProjectSyncOp(buildProjectSyncOp({
+      kind: 'register-add',
+      targetKey: `register:${registerType}:batch:${createdItems.map((item) => item._id).join(',')}`,
+      label: `Added ${createdItems.length} ${title} item${createdItems.length === 1 ? '' : 's'}`,
+      detail: createdItems.length === 1
+        ? (createdItems[0].description || createdItems[0].riskdetails || createdItems[0].decision || createdItems[0].minutedescription || '')
+        : '',
+      createdAt: ts,
+    }));
+
+    return createdItems;
+  }, [queueProjectSyncOp, registers]);
 
   // Update register item — stamp updatedAt
   const updateRegisterItem = useCallback((registerType, itemId, key, value) => {
-    setRegisters(prev => updateRegisterItemInState(prev, registerType, itemId, key, value, now()));
-  }, []);
+    const ts = now();
+    setRegisters(prev => updateRegisterItemInState(prev, registerType, itemId, key, value, ts));
+    const title = SCHEMAS[registerType]?.title || 'Register';
+    queueProjectSyncOp(buildProjectSyncOp({
+      kind: 'register-update',
+      targetKey: `register:${registerType}:${itemId}`,
+      label: `Updated ${title}`,
+      detail: `${key} changed`,
+      createdAt: ts,
+    }));
+  }, [queueProjectSyncOp]);
 
   const deleteRegisterItem = useCallback((registerType, itemId) => {
+    const deletedItem = (registers[registerType] || []).find((item) => item._id === itemId) || null;
     setRegisters(prev => deleteRegisterItemFromState(prev, registerType, itemId));
-  }, []);
+    if (deletedItem) {
+      const title = SCHEMAS[registerType]?.title || 'Register';
+      queueProjectSyncOp(buildProjectSyncOp({
+        kind: 'register-delete',
+        targetKey: `register:${registerType}:${itemId}:delete`,
+        label: `Deleted ${title} item`,
+        detail: deletedItem.description || deletedItem.riskdetails || deletedItem.decision || deletedItem.minutedescription || '',
+      }));
+    }
+    return deletedItem;
+  }, [queueProjectSyncOp, registers]);
+
+  const restoreRegisterItem = useCallback((registerType, itemData) => {
+    if (!itemData?._id) return null;
+    if ((registers[registerType] || []).some((item) => item._id === itemData._id)) return itemData;
+
+    const restoredItem = {
+      ...itemData,
+      updatedAt: now(),
+    };
+
+    setRegisters(prev => ({
+      ...prev,
+      [registerType]: [...(prev[registerType] || []), restoredItem]
+    }));
+
+    const title = SCHEMAS[registerType]?.title || 'Register';
+    queueProjectSyncOp(buildProjectSyncOp({
+      kind: 'register-add',
+      targetKey: `register:${registerType}:${restoredItem._id}:restore`,
+      label: `Restored ${title} item`,
+      detail: restoredItem.description || restoredItem.riskdetails || restoredItem.decision || restoredItem.minutedescription || '',
+    }));
+
+    return restoredItem;
+  }, [queueProjectSyncOp, registers]);
 
   const toggleItemPublic = useCallback((registerType, itemId) => {
-    setRegisters(prev => toggleRegisterItemPublicInState(prev, registerType, itemId, now()));
-  }, []);
+    const ts = now();
+    setRegisters(prev => toggleRegisterItemPublicInState(prev, registerType, itemId, ts));
+    const title = SCHEMAS[registerType]?.title || 'Register';
+    queueProjectSyncOp(buildProjectSyncOp({
+      kind: 'register-update',
+      targetKey: `register:${registerType}:${itemId}:visibility`,
+      label: `Updated ${title} visibility`,
+      detail: 'Visibility changed',
+      createdAt: ts,
+    }));
+  }, [queueProjectSyncOp]);
 
   return {
     projectData,
@@ -1063,8 +1245,10 @@ export const useProjectData = (projectId, userId = null) => {
     saveError,
     remoteUpdateAvailable,
     isOnline,
-    offlinePendingSync: offlinePendingSync || todoQueue.length > 0,
+    offlinePendingSync: offlinePendingSync || todoQueue.length > 0 || projectSyncQueue.length > 0,
     usingOfflineSnapshot,
+    projectSyncQueue,
+    pendingProjectSyncCount: projectSyncQueue.length,
     addTask,
     updateTask,
     deleteTask,
@@ -1077,8 +1261,10 @@ export const useProjectData = (projectId, userId = null) => {
     setBaseline,
     clearBaseline,
     addRegisterItem,
+    addRegisterItems,
     updateRegisterItem,
     deleteRegisterItem,
+    restoreRegisterItem,
     toggleItemPublic,
     sendToTracker,
     addManualTrackerItem,
@@ -1091,6 +1277,7 @@ export const useProjectData = (projectId, userId = null) => {
     updateTodo,
     deleteTodo,
     completeTodoFromView,
+    retryProjectSync,
     reloadProject,
     setProjectData,
     setRegisters,

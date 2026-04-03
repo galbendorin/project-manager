@@ -55,31 +55,46 @@ export const syncTrackedActionFromTask = (registers, task, nowIso) => {
   return { ...registers, actions: nextActions };
 };
 
-export const addRegisterItemToState = (registers, registerType, itemData, nowIso) => {
+export const buildRegisterItem = (registerType, existingItems = [], itemData = {}, nowIso) => {
   const schema = SCHEMAS[registerType];
-  if (!schema) return registers;
+  if (!schema) return null;
 
-  const existingItems = registers[registerType] || [];
   const newItem = {
-    _id: Date.now().toString(),
-    public: true,
-    visible: true,
+    _id: itemData._id || Date.now().toString(),
+    public: Object.prototype.hasOwnProperty.call(itemData, 'public') ? itemData.public : true,
+    visible: Object.prototype.hasOwnProperty.call(itemData, 'visible') ? itemData.visible : true,
     rowColor: itemData.rowColor || null,
-    createdAt: nowIso,
-    updatedAt: nowIso
+    createdAt: itemData.createdAt || nowIso,
+    updatedAt: itemData.updatedAt || nowIso
   };
 
   schema.cols.forEach((col) => {
     const key = keyGen(col);
     if (col === 'Visible') return;
     if (col === 'Number') {
-      newItem[key] = existingItems.length + 1;
+      newItem[key] = Object.prototype.hasOwnProperty.call(itemData, key)
+        ? itemData[key]
+        : existingItems.length + 1;
     } else if (col.toLowerCase().includes('date') || col.toLowerCase().includes('raised')) {
-      newItem[key] = getCurrentDate();
+      newItem[key] = Object.prototype.hasOwnProperty.call(itemData, key)
+        ? itemData[key]
+        : getCurrentDate();
     } else {
-      newItem[key] = itemData[key] || '...';
+      newItem[key] = Object.prototype.hasOwnProperty.call(itemData, key)
+        ? itemData[key]
+        : '...';
     }
   });
+
+  return newItem;
+};
+
+export const addRegisterItemToState = (registers, registerType, itemData, nowIso) => {
+  const schema = SCHEMAS[registerType];
+  if (!schema) return registers;
+
+  const existingItems = registers[registerType] || [];
+  const newItem = buildRegisterItem(registerType, existingItems, itemData, nowIso);
 
   return {
     ...registers,
