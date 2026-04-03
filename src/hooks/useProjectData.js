@@ -28,6 +28,7 @@ import {
   isMissingRelationError
 } from './projectData/manualTodoUtils';
 import { getTodoCompletionDescriptor } from './projectData/todoCompletion';
+import { buildProjectSnapshotKey, readLocalJson, writeLocalJson } from '../utils/offlineState';
 
 // Helper: get ISO timestamp
 const now = () => new Date().toISOString();
@@ -49,11 +50,30 @@ export const useProjectData = (projectId, userId = null) => {
   const [saveConflict, setSaveConflict] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [remoteUpdateAvailable, setRemoteUpdateAvailable] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => (
+    typeof navigator === 'undefined' ? true : navigator.onLine !== false
+  ));
+  const [offlinePendingSync, setOfflinePendingSync] = useState(false);
+  const [usingOfflineSnapshot, setUsingOfflineSnapshot] = useState(false);
 
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef(null);
   const projectVersionRef = useRef(1);
   const supportsManualTodosTableRef = useRef(true);
+  const snapshotKey = buildProjectSnapshotKey(projectId, userId || 'anon');
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Load project data from Supabase
   const loadProject = useCallback(async () => {
@@ -99,15 +119,40 @@ export const useProjectData = (projectId, userId = null) => {
       }
 
       projectVersionRef.current = normalizedState.version;
+      setUsingOfflineSnapshot(false);
+      setOfflinePendingSync(false);
+      writeLocalJson(snapshotKey, {
+        tasks: normalizedState.tasks,
+        registers: normalizedState.registers,
+        baseline: normalizedState.baseline,
+        tracker: normalizedState.tracker,
+        statusReport: normalizedState.statusReport,
+        todos: userId ? [] : [],
+        version: normalizedState.version,
+        cachedAt: now(),
+      });
     } else if (error) {
-      setSaveError(`Unable to load project: ${error.message}`);
+      const cachedSnapshot = readLocalJson(snapshotKey, null);
+      if (cachedSnapshot) {
+        setProjectData(cachedSnapshot.tasks || []);
+        setRegisters(cachedSnapshot.registers || createEmptyRegisters());
+        setBaselineState(cachedSnapshot.baseline || null);
+        setTracker(cachedSnapshot.tracker || []);
+        setStatusReport(cachedSnapshot.statusReport || createEmptyStatusReport());
+        setTodos(cachedSnapshot.todos || []);
+        projectVersionRef.current = Number.isInteger(cachedSnapshot.version) ? cachedSnapshot.version : 1;
+        setUsingOfflineSnapshot(true);
+        setSaveError(null);
+      } else {
+        setSaveError(`Unable to load project: ${error.message}`);
+      }
     }
 
     setLoadingData(false);
     setTimeout(() => {
       initialLoadDone.current = true;
     }, 500);
-  }, [projectId, userId]);
+  }, [projectId, snapshotKey, userId]);
 
   useEffect(() => {
     loadProject();
@@ -119,6 +164,12 @@ export const useProjectData = (projectId, userId = null) => {
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
+    }
+
+    if (!isOnline) {
+      setOfflinePendingSync(true);
+      setSaving(false);
+      return undefined;
     }
 
     saveTimeoutRef.current = setTimeout(async () => {
@@ -147,6 +198,8 @@ export const useProjectData = (projectId, userId = null) => {
         setLastSaved(new Date());
         setSaveConflict(false);
         setRemoteUpdateAvailable(false);
+        setOfflinePendingSync(false);
+        setUsingOfflineSnapshot(false);
       } else if (!error && !data) {
         setSaveConflict(true);
         setSaveError('Save conflict detected. This project was changed in another tab or session. Click Reload Latest.');
@@ -162,7 +215,22 @@ export const useProjectData = (projectId, userId = null) => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict]);
+  }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict, isOnline]);
+
+  useEffect(() => {
+    if (!projectId || !initialLoadDone.current) return;
+
+    writeLocalJson(snapshotKey, {
+      tasks: projectData,
+      registers,
+      baseline,
+      tracker,
+      statusReport,
+      todos,
+      version: projectVersionRef.current,
+      cachedAt: now(),
+    });
+  }, [baseline, projectData, projectId, registers, snapshotKey, statusReport, todos, tracker]);
 
   // Warn user if they close the tab with unsaved changes
   useEffect(() => {
@@ -177,7 +245,7 @@ export const useProjectData = (projectId, userId = null) => {
   }, []);
 
   useEffect(() => {
-    if (!projectId || loadingData) return undefined;
+    if (!projectId || loadingData || !isOnline) return undefined;
 
     let cancelled = false;
 
@@ -205,7 +273,7 @@ export const useProjectData = (projectId, userId = null) => {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [projectId, loadingData]);
+  }, [projectId, loadingData, isOnline]);
 
   const reloadProject = useCallback(async () => {
     await loadProject();
@@ -636,6 +704,9 @@ export const useProjectData = (projectId, userId = null) => {
     saveConflict,
     saveError,
     remoteUpdateAvailable,
+    isOnline,
+    offlinePendingSync,
+    usingOfflineSnapshot,
     addTask,
     updateTask,
     deleteTask,

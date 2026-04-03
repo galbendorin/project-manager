@@ -90,6 +90,9 @@ export default function TimesheetPanel({
   projectLoadError,
   entryError,
   successMessage,
+  offlineStatusLabel,
+  offlineQueueCount,
+  entrySyncStateById,
   composer,
   onComposerChange,
   onSubmit,
@@ -324,6 +327,16 @@ export default function TimesheetPanel({
             <div className="pm-accent-panel mt-3 rounded-2xl px-4 py-4 sm:mt-5">
               <div className={sectionLabelClass}>Week</div>
               <div className="mt-1 text-sm font-semibold text-slate-950">{formatWeekRange(weekStart)}</div>
+              {offlineStatusLabel ? (
+                <div className="mt-2 text-xs leading-5 text-slate-500">
+                  {offlineStatusLabel}
+                </div>
+              ) : null}
+              {offlineQueueCount > 0 ? (
+                <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                  {offlineQueueCount} waiting to sync
+                </div>
+              ) : null}
 
               <div className="mt-3 grid grid-cols-3 gap-2">
                 <button
@@ -809,6 +822,7 @@ export default function TimesheetPanel({
                           const project = projects.find((item) => item.id === entry.project_id);
                           const color = getTrackProjectColor(entry.project_id);
                           const isSelected = activeEntry?.id === entry.id;
+                          const syncState = entrySyncStateById?.[entry.id] || '';
 
                           return (
                             <button
@@ -825,6 +839,15 @@ export default function TimesheetPanel({
                                   <div className="mt-1 text-xs text-slate-600">
                                     {formatEntryWindow(entry)}
                                   </div>
+                                  {syncState ? (
+                                    <div className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                                      syncState === 'syncing'
+                                        ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                                        : 'border-amber-200 bg-amber-50 text-amber-700'
+                                    }`}>
+                                      {syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
+                                    </div>
+                                  ) : null}
                                 </div>
                                 <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold text-slate-600">
                                   {formatDurationMinutes(entry.duration_minutes)}

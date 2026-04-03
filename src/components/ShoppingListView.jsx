@@ -8,6 +8,9 @@ import {
   isMissingRelationError as isMissingTodoRelationError,
   mapManualTodoRow,
 } from '../hooks/projectData/manualTodoUtils';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { createOfflineTempId, isOfflineTempId, readLocalJson, writeLocalJson } from '../utils/offlineState';
+import { enqueueCreate, enqueueDelete, enqueueUpdate, replaceQueuedTargetId } from '../utils/offlineQueue';
 import { normalizeProjectRecord } from '../utils/projectSharing';
 import ProjectShareModal from './ProjectShareModal';
 
@@ -60,6 +63,7 @@ const KNOWN_GROCERY_PHRASES = [
   ['kitchen', 'roll'],
   ['washing', 'up', 'liquid'],
 ];
+const SHOPPING_OFFLINE_PREFIX = 'pmworkspace:shopping-offline:v1';
 
 const IconBase = ({ children, className = '', viewBox = '0 0 24 24' }) => (
   <svg
@@ -301,9 +305,55 @@ const describeShoppingProject = (project, index) => {
   return `Shared List ${index + 1}`;
 };
 
+const buildShoppingOfflineKey = (userId = 'anon') => `${SHOPPING_OFFLINE_PREFIX}:${userId}`;
+
+const createEmptyShoppingOfflineState = () => ({
+  projects: [],
+  selectedProjectId: '',
+  todosByProject: {},
+  queue: [],
+  lastSyncedAt: '',
+});
+
+const loadShoppingOfflineState = (userId) => (
+  readLocalJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState())
+);
+
+const saveShoppingOfflineState = (userId, state) => {
+  writeLocalJson(buildShoppingOfflineKey(userId), {
+    ...createEmptyShoppingOfflineState(),
+    ...(state || {}),
+  });
+};
+
+const createOfflineShoppingTodo = ({ title, projectId, userId, status = 'Open', completedAt = '' }) => {
+  const timestamp = new Date().toISOString();
+  return {
+    _id: createOfflineTempId('offline-todo'),
+    projectId,
+    title,
+    dueDate: '',
+    owner: '',
+    assigneeUserId: userId,
+    status,
+    recurrence: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    completedAt,
+  };
+};
+
+const formatSyncTimeLabel = (value) => {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+};
+
 export default function ShoppingListView({ currentUserId }) {
   const { canCreateProject, limits, refreshProjectCount } = usePlan();
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const isOnline = useOnlineStatus();
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -324,8 +374,18 @@ export default function ShoppingListView({ currentUserId }) {
   const [failedTodoId, setFailedTodoId] = useState('');
   const [failedTodoMessage, setFailedTodoMessage] = useState('');
   const [showBought, setShowBought] = useState(false);
+  const [syncingQueue, setSyncingQueue] = useState(false);
+  const [offlineQueue, setOfflineQueue] = useState(() => {
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    return Array.isArray(cachedState.queue) ? cachedState.queue : [];
+  });
+  const [lastSyncedAt, setLastSyncedAt] = useState(() => {
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    return cachedState.lastSyncedAt || '';
+  });
   const supportsProjectMembersRef = useRef(true);
   const ensuringProjectRef = useRef(false);
+  const syncingQueueRef = useRef(false);
   const recognitionRef = useRef(null);
   const pendingVoiceTranscriptRef = useRef('');
   const voiceSessionActiveRef = useRef(false);
@@ -345,12 +405,30 @@ export default function ShoppingListView({ currentUserId }) {
   const openTodos = useMemo(() => todos.filter((todo) => todo.status !== 'Done'), [todos]);
   const completedTodos = useMemo(() => todos.filter((todo) => todo.status === 'Done'), [todos]);
   const canShareProject = Boolean(selectedProject?.isOwned && supportsProjectMembersRef.current);
+  const persistOfflineState = useCallback((nextState) => {
+    saveShoppingOfflineState(currentUserId, nextState);
+    setOfflineQueue(Array.isArray(nextState.queue) ? nextState.queue : []);
+    setLastSyncedAt(nextState.lastSyncedAt || '');
+    return nextState;
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!isMobile) {
       setShowBought(true);
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    if (cachedState.projects?.length) {
+      setProjects(cachedState.projects);
+    }
+    if (cachedState.selectedProjectId) {
+      setSelectedProjectId((current) => current || cachedState.selectedProjectId);
+    }
+    setOfflineQueue(Array.isArray(cachedState.queue) ? cachedState.queue : []);
+    setLastSyncedAt(cachedState.lastSyncedAt || '');
+  }, [currentUserId]);
 
   const createShoppingProject = useCallback(async () => {
     const projectPayload = {
@@ -397,6 +475,22 @@ export default function ShoppingListView({ currentUserId }) {
 
     setLoadingProjects(true);
     setProjectError('');
+
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    if (cachedState.projects?.length) {
+      setProjects(cachedState.projects);
+      if (cachedState.selectedProjectId) {
+        setSelectedProjectId((current) => current || cachedState.selectedProjectId);
+      }
+    }
+
+    if (!isOnline) {
+      if (!cachedState.projects?.length) {
+        setProjectError('You are offline. Open Shopping List once online on this device to keep it available.');
+      }
+      setLoadingProjects(false);
+      return;
+    }
 
     let includeMembers = supportsProjectMembersRef.current;
     let { data, error } = await supabase
@@ -451,7 +545,12 @@ export default function ShoppingListView({ currentUserId }) {
         : (defaultProject?.id || '')
     ));
     setLoadingProjects(false);
-  }, [canCreateProject, createShoppingProject, currentUserId, limits.label, limits.maxProjects]);
+    persistOfflineState({
+      ...cachedState,
+      projects: nextProjects,
+      selectedProjectId: defaultProject?.id || cachedState.selectedProjectId || '',
+    });
+  }, [canCreateProject, createShoppingProject, currentUserId, isOnline, limits.label, limits.maxProjects, persistOfflineState]);
 
   const loadTodos = useCallback(async () => {
     if (!selectedProject?.id) {
@@ -461,6 +560,20 @@ export default function ShoppingListView({ currentUserId }) {
 
     setLoadingTodos(true);
     setTodoError('');
+
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    const cachedTodos = cachedState.todosByProject?.[selectedProject.id] || [];
+    if (cachedTodos.length > 0) {
+      setTodos(sortTodos(cachedTodos));
+    }
+
+    if (!isOnline) {
+      if (!cachedTodos.length) {
+        setTodoError('You are offline. Open this list once online on this device to cache it.');
+      }
+      setLoadingTodos(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from('manual_todos')
@@ -480,9 +593,18 @@ export default function ShoppingListView({ currentUserId }) {
       return;
     }
 
-    setTodos(sortTodos((data || []).map(mapManualTodoRow)));
+    const nextTodos = sortTodos((data || []).map(mapManualTodoRow));
+    setTodos(nextTodos);
+    persistOfflineState({
+      ...cachedState,
+      selectedProjectId: selectedProject.id,
+      todosByProject: {
+        ...(cachedState.todosByProject || {}),
+        [selectedProject.id]: nextTodos,
+      }
+    });
     setLoadingTodos(false);
-  }, [selectedProject?.id]);
+  }, [currentUserId, isOnline, persistOfflineState, selectedProject?.id]);
 
   useEffect(() => {
     loadProjects();
@@ -491,6 +613,22 @@ export default function ShoppingListView({ currentUserId }) {
   useEffect(() => {
     loadTodos();
   }, [loadTodos]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    persistOfflineState({
+      ...cachedState,
+      projects,
+      selectedProjectId,
+      todosByProject: selectedProjectId
+        ? {
+          ...(cachedState.todosByProject || {}),
+          [selectedProjectId]: todos,
+        }
+        : (cachedState.todosByProject || {}),
+    });
+  }, [currentUserId, persistOfflineState, projects, selectedProjectId, todos]);
 
   useEffect(() => {
     return () => {
@@ -544,6 +682,39 @@ export default function ShoppingListView({ currentUserId }) {
     setSavingItems(true);
     setTodoError('');
 
+    if (!isOnline) {
+      const offlineItems = normalizedTitles.map((title) => createOfflineShoppingTodo({
+        title,
+        projectId: selectedProject.id,
+        userId: currentUserId,
+      }));
+      const nextTodos = sortTodos([...todos, ...offlineItems]);
+      const cachedState = loadShoppingOfflineState(currentUserId);
+      const nextQueue = offlineItems.reduce((queue, todo) => enqueueCreate(queue, {
+        localId: todo._id,
+        projectId: todo.projectId,
+        userId: todo.assigneeUserId,
+        title: todo.title,
+        status: todo.status,
+        completedAt: todo.completedAt || null,
+        createdAt: todo.createdAt,
+        updatedAt: todo.updatedAt,
+      }), cachedState.queue || []);
+
+      setTodos(nextTodos);
+      persistOfflineState({
+        ...cachedState,
+        selectedProjectId: selectedProject.id,
+        todosByProject: {
+          ...(cachedState.todosByProject || {}),
+          [selectedProject.id]: nextTodos,
+        },
+        queue: nextQueue,
+      });
+      setSavingItems(false);
+      return;
+    }
+
     const rows = normalizedTitles.map((title) => ({
       user_id: currentUserId,
       project_id: selectedProject.id,
@@ -568,9 +739,22 @@ export default function ShoppingListView({ currentUserId }) {
     }
 
     const savedItems = sortTodos((data || []).map(mapManualTodoRow));
-    setTodos((previous) => sortTodos([...previous, ...savedItems]));
+    setTodos((previous) => {
+      const nextTodos = sortTodos([...previous, ...savedItems]);
+      const cachedState = loadShoppingOfflineState(currentUserId);
+      persistOfflineState({
+        ...cachedState,
+        selectedProjectId: selectedProject.id,
+        todosByProject: {
+          ...(cachedState.todosByProject || {}),
+          [selectedProject.id]: nextTodos,
+        },
+        lastSyncedAt: new Date().toISOString(),
+      });
+      return nextTodos;
+    });
     setSavingItems(false);
-  }, [currentUserId, selectedProject?.id]);
+  }, [currentUserId, isOnline, persistOfflineState, selectedProject?.id, todos]);
 
   const handleAddSubmit = useCallback(async (event) => {
     event.preventDefault();
@@ -586,20 +770,12 @@ export default function ShoppingListView({ currentUserId }) {
     const completedAt = nextStatus === 'Done' ? new Date().toISOString() : null;
     const actionLabel = nextStatus === 'Done' ? 'complete' : 'reopen';
 
-    if (isOfflineBrowser()) {
-      setFailedTodoId(todo._id);
-      setFailedTodoMessage('You appear to be offline. Reconnect and try again.');
-      setSavingTodoId('');
-      setSavingTodoAction('');
-      return;
-    }
-
     const previous = todos;
     setFailedTodoId('');
     setFailedTodoMessage('');
     setSavingTodoId(todo._id);
     setSavingTodoAction(actionLabel);
-    setTodos((items) => sortTodos(items.map((item) => (
+    const optimisticTodos = sortTodos(todos.map((item) => (
       item._id === todo._id
         ? {
           ...item,
@@ -608,7 +784,29 @@ export default function ShoppingListView({ currentUserId }) {
           updatedAt: new Date().toISOString(),
         }
         : item
-    ))));
+    )));
+    setTodos(optimisticTodos);
+
+    if (!isOnline || isOfflineTempId(todo._id)) {
+      const cachedState = loadShoppingOfflineState(currentUserId);
+      const nextQueue = enqueueUpdate(cachedState.queue || [], todo._id, {
+        status: nextStatus,
+        completedAt,
+        updatedAt: new Date().toISOString(),
+      });
+      persistOfflineState({
+        ...cachedState,
+        selectedProjectId: selectedProject?.id || cachedState.selectedProjectId,
+        todosByProject: {
+          ...(cachedState.todosByProject || {}),
+          [selectedProject.id]: optimisticTodos,
+        },
+        queue: nextQueue,
+      });
+      setSavingTodoId('');
+      setSavingTodoAction('');
+      return;
+    }
 
     const { data, error } = await supabase
       .from('manual_todos')
@@ -634,14 +832,27 @@ export default function ShoppingListView({ currentUserId }) {
       return;
     }
 
-    setTodos((previous) => sortTodos(previous.map((item) => (
+    setTodos((previousItems) => {
+      const nextTodos = sortTodos(previousItems.map((item) => (
       item._id === todo._id ? mapManualTodoRow(data) : item
-    ))));
+      )));
+      const cachedState = loadShoppingOfflineState(currentUserId);
+      persistOfflineState({
+        ...cachedState,
+        selectedProjectId: selectedProject?.id || cachedState.selectedProjectId,
+        todosByProject: {
+          ...(cachedState.todosByProject || {}),
+          [selectedProject.id]: nextTodos,
+        },
+        lastSyncedAt: new Date().toISOString(),
+      });
+      return nextTodos;
+    });
     setSavingTodoId('');
     setSavingTodoAction('');
     setFailedTodoId('');
     setFailedTodoMessage('');
-  }, [todos]);
+  }, [currentUserId, isOnline, persistOfflineState, selectedProject?.id, todos]);
 
   const handleToggleTodo = useCallback((todo) => {
     if (todo.status === 'Done' || !isMobile) {
@@ -689,7 +900,22 @@ export default function ShoppingListView({ currentUserId }) {
       setFailedTodoMessage('');
     }
     const previous = todos;
-    setTodos((items) => items.filter((item) => item._id !== todoId));
+    const nextTodos = todos.filter((item) => item._id !== todoId);
+    setTodos(nextTodos);
+
+    if (!isOnline || isOfflineTempId(todoId)) {
+      const cachedState = loadShoppingOfflineState(currentUserId);
+      persistOfflineState({
+        ...cachedState,
+        selectedProjectId: selectedProject?.id || cachedState.selectedProjectId,
+        todosByProject: {
+          ...(cachedState.todosByProject || {}),
+          [selectedProject.id]: nextTodos,
+        },
+        queue: enqueueDelete(cachedState.queue || [], todoId),
+      });
+      return;
+    }
 
     const { error } = await supabase
       .from('manual_todos')
@@ -699,8 +925,20 @@ export default function ShoppingListView({ currentUserId }) {
     if (error) {
       setTodos(previous);
       setTodoError(error.message || 'Unable to remove this grocery right now.');
+      return;
     }
-  }, [clearPendingCompletion, failedTodoId, pendingCompleteId, todos]);
+
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    persistOfflineState({
+      ...cachedState,
+      selectedProjectId: selectedProject?.id || cachedState.selectedProjectId,
+      todosByProject: {
+        ...(cachedState.todosByProject || {}),
+        [selectedProject.id]: nextTodos,
+      },
+      lastSyncedAt: new Date().toISOString(),
+    });
+  }, [clearPendingCompletion, currentUserId, failedTodoId, isOnline, pendingCompleteId, persistOfflineState, selectedProject?.id, todos]);
 
   const retryTodoAction = useCallback((todo) => {
     setFailedTodoId('');
@@ -865,6 +1103,121 @@ export default function ShoppingListView({ currentUserId }) {
       setVoiceMessage('Voice input is unavailable right now. Please try again.');
     }
   }, [clearVoiceTimers, startRecognitionSession]);
+
+  const syncOfflineQueue = useCallback(async () => {
+    if (!currentUserId || !isOnline || syncingQueueRef.current) return;
+
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    let queue = Array.isArray(cachedState.queue) ? [...cachedState.queue] : [];
+    if (queue.length === 0) return;
+
+    syncingQueueRef.current = true;
+    setSyncingQueue(true);
+    let todosByProject = { ...(cachedState.todosByProject || {}) };
+
+    while (queue.length > 0) {
+      const op = queue[0];
+
+      if (op.kind === 'create') {
+        const { data, error } = await supabase
+          .from('manual_todos')
+          .insert({
+            user_id: op.record.userId,
+            project_id: op.record.projectId,
+            title: op.record.title,
+            due_date: null,
+            owner_text: '',
+            assignee_user_id: op.record.userId,
+            status: op.record.status,
+            recurrence: null,
+            completed_at: op.record.completedAt || null,
+          })
+          .select(MANUAL_TODO_SELECT)
+          .single();
+
+        if (error || !data) break;
+
+        const savedTodo = mapManualTodoRow(data);
+        const projectTodos = todosByProject[op.record.projectId] || [];
+        todosByProject[op.record.projectId] = sortTodos(projectTodos.map((item) => (
+          item._id === op.targetId ? savedTodo : item
+        )));
+        queue = replaceQueuedTargetId(queue.slice(1), op.targetId, savedTodo._id);
+        continue;
+      }
+
+      if (op.kind === 'update') {
+        const { error } = await supabase
+          .from('manual_todos')
+          .update({
+            status: op.patch.status,
+            completed_at: op.patch.completedAt || null,
+            updated_at: op.patch.updatedAt || new Date().toISOString(),
+          })
+          .eq('id', op.targetId);
+
+        if (error) break;
+        queue = queue.slice(1);
+        continue;
+      }
+
+      if (op.kind === 'delete') {
+        const { error } = await supabase
+          .from('manual_todos')
+          .delete()
+          .eq('id', op.targetId);
+
+        if (error) break;
+        queue = queue.slice(1);
+      }
+    }
+
+    persistOfflineState({
+      ...cachedState,
+      todosByProject,
+      queue,
+      lastSyncedAt: queue.length === 0 ? new Date().toISOString() : cachedState.lastSyncedAt,
+    });
+
+    if (selectedProject?.id) {
+      setTodos(sortTodos(todosByProject[selectedProject.id] || []));
+    }
+
+    if (queue.length === 0) {
+      setFailedTodoId('');
+      setFailedTodoMessage('');
+    }
+
+    syncingQueueRef.current = false;
+    setSyncingQueue(false);
+  }, [currentUserId, isOnline, persistOfflineState, selectedProject?.id]);
+
+  useEffect(() => {
+    void syncOfflineQueue();
+  }, [syncOfflineQueue]);
+
+  const queuedTodoIds = useMemo(
+    () => new Set((offlineQueue || []).map((item) => item.targetId)),
+    [offlineQueue]
+  );
+  const shoppingSyncSummary = useMemo(() => {
+    const queueCount = offlineQueue.length;
+    if (syncingQueue && queueCount > 0) {
+      return `Syncing ${queueCount} offline change${queueCount === 1 ? '' : 's'}...`;
+    }
+    if (queueCount > 0) {
+      return isOnline
+        ? `${queueCount} item change${queueCount === 1 ? '' : 's'} ready to sync`
+        : `${queueCount} item change${queueCount === 1 ? '' : 's'} waiting for signal`;
+    }
+    const lastSyncLabel = formatSyncTimeLabel(lastSyncedAt);
+    if (lastSyncLabel) {
+      return `Last synced at ${lastSyncLabel}`;
+    }
+    return isOnline
+      ? 'This list stays cached once it has loaded on this device.'
+      : 'Using the last cached list on this device.';
+  }, [isOnline, lastSyncedAt, offlineQueue.length, syncingQueue]);
 
   const stopListening = useCallback(() => {
     manualVoiceStopRef.current = true;
@@ -1082,11 +1435,23 @@ export default function ShoppingListView({ currentUserId }) {
 
                 <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
                   <div className="pm-list-shell rounded-[28px] p-3 sm:p-4">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="pm-kicker text-sm">Shopping items</h3>
-                      <span className="text-xs text-slate-400">
-                        {loadingTodos ? 'Loading...' : `${openTodos.length} open · ${completedTodos.length} bought`}
-                      </span>
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="pm-kicker text-sm">Shopping items</h3>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {shoppingSyncSummary}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs text-slate-400">
+                          {loadingTodos ? 'Loading...' : `${openTodos.length} open · ${completedTodos.length} bought`}
+                        </span>
+                        {offlineQueue.length > 0 ? (
+                          <div className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                            {offlineQueue.length} waiting
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
 
                     {loadingTodos ? (
@@ -1129,6 +1494,11 @@ export default function ShoppingListView({ currentUserId }) {
                                       : 'border-slate-200'
                                 }`}
                               >
+                                {(() => {
+                                  const syncState = queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
+                                    ? (syncingQueue && isOnline ? 'syncing' : 'offline')
+                                    : '';
+                                  return (
                                 <div className="flex items-start gap-3 sm:items-center">
                                   {isMobile ? (
                                     <span
@@ -1174,12 +1544,25 @@ export default function ShoppingListView({ currentUserId }) {
                                   )}
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-start justify-between gap-3">
-                                      <p className="text-base font-semibold leading-6 text-slate-900 sm:text-sm">{todo.title}</p>
-                                      {savingTodoId === todo._id ? (
-                                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700 shadow-sm">
-                                          Saving...
-                                        </span>
-                                      ) : null}
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-base font-semibold leading-6 text-slate-900 sm:text-sm">{todo.title}</p>
+                                      </div>
+                                      <div className="flex shrink-0 flex-col items-end gap-1">
+                                        {savingTodoId === todo._id ? (
+                                          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700 shadow-sm">
+                                            Saving...
+                                          </span>
+                                        ) : null}
+                                        {syncState ? (
+                                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                            syncState === 'syncing'
+                                              ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                                              : 'border-amber-200 bg-amber-50 text-amber-700'
+                                          }`}>
+                                            {syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
+                                          </span>
+                                        ) : null}
+                                      </div>
                                     </div>
                                     <p className={`mt-1 text-xs ${
                                       pendingCompleteId === todo._id
@@ -1245,6 +1628,8 @@ export default function ShoppingListView({ currentUserId }) {
                                     </button>
                                   ) : null}
                                 </div>
+                                  );
+                                })()}
                               </div>
                             ))}
                           </div>
@@ -1277,6 +1662,11 @@ export default function ShoppingListView({ currentUserId }) {
                             ) : null}
                             {completedTodos.length > 0 && (!isMobile || showBought) ? completedTodos.map((todo) => (
                               <div key={todo._id} className="rounded-[22px] border border-slate-200 bg-white/90 px-4 py-4 shadow-sm">
+                                {(() => {
+                                  const syncState = queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
+                                    ? (syncingQueue && isOnline ? 'syncing' : 'offline')
+                                    : '';
+                                  return (
                                 <div className="flex items-start gap-3 sm:items-center">
                                   {isMobile ? (
                                     <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600" aria-hidden="true">
@@ -1294,7 +1684,18 @@ export default function ShoppingListView({ currentUserId }) {
                                     </button>
                                   )}
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-base font-semibold leading-6 text-slate-400 line-through sm:text-sm">{todo.title}</p>
+                                    <div className="flex items-start justify-between gap-3">
+                                      <p className="text-base font-semibold leading-6 text-slate-400 line-through sm:text-sm">{todo.title}</p>
+                                      {syncState ? (
+                                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                          syncState === 'syncing'
+                                            ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                                            : 'border-amber-200 bg-amber-50 text-amber-700'
+                                        }`}>
+                                          {syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
+                                        </span>
+                                      ) : null}
+                                    </div>
                                     <p className={`mt-1 text-xs ${savingTodoId === todo._id ? 'text-emerald-700' : 'text-slate-400'}`}>
                                       {savingTodoId === todo._id
                                         ? (savingTodoAction === 'reopen' ? `Saving ${todo.title}...` : 'Saving...')
@@ -1347,6 +1748,8 @@ export default function ShoppingListView({ currentUserId }) {
                                     </button>
                                   ) : null}
                                 </div>
+                                  );
+                                })()}
                               </div>
                             )) : null}
                             {completedTodos.length > 0 && isMobile && !showBought ? (

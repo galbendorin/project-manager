@@ -43,6 +43,9 @@ import {
 import { openFeedbackEmail } from './utils/feedback';
 import AccentThemePicker from './components/AccentThemePicker';
 import { applyAccentTheme, loadAccentTheme, saveAccentTheme } from './utils/appearance';
+import OfflineBanner from './components/OfflineBanner';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { clearLastProject, loadLastAppPath, loadLastProject, saveLastAppPath, saveLastProject } from './utils/navigationState';
 
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 const RegisterView = lazy(() => import('./components/RegisterView'));
@@ -63,10 +66,13 @@ const normalizeAppPath = (value = '/') => {
 function App() {
   const { user, loading: authLoading, signOut, isPasswordRecovery } = useAuth();
   const checkoutStatus = useCheckoutStatus();
+  const isOnline = useOnlineStatus();
   const [currentProject, setCurrentProject] = useState(null);
   const [accentTheme, setAccentTheme] = useState(() => loadAccentTheme());
   const [currentPath, setCurrentPath] = useState(() => (
-    typeof window !== 'undefined' ? normalizeAppPath(window.location.pathname) : '/'
+    typeof window !== 'undefined'
+      ? normalizeAppPath(window.location.pathname === '/' ? loadLastAppPath() : window.location.pathname)
+      : '/'
   ));
 
   useEffect(() => {
@@ -91,7 +97,16 @@ function App() {
       window.history.pushState({}, '', nextPath);
     }
     setCurrentPath(nextPath);
+    saveLastAppPath(nextPath);
   }, []);
+
+  useEffect(() => {
+    if (!user || currentProject || currentPath !== '/') return;
+
+    const savedProject = loadLastProject();
+    if (!savedProject?.id) return;
+    setCurrentProject(savedProject);
+  }, [currentPath, currentProject, user]);
 
   if (currentPath === '/privacy') {
     return <LegalPage page="privacy" />;
@@ -120,6 +135,7 @@ function App() {
   if (authLoading) {
     return (
       <>
+        <OfflineBanner isOnline={isOnline} />
         <div className="min-h-screen bg-gray-900 flex items-center justify-center">
           <div className="text-gray-400 text-lg">Loading...</div>
         </div>
@@ -131,6 +147,7 @@ function App() {
   if (!user || isPasswordRecovery) {
     return (
       <>
+        <OfflineBanner isOnline={isOnline} />
         <AuthPage />
         <CheckoutToast status={checkoutStatus} />
       </>
@@ -140,6 +157,7 @@ function App() {
   if (!currentProject) {
     return (
       <>
+        <OfflineBanner isOnline={isOnline} />
         {currentPath === '/track' ? (
           <AuthenticatedTrackShell
             currentUserId={user.id}
@@ -148,6 +166,7 @@ function App() {
             onSignOut={signOut}
             accentTheme={accentTheme}
             onAccentThemeChange={setAccentTheme}
+            isOnline={isOnline}
           />
         ) : currentPath === '/shopping' ? (
           <AuthenticatedShoppingShell
@@ -157,11 +176,13 @@ function App() {
             onSignOut={signOut}
             accentTheme={accentTheme}
             onAccentThemeChange={setAccentTheme}
+            isOnline={isOnline}
           />
         ) : (
           <ProjectSelector
             onSelectProject={(project) => {
               setCurrentProject(project);
+              saveLastProject(project);
               navigateToPath('/');
             }}
             onOpenTrack={() => navigateToPath('/track')}
@@ -176,23 +197,26 @@ function App() {
   }
 
   return (
-    <>
-      <MainApp
-        project={currentProject}
-        currentUserId={user.id}
-        accentTheme={accentTheme}
-        onAccentThemeChange={setAccentTheme}
-        onBackToProjects={() => {
-          setCurrentProject(null);
-          navigateToPath('/');
-        }}
+      <>
+        <OfflineBanner isOnline={isOnline} />
+        <MainApp
+          project={currentProject}
+          currentUserId={user.id}
+          accentTheme={accentTheme}
+          onAccentThemeChange={setAccentTheme}
+          isOnline={isOnline}
+          onBackToProjects={() => {
+            setCurrentProject(null);
+            clearLastProject();
+            navigateToPath('/');
+          }}
       />
       <CheckoutToast status={checkoutStatus} />
     </>
   );
 }
 
-function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onSignOut, accentTheme, onAccentThemeChange }) {
+function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onSignOut, accentTheme, onAccentThemeChange, isOnline }) {
   return (
     <div className="pm-shell-bg pm-accent-scope min-h-screen flex flex-col">
       <div className="border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -242,7 +266,7 @@ function AuthenticatedTrackShell({ currentUserId, userEmail, onGoToProjects, onS
   );
 }
 
-function AuthenticatedShoppingShell({ currentUserId, userEmail, onGoToProjects, onSignOut, accentTheme, onAccentThemeChange }) {
+function AuthenticatedShoppingShell({ currentUserId, userEmail, onGoToProjects, onSignOut, accentTheme, onAccentThemeChange, isOnline }) {
   return (
     <div className="pm-shell-bg pm-accent-scope min-h-screen flex flex-col">
       <div className="border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -292,7 +316,7 @@ function AuthenticatedShoppingShell({ currentUserId, userEmail, onGoToProjects, 
   );
 }
 
-function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onBackToProjects }) {
+function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onBackToProjects, isOnline }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const {
     canUseAiReport, aiReportsRemaining, incrementAiReports,
@@ -335,6 +359,8 @@ function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onB
     saveConflict,
     saveError,
     remoteUpdateAvailable,
+    offlinePendingSync,
+    usingOfflineSnapshot,
     addTask,
     updateTask,
     deleteTask,
@@ -958,6 +984,10 @@ function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onB
             <span className={`shrink-0 flex items-center gap-1 ${importStatus.startsWith('✓') ? 'text-emerald-400' : importStatus === 'Importing...' ? 'text-blue-400' : 'text-amber-400'}`}>
               {importStatus}
             </span>
+          ) : !isOnline && offlinePendingSync ? (
+            <span className="shrink-0 text-amber-300 whitespace-nowrap">
+              Offline changes queued
+            </span>
           ) : saveConflict ? (
             <div className="shrink-0 flex items-center gap-2">
               <span className="text-rose-400 whitespace-nowrap">Save conflict detected</span>
@@ -982,6 +1012,8 @@ function MainApp({ project, currentUserId, accentTheme, onAccentThemeChange, onB
             </div>
           ) : saveError ? (
             <span className="shrink-0 text-rose-400 whitespace-nowrap" title={saveError}>Save failed</span>
+          ) : !isOnline && usingOfflineSnapshot ? (
+            <span className="shrink-0 text-amber-300 whitespace-nowrap">Offline snapshot loaded</span>
           ) : saving ? (
             <span className="shrink-0 text-yellow-400 flex items-center gap-1 whitespace-nowrap">
               <span className="animate-pulse">●</span> Saving...

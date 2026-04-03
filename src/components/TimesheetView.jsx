@@ -1,6 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import TimesheetPanel from './TimesheetPanel';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { createOfflineTempId, isOfflineTempId, readLocalJson, writeLocalJson } from '../utils/offlineState';
+import { enqueueCreate, enqueueDelete, enqueueUpdate, replaceQueuedTargetId } from '../utils/offlineQueue';
 import { loadXLSX } from '../utils/importParsers';
 import { normalizeProjectRecord } from '../utils/projectSharing';
 import {
@@ -17,6 +20,7 @@ import {
   TIMESHEET_REPORT_COLUMNS,
   toWeekStartIso,
 } from '../utils/timesheets';
+const TIMESHEET_OFFLINE_PREFIX = 'pmworkspace:timesheet-offline:v1';
 
 const isMissingColumnError = (error, columnName) => {
   const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
@@ -55,11 +59,69 @@ const createDefaultComposer = (projectId = '', weekStart = toWeekStartIso(new Da
   description: '',
 });
 
+const buildTimesheetOfflineKey = (userId = 'anon') => `${TIMESHEET_OFFLINE_PREFIX}:${userId}`;
+
+const createEmptyTimesheetOfflineState = () => ({
+  projects: [],
+  entriesByWeek: {},
+  queue: [],
+  selectedProjectId: '',
+  weekStart: '',
+  viewMode: 'mine',
+  lastSyncedAt: '',
+});
+
+const loadTimesheetOfflineState = (userId) => (
+  readLocalJson(buildTimesheetOfflineKey(userId), createEmptyTimesheetOfflineState())
+);
+
+const saveTimesheetOfflineState = (userId, state) => {
+  writeLocalJson(buildTimesheetOfflineKey(userId), {
+    ...createEmptyTimesheetOfflineState(),
+    ...(state || {}),
+  });
+};
+
+const sortEntries = (items = []) => (
+  [...items].sort((left, right) => {
+    if (left.entry_date !== right.entry_date) {
+      return String(left.entry_date || '').localeCompare(String(right.entry_date || ''));
+    }
+    if ((left.start_minutes ?? 0) !== (right.start_minutes ?? 0)) {
+      return (left.start_minutes ?? 0) - (right.start_minutes ?? 0);
+    }
+    return String(left.id || '').localeCompare(String(right.id || ''));
+  })
+);
+
+const createOfflineTimeEntry = ({ payload, entryId }) => {
+  const timestamp = new Date().toISOString();
+  return {
+    id: entryId || createOfflineTempId('offline-time'),
+    project_id: payload.project_id,
+    user_id: payload.user_id,
+    entry_date: payload.entry_date,
+    start_minutes: payload.start_minutes,
+    duration_minutes: payload.duration_minutes,
+    description: payload.description || '',
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+};
+
+const formatSyncTimeLabel = (value) => {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+};
+
 export default function TimesheetView({
   currentUserId,
   currentProject = null,
   onBackToProject,
 }) {
+  const isOnline = useOnlineStatus();
   const [projects, setProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [projectLoadError, setProjectLoadError] = useState('');
@@ -71,13 +133,39 @@ export default function TimesheetView({
   const [saving, setSaving] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState(false);
   const [deletingEntryId, setDeletingEntryId] = useState('');
-  const [weekStart, setWeekStart] = useState(() => toWeekStartIso(new Date()));
+  const [weekStart, setWeekStart] = useState(() => {
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    return cachedState.weekStart || toWeekStartIso(new Date());
+  });
   const initialProjectId = currentProject?.is_demo ? '' : (currentProject?.id || '');
-  const [selectedProjectId, setSelectedProjectId] = useState(() => initialProjectId || 'all');
-  const [viewMode, setViewMode] = useState('mine');
+  const [selectedProjectId, setSelectedProjectId] = useState(() => {
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    return initialProjectId || cachedState.selectedProjectId || 'all';
+  });
+  const [viewMode, setViewMode] = useState(() => {
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    return cachedState.viewMode || 'mine';
+  });
   const [activeEntryId, setActiveEntryId] = useState('');
   const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
   const [composer, setComposer] = useState(() => createDefaultComposer(initialProjectId, toWeekStartIso(new Date())));
+  const [syncingQueue, setSyncingQueue] = useState(false);
+  const [offlineQueue, setOfflineQueue] = useState(() => {
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    return Array.isArray(cachedState.queue) ? cachedState.queue : [];
+  });
+  const [lastSyncedAt, setLastSyncedAt] = useState(() => {
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    return cachedState.lastSyncedAt || '';
+  });
+  const syncingQueueRef = useRef(false);
+
+  const persistOfflineState = useCallback((nextState) => {
+    saveTimesheetOfflineState(currentUserId, nextState);
+    setOfflineQueue(Array.isArray(nextState.queue) ? nextState.queue : []);
+    setLastSyncedAt(nextState.lastSyncedAt || '');
+    return nextState;
+  }, [currentUserId]);
 
   const trackProjects = useMemo(() => filterTimesheetProjects(projects), [projects]);
   const selectedProject = useMemo(
@@ -111,11 +199,44 @@ export default function TimesheetView({
     };
   }, [composer.description, composer.durationMinutes, composer.entryDate, composer.projectId, composer.startTime, currentUserId, duplicateDraftActive]);
 
+  useEffect(() => {
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    if (cachedState.projects?.length) {
+      setProjects(cachedState.projects);
+    }
+    setOfflineQueue(Array.isArray(cachedState.queue) ? cachedState.queue : []);
+    setLastSyncedAt(cachedState.lastSyncedAt || '');
+    if (!currentProject?.id || currentProject?.is_demo) {
+      if (cachedState.weekStart) {
+        setWeekStart(cachedState.weekStart);
+      }
+      if (cachedState.selectedProjectId) {
+        setSelectedProjectId(cachedState.selectedProjectId);
+      }
+      if (cachedState.viewMode) {
+        setViewMode(cachedState.viewMode);
+      }
+    }
+  }, [currentProject?.id, currentProject?.is_demo, currentUserId]);
+
   const loadProjects = useCallback(async () => {
     if (!currentUserId) return;
 
     setLoadingProjects(true);
     setProjectLoadError('');
+
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    if (cachedState.projects?.length) {
+      setProjects(cachedState.projects);
+    }
+
+    if (!isOnline) {
+      if (!cachedState.projects?.length) {
+        setProjectLoadError('You are offline. Open Timesheet once online on this device to keep it available.');
+      }
+      setLoadingProjects(false);
+      return;
+    }
 
     const queryProjects = async () => {
       let includeMembers = true;
@@ -175,9 +296,17 @@ export default function TimesheetView({
       return;
     }
 
-    setProjects((data || []).map((project) => normalizeProjectRecord(project, currentUserId)));
+    const nextProjects = (data || []).map((project) => normalizeProjectRecord(project, currentUserId));
+    setProjects(nextProjects);
+    persistOfflineState({
+      ...cachedState,
+      projects: nextProjects,
+      selectedProjectId,
+      weekStart,
+      viewMode,
+    });
     setLoadingProjects(false);
-  }, [currentUserId]);
+  }, [currentUserId, isOnline, persistOfflineState, selectedProjectId, viewMode, weekStart]);
 
   const loadEntries = useCallback(async () => {
     if (!currentUserId) return;
@@ -186,6 +315,20 @@ export default function TimesheetView({
     setLoadingEntries(true);
     setEntryError('');
     setSuccessMessage('');
+
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    const cachedEntries = cachedState.entriesByWeek?.[weekStart] || [];
+    if (cachedEntries.length) {
+      setEntries(sortEntries(cachedEntries));
+    }
+
+    if (!isOnline) {
+      if (!cachedEntries.length) {
+        setEntryError('You are offline. Open this week once online on this device to cache it.');
+      }
+      setLoadingEntries(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from('time_entries')
@@ -209,9 +352,21 @@ export default function TimesheetView({
     }
 
     setSchemaReady(true);
-    setEntries(data || []);
+    const nextEntries = sortEntries(data || []);
+    setEntries(nextEntries);
+    persistOfflineState({
+      ...cachedState,
+      entriesByWeek: {
+        ...(cachedState.entriesByWeek || {}),
+        [weekStart]: nextEntries,
+      },
+      selectedProjectId,
+      weekStart,
+      viewMode,
+      lastSyncedAt: new Date().toISOString(),
+    });
     setLoadingEntries(false);
-  }, [currentUserId, weekStart]);
+  }, [currentUserId, isOnline, persistOfflineState, selectedProjectId, viewMode, weekStart]);
 
   useEffect(() => {
     loadProjects();
@@ -220,6 +375,22 @@ export default function TimesheetView({
   useEffect(() => {
     loadEntries();
   }, [loadEntries]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    persistOfflineState({
+      ...cachedState,
+      projects,
+      entriesByWeek: {
+        ...(cachedState.entriesByWeek || {}),
+        [weekStart]: entries,
+      },
+      selectedProjectId,
+      weekStart,
+      viewMode,
+    });
+  }, [currentUserId, entries, persistOfflineState, projects, selectedProjectId, viewMode, weekStart]);
 
   useEffect(() => {
     if (currentProject?.id && !currentProject?.is_demo) {
@@ -402,6 +573,37 @@ export default function TimesheetView({
     setSuccessMessage('');
 
     if (editingOwnEntry) {
+      if (!isOnline || isOfflineTempId(activeEntry.id)) {
+        const updatedEntry = {
+          ...activeEntry,
+          ...payload,
+          updated_at: new Date().toISOString(),
+        };
+        const nextEntries = sortEntries(entries.map((entry) => (
+          entry.id === activeEntry.id ? updatedEntry : entry
+        )));
+        const cachedState = loadTimesheetOfflineState(currentUserId);
+        persistOfflineState({
+          ...cachedState,
+          entriesByWeek: {
+            ...(cachedState.entriesByWeek || {}),
+            [weekStart]: nextEntries,
+          },
+          queue: enqueueUpdate(cachedState.queue || [], activeEntry.id, {
+            ...payload,
+            updated_at: new Date().toISOString(),
+          }),
+          selectedProjectId,
+          weekStart,
+          viewMode,
+        });
+        setEntries(nextEntries);
+        setSaving(false);
+        setSuccessMessage('Timesheet entry saved offline. It will sync when your connection returns.');
+        resetComposer();
+        return;
+      }
+
       const { error } = await supabase
         .from('time_entries')
         .update(payload)
@@ -421,6 +623,32 @@ export default function TimesheetView({
       return;
     }
 
+    if (!isOnline) {
+      const localEntry = createOfflineTimeEntry({ payload });
+      const nextEntries = sortEntries([...entries, localEntry]);
+      const cachedState = loadTimesheetOfflineState(currentUserId);
+      persistOfflineState({
+        ...cachedState,
+        entriesByWeek: {
+          ...(cachedState.entriesByWeek || {}),
+          [weekStart]: nextEntries,
+        },
+        queue: enqueueCreate(cachedState.queue || [], {
+          localId: localEntry.id,
+          payload,
+        }),
+        selectedProjectId,
+        weekStart,
+        viewMode,
+      });
+      setEntries(nextEntries);
+      setSaving(false);
+      setSuccessMessage('Timesheet entry saved offline. It will sync when your connection returns.');
+      setDuplicateDraftActive(false);
+      resetComposer();
+      return;
+    }
+
     const { error } = await supabase
       .from('time_entries')
       .insert(payload);
@@ -436,7 +664,7 @@ export default function TimesheetView({
     setSuccessMessage('Timesheet entry added.');
     setDuplicateDraftActive(false);
     resetComposer();
-  }, [activeEntry, composer, currentUserId, editingOwnEntry, loadEntries, resetComposer, saving, schemaReady]);
+  }, [activeEntry, composer, currentUserId, editingOwnEntry, entries, isOnline, loadEntries, persistOfflineState, resetComposer, saving, schemaReady, selectedProjectId, viewMode, weekStart]);
 
   const handleDeleteEntry = useCallback(async () => {
     if (!editingOwnEntry || !activeEntry?.id || deletingEntryId) return;
@@ -444,6 +672,27 @@ export default function TimesheetView({
     setDeletingEntryId(activeEntry.id);
     setEntryError('');
     setSuccessMessage('');
+
+    if (!isOnline || isOfflineTempId(activeEntry.id)) {
+      const nextEntries = entries.filter((entry) => entry.id !== activeEntry.id);
+      const cachedState = loadTimesheetOfflineState(currentUserId);
+      persistOfflineState({
+        ...cachedState,
+        entriesByWeek: {
+          ...(cachedState.entriesByWeek || {}),
+          [weekStart]: nextEntries,
+        },
+        queue: enqueueDelete(cachedState.queue || [], activeEntry.id),
+        selectedProjectId,
+        weekStart,
+        viewMode,
+      });
+      setEntries(nextEntries);
+      setDeletingEntryId('');
+      setSuccessMessage('Timesheet entry removed offline. The change will sync when your connection returns.');
+      resetComposer();
+      return;
+    }
 
     const { error } = await supabase
       .from('time_entries')
@@ -461,7 +710,7 @@ export default function TimesheetView({
     setDeletingEntryId('');
     setSuccessMessage('Timesheet entry deleted.');
     resetComposer();
-  }, [activeEntry?.id, currentUserId, deletingEntryId, editingOwnEntry, loadEntries, resetComposer]);
+  }, [activeEntry, currentUserId, deletingEntryId, editingOwnEntry, entries, isOnline, loadEntries, persistOfflineState, resetComposer, selectedProjectId, viewMode, weekStart]);
 
   const handleDownloadReport = useCallback(async () => {
     if (downloadingReport || loadingProjects || loadingEntries || !schemaReady) return;
@@ -518,6 +767,114 @@ export default function TimesheetView({
     viewMode,
   ]);
 
+  const syncOfflineQueue = useCallback(async () => {
+    if (!currentUserId || !isOnline || syncingQueueRef.current) return;
+
+    const cachedState = loadTimesheetOfflineState(currentUserId);
+    let queue = Array.isArray(cachedState.queue) ? [...cachedState.queue] : [];
+    if (queue.length === 0) return;
+
+    syncingQueueRef.current = true;
+    setSyncingQueue(true);
+    let entriesByWeek = { ...(cachedState.entriesByWeek || {}) };
+
+    while (queue.length > 0) {
+      const op = queue[0];
+
+      if (op.kind === 'create') {
+        const { data, error } = await supabase
+          .from('time_entries')
+          .insert(op.record?.payload || op.record?.data || op.payload)
+          .select('id, project_id, user_id, entry_date, start_minutes, duration_minutes, description, created_at, updated_at')
+          .single();
+
+        if (error || !data) break;
+
+        const previousId = op.targetId;
+        Object.keys(entriesByWeek).forEach((key) => {
+          entriesByWeek[key] = sortEntries((entriesByWeek[key] || []).map((entry) => (
+            entry.id === previousId ? data : entry
+          )));
+        });
+        queue = replaceQueuedTargetId(queue.slice(1), previousId, data.id);
+        continue;
+      }
+
+      if (op.kind === 'update') {
+        const { error } = await supabase
+          .from('time_entries')
+          .update(op.patch)
+          .eq('id', op.targetId)
+          .eq('user_id', currentUserId);
+
+        if (error) break;
+        queue = queue.slice(1);
+        continue;
+      }
+
+      if (op.kind === 'delete') {
+        const { error } = await supabase
+          .from('time_entries')
+          .delete()
+          .eq('id', op.targetId)
+          .eq('user_id', currentUserId);
+
+        if (error) break;
+        queue = queue.slice(1);
+      }
+    }
+
+    persistOfflineState({
+      ...cachedState,
+      entriesByWeek,
+      queue,
+      selectedProjectId,
+      weekStart,
+      viewMode,
+      lastSyncedAt: queue.length === 0 ? new Date().toISOString() : cachedState.lastSyncedAt,
+    });
+    if (entriesByWeek[weekStart]) {
+      setEntries(sortEntries(entriesByWeek[weekStart]));
+    }
+    syncingQueueRef.current = false;
+    setSyncingQueue(false);
+  }, [currentUserId, isOnline, persistOfflineState, selectedProjectId, viewMode, weekStart]);
+
+  useEffect(() => {
+    void syncOfflineQueue();
+  }, [syncOfflineQueue]);
+
+  const queuedEntryIds = useMemo(
+    () => new Set((offlineQueue || []).map((item) => item.targetId)),
+    [offlineQueue]
+  );
+  const entrySyncStateById = useMemo(() => (
+    visibleEntries.reduce((acc, entry) => {
+      if (queuedEntryIds.has(entry.id) || isOfflineTempId(entry.id)) {
+        acc[entry.id] = syncingQueue && isOnline ? 'syncing' : 'offline';
+      }
+      return acc;
+    }, {})
+  ), [isOnline, queuedEntryIds, syncingQueue, visibleEntries]);
+  const offlineStatusLabel = useMemo(() => {
+    const queueCount = offlineQueue.length;
+    if (syncingQueue && queueCount > 0) {
+      return `Syncing ${queueCount} offline change${queueCount === 1 ? '' : 's'}...`;
+    }
+    if (queueCount > 0) {
+      return isOnline
+        ? `${queueCount} offline change${queueCount === 1 ? '' : 's'} ready to sync.`
+        : `${queueCount} offline change${queueCount === 1 ? '' : 's'} waiting for signal.`;
+    }
+    const lastSyncLabel = formatSyncTimeLabel(lastSyncedAt);
+    if (lastSyncLabel) {
+      return `Last synced at ${lastSyncLabel}.`;
+    }
+    return isOnline
+      ? 'This week stays cached on this device once it loads.'
+      : 'You are working from the last cached copy on this device.';
+  }, [isOnline, lastSyncedAt, offlineQueue.length, syncingQueue]);
+
   return (
     <TimesheetPanel
       currentUserId={currentUserId}
@@ -545,7 +902,10 @@ export default function TimesheetView({
       deletingEntryId={deletingEntryId}
       projectLoadError={projectLoadError}
       entryError={entryError}
-      successMessage={successMessage}
+      successMessage={syncingQueue ? 'Syncing offline Timesheet changes…' : successMessage}
+      offlineStatusLabel={offlineStatusLabel}
+      offlineQueueCount={offlineQueue.length}
+      entrySyncStateById={entrySyncStateById}
       composer={composer}
       onComposerChange={handleComposerChange}
       onSubmit={handleSubmit}

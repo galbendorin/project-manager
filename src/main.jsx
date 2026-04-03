@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { PlanProvider } from './contexts/PlanContext';
 import App from './App';
 import './styles/index.css';
+import { registerServiceWorker } from './utils/registerServiceWorker';
 
 const DEFAULT_VIEWPORT =
   'width=device-width, initial-scale=1.0, viewport-fit=cover';
@@ -45,6 +46,7 @@ window.addEventListener('DOMContentLoaded', () => {
   applyStandaloneViewport();
 }, { once: true });
 window.addEventListener('pageshow', applyStandaloneViewport);
+registerServiceWorker();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
