@@ -38,6 +38,7 @@ import {
 import { openFeedbackEmail } from '../utils/feedback';
 import AccentThemePicker from './AccentThemePicker';
 import MobileQuickCapture from './MobileQuickCapture';
+import ProjectNowSummary from './ProjectNowSummary';
 
 const ScheduleView = lazy(() => import('./ScheduleView'));
 const RegisterView = lazy(() => import('./RegisterView'));
@@ -929,6 +930,16 @@ export function MainApp({ project, currentUserId, accentTheme, onAccentThemeChan
           }
         }}
       />
+
+      {activeTab !== 'timesheets' ? (
+        <ProjectNowSummary
+          tasks={projectData}
+          registers={registers}
+          tracker={tracker}
+          statusReport={statusReport}
+          todos={todos}
+        />
+      ) : null}
 
       <main className="relative flex-grow min-h-0 overflow-hidden">
         <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-slate-500">Loading view...</div>}>
