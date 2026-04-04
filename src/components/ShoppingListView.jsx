@@ -213,6 +213,43 @@ const sortTodos = (items = []) => (
   })
 );
 
+const mergeTodosById = (existingItems = [], incomingItems = []) => {
+  const merged = new Map();
+
+  for (const item of existingItems || []) {
+    if (item?._id) merged.set(item._id, item);
+  }
+
+  for (const item of incomingItems || []) {
+    if (!item?._id) continue;
+    const current = merged.get(item._id) || {};
+    merged.set(item._id, { ...current, ...item });
+  }
+
+  return sortTodos(Array.from(merged.values()));
+};
+
+const formatSharedActorLabel = (value = '') => {
+  const email = String(value || '').trim().toLowerCase();
+  const localPart = email.split('@')[0] || '';
+  if (!localPart) return '';
+  return localPart
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
+const resolveSharedActorLabel = (row = {}, project, currentUserId) => {
+  const actorId = row.user_id || row.assignee_user_id || '';
+  if (!actorId || actorId === currentUserId) return '';
+  if (actorId === project?.user_id) return 'Owner';
+
+  const matchingMember = (project?.project_members || []).find((member) => member?.user_id === actorId);
+  const memberLabel = formatSharedActorLabel(matchingMember?.member_email);
+  return memberLabel || 'Someone';
+};
+
 const isOfflineBrowser = () => (
   typeof navigator !== 'undefined' && navigator.onLine === false
 );
@@ -372,6 +409,7 @@ export default function ShoppingListView({ currentUserId }) {
   const [isListening, setIsListening] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [voiceMessage, setVoiceMessage] = useState('');
+  const [liveUpdateMessage, setLiveUpdateMessage] = useState('');
   const [pendingCompleteId, setPendingCompleteId] = useState('');
   const [pendingCompleteSeconds, setPendingCompleteSeconds] = useState(1);
   const [savingTodoId, setSavingTodoId] = useState('');
@@ -391,6 +429,7 @@ export default function ShoppingListView({ currentUserId }) {
   const supportsProjectMembersRef = useRef(true);
   const ensuringProjectRef = useRef(false);
   const syncingQueueRef = useRef(false);
+  const shoppingRealtimeChannelRef = useRef(null);
   const recognitionRef = useRef(null);
   const pendingVoiceTranscriptRef = useRef('');
   const voiceSessionActiveRef = useRef(false);
@@ -422,6 +461,12 @@ export default function ShoppingListView({ currentUserId }) {
       setShowBought(true);
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    if (!liveUpdateMessage) return undefined;
+    const timeoutId = window.setTimeout(() => setLiveUpdateMessage(''), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [liveUpdateMessage]);
 
   useEffect(() => {
     const cachedState = loadShoppingOfflineState(currentUserId);
@@ -637,6 +682,81 @@ export default function ShoppingListView({ currentUserId }) {
   }, [loadTodos]);
 
   useEffect(() => {
+    if (!selectedProject?.id || !isOnline) return undefined;
+
+    const channel = supabase
+      .channel(`shopping-list-live:${selectedProject.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'manual_todos',
+          filter: `project_id=eq.${selectedProject.id}`,
+        },
+        (payload) => {
+          const nextRow = payload?.new;
+          if (!nextRow?.id) return;
+
+          const incomingTodo = mapManualTodoRow(nextRow);
+          const actorLabel = resolveSharedActorLabel(nextRow, selectedProject, currentUserId);
+          const isFromSomeoneElse = Boolean(actorLabel);
+
+          setTodos((previousItems) => {
+            if (previousItems.some((item) => item._id === incomingTodo._id)) {
+              return previousItems;
+            }
+
+            const nextTodos = mergeTodosById(previousItems, [incomingTodo]);
+            const cachedState = loadShoppingOfflineState(currentUserId);
+            persistOfflineState({
+              ...cachedState,
+              selectedProjectId: selectedProject.id,
+              todosByProject: {
+                ...(cachedState.todosByProject || {}),
+                [selectedProject.id]: nextTodos,
+              },
+              lastSyncedAt: new Date().toISOString(),
+            });
+
+            return nextTodos;
+          });
+
+          if (isFromSomeoneElse) {
+            const message = `${actorLabel} added ${incomingTodo.title}.`;
+            setLiveUpdateMessage(message);
+
+            if (
+              typeof window !== 'undefined'
+              && typeof document !== 'undefined'
+              && document.visibilityState === 'hidden'
+              && 'Notification' in window
+              && window.Notification?.permission === 'granted'
+            ) {
+              try {
+                void new window.Notification('Shopping List updated', {
+                  body: message,
+                });
+              } catch {
+                // Ignore notification API failures and keep the in-app update only.
+              }
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    shoppingRealtimeChannelRef.current = channel;
+
+    return () => {
+      if (shoppingRealtimeChannelRef.current) {
+        void supabase.removeChannel(shoppingRealtimeChannelRef.current);
+        shoppingRealtimeChannelRef.current = null;
+      }
+    };
+  }, [currentUserId, isOnline, persistOfflineState, selectedProject]);
+
+  useEffect(() => {
     if (!currentUserId) return;
     const cachedState = loadShoppingOfflineState(currentUserId);
     persistOfflineState({
@@ -762,7 +882,7 @@ export default function ShoppingListView({ currentUserId }) {
 
     const savedItems = sortTodos((data || []).map(mapManualTodoRow));
     setTodos((previous) => {
-      const nextTodos = sortTodos([...previous, ...savedItems]);
+      const nextTodos = mergeTodosById(previous, savedItems);
       const cachedState = loadShoppingOfflineState(currentUserId);
       persistOfflineState({
         ...cachedState,
@@ -1502,6 +1622,12 @@ export default function ShoppingListView({ currentUserId }) {
                 {todoError ? (
                   <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                     {todoError}
+                  </div>
+                ) : null}
+
+                {liveUpdateMessage ? (
+                  <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700 shadow-sm">
+                    {liveUpdateMessage}
                   </div>
                 ) : null}
 
