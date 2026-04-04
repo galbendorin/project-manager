@@ -12,6 +12,13 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { createOfflineTempId, isOfflineTempId, readLocalJson, readOfflineJson, writeLocalJson } from '../utils/offlineState';
 import { enqueueCreate, enqueueDelete, enqueueUpdate, replaceQueuedTargetId } from '../utils/offlineQueue';
 import { normalizeProjectRecord } from '../utils/projectSharing';
+import {
+  disablePushAlerts,
+  enablePushAlerts,
+  isPushNotificationsSupported,
+  notifyShoppingListSubscribers,
+  syncExistingPushSubscription,
+} from '../utils/pushNotifications';
 import MobileSyncCenter from './MobileSyncCenter';
 import ProjectShareModal from './ProjectShareModal';
 
@@ -410,6 +417,13 @@ export default function ShoppingListView({ currentUserId }) {
   const [interimText, setInterimText] = useState('');
   const [voiceMessage, setVoiceMessage] = useState('');
   const [liveUpdateMessage, setLiveUpdateMessage] = useState('');
+  const [pushSupported, setPushSupported] = useState(() => isPushNotificationsSupported());
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushPermission, setPushPermission] = useState(() => (
+    typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'default'
+  ));
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState('');
   const [pendingCompleteId, setPendingCompleteId] = useState('');
   const [pendingCompleteSeconds, setPendingCompleteSeconds] = useState(1);
   const [savingTodoId, setSavingTodoId] = useState('');
@@ -469,6 +483,12 @@ export default function ShoppingListView({ currentUserId }) {
   }, [liveUpdateMessage]);
 
   useEffect(() => {
+    if (!pushMessage) return undefined;
+    const timeoutId = window.setTimeout(() => setPushMessage(''), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [pushMessage]);
+
+  useEffect(() => {
     const cachedState = loadShoppingOfflineState(currentUserId);
     if (cachedState.projects?.length) {
       setProjects(cachedState.projects);
@@ -496,6 +516,31 @@ export default function ShoppingListView({ currentUserId }) {
       active = false;
     };
   }, [currentUserId]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!isPushNotificationsSupported()) {
+      setPushSupported(false);
+      setPushEnabled(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    setPushSupported(true);
+
+    void syncExistingPushSubscription().then((result) => {
+      if (!active || !result) return;
+      setPushSupported(Boolean(result.supported));
+      setPushEnabled(Boolean(result.enabled));
+      setPushPermission(result.permission || window.Notification.permission);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const createShoppingProject = useCallback(async () => {
     const projectPayload = {
@@ -730,16 +775,19 @@ export default function ShoppingListView({ currentUserId }) {
               typeof window !== 'undefined'
               && typeof document !== 'undefined'
               && document.visibilityState === 'hidden'
+              && !pushEnabled
               && 'Notification' in window
               && window.Notification?.permission === 'granted'
             ) {
-              try {
-                void new window.Notification('Shopping List updated', {
+              void navigator.serviceWorker?.ready
+                ?.then((registration) => registration?.showNotification?.('Shopping List updated', {
                   body: message,
-                });
-              } catch {
-                // Ignore notification API failures and keep the in-app update only.
-              }
+                  icon: '/pmworkspace-icon-192.png',
+                  badge: '/pmworkspace-icon-192.png',
+                  tag: `shopping-live:${selectedProject.id}`,
+                  data: { url: '/shopping', projectId: selectedProject.id, kind: 'shopping-list' },
+                }))
+                .catch(() => null);
             }
           }
         }
@@ -754,7 +802,7 @@ export default function ShoppingListView({ currentUserId }) {
         shoppingRealtimeChannelRef.current = null;
       }
     };
-  }, [currentUserId, isOnline, persistOfflineState, selectedProject]);
+  }, [currentUserId, isOnline, persistOfflineState, pushEnabled, selectedProject]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -894,6 +942,10 @@ export default function ShoppingListView({ currentUserId }) {
         lastSyncedAt: new Date().toISOString(),
       });
       return nextTodos;
+    });
+    await notifyShoppingListSubscribers({
+      projectId: selectedProject.id,
+      itemTitles: savedItems.map((item) => item.title),
     });
     setSavingItems(false);
   }, [currentUserId, isOnline, persistOfflineState, selectedProject?.id, todos]);
@@ -1256,6 +1308,7 @@ export default function ShoppingListView({ currentUserId }) {
     syncingQueueRef.current = true;
     setSyncingQueue(true);
     let todosByProject = { ...(cachedState.todosByProject || {}) };
+    const createdTitlesByProject = new Map();
 
     while (queue.length > 0) {
       const op = queue[0];
@@ -1284,6 +1337,8 @@ export default function ShoppingListView({ currentUserId }) {
         todosByProject[op.record.projectId] = sortTodos(projectTodos.map((item) => (
           item._id === op.targetId ? savedTodo : item
         )));
+        const existingTitles = createdTitlesByProject.get(op.record.projectId) || [];
+        createdTitlesByProject.set(op.record.projectId, [...existingTitles, savedTodo.title]);
         queue = replaceQueuedTargetId(queue.slice(1), op.targetId, savedTodo._id);
         continue;
       }
@@ -1325,6 +1380,10 @@ export default function ShoppingListView({ currentUserId }) {
       setTodos(sortTodos(todosByProject[selectedProject.id] || []));
     }
 
+    for (const [projectId, itemTitles] of createdTitlesByProject.entries()) {
+      await notifyShoppingListSubscribers({ projectId, itemTitles });
+    }
+
     if (queue.length === 0) {
       setFailedTodoId('');
       setFailedTodoMessage('');
@@ -1333,6 +1392,26 @@ export default function ShoppingListView({ currentUserId }) {
     syncingQueueRef.current = false;
     setSyncingQueue(false);
   }, [currentUserId, isOnline, persistOfflineState, selectedProject?.id]);
+
+  const handleEnablePushAlerts = useCallback(async () => {
+    setPushBusy(true);
+    const result = await enablePushAlerts();
+    setPushSupported(Boolean(result.supported));
+    setPushEnabled(Boolean(result.enabled));
+    setPushPermission(result.permission || pushPermission);
+    setPushMessage(result.message || 'Phone alert status updated.');
+    setPushBusy(false);
+  }, [pushPermission]);
+
+  const handleDisablePushAlerts = useCallback(async () => {
+    setPushBusy(true);
+    const result = await disablePushAlerts();
+    setPushSupported(Boolean(result.supported));
+    setPushEnabled(Boolean(result.enabled));
+    setPushPermission(result.permission || pushPermission);
+    setPushMessage(result.message || 'Phone alert status updated.');
+    setPushBusy(false);
+  }, [pushPermission]);
 
   useEffect(() => {
     void syncOfflineQueue();
@@ -1497,6 +1576,51 @@ export default function ShoppingListView({ currentUserId }) {
                         Share this list
                       </button>
                     ) : null}
+                  </div>
+
+                  <div className="pm-metric-card rounded-2xl px-4 py-3">
+                    <div className="pm-kicker">Phone alerts</div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="text-lg font-semibold text-slate-950">
+                        {!pushSupported ? 'Unavailable' : pushEnabled ? 'Enabled' : pushPermission === 'denied' ? 'Blocked' : 'Off'}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {!pushSupported
+                          ? 'browser support missing'
+                          : pushEnabled
+                            ? 'background alerts ready'
+                            : pushPermission === 'denied'
+                              ? 'allow notifications in settings'
+                              : 'turn on for this device'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      Get a device alert when someone adds groceries while this list is closed or in the background.
+                    </p>
+                    {pushMessage ? (
+                      <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                        {pushMessage}
+                      </div>
+                    ) : null}
+                    {!pushSupported ? null : pushEnabled ? (
+                      <button
+                        type="button"
+                        onClick={handleDisablePushAlerts}
+                        disabled={pushBusy}
+                        className="pm-subtle-button mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {pushBusy ? 'Updating…' : 'Turn off alerts'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleEnablePushAlerts}
+                        disabled={pushBusy || pushPermission === 'denied'}
+                        className="pm-subtle-button mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {pushBusy ? 'Updating…' : 'Enable phone alerts'}
+                      </button>
+                    )}
                   </div>
                 </div>
 

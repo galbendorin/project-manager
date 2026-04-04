@@ -5,6 +5,7 @@ import OfflineBanner from './components/OfflineBanner';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { applyAccentTheme, loadAccentTheme, saveAccentTheme } from './utils/appearance';
 import { clearLastProject, loadLastAppPath, loadLastProject, saveLastAppPath, saveLastProject } from './utils/navigationState';
+import { readAppShortcutIntent } from './utils/appShortcutIntent';
 
 const AuthPage = lazy(() => import('./components/AuthPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -17,6 +18,18 @@ const AuthenticatedShoppingShell = lazy(() => import('./components/AppWorkspaceS
 const normalizeAppPath = (value = '/') => {
   const normalized = String(value || '/').replace(/\/+$/, '');
   return normalized || '/';
+};
+
+const getInitialAppPath = () => {
+  if (typeof window === 'undefined') return '/';
+
+  const pathname = normalizeAppPath(window.location.pathname);
+  const shortcutIntent = readAppShortcutIntent(window.location.search);
+  if (pathname === '/' && shortcutIntent) {
+    return '/';
+  }
+
+  return pathname === '/' ? loadLastAppPath() : pathname;
 };
 
 const PageFallback = ({ label = 'Loading...' }) => (
@@ -51,10 +64,9 @@ function App() {
   const isOnline = useOnlineStatus();
   const [currentProject, setCurrentProject] = useState(null);
   const [accentTheme, setAccentTheme] = useState(() => loadAccentTheme());
-  const [currentPath, setCurrentPath] = useState(() => (
-    typeof window !== 'undefined'
-      ? normalizeAppPath(window.location.pathname === '/' ? loadLastAppPath() : window.location.pathname)
-      : '/'
+  const [currentPath, setCurrentPath] = useState(() => getInitialAppPath());
+  const [launchShortcut, setLaunchShortcut] = useState(() => (
+    typeof window !== 'undefined' ? readAppShortcutIntent(window.location.search) : null
   ));
 
   useEffect(() => {
@@ -67,6 +79,7 @@ function App() {
 
     const handlePopState = () => {
       setCurrentPath(normalizeAppPath(window.location.pathname));
+      setLaunchShortcut(readAppShortcutIntent(window.location.search));
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -192,6 +205,7 @@ function App() {
           accentTheme={accentTheme}
           onAccentThemeChange={setAccentTheme}
           isOnline={isOnline}
+          launchShortcut={currentPath === '/' ? launchShortcut : null}
           onBackToProjects={() => {
             setCurrentProject(null);
             clearLastProject();

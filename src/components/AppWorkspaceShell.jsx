@@ -160,8 +160,9 @@ export function AuthenticatedShoppingShell({
   );
 }
 
-export function MainApp({ project, currentUserId, currentUserName, accentTheme, onAccentThemeChange, onBackToProjects, isOnline }) {
+export function MainApp({ project, currentUserId, currentUserName, accentTheme, onAccentThemeChange, onBackToProjects, isOnline, launchShortcut }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const appliedLaunchShortcutRef = useRef('');
   const {
     canUseAiReport, aiReportsRemaining, incrementAiReports,
     limits, effectivePlan, isAdmin, isInTaskGrace, getTaskHardLimit,
@@ -335,6 +336,26 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     setIsQuickCaptureOpen(false);
     setQuickCaptureText('');
   }, [quickCaptureSaving]);
+
+  useEffect(() => {
+    if (!launchShortcut?.key || !project?.id) return;
+
+    const intentKey = `${project.id}:${launchShortcut.key}`;
+    if (appliedLaunchShortcutRef.current === intentKey) return;
+
+    if (launchShortcut.initialTab) {
+      setActiveTab(launchShortcut.initialTab);
+      setActiveSubView(null);
+    }
+
+    if (launchShortcut.openQuickCapture && isMobile) {
+      setQuickCaptureMode('smart');
+      setQuickCaptureStatus('');
+      setIsQuickCaptureOpen(true);
+    }
+
+    appliedLaunchShortcutRef.current = intentKey;
+  }, [isMobile, launchShortcut, project?.id]);
 
   const handleSubmitQuickCapture = useCallback(async () => {
     const captureEntries = (quickCaptureMode === 'smart' ? quickCaptureItems : [activeCaptureRoute])

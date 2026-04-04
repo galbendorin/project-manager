@@ -14,11 +14,25 @@
     {
       "name": "Shopping List",
       "short_name": "Shopping",
+      "description": "Open your shared grocery list",
       "url": "/shopping"
+    },
+    {
+      "name": "Capture",
+      "short_name": "Capture",
+      "description": "Quickly save a task, action, risk, or decision",
+      "url": "/?shortcut=capture"
+    },
+    {
+      "name": "Tasks",
+      "short_name": "Tasks",
+      "description": "Jump straight into the last project tasks view",
+      "url": "/?shortcut=tasks"
     },
     {
       "name": "Timesheet",
       "short_name": "Timesheet",
+      "description": "Open your current timesheet",
       "url": "/track"
     }
   ],
