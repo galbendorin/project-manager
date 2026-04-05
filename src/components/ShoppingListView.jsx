@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { usePlan } from '../contexts/PlanContext';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
@@ -9,6 +8,7 @@ import {
   mapManualTodoRow,
 } from '../hooks/projectData/manualTodoUtils';
 import { useShoppingListActions } from '../hooks/useShoppingListActions';
+import { useShoppingListData } from '../hooks/useShoppingListData';
 import { useShoppingListLiveUpdates } from '../hooks/useShoppingListLiveUpdates';
 import { useShoppingListOfflineSync } from '../hooks/useShoppingListOfflineSync';
 import { useShoppingListVoiceCapture } from '../hooks/useShoppingListVoiceCapture';
@@ -261,13 +261,6 @@ export default function ShoppingListView({ currentUserId }) {
   const { canCreateProject, limits, refreshProjectCount } = usePlan();
   const isMobile = useMediaQuery('(max-width: 768px)');
   const isOnline = useOnlineStatus();
-  const [projects, setProjects] = useState([]);
-  const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [loadingProjects, setLoadingProjects] = useState(true);
-  const [projectError, setProjectError] = useState('');
-  const [todos, setTodos] = useState([]);
-  const [loadingTodos, setLoadingTodos] = useState(false);
-  const [todoError, setTodoError] = useState('');
   const [draftTitle, setDraftTitle] = useState('');
   const [shareOpen, setShareOpen] = useState(false);
   const [showBought, setShowBought] = useState(false);
@@ -285,22 +278,54 @@ export default function ShoppingListView({ currentUserId }) {
   });
   const supportsProjectMembersRef = useRef(true);
   const ensuringProjectRef = useRef(false);
-
-  const selectedProject = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId) || null,
-    [projects, selectedProjectId]
-  );
   const isCompactDesktop = !isMobile && desktopCompact;
   const shouldCollapseBought = isMobile || isCompactDesktop;
-  const openTodos = useMemo(() => todos.filter((todo) => todo.status !== 'Done'), [todos]);
-  const completedTodos = useMemo(() => todos.filter((todo) => todo.status === 'Done'), [todos]);
-  const canShareProject = Boolean(selectedProject?.isOwned && supportsProjectMembersRef.current);
   const persistOfflineState = useCallback((nextState) => {
     saveShoppingOfflineState(currentUserId, nextState);
     setOfflineQueue(Array.isArray(nextState.queue) ? nextState.queue : []);
     setLastSyncedAt(nextState.lastSyncedAt || '');
     return nextState;
   }, [currentUserId]);
+
+  const {
+    loadProjects,
+    loadTodos,
+    loadingProjects,
+    loadingTodos,
+    projectError,
+    projects,
+    selectedProject,
+    selectedProjectId,
+    setSelectedProjectId,
+    setTodoError,
+    setTodos,
+    todoError,
+    todos,
+  } = useShoppingListData({
+    canCreateProject,
+    createEmptyProjectSnapshot,
+    currentUserId,
+    generateProjectId,
+    isMissingTodoRelationError: isMissingTodoRelationError,
+    isOnline,
+    isProjectRelationMissingError,
+    isRowLevelSecurityError,
+    limits,
+    loadShoppingOfflineState,
+    loadShoppingOfflineStateAsync,
+    manualTodoSelect: MANUAL_TODO_SELECT,
+    mapManualTodoRow,
+    normalizeProjectRecord,
+    persistOfflineState,
+    refreshProjectCount,
+    shoppingProjectName: SHOPPING_PROJECT_NAME,
+    sortTodos,
+    supportsProjectMembersRef,
+    ensuringProjectRef,
+  });
+  const openTodos = useMemo(() => todos.filter((todo) => todo.status !== 'Done'), [todos]);
+  const completedTodos = useMemo(() => todos.filter((todo) => todo.status === 'Done'), [todos]);
+  const canShareProject = Boolean(selectedProject?.isOwned && supportsProjectMembersRef.current);
   useEffect(() => {
     if (!shouldCollapseBought) {
       setShowBought(true);
@@ -310,211 +335,6 @@ export default function ShoppingListView({ currentUserId }) {
   useEffect(() => {
     writeLocalJson(SHOPPING_UI_PREFS_KEY, { desktopCompact });
   }, [desktopCompact]);
-
-  useEffect(() => {
-    const cachedState = loadShoppingOfflineState(currentUserId);
-    if (cachedState.projects?.length) {
-      setProjects(cachedState.projects);
-    }
-    if (cachedState.selectedProjectId) {
-      setSelectedProjectId((current) => current || cachedState.selectedProjectId);
-    }
-    setOfflineQueue(Array.isArray(cachedState.queue) ? cachedState.queue : []);
-    setLastSyncedAt(cachedState.lastSyncedAt || '');
-
-    let active = true;
-    void loadShoppingOfflineStateAsync(currentUserId).then((preferredState) => {
-      if (!active || !preferredState) return;
-      if (preferredState.projects?.length) {
-        setProjects(preferredState.projects);
-      }
-      if (preferredState.selectedProjectId) {
-        setSelectedProjectId((current) => current || preferredState.selectedProjectId);
-      }
-      setOfflineQueue(Array.isArray(preferredState.queue) ? preferredState.queue : []);
-      setLastSyncedAt(preferredState.lastSyncedAt || '');
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [currentUserId]);
-
-  const createShoppingProject = useCallback(async () => {
-    const projectPayload = {
-      id: generateProjectId(),
-      user_id: currentUserId,
-      name: SHOPPING_PROJECT_NAME,
-      ...createEmptyProjectSnapshot(),
-    };
-
-    let { data, error } = await supabase
-      .from('projects')
-      .insert(projectPayload)
-      .select('id, user_id, name, created_at, updated_at')
-      .single();
-
-    if (error && projectPayload.id && isRowLevelSecurityError(error, 'projects')) {
-      const { error: insertError } = await supabase
-        .from('projects')
-        .insert(projectPayload);
-
-      if (!insertError) {
-        ({ data, error } = await supabase
-          .from('projects')
-          .select(supportsProjectMembersRef.current
-            ? 'id, user_id, name, created_at, updated_at, project_members(id, user_id, member_email, role, invited_by_user_id, created_at)'
-            : 'id, user_id, name, created_at, updated_at')
-          .eq('id', projectPayload.id)
-          .single());
-      } else {
-        error = insertError;
-      }
-    }
-
-    if (error || !data) {
-      throw error || new Error('Unable to create Shopping List.');
-    }
-
-    refreshProjectCount();
-    return normalizeProjectRecord(data, currentUserId);
-  }, [currentUserId, refreshProjectCount]);
-
-  const loadProjects = useCallback(async () => {
-    if (!currentUserId) return;
-
-    setLoadingProjects(true);
-    setProjectError('');
-
-    const cachedState = await loadShoppingOfflineStateAsync(currentUserId);
-    if (cachedState.projects?.length) {
-      setProjects(cachedState.projects);
-      if (cachedState.selectedProjectId) {
-        setSelectedProjectId((current) => current || cachedState.selectedProjectId);
-      }
-    }
-
-    if (!isOnline) {
-      if (!cachedState.projects?.length) {
-        setProjectError('You are offline. Open Shopping List once online on this device to keep it available.');
-      }
-      setLoadingProjects(false);
-      return;
-    }
-
-    let includeMembers = supportsProjectMembersRef.current;
-    let { data, error } = await supabase
-      .from('projects')
-      .select(includeMembers
-        ? 'id, user_id, name, created_at, updated_at, project_members(id, user_id, member_email, role, invited_by_user_id, created_at)'
-        : 'id, user_id, name, created_at, updated_at')
-      .eq('name', SHOPPING_PROJECT_NAME)
-      .order('created_at', { ascending: true });
-
-    if (error && includeMembers && isProjectRelationMissingError(error, 'project_members')) {
-      supportsProjectMembersRef.current = false;
-      includeMembers = false;
-      ({ data, error } = await supabase
-        .from('projects')
-        .select('id, user_id, name, created_at, updated_at')
-        .eq('name', SHOPPING_PROJECT_NAME)
-        .order('created_at', { ascending: true }));
-    }
-
-    if (error) {
-      setProjects([]);
-      setProjectError(error.message || 'Unable to load Shopping List.');
-      setLoadingProjects(false);
-      return;
-    }
-
-    let nextProjects = (data || []).map((project) => normalizeProjectRecord(project, currentUserId));
-
-    if (nextProjects.length === 0 && canCreateProject && !ensuringProjectRef.current) {
-      ensuringProjectRef.current = true;
-      try {
-        const createdProject = await createShoppingProject();
-        nextProjects = createdProject ? [createdProject] : [];
-      } catch (createError) {
-        setProjectError(createError.message || 'Unable to prepare Shopping List.');
-      } finally {
-        ensuringProjectRef.current = false;
-      }
-    } else if (nextProjects.length === 0 && !canCreateProject) {
-      setProjectError(
-        `Shopping List needs one project slot. Your ${limits.label} plan currently allows ${limits.maxProjects} project${limits.maxProjects === 1 ? '' : 's'}.`
-      );
-    }
-
-    const defaultProject = nextProjects.find((project) => project.isOwned) || nextProjects[0] || null;
-
-    setProjects(nextProjects);
-    setSelectedProjectId((currentValue) => (
-      currentValue && nextProjects.some((project) => project.id === currentValue)
-        ? currentValue
-        : (defaultProject?.id || '')
-    ));
-    setLoadingProjects(false);
-    persistOfflineState({
-      ...cachedState,
-      projects: nextProjects,
-      selectedProjectId: defaultProject?.id || cachedState.selectedProjectId || '',
-    });
-  }, [canCreateProject, createShoppingProject, currentUserId, isOnline, limits.label, limits.maxProjects, persistOfflineState]);
-
-  const loadTodos = useCallback(async () => {
-    if (!selectedProject?.id) {
-      setTodos([]);
-      return;
-    }
-
-    setLoadingTodos(true);
-    setTodoError('');
-
-    const cachedState = await loadShoppingOfflineStateAsync(currentUserId);
-    const cachedTodos = cachedState.todosByProject?.[selectedProject.id] || [];
-    if (cachedTodos.length > 0) {
-      setTodos(sortTodos(cachedTodos));
-    }
-
-    if (!isOnline) {
-      if (!cachedTodos.length) {
-        setTodoError('You are offline. Open this list once online on this device to cache it.');
-      }
-      setLoadingTodos(false);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from('manual_todos')
-      .select(MANUAL_TODO_SELECT)
-      .eq('project_id', selectedProject.id)
-      .order('status', { ascending: true })
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      if (isMissingTodoRelationError(error, 'manual_todos')) {
-        setTodoError('Shopping items need the manual to-dos table enabled first.');
-      } else {
-        setTodoError(error.message || 'Unable to load grocery items.');
-      }
-      setTodos([]);
-      setLoadingTodos(false);
-      return;
-    }
-
-    const nextTodos = sortTodos((data || []).map(mapManualTodoRow));
-    setTodos(nextTodos);
-    persistOfflineState({
-      ...cachedState,
-      selectedProjectId: selectedProject.id,
-      todosByProject: {
-        ...(cachedState.todosByProject || {}),
-        [selectedProject.id]: nextTodos,
-      }
-    });
-    setLoadingTodos(false);
-  }, [currentUserId, isOnline, persistOfflineState, selectedProject?.id]);
 
   const {
     liveUpdateMessage,
@@ -537,14 +357,6 @@ export default function ShoppingListView({ currentUserId }) {
     sortTodos,
     resolveSharedActorLabel,
   });
-
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => {
-    loadTodos();
-  }, [loadTodos]);
 
   useEffect(() => {
     if (!currentUserId) return;
