@@ -1,125 +1,13 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { SCHEMAS } from '../utils/constants';
-import { keyGen } from '../utils/helpers';
 import { applyRegisterView, getRegisterViewConfig } from '../utils/registerViewUtils';
-import { IconEyeOpen, IconEyeClosed, IconTrash } from './Icons';
+import { IconEyeOpen, IconTrash } from './Icons';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import MobileRegisterList from './mobile/MobileRegisterList';
 import RowColorControl from './RowColorControl';
 import { getRowColorBackground } from '../utils/rowColors';
-
-// Columns that are short/fixed — don't need clamp/tooltip
-const SHORT_COLS = ['visible', 'number', 'status', 'level', 'raised', 'target', 'completed', 'date', 'updated', 'complete', 'cost', 'billing', 'mobile', 'phone'];
-
-const isLongTextCol = (colName) => {
-  const k = colName.toLowerCase().replace(/[^a-z]/g, '');
-  if (k === 'status' || k === 'number' || k === 'visible' || k === 'level' || k === 'complete') return false;
-  return !SHORT_COLS.some(s => s !== 'status' && k.includes(s));
-};
-
-const HeaderMenuPopover = ({
-  anchorRect,
-  title,
-  sortValue,
-  sortOptions = [],
-  filterValue = 'all',
-  filterOptions = [],
-  filterLabel = 'Filter',
-  onSortChange,
-  onFilterChange,
-  onClose
-}) => {
-  const popRef = useRef(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-
-  useEffect(() => {
-    if (!anchorRect || !popRef.current) return;
-    const pop = popRef.current.getBoundingClientRect();
-    const pad = 8;
-    let top = anchorRect.bottom + 6;
-    let left = anchorRect.left;
-
-    if (left + pop.width > window.innerWidth - pad) {
-      left = window.innerWidth - pop.width - pad;
-    }
-    if (left < pad) left = pad;
-
-    if (top + pop.height > window.innerHeight - pad) {
-      top = Math.max(pad, anchorRect.top - pop.height - 6);
-    }
-
-    setPos({ top, left });
-  }, [anchorRect]);
-
-  useEffect(() => {
-    const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
-    const handleClick = (e) => {
-      if (popRef.current && !popRef.current.contains(e.target)) onClose();
-    };
-    document.addEventListener('keydown', handleEsc);
-    document.addEventListener('mousedown', handleClick);
-    return () => {
-      document.removeEventListener('keydown', handleEsc);
-      document.removeEventListener('mousedown', handleClick);
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      ref={popRef}
-      className="fixed z-[9999] w-56 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl"
-      style={{ top: pos.top, left: pos.left }}
-    >
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-        {title}
-      </div>
-
-      {sortOptions.length > 0 && (
-        <div className="mt-3">
-          <div className="mb-2 text-[11px] font-semibold text-slate-500">Sort</div>
-          <div className="space-y-1">
-            {sortOptions.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => {
-                  onSortChange(option.value);
-                  onClose();
-                }}
-                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[12px] transition-colors ${
-                  sortValue === option.value
-                    ? 'bg-indigo-50 text-indigo-700'
-                    : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <span>{option.label}</span>
-                {sortValue === option.value && <span className="text-indigo-600">✓</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {filterOptions.length > 0 && (
-        <div className="mt-3 border-t border-slate-100 pt-3">
-          <div className="mb-2 text-[11px] font-semibold text-slate-500">{filterLabel}</div>
-          <select
-            value={filterValue}
-            onChange={(e) => {
-              onFilterChange(e.target.value);
-              onClose();
-            }}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
-          >
-            <option value="all">All</option>
-            {filterOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-        </div>
-      )}
-    </div>
-  );
-};
+import RegisterEditableCell from './RegisterEditableCell';
+import RegisterHeaderMenuPopover from './RegisterHeaderMenuPopover';
 
 // ── Main component ─────────────────────────────────────────────────
 
@@ -238,126 +126,6 @@ const RegisterView = ({
     ));
   };
 
-  const EditableCell = ({ item, colName }) => {
-    const key = keyGen(colName);
-    const cellId = `${item._id}-${key}`;
-    const isEditing = editingCell === cellId;
-    const value = item[key];
-    const textValue = value || '...';
-    const isLong = isLongTextCol(colName);
-    const hasContent = value && value !== '...' && value.length > 40;
-    const isExpanded = expandedCell === cellId;
-
-    if (colName === "Visible") {
-      return (
-        <td className="px-3 py-2.5 text-center w-12">
-          <button
-            onClick={() => onTogglePublic(registerType, item._id)}
-            className="hover:text-indigo-600"
-          >
-            {item.public ? <IconEyeOpen /> : <IconEyeClosed />}
-          </button>
-        </td>
-      );
-    }
-
-    if (colName === "Number") {
-      return (
-        <td className="px-3 py-2.5 font-mono text-slate-300 font-bold w-16 text-center">
-          {textValue}
-        </td>
-      );
-    }
-
-    const handleClick = () => {
-      if (expandedCell === cellId) {
-        setExpandedCell(null);
-        return;
-      }
-      setEditingCell(cellId);
-    };
-
-    const handleBlur = (e) => {
-      handleCellEdit(item._id, key, e.target.value);
-    };
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Enter') {
-        e.target.blur();
-      }
-    };
-
-    const handleExpand = (e) => {
-      e.stopPropagation();
-      setExpandedCell(isExpanded ? null : cellId);
-    };
-
-    if (isEditing) {
-      return (
-        <td className="px-3 py-2.5">
-          <input
-            autoFocus
-            type="text"
-            defaultValue={value === "..." ? "" : value}
-            onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
-            className="editing-input bg-indigo-50"
-          />
-        </td>
-      );
-    }
-
-    if (isLong) {
-      return (
-        <td
-          className="px-3 py-2.5 editable relative"
-          onClick={handleClick}
-        >
-          <div className="flex items-start gap-1.5">
-            <div 
-              className="overflow-hidden text-ellipsis flex-1 min-w-0"
-              style={{
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                lineHeight: '1.4em',
-                maxHeight: '2.8em'
-              }}
-            >
-              {textValue}
-            </div>
-            {hasContent && (
-              <button
-                onClick={handleExpand}
-                className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors mt-0.5"
-                title="Expand"
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  {isExpanded ? <path d="M4 10l4-4 4 4" /> : <path d="M6 4l4 4-4 4" />}
-                </svg>
-              </button>
-            )}
-          </div>
-
-          {isExpanded && (
-            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700 whitespace-pre-wrap break-words shadow-sm">
-              {value}
-            </div>
-          )}
-        </td>
-      );
-    }
-
-    return (
-      <td
-        className="px-3 py-2.5 editable"
-        onClick={handleClick}
-      >
-        {textValue}
-      </td>
-    );
-  };
-
   return (
     <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
       <div className="max-w-[1650px] mx-auto bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-h-[500px]">
@@ -442,7 +210,18 @@ const RegisterView = ({
                   style={item.rowColor ? { backgroundColor: getRowColorBackground(item.rowColor) } : undefined}
                 >
                   {visibleCols.map(col => (
-                    <EditableCell key={col} item={item} colName={col} />
+                    <RegisterEditableCell
+                      key={col}
+                      item={item}
+                      colName={col}
+                      registerType={registerType}
+                      editingCell={editingCell}
+                      expandedCell={expandedCell}
+                      onSetEditingCell={setEditingCell}
+                      onSetExpandedCell={setExpandedCell}
+                      onCommitCell={handleCellEdit}
+                      onTogglePublic={onTogglePublic}
+                    />
                   ))}
                   <td className={`px-3 py-2.5 text-center ${allowRowColor ? 'w-24' : 'w-12'}`}>
                     <div className="flex items-center justify-center gap-2">
@@ -475,7 +254,7 @@ const RegisterView = ({
       </div>
 
       {headerMenu && getHeaderMenuConfig(headerMenu.col) && (
-        <HeaderMenuPopover
+        <RegisterHeaderMenuPopover
           anchorRect={headerMenu.anchorRect}
           title={headerMenu.col}
           {...getHeaderMenuConfig(headerMenu.col)}
