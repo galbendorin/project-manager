@@ -727,6 +727,43 @@ export default function ShoppingListView({ currentUserId }) {
   }, [loadTodos]);
 
   useEffect(() => {
+    if (!selectedProject?.id || typeof window === 'undefined') return undefined;
+
+    const handleForegroundRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        void loadTodos();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      void loadTodos();
+    };
+
+    const handleWorkerMessage = (event) => {
+      const message = event?.data;
+      if (!message || (message.type !== 'shopping-list-updated' && message.type !== 'shopping-list-open')) {
+        return;
+      }
+
+      const messageProjectId = String(message.projectId || '').trim();
+      if (messageProjectId && messageProjectId !== selectedProject.id) return;
+      void loadTodos();
+    };
+
+    document.addEventListener('visibilitychange', handleForegroundRefresh);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pageshow', handleWindowFocus);
+    navigator.serviceWorker?.addEventListener?.('message', handleWorkerMessage);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleForegroundRefresh);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pageshow', handleWindowFocus);
+      navigator.serviceWorker?.removeEventListener?.('message', handleWorkerMessage);
+    };
+  }, [loadTodos, selectedProject?.id]);
+
+  useEffect(() => {
     if (!selectedProject?.id || !isOnline) return undefined;
 
     const channel = supabase

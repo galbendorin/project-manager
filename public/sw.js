@@ -97,7 +97,15 @@ self.addEventListener('push', (event) => {
     },
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    await Promise.all(clientList.map((client) => client.postMessage({
+      type: 'shopping-list-updated',
+      projectId: options?.data?.projectId || '',
+      url: options?.data?.url || '/shopping',
+    })));
+    await self.registration.showNotification(title, options);
+  })());
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -110,6 +118,11 @@ self.addEventListener('notificationclick', (event) => {
     for (const client of clientList) {
       const clientUrl = new URL(client.url);
       if (clientUrl.origin === self.location.origin) {
+        client.postMessage({
+          type: 'shopping-list-open',
+          projectId: event.notification?.data?.projectId || '',
+          url: event.notification?.data?.url || '/shopping',
+        });
         if ('focus' in client) {
           await client.focus();
         }
