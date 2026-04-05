@@ -10,15 +10,15 @@ import {
 import { IconTrash } from './Icons';
 import { supabase } from '../lib/supabase';
 import {
-  getMultiFilterSummary,
   matchesBucketSelection,
   matchesOwnerSelection,
   matchesProjectSelection,
   matchesRecurrenceSelection,
   matchesSourceSelection,
-  toggleMultiFilterValue,
 } from '../utils/todoFilterUtils';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import MobileTodoDetailSheet from './MobileTodoDetailSheet';
+import TodoMultiSelectFilter from './TodoMultiSelectFilter';
 
 const STATUS_OPTIONS = ['Open', 'Done'];
 
@@ -100,289 +100,6 @@ const CompletionTickButton = ({ checked, disabled, onClick, label }) => (
     )}
   </button>
 );
-
-const MultiSelectFilter = ({
-  allLabel,
-  options,
-  selectedValues,
-  onChange,
-  className = '',
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const wrapperRef = useRef(null);
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    const handlePointerDown = (event) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen]);
-
-  return (
-    <div ref={wrapperRef} className={`relative ${className}`}>
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-left text-slate-700 flex items-center justify-between gap-2 hover:border-slate-300 transition-colors"
-      >
-        <span className="truncate">{getMultiFilterSummary(selectedValues, options, allLabel)}</span>
-        <span className={`text-[10px] text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▾</span>
-      </button>
-
-      {isOpen && (
-        <div className="absolute z-30 mt-2 w-full min-w-[220px] rounded-xl border border-slate-200 bg-white shadow-lg p-2">
-          <button
-            type="button"
-            onClick={() => onChange([])}
-            className="w-full text-left px-2.5 py-2 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded-lg"
-          >
-            Clear selection
-          </button>
-          <div className="px-2.5 pt-1 pb-2 text-[10px] text-slate-400">
-            Tap a name to show only that option, or use checkboxes to combine filters.
-          </div>
-          <div className="mt-1 max-h-64 overflow-y-auto space-y-1">
-            {options.map((option) => {
-              const checked = selectedValues.includes(option.value);
-              return (
-                <div
-                  key={option.value}
-                  className="flex items-center gap-2 px-2.5 py-2 text-[11px] text-slate-700 rounded-lg hover:bg-slate-50"
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => onChange(toggleMultiFilterValue(selectedValues, option.value))}
-                    className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    aria-label={`Include ${option.label}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onChange([option.value]);
-                      setIsOpen(false);
-                    }}
-                    className="flex-1 truncate text-left"
-                    aria-label={`Show only ${option.label}`}
-                  >
-                    {option.label}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const MobileField = ({ label, children }) => (
-  <label className="block">
-    <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-      {label}
-    </span>
-    {children}
-  </label>
-);
-
-const MobileValue = ({ children }) => (
-  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] text-slate-700">
-    {children}
-  </div>
-);
-
-const MobileTodoDetailSheet = ({
-  todo,
-  canEdit,
-  projectOptions,
-  onClose,
-  onDeleteTodo,
-  onUpdateTodo,
-}) => {
-  if (!todo) return null;
-
-  const isCompleted = todo.status === 'Done';
-
-  return (
-    <div className="fixed inset-0 z-[70] flex flex-col">
-      <div className="absolute inset-0 bg-slate-950/45" onClick={onClose} />
-      <div className="relative mt-12 flex-1 overflow-hidden rounded-t-[28px] bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <button onClick={onClose} className="text-sm font-semibold text-indigo-600">
-            Back
-          </button>
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Tasks
-          </div>
-          {!todo.isDerived && !isCompleted ? (
-            <button
-              onClick={() => {
-                onDeleteTodo(todo._id);
-                onClose();
-              }}
-              className="text-sm font-semibold text-rose-500"
-            >
-              Delete
-            </button>
-          ) : (
-            <span className="w-12" />
-          )}
-        </div>
-
-        <div className="h-full overflow-y-auto pb-16">
-          <div className="space-y-4 px-4 py-4">
-            <div className={`rounded-[24px] border p-4 ${isCompleted ? 'border-emerald-200 bg-emerald-50/80' : 'border-slate-200 bg-slate-50'}`}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600">
-                  {todo.source || 'Manual'}
-                </span>
-                <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusClass(todo.status)}`}>
-                  {todo.status || 'Open'}
-                </span>
-              </div>
-
-              <div className={`mt-3 text-base font-semibold leading-6 ${isCompleted ? 'text-slate-500 line-through' : 'text-slate-900'}`}>
-                {todo.title || 'Untitled'}
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600">
-                  {todo.projectName || 'Other'}
-                </span>
-                {todo.owner ? (
-                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600">
-                    {todo.owner}
-                  </span>
-                ) : null}
-                {todo.dueDate ? (
-                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500">
-                    {formatDate(todo.dueDate)}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white p-4 space-y-3">
-              <MobileField label="Title">
-                {canEdit ? (
-                  <input
-                    type="text"
-                    value={todo.title || ''}
-                    onChange={(e) => onUpdateTodo(todo._id, 'title', e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
-                  />
-                ) : (
-                  <MobileValue>{todo.title || 'Untitled'}</MobileValue>
-                )}
-              </MobileField>
-
-              <MobileField label="Project">
-                {canEdit ? (
-                  <select
-                    value={todo.projectId || 'other'}
-                    onChange={(e) => onUpdateTodo(todo._id, 'projectId', e.target.value === 'other' ? null : e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
-                  >
-                    <option value="other">Other</option>
-                    {projectOptions.map((project) => (
-                      <option key={project.id} value={project.id}>{project.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <MobileValue>{todo.projectName || 'Other'}</MobileValue>
-                )}
-              </MobileField>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <MobileField label="Due Date">
-                  {canEdit ? (
-                    <input
-                      type="date"
-                      value={todo.dueDate || ''}
-                      onChange={(e) => onUpdateTodo(todo._id, 'dueDate', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
-                    />
-                  ) : (
-                    <MobileValue>{todo.dueDate ? formatDate(todo.dueDate) : 'No deadline'}</MobileValue>
-                  )}
-                </MobileField>
-
-                <MobileField label="Recurring">
-                  {canEdit ? (
-                    <select
-                      value={todo.recurrence?.type || 'none'}
-                      onChange={(e) => onUpdateTodo(
-                        todo._id,
-                        'recurrence',
-                        e.target.value === 'none' ? null : { type: e.target.value, interval: 1 }
-                      )}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
-                    >
-                      {RECURRENCE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <MobileValue>{recurrenceLabel(todo.recurrence)}</MobileValue>
-                  )}
-                </MobileField>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <MobileField label="Owner">
-                  {canEdit ? (
-                    <input
-                      type="text"
-                      value={todo.owner || ''}
-                      onChange={(e) => onUpdateTodo(todo._id, 'owner', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
-                    />
-                  ) : (
-                    <MobileValue>{todo.owner || 'Unassigned'}</MobileValue>
-                  )}
-                </MobileField>
-
-                <MobileField label="Status">
-                  {canEdit ? (
-                    <select
-                      value={todo.status || 'Open'}
-                      onChange={(e) => onUpdateTodo(todo._id, 'status', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
-                    >
-                      {STATUS_OPTIONS.map((status) => (
-                        <option key={status} value={status}>{status}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <MobileValue>{todo.status || 'Open'}</MobileValue>
-                  )}
-                </MobileField>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const TodoView = ({
   todos,
@@ -978,35 +695,35 @@ const TodoView = ({
                         </select>
                       </MobileField>
 
-                      <MultiSelectFilter
+                      <TodoMultiSelectFilter
                         allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
                         options={projectSelectOptions}
                         selectedValues={projectFilter}
                         onChange={setProjectFilter}
                       />
 
-                      <MultiSelectFilter
+                      <TodoMultiSelectFilter
                         allLabel="All Sources"
                         options={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
                         selectedValues={sourceFilter}
                         onChange={setSourceFilter}
                       />
 
-                      <MultiSelectFilter
+                      <TodoMultiSelectFilter
                         allLabel="All Owners"
                         options={ownerOptions}
                         selectedValues={ownerFilter}
                         onChange={setOwnerFilter}
                       />
 
-                      <MultiSelectFilter
+                      <TodoMultiSelectFilter
                         allLabel="All Recurrence"
                         options={RECURRENCE_OPTIONS}
                         selectedValues={recurrenceFilter}
                         onChange={setRecurrenceFilter}
                       />
 
-                      <MultiSelectFilter
+                      <TodoMultiSelectFilter
                         allLabel="All Buckets"
                         options={TODO_BUCKETS.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
                         selectedValues={bucketFilter}
@@ -1042,35 +759,35 @@ const TodoView = ({
                 <option value="all">All Projects + Other</option>
               </select>
 
-              <MultiSelectFilter
+              <TodoMultiSelectFilter
                 allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
                 options={projectSelectOptions}
                 selectedValues={projectFilter}
                 onChange={setProjectFilter}
               />
 
-              <MultiSelectFilter
+              <TodoMultiSelectFilter
                 allLabel="All Sources"
                 options={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
                 selectedValues={sourceFilter}
                 onChange={setSourceFilter}
               />
 
-              <MultiSelectFilter
+              <TodoMultiSelectFilter
                 allLabel="All Owners"
                 options={ownerOptions}
                 selectedValues={ownerFilter}
                 onChange={setOwnerFilter}
               />
 
-              <MultiSelectFilter
+              <TodoMultiSelectFilter
                 allLabel="All Recurrence"
                 options={RECURRENCE_OPTIONS}
                 selectedValues={recurrenceFilter}
                 onChange={setRecurrenceFilter}
               />
 
-              <MultiSelectFilter
+              <TodoMultiSelectFilter
                 allLabel="All Buckets"
                 options={TODO_BUCKETS.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
                 selectedValues={bucketFilter}
@@ -1429,6 +1146,9 @@ const TodoView = ({
           onClose={() => setSelectedMobileTodo(null)}
           onDeleteTodo={onDeleteTodo}
           onUpdateTodo={onUpdateTodo}
+          recurrenceOptions={RECURRENCE_OPTIONS}
+          recurrenceLabel={recurrenceLabel}
+          statusClass={statusClass}
         />
       ) : null}
     </div>
