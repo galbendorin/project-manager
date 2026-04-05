@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PROVIDERS, loadAiSettings, saveAiSettings, clearAiSettings, maskApiKey, isAiConfigured } from '../utils/aiSettings';
+import { PROVIDERS, loadAiSettings, saveAiSettings, clearAiSettings, isAiConfigured, STORAGE_SCOPES } from '../utils/aiSettings';
 import { supabase } from '../lib/supabase';
 
 const AiSettingsModal = ({ onClose, onSettingsChange }) => {
@@ -29,6 +29,10 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
   const handleKeyChange = (value) => {
     setSettings(prev => ({ ...prev, apiKey: value }));
     setTestStatus(null);
+  };
+
+  const handleStorageScopeChange = (storageScope) => {
+    setSettings(prev => ({ ...prev, storageScope }));
   };
 
   const handleSave = () => {
@@ -182,7 +186,46 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
               </button>
             </div>
             <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
-              Your key is stored in this browser's localStorage only. It is sent to the LLM provider through our proxy but is never stored on any server.
+              Your key stays in this browser only. Choose session-only storage for the safest default, or remember it on this device if you prefer convenience.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+              Storage
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleStorageScopeChange(STORAGE_SCOPES.session)}
+                className={`text-left rounded-lg border px-3 py-2 transition-all ${
+                  settings.storageScope === STORAGE_SCOPES.session
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}
+              >
+                <div className="text-[11px] font-medium">This session</div>
+                <div className="text-[10px] mt-1 text-slate-400">
+                  Recommended. Clears when this browser session ends.
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStorageScopeChange(STORAGE_SCOPES.local)}
+                className={`text-left rounded-lg border px-3 py-2 transition-all ${
+                  settings.storageScope === STORAGE_SCOPES.local
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}
+              >
+                <div className="text-[11px] font-medium">Remember on this device</div>
+                <div className="text-[10px] mt-1 text-slate-400">
+                  More convenient, but stored persistently in this browser.
+                </div>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+              Your key is never stored in PM Workspace servers. It is sent to the selected AI provider through our proxy only for the requests you run.
             </p>
           </div>
 

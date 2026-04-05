@@ -1,11 +1,60 @@
 /**
  * AI Settings — BYOK (Bring Your Own Key) management
  * 
- * Stored in localStorage only. API keys never touch the server/database.
+ * Stored in browser storage only. API keys never touch the server/database.
  * Supports Anthropic (Claude) and OpenAI providers.
  */
 
 const STORAGE_KEY = 'pm_os_ai_settings'
+const STORAGE_SCOPES = {
+  session: 'session',
+  local: 'local'
+}
+
+const getLocalStorage = () => {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null
+  } catch {
+    return null
+  }
+}
+
+const getSessionStorage = () => {
+  try {
+    return typeof window !== 'undefined' ? window.sessionStorage : null
+  } catch {
+    return null
+  }
+}
+
+const readStoredSettings = (storage) => {
+  if (!storage) return null
+  try {
+    const raw = storage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+const writeStoredSettings = (storage, settings) => {
+  if (!storage) return false
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    return true
+  } catch {
+    return false
+  }
+}
+
+const clearStoredSettings = (storage) => {
+  if (!storage) return
+  try {
+    storage.removeItem(STORAGE_KEY)
+  } catch {
+    // silent
+  }
+}
 
 const normalizeGeminiModel = (model) => {
   if (model === 'gemini-2.0-flash') return 'gemini-2.5-flash'
@@ -58,67 +107,87 @@ const DEFAULT_SETTINGS = {
   provider: 'anthropic',
   apiKey: '',
   model: 'claude-sonnet-4-20250514',
-  configured: false
+  configured: false,
+  storageScope: STORAGE_SCOPES.session
 }
 
-/**
- * Load AI settings from localStorage
- */
-export const loadAiSettings = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...DEFAULT_SETTINGS }
-    const parsed = JSON.parse(raw)
-    const provider = parsed.provider || DEFAULT_SETTINGS.provider
-    const model = provider === 'gemini'
-      ? normalizeGeminiModel(parsed.model || PROVIDERS.gemini.defaultModel)
-      : (parsed.model || DEFAULT_SETTINGS.model)
-    const normalized = {
-      provider: parsed.provider || DEFAULT_SETTINGS.provider,
-      apiKey: parsed.apiKey || DEFAULT_SETTINGS.apiKey,
-      model,
-      configured: !!(parsed.apiKey && parsed.provider)
-    }
-    if (provider === 'gemini' && model !== parsed.model) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
-    }
-    return normalized
-  } catch {
-    return { ...DEFAULT_SETTINGS }
+const normalizeParsedSettings = (parsed = {}, storageScope = DEFAULT_SETTINGS.storageScope) => {
+  const provider = parsed.provider || DEFAULT_SETTINGS.provider
+  const model = provider === 'gemini'
+    ? normalizeGeminiModel(parsed.model || PROVIDERS.gemini.defaultModel)
+    : (parsed.model || PROVIDERS[provider]?.defaultModel || DEFAULT_SETTINGS.model)
+
+  return {
+    provider,
+    apiKey: parsed.apiKey || DEFAULT_SETTINGS.apiKey,
+    model,
+    configured: !!(parsed.apiKey && provider),
+    storageScope
   }
 }
 
 /**
- * Save AI settings to localStorage
+ * Load AI settings from sessionStorage first, then localStorage
  */
-export const saveAiSettings = ({ provider, apiKey, model }) => {
+export const loadAiSettings = () => {
+  const sessionStorage = getSessionStorage()
+  const localStorage = getLocalStorage()
+
+  const sessionSettings = readStoredSettings(sessionStorage)
+  if (sessionSettings?.apiKey) {
+    const normalized = normalizeParsedSettings(sessionSettings, STORAGE_SCOPES.session)
+    if (normalized.provider === 'gemini' && normalized.model !== sessionSettings.model) {
+      writeStoredSettings(sessionStorage, normalized)
+    }
+    return normalized
+  }
+
+  const localSettings = readStoredSettings(localStorage)
+  if (localSettings?.apiKey) {
+    const normalized = normalizeParsedSettings(localSettings, STORAGE_SCOPES.local)
+    if (normalized.provider === 'gemini' && normalized.model !== localSettings.model) {
+      writeStoredSettings(localStorage, normalized)
+    }
+    return normalized
+  }
+
+  return { ...DEFAULT_SETTINGS }
+}
+
+/**
+ * Save AI settings to the selected browser storage
+ */
+export const saveAiSettings = ({ provider, apiKey, model, storageScope = DEFAULT_SETTINGS.storageScope }) => {
   const normalizedProvider = provider || DEFAULT_SETTINGS.provider
   const normalizedModel = normalizedProvider === 'gemini'
     ? normalizeGeminiModel(model || PROVIDERS.gemini.defaultModel)
     : (model || PROVIDERS[normalizedProvider]?.defaultModel || DEFAULT_SETTINGS.model)
+  const normalizedScope = storageScope === STORAGE_SCOPES.local ? STORAGE_SCOPES.local : STORAGE_SCOPES.session
   const settings = {
     provider: normalizedProvider,
     apiKey: (apiKey || '').trim(),
     model: normalizedModel,
-    configured: !!(apiKey && provider)
+    configured: !!(apiKey && provider),
+    storageScope: normalizedScope
   }
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
-  } catch {
-    // localStorage full or unavailable — silent fail
-  }
+
+  const sessionStorage = getSessionStorage()
+  const localStorage = getLocalStorage()
+  const targetStorage = normalizedScope === STORAGE_SCOPES.local ? localStorage : sessionStorage
+  const otherStorage = normalizedScope === STORAGE_SCOPES.local ? sessionStorage : localStorage
+
+  clearStoredSettings(otherStorage)
+  writeStoredSettings(targetStorage, settings)
+
   return settings
 }
 
 /**
- * Clear AI settings from localStorage
+ * Clear AI settings from browser storage
  */
 export const clearAiSettings = () => {
-  try {
-    localStorage.removeItem(STORAGE_KEY)
-  } catch {
-    // silent
-  }
+  clearStoredSettings(getSessionStorage())
+  clearStoredSettings(getLocalStorage())
   return { ...DEFAULT_SETTINGS }
 }
 
@@ -137,4 +206,4 @@ export const maskApiKey = (key) => {
   return `${key.slice(0, 8)}${'•'.repeat(Math.min(20, key.length - 12))}${key.slice(-4)}`
 }
 
-export { PROVIDERS, DEFAULT_SETTINGS }
+export { PROVIDERS, DEFAULT_SETTINGS, STORAGE_SCOPES }
