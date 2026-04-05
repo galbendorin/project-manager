@@ -75,6 +75,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    let isActive = true;
+
     const acceptPendingProjectInvites = async (session) => {
       const accessToken = session?.access_token;
       const email = session?.user?.email;
@@ -93,16 +95,36 @@ export const AuthProvider = ({ children }) => {
       }
     };
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setIsPasswordRecovery(isPasswordRecoveryUrl());
-      void acceptPendingProjectInvites(session);
+    const finishBootstrap = () => {
+      if (!isActive) return;
       setLoading(false);
-    });
+    };
+
+    const bootstrapTimeout = window.setTimeout(() => {
+      console.warn('Supabase session bootstrap timed out; continuing with fallback auth state.');
+      finishBootstrap();
+    }, 4000);
+
+    // Get initial session
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (!isActive) return;
+        setUser(session?.user ?? null);
+        setIsPasswordRecovery(isPasswordRecoveryUrl());
+        void acceptPendingProjectInvites(session);
+        finishBootstrap();
+      })
+      .catch((error) => {
+        console.warn('Unable to load initial Supabase session:', error);
+        if (!isActive) return;
+        setUser(null);
+        setIsPasswordRecovery(isPasswordRecoveryUrl());
+        finishBootstrap();
+      });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isActive) return;
       setUser(session?.user ?? null);
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
@@ -113,10 +135,14 @@ export const AuthProvider = ({ children }) => {
         void acceptPendingProjectInvites(session);
       }
       // Only set loading false if we're still loading
-      setLoading(false);
+      finishBootstrap();
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isActive = false;
+      window.clearTimeout(bootstrapTimeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signUp = async (email, password, fullNameInput) => {
