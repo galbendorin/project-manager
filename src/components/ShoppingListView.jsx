@@ -23,6 +23,7 @@ import MobileSyncCenter from './MobileSyncCenter';
 import ProjectShareModal from './ProjectShareModal';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
+const SHOPPING_UI_PREFS_KEY = 'pmworkspace:shopping-ui:v1';
 const VOICE_GRACE_PERIOD_MS = 2000;
 const VOICE_RESTART_DELAY_MS = 150;
 const VOICE_EARLY_SESSION_MS = 6000;
@@ -431,6 +432,10 @@ export default function ShoppingListView({ currentUserId }) {
   const [failedTodoId, setFailedTodoId] = useState('');
   const [failedTodoMessage, setFailedTodoMessage] = useState('');
   const [showBought, setShowBought] = useState(false);
+  const [desktopCompact, setDesktopCompact] = useState(() => {
+    const prefs = readLocalJson(SHOPPING_UI_PREFS_KEY, {});
+    return prefs?.desktopCompact ?? true;
+  });
   const [syncingQueue, setSyncingQueue] = useState(false);
   const [offlineQueue, setOfflineQueue] = useState(() => {
     const cachedState = loadShoppingOfflineState(currentUserId);
@@ -460,6 +465,8 @@ export default function ShoppingListView({ currentUserId }) {
     () => projects.find((project) => project.id === selectedProjectId) || null,
     [projects, selectedProjectId]
   );
+  const isCompactDesktop = !isMobile && desktopCompact;
+  const shouldCollapseBought = isMobile || isCompactDesktop;
   const openTodos = useMemo(() => todos.filter((todo) => todo.status !== 'Done'), [todos]);
   const completedTodos = useMemo(() => todos.filter((todo) => todo.status === 'Done'), [todos]);
   const canShareProject = Boolean(selectedProject?.isOwned && supportsProjectMembersRef.current);
@@ -471,10 +478,14 @@ export default function ShoppingListView({ currentUserId }) {
   }, [currentUserId]);
 
   useEffect(() => {
-    if (!isMobile) {
+    if (!shouldCollapseBought) {
       setShowBought(true);
     }
-  }, [isMobile]);
+  }, [shouldCollapseBought]);
+
+  useEffect(() => {
+    writeLocalJson(SHOPPING_UI_PREFS_KEY, { desktopCompact });
+  }, [desktopCompact]);
 
   useEffect(() => {
     if (!liveUpdateMessage) return undefined;
@@ -1894,15 +1905,26 @@ export default function ShoppingListView({ currentUserId }) {
                           {shoppingSyncSummary}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-xs text-slate-400">
-                          {loadingTodos ? 'Loading...' : `${openTodos.length} open · ${completedTodos.length} bought`}
-                        </span>
-                        {offlineQueue.length > 0 ? (
-                          <div className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-                            {offlineQueue.length} waiting
-                          </div>
+                      <div className="flex flex-col items-end gap-2 text-right">
+                        {!isMobile ? (
+                          <button
+                            type="button"
+                            onClick={() => setDesktopCompact((value) => !value)}
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50"
+                          >
+                            {desktopCompact ? 'Comfortable list' : 'Compact list'}
+                          </button>
                         ) : null}
+                        <div>
+                          <span className="text-xs text-slate-400">
+                            {loadingTodos ? 'Loading...' : `${openTodos.length} open · ${completedTodos.length} bought`}
+                          </span>
+                          {offlineQueue.length > 0 ? (
+                            <div className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                              {offlineQueue.length} waiting
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 
@@ -1938,7 +1960,9 @@ export default function ShoppingListView({ currentUserId }) {
                             ) : openTodos.map((todo) => (
                               <div
                                 key={todo._id}
-                                className={`rounded-[22px] border bg-white px-4 py-4 shadow-sm transition ${
+                                className={`border bg-white shadow-sm transition ${
+                                  isCompactDesktop ? 'rounded-[18px] px-3.5 py-3' : 'rounded-[22px] px-4 py-4'
+                                } ${
                                   pendingCompleteId === todo._id
                                     ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-tint)]'
                                     : savingTodoId === todo._id
@@ -1951,7 +1975,7 @@ export default function ShoppingListView({ currentUserId }) {
                                     ? (syncingQueue && isOnline ? 'syncing' : 'offline')
                                     : '';
                                   return (
-                                <div className="flex items-start gap-3 sm:items-center">
+                                <div className={`flex gap-3 ${isCompactDesktop ? 'items-center' : 'items-start sm:items-center'}`}>
                                   {isMobile ? (
                                     <span
                                       className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${
@@ -1976,7 +2000,9 @@ export default function ShoppingListView({ currentUserId }) {
                                       type="button"
                                       onClick={() => handleToggleTodo(todo)}
                                       disabled={savingTodoId === todo._id}
-                                      className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition ${
+                                      className={`inline-flex shrink-0 items-center justify-center rounded-full border transition ${
+                                        isCompactDesktop ? 'h-9 w-9' : 'h-11 w-11'
+                                      } ${
                                         pendingCompleteId === todo._id
                                           ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent)]'
                                           : savingTodoId === todo._id
@@ -1995,9 +2021,9 @@ export default function ShoppingListView({ currentUserId }) {
                                     </button>
                                   )}
                                   <div className="min-w-0 flex-1">
-                                    <div className="flex items-start justify-between gap-3">
+                                    <div className={`flex justify-between gap-3 ${isCompactDesktop ? 'items-center' : 'items-start'}`}>
                                       <div className="min-w-0 flex-1">
-                                        <p className="text-base font-semibold leading-6 text-slate-900 sm:text-sm">{todo.title}</p>
+                                        <p className={`font-semibold text-slate-900 ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
                                       </div>
                                       <div className="flex shrink-0 flex-col items-end gap-1">
                                         {savingTodoId === todo._id ? (
@@ -2016,19 +2042,21 @@ export default function ShoppingListView({ currentUserId }) {
                                         ) : null}
                                       </div>
                                     </div>
-                                    <p className={`mt-1 text-xs ${
-                                      pendingCompleteId === todo._id
-                                        ? 'text-[var(--pm-accent-strong)]'
-                                        : savingTodoId === todo._id
-                                          ? 'text-emerald-700'
-                                          : 'text-slate-400'
-                                    }`}>
-                                      {savingTodoId === todo._id
-                                        ? (savingTodoAction === 'complete' ? `Saving ${todo.title} as bought...` : 'Saving...')
-                                        : pendingCompleteId === todo._id
-                                          ? `Marking bought in ${pendingCompleteSeconds}s. Tap again to cancel.`
-                                          : (isMobile ? 'Tap Bought to move it off the live list.' : 'Tap the check to mark this item as bought.')}
-                                    </p>
+                                    {(isMobile || pendingCompleteId === todo._id || savingTodoId === todo._id || failedTodoId === todo._id || !isCompactDesktop) ? (
+                                      <p className={`mt-1 text-xs ${
+                                        pendingCompleteId === todo._id
+                                          ? 'text-[var(--pm-accent-strong)]'
+                                          : savingTodoId === todo._id
+                                            ? 'text-emerald-700'
+                                            : 'text-slate-400'
+                                      }`}>
+                                        {savingTodoId === todo._id
+                                          ? (savingTodoAction === 'complete' ? `Saving ${todo.title} as bought...` : 'Saving...')
+                                          : pendingCompleteId === todo._id
+                                            ? `Marking bought in ${pendingCompleteSeconds}s. Tap again to cancel.`
+                                            : (isMobile ? 'Tap Bought to move it off the live list.' : 'Tap the check to mark this item as bought.')}
+                                      </p>
+                                    ) : null}
                                     {failedTodoId === todo._id ? (
                                       <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3">
                                         <p className="text-xs font-medium text-rose-700">{failedTodoMessage}</p>
@@ -2073,7 +2101,9 @@ export default function ShoppingListView({ currentUserId }) {
                                       type="button"
                                       onClick={() => deleteTodo(todo._id)}
                                       disabled={savingTodoId === todo._id}
-                                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                      className={`inline-flex shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${
+                                        isCompactDesktop ? 'h-9 w-9' : 'h-11 w-11'
+                                      }`}
                                       aria-label={`Delete ${todo.title}`}
                                     >
                                       <Trash2 className="h-4 w-4" />
@@ -2100,7 +2130,7 @@ export default function ShoppingListView({ currentUserId }) {
                             ) : null}
                             {completedTodos.length > 0 ? (
                               <div className="mb-3 flex items-center justify-between">
-                                {isMobile ? (
+                                {shouldCollapseBought ? (
                                   <button
                                     type="button"
                                     onClick={() => setShowBought((value) => !value)}
@@ -2112,14 +2142,16 @@ export default function ShoppingListView({ currentUserId }) {
                                 ) : null}
                               </div>
                             ) : null}
-                            {completedTodos.length > 0 && (!isMobile || showBought) ? completedTodos.map((todo) => (
-                              <div key={todo._id} className="rounded-[22px] border border-slate-200 bg-white/90 px-4 py-4 shadow-sm">
+                            {completedTodos.length > 0 && (!shouldCollapseBought || showBought) ? completedTodos.map((todo) => (
+                              <div key={todo._id} className={`border border-slate-200 bg-white/90 shadow-sm ${
+                                isCompactDesktop ? 'rounded-[18px] px-3.5 py-3' : 'rounded-[22px] px-4 py-4'
+                              }`}>
                                 {(() => {
                                   const syncState = queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
                                     ? (syncingQueue && isOnline ? 'syncing' : 'offline')
                                     : '';
                                   return (
-                                <div className="flex items-start gap-3 sm:items-center">
+                                <div className={`flex gap-3 ${isCompactDesktop ? 'items-center' : 'items-start sm:items-center'}`}>
                                   {isMobile ? (
                                     <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600" aria-hidden="true">
                                       {savingTodoId === todo._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
@@ -2129,15 +2161,17 @@ export default function ShoppingListView({ currentUserId }) {
                                       type="button"
                                       onClick={() => handleToggleTodo(todo)}
                                       disabled={savingTodoId === todo._id}
-                                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100"
+                                      className={`inline-flex shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 ${
+                                        isCompactDesktop ? 'h-9 w-9' : 'h-11 w-11'
+                                      }`}
                                       aria-label={`Move ${todo.title} back to open`}
                                     >
                                       {savingTodoId === todo._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                                     </button>
                                   )}
                                   <div className="min-w-0 flex-1">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <p className="text-base font-semibold leading-6 text-slate-400 line-through sm:text-sm">{todo.title}</p>
+                                    <div className={`flex justify-between gap-3 ${isCompactDesktop ? 'items-center' : 'items-start'}`}>
+                                      <p className={`font-semibold text-slate-400 line-through ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
                                       {syncState ? (
                                         <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
                                           syncState === 'syncing'
@@ -2148,11 +2182,13 @@ export default function ShoppingListView({ currentUserId }) {
                                         </span>
                                       ) : null}
                                     </div>
-                                    <p className={`mt-1 text-xs ${savingTodoId === todo._id ? 'text-emerald-700' : 'text-slate-400'}`}>
-                                      {savingTodoId === todo._id
-                                        ? (savingTodoAction === 'reopen' ? `Saving ${todo.title}...` : 'Saving...')
-                                        : (isMobile ? 'Use Undo if this needs to go back on the live list.' : 'Tap the check if you need to reopen it.')}
-                                    </p>
+                                    {(isMobile || savingTodoId === todo._id || failedTodoId === todo._id || !isCompactDesktop) ? (
+                                      <p className={`mt-1 text-xs ${savingTodoId === todo._id ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                        {savingTodoId === todo._id
+                                          ? (savingTodoAction === 'reopen' ? `Saving ${todo.title}...` : 'Saving...')
+                                          : (isMobile ? 'Use Undo if this needs to go back on the live list.' : 'Tap the check if you need to reopen it.')}
+                                      </p>
+                                    ) : null}
                                     {failedTodoId === todo._id ? (
                                       <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3">
                                         <p className="text-xs font-medium text-rose-700">{failedTodoMessage}</p>
@@ -2193,7 +2229,9 @@ export default function ShoppingListView({ currentUserId }) {
                                       type="button"
                                       onClick={() => deleteTodo(todo._id)}
                                       disabled={savingTodoId === todo._id}
-                                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                      className={`inline-flex shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${
+                                        isCompactDesktop ? 'h-9 w-9' : 'h-11 w-11'
+                                      }`}
                                       aria-label={`Delete ${todo.title}`}
                                     >
                                       <Trash2 className="h-4 w-4" />
@@ -2204,7 +2242,7 @@ export default function ShoppingListView({ currentUserId }) {
                                 })()}
                               </div>
                             )) : null}
-                            {completedTodos.length > 0 && isMobile && !showBought ? (
+                            {completedTodos.length > 0 && shouldCollapseBought && !showBought ? (
                               <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-4 text-sm text-slate-500">
                                 {completedTodos.length} bought item{completedTodos.length === 1 ? '' : 's'} hidden while you shop.
                               </div>
