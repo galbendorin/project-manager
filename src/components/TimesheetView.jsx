@@ -471,7 +471,7 @@ export default function TimesheetView({
         entryDate: nextDate,
       };
     });
-  }, [currentProject?.id, editingOwnEntry, selectedProjectId, weekStart]);
+  }, [currentProject?.id, currentProject?.is_demo, editingOwnEntry, selectedProjectId, weekStart]);
 
   const visibleEntries = useMemo(() => {
     const scopedEntries = selectedProjectId === 'all'

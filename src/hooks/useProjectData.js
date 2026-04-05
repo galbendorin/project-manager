@@ -1275,7 +1275,7 @@ export const useProjectData = (projectId, userId = null) => {
     if (completion.kind === 'schedule') {
       updateTask(completion.taskId, completion.patch);
     }
-  }, [updateTask, updateTodo]);
+  }, [queueProjectSyncOp, updateTask, updateTodo]);
 
   // ==================== TEMPLATE ====================
 

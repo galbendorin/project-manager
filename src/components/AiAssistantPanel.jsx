@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { createPlan, editPlan, describeChanges } from '../utils/aiPlanAssistant';
 import { isAiConfigured } from '../utils/aiSettings';
 
@@ -107,9 +107,12 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
   const hasTasks = currentTasks && currentTasks.length > 0;
 
   // Build effective settings for AI calls (platform key mode uses server defaults)
-  const effectiveSettings = usePlatformKey && !isAiConfigured(aiSettings)
-    ? { provider: 'gemini', apiKey: '', model: 'gemini-2.5-flash-lite', usePlatformKey: true }
-    : { ...aiSettings, usePlatformKey: false };
+  const effectiveSettings = useMemo(
+    () => (usePlatformKey && !isAiConfigured(aiSettings)
+      ? { provider: 'gemini', apiKey: '', model: 'gemini-2.5-flash-lite', usePlatformKey: true }
+      : { ...aiSettings, usePlatformKey: false }),
+    [aiSettings, usePlatformKey]
+  );
 
   const addMessage = useCallback((msg) => {
     setMessages(prev => [...prev, { ...msg, id: Date.now() + Math.random() }]);
@@ -162,6 +165,22 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
     setIsListening(false);
     setInterimText('');
   }, []);
+
+  const handleApply = useCallback((tasks) => {
+    onApplyTasks(tasks);
+    // Remove the apply/discard buttons from the last message
+    setMessages(prev => prev.map((msg, idx) =>
+      idx === prev.length - 1 ? { ...msg, showApply: false, onApply: undefined, onDiscard: undefined } : msg
+    ));
+    addMessage({ role: 'system', text: '✓ Changes applied to your project plan.' });
+  }, [onApplyTasks, addMessage]);
+
+  const handleDiscard = useCallback(() => {
+    setMessages(prev => prev.map((msg, idx) =>
+      idx === prev.length - 1 ? { ...msg, showApply: false, onApply: undefined, onDiscard: undefined } : msg
+    ));
+    addMessage({ role: 'system', text: 'Changes discarded.' });
+  }, [addMessage]);
 
   // ── Send message ───────────────────────────────────────────────────
 
@@ -229,23 +248,7 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
 
     abortRef.current = null;
     setIsProcessing(false);
-  }, [input, isProcessing, hasTasks, currentTasks, effectiveSettings, addMessage]);
-
-  const handleApply = useCallback((tasks) => {
-    onApplyTasks(tasks);
-    // Remove the apply/discard buttons from the last message
-    setMessages(prev => prev.map((msg, idx) =>
-      idx === prev.length - 1 ? { ...msg, showApply: false, onApply: undefined, onDiscard: undefined } : msg
-    ));
-    addMessage({ role: 'system', text: '✓ Changes applied to your project plan.' });
-  }, [onApplyTasks, addMessage]);
-
-  const handleDiscard = useCallback(() => {
-    setMessages(prev => prev.map((msg, idx) =>
-      idx === prev.length - 1 ? { ...msg, showApply: false, onApply: undefined, onDiscard: undefined } : msg
-    ));
-    addMessage({ role: 'system', text: 'Changes discarded.' });
-  }, [addMessage]);
+  }, [input, isProcessing, hasTasks, currentTasks, effectiveSettings, addMessage, handleApply, handleDiscard]);
 
   const handleCancel = () => {
     abortRef.current?.abort();

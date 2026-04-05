@@ -423,7 +423,7 @@ const MobileRegisterList = ({
     setSortKey(viewConfig.defaultSort);
     setSelectedItem(null);
     setShowFilters(false);
-  }, [schema.title, filterColumnsKey, viewConfig.defaultSort]);
+  }, [schema.title, filterColumnsKey, viewConfig.defaultFilters, viewConfig.defaultSort]);
 
   const filteredItems = useMemo(() => applyRegisterView({
     items,

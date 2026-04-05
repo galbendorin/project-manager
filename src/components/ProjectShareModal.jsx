@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeInviteEmail } from '../utils/projectSharing';
 
@@ -57,7 +57,7 @@ const ProjectShareModal = ({
     setSuccessMessage('');
   }, [isOpen, project?.id]);
 
-  const fetchPendingInvites = async () => {
+  const fetchPendingInvites = useCallback(async () => {
     if (!project?.id || !isOpen) return;
     setLoadingPendingInvites(true);
     const { data, error } = await supabase
@@ -81,12 +81,12 @@ const ProjectShareModal = ({
       setPendingInvites(data || []);
     }
     setLoadingPendingInvites(false);
-  };
+  }, [isOpen, project?.id]);
 
   useEffect(() => {
     if (!isOpen || !project?.id) return;
     void fetchPendingInvites();
-  }, [isOpen, project?.id]);
+  }, [fetchPendingInvites, isOpen, project?.id]);
 
   if (!isOpen || !project) return null;
 

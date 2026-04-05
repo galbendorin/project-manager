@@ -1640,7 +1640,7 @@ export default function ShoppingListView({ currentUserId }) {
       void finalizeVoiceCapture();
     }
     setVoiceMessage('Voice input stopped.');
-  }, []);
+  }, [clearVoiceTimers, finalizeVoiceCapture]);
 
   if (loadingProjects) {
     return (

@@ -128,7 +128,10 @@ export default function TimesheetPanel({
     () => weekDays.find((day) => day.iso === composer.entryDate) || weekDays[0] || null,
     [composer.entryDate, weekDays]
   );
-  const selectedDayEntries = selectedDay ? (entriesByDay[selectedDay.iso] || []) : [];
+  const selectedDayEntries = useMemo(
+    () => (selectedDay ? (entriesByDay[selectedDay.iso] || []) : []),
+    [entriesByDay, selectedDay]
+  );
   const selectedDayIndex = selectedDay ? weekDays.findIndex((day) => day.iso === selectedDay.iso) : -1;
   const desktopWeekDays = useMemo(
     () => (showWeekend ? weekDays : weekDays.slice(0, 5)),

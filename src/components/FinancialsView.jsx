@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { SCHEMAS } from '../utils/constants';
 import { keyGen, filterBySearch } from '../utils/helpers';
 import { IconEyeOpen, IconEyeClosed, IconTrash } from './Icons';
@@ -18,17 +18,17 @@ const FinancialsView = ({ registers, isExternalView, onUpdateItem, onDeleteItem,
   const [editingCell, setEditingCell] = useState(null);
   const isMobile = useMediaQuery('(max-width: 768px)');
 
-  const handleViewChange = (v) => {
+  const handleViewChange = useCallback((v) => {
     setActiveView(v);
     setSearchQuery('');
     setEditingCell(null);
     if (onSubViewChange) onSubViewChange(v);
-  };
+  }, [onSubViewChange]);
 
   // Report initial view on mount
   useEffect(() => {
     if (onSubViewChange) onSubViewChange('costs');
-  }, []);
+  }, [onSubViewChange]);
 
   const schema = SCHEMAS[activeView];
   const items = registers[activeView] || [];

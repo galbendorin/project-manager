@@ -164,7 +164,7 @@ const RegisterView = ({
     setColumnFilters(viewConfig.defaultFilters);
     setSortKey(viewConfig.defaultSort);
     setHeaderMenu(null);
-  }, [registerType, filterColumnsKey, viewConfig.defaultSort]);
+  }, [registerType, filterColumnsKey, viewConfig.defaultFilters, viewConfig.defaultSort]);
 
   const filteredItems = useMemo(() => applyRegisterView({
     items,

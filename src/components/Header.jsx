@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ModuleHeader from './ModuleHeader';
 import PmWorkspaceLogo from './PmWorkspaceLogo';
@@ -40,7 +40,7 @@ const Header = ({
   const isTimesheetTab = activeTab === 'timesheets';
   const showBillingButton = Boolean(onOpenBilling) && !isPaid;
 
-  const updateBaselineMenuPosition = () => {
+  const updateBaselineMenuPosition = useCallback(() => {
     if (typeof window === 'undefined' || !baselineButtonRef.current) return;
 
     const rect = baselineButtonRef.current.getBoundingClientRect();
@@ -55,7 +55,7 @@ const Header = ({
     const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
 
     setBaselineMenuStyle({ top, left });
-  };
+  }, [hasBaseline]);
 
   useEffect(() => {
     if (!showBaselineMenu) return undefined;
@@ -87,7 +87,7 @@ const Header = ({
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [showBaselineMenu, hasBaseline]);
+  }, [showBaselineMenu, updateBaselineMenuPosition]);
 
   const closeBaselineMenu = () => {
     setShowBaselineMenu(false);
