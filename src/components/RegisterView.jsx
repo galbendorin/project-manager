@@ -140,15 +140,21 @@ const RegisterView = ({
   const isMobile = useMediaQuery('(max-width: 768px)');
 
   const schema = SCHEMAS[registerType];
-  if (!schema) return null;
+  const safeSchema = schema || { cols: [] };
   const allowRowColor = registerType === 'actions';
 
   const visibleCols = isExternalView 
-    ? schema.cols.filter(c => c !== "Visible") 
-    : schema.cols;
+    ? safeSchema.cols.filter(c => c !== "Visible") 
+    : safeSchema.cols;
 
   const viewConfig = useMemo(
-    () => getRegisterViewConfig(schema, items, isExternalView),
+    () => (schema ? getRegisterViewConfig(schema, items, isExternalView) : {
+      filterColumns: [],
+      defaultFilters: {},
+      defaultSort: 'default',
+      sortOptionsByColumn: {},
+      filterOptionsByColumn: {},
+    }),
     [schema, items, isExternalView]
   );
   const filterColumnsKey = viewConfig.filterColumns.join('|');
@@ -180,6 +186,8 @@ const RegisterView = ({
     onUpdateItem(registerType, itemId, key, value);
     setEditingCell(null);
   };
+
+  if (!schema) return null;
 
   if (isMobile) {
     return (
