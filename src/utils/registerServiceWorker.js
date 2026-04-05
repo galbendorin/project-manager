@@ -8,9 +8,12 @@ export const registerServiceWorker = () => {
   }
 
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
+    navigator.serviceWorker.getRegistrations()
+      .then((registrations) => Promise.all(
+        registrations.map((registration) => registration.unregister().catch(() => false))
+      ))
       .catch((error) => {
-        console.warn('Service worker registration failed:', error);
+        console.warn('Service worker cleanup failed:', error);
       });
   });
 };
