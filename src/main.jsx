@@ -5,6 +5,12 @@ import { PlanProvider } from './contexts/PlanContext';
 import App from './App';
 import './styles/index.css';
 import { registerServiceWorker } from './utils/registerServiceWorker';
+import {
+  clearChunkReloadGuard,
+  consumeChunkReloadGuard,
+  isLikelyChunkLoadFailure,
+  markChunkReloadGuard,
+} from './utils/appUpdateRecovery';
 
 const DEFAULT_VIEWPORT =
   'width=device-width, initial-scale=1.0, viewport-fit=cover';
@@ -41,9 +47,33 @@ const applyStandaloneClass = () => {
 
 applyStandaloneClass();
 applyStandaloneViewport();
+
+const attemptChunkRecoveryReload = (errorLike) => {
+  if (typeof window === 'undefined') return;
+  if (!isLikelyChunkLoadFailure(errorLike)) return;
+  if (consumeChunkReloadGuard(window.sessionStorage)) return;
+
+  markChunkReloadGuard(window.sessionStorage);
+  window.location.reload();
+};
+
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault?.();
+  attemptChunkRecoveryReload(event?.payload || event?.error || event);
+});
+
+window.addEventListener('error', (event) => {
+  attemptChunkRecoveryReload(event?.error || event?.message || event);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  attemptChunkRecoveryReload(event?.reason || event);
+});
+
 window.addEventListener('DOMContentLoaded', () => {
   applyStandaloneClass();
   applyStandaloneViewport();
+  clearChunkReloadGuard(window.sessionStorage);
 }, { once: true });
 window.addEventListener('pageshow', applyStandaloneViewport);
 registerServiceWorker();

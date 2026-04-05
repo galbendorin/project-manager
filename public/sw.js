@@ -1,5 +1,5 @@
-const SHELL_CACHE = 'pmworkspace-shell-v2';
-const RUNTIME_CACHE = 'pmworkspace-runtime-v2';
+const SHELL_CACHE = 'pmworkspace-shell-v3';
+const RUNTIME_CACHE = 'pmworkspace-runtime-v3';
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [
@@ -18,7 +18,6 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE)
       .then((cache) => cache.addAll(PRECACHE_URLS))
-      .then(() => self.skipWaiting())
   );
 });
 
@@ -30,6 +29,12 @@ self.addEventListener('activate', (event) => {
         .map((key) => caches.delete(key))
     )).then(() => self.clients.claim())
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event?.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {

@@ -6,6 +6,7 @@ import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { applyAccentTheme, loadAccentTheme, saveAccentTheme } from './utils/appearance';
 import { clearLastProject, loadLastAppPath, loadLastProject, saveLastAppPath, saveLastProject } from './utils/navigationState';
 import { readAppShortcutIntent } from './utils/appShortcutIntent';
+import { activatePendingServiceWorker } from './utils/registerServiceWorker';
 
 const AuthPage = lazy(() => import('./components/AuthPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -68,6 +69,8 @@ function App() {
   const [launchShortcut, setLaunchShortcut] = useState(() => (
     typeof window !== 'undefined' ? readAppShortcutIntent(window.location.search) : null
   ));
+  const [updateReady, setUpdateReady] = useState(false);
+  const [applyingUpdate, setApplyingUpdate] = useState(false);
 
   useEffect(() => {
     applyAccentTheme(accentTheme);
@@ -82,9 +85,24 @@ function App() {
       setLaunchShortcut(readAppShortcutIntent(window.location.search));
     };
 
+    const handleUpdateAvailable = () => {
+      setUpdateReady(true);
+    };
+
+    const handleControllerChanged = () => {
+      if (!applyingUpdate) return;
+      window.location.reload();
+    };
+
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+    window.addEventListener('pmworkspace:update-available', handleUpdateAvailable);
+    window.addEventListener('pmworkspace:controller-changed', handleControllerChanged);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('pmworkspace:update-available', handleUpdateAvailable);
+      window.removeEventListener('pmworkspace:controller-changed', handleControllerChanged);
+    };
+  }, [applyingUpdate]);
 
   const navigateToPath = useCallback((path) => {
     const nextPath = normalizeAppPath(path);
@@ -100,6 +118,19 @@ function App() {
     clearLastProject();
     navigateToPath('/');
   }, [navigateToPath]);
+
+  const handleApplyUpdate = useCallback(() => {
+    setApplyingUpdate(true);
+    const activated = activatePendingServiceWorker();
+    if (!activated) {
+      window.location.reload();
+      return;
+    }
+
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 2500);
+  }, []);
 
   useEffect(() => {
     if (!user || currentProject || currentPath !== '/') return;
@@ -203,6 +234,25 @@ function App() {
   return (
     <>
       <OfflineBanner isOnline={isOnline} />
+      {updateReady ? (
+        <div className="fixed inset-x-4 bottom-4 z-[70] flex justify-center">
+          <div className="flex max-w-xl items-center gap-3 rounded-2xl border border-indigo-200 bg-white px-4 py-3 shadow-[0_18px_40px_rgba(15,23,42,0.16)]">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-slate-950">Update ready</div>
+              <div className="text-xs text-slate-600">
+                A new version of PM Workspace is available.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleApplyUpdate}
+              className="whitespace-nowrap rounded-xl bg-[var(--pm-accent)] px-3 py-2 text-xs font-semibold text-white transition hover:brightness-95"
+            >
+              {applyingUpdate ? 'Updating…' : 'Update now'}
+            </button>
+          </div>
+        </div>
+      ) : null}
       {renderLazyPage(
         <MainApp
           project={currentProject}
