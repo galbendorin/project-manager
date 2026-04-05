@@ -829,6 +829,47 @@ export default function ShoppingListView({ currentUserId }) {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'manual_todos',
+          filter: `project_id=eq.${selectedProject.id}`,
+        },
+        (payload) => {
+          const nextRow = payload?.new;
+          const previousRow = payload?.old;
+          if (!nextRow?.id) return;
+
+          const incomingTodo = mapManualTodoRow(nextRow);
+          const actorLabel = resolveSharedActorLabel(nextRow, selectedProject, currentUserId);
+          const isFromSomeoneElse = Boolean(actorLabel);
+          const becameDone = previousRow?.status !== 'Done' && nextRow?.status === 'Done';
+
+          setTodos((previousItems) => {
+            const nextTodos = sortTodos(previousItems.map((item) => (
+              item._id === incomingTodo._id ? incomingTodo : item
+            )));
+            const cachedState = loadShoppingOfflineState(currentUserId);
+            persistOfflineState({
+              ...cachedState,
+              selectedProjectId: selectedProject.id,
+              todosByProject: {
+                ...(cachedState.todosByProject || {}),
+                [selectedProject.id]: nextTodos,
+              },
+              lastSyncedAt: new Date().toISOString(),
+            });
+            return nextTodos;
+          });
+
+          if (isFromSomeoneElse && becameDone) {
+            const message = `${actorLabel} bought ${incomingTodo.title}.`;
+            setLiveUpdateMessage(message);
+          }
+        }
+      )
       .subscribe();
 
     shoppingRealtimeChannelRef.current = channel;
@@ -1079,6 +1120,13 @@ export default function ShoppingListView({ currentUserId }) {
       });
       return nextTodos;
     });
+    if (nextStatus === 'Done') {
+      await notifyShoppingListSubscribers({
+        projectId: selectedProject.id,
+        itemTitles: [todo.title],
+        eventType: 'bought',
+      });
+    }
     setSavingTodoId('');
     setSavingTodoAction('');
     setFailedTodoId('');

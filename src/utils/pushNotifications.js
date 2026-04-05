@@ -226,7 +226,11 @@ export const disablePushAlerts = async () => {
   };
 };
 
-export const notifyShoppingListSubscribers = async ({ projectId, itemTitles = [] }) => {
+export const notifyShoppingListSubscribers = async ({
+  projectId,
+  itemTitles = [],
+  eventType = 'added',
+}) => {
   const titles = (Array.isArray(itemTitles) ? itemTitles : [])
     .map((value) => String(value || '').trim())
     .filter(Boolean);
@@ -246,6 +250,7 @@ export const notifyShoppingListSubscribers = async ({ projectId, itemTitles = []
       body: JSON.stringify({
         projectId,
         itemTitles: titles,
+        eventType,
       }),
     });
   } catch {

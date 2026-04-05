@@ -21,21 +21,22 @@ const buildActorLabel = (user = {}) => {
   return titleCaseFromEmail(user?.email) || 'Someone';
 };
 
-const formatShoppingBody = ({ actorLabel, itemTitles = [] }) => {
+const formatShoppingBody = ({ actorLabel, itemTitles = [], eventType = 'added' }) => {
   const titles = itemTitles.slice(0, 3);
+  const actionLabel = eventType === 'bought' ? 'bought' : 'added';
   if (titles.length === 0) {
     return `${actorLabel} updated the Shopping List.`;
   }
 
   if (titles.length === 1) {
-    return `${actorLabel} added ${titles[0]}.`;
+    return `${actorLabel} ${actionLabel} ${titles[0]}.`;
   }
 
   if (itemTitles.length > titles.length) {
-    return `${actorLabel} added ${titles.join(', ')} and ${itemTitles.length - titles.length} more item${itemTitles.length - titles.length === 1 ? '' : 's'}.`;
+    return `${actorLabel} ${actionLabel} ${titles.join(', ')} and ${itemTitles.length - titles.length} more item${itemTitles.length - titles.length === 1 ? '' : 's'}.`;
   }
 
-  return `${actorLabel} added ${titles.join(', ')}.`;
+  return `${actorLabel} ${actionLabel} ${titles.join(', ')}.`;
 };
 
 const hasProjectAccess = async ({ userId, projectId, ownerId }) => {
@@ -88,6 +89,9 @@ export default async function handler(req, res) {
     }
 
     const projectId = String(req.body?.projectId || '').trim();
+    const eventType = String(req.body?.eventType || 'added').trim().toLowerCase() === 'bought'
+      ? 'bought'
+      : 'added';
     const itemTitles = (Array.isArray(req.body?.itemTitles) ? req.body.itemTitles : [])
       .map((value) => String(value || '').trim())
       .filter(Boolean)
@@ -155,7 +159,7 @@ export default async function handler(req, res) {
     const actorLabel = buildActorLabel(user);
     const payload = {
       title: 'Shopping List updated',
-      body: formatShoppingBody({ actorLabel, itemTitles }),
+      body: formatShoppingBody({ actorLabel, itemTitles, eventType }),
       icon: '/pmworkspace-icon-192.png',
       badge: '/pmworkspace-icon-192.png',
       tag: `shopping:${projectId}`,
@@ -163,6 +167,7 @@ export default async function handler(req, res) {
         url: '/shopping',
         projectId,
         kind: 'shopping-list',
+        eventType,
       },
     };
 
