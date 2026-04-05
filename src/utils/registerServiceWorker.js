@@ -1,4 +1,5 @@
 let activeRegistration = null;
+let lastUpdateCheckAt = 0;
 
 const emitWindowEvent = (name, detail = {}) => {
   if (typeof window === 'undefined') return;
@@ -51,6 +52,9 @@ export const registerServiceWorker = () => {
         trackInstallingWorker(registration);
 
         const requestUpdateCheck = () => {
+          const now = Date.now();
+          if (now - lastUpdateCheckAt < 15_000) return;
+          lastUpdateCheckAt = now;
           registration.update().catch(() => null);
         };
 

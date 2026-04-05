@@ -1,4 +1,5 @@
 export const CHUNK_LOAD_GUARD_KEY = 'pmworkspace:chunk-reload-guard:v1';
+export const CHUNK_RECOVERY_QUERY_PARAM = 'pmw-recover';
 
 const CHUNK_LOAD_PATTERNS = [
   'failed to fetch dynamically imported module',
@@ -49,4 +50,36 @@ export const clearChunkReloadGuard = (storage) => {
   } catch {
     // Ignore storage failures.
   }
+};
+
+export const shouldAttemptChunkRecoveryReload = (errorLike, storage, isOnline = true) => {
+  if (!isOnline) return false;
+  if (!isLikelyChunkLoadFailure(errorLike)) return false;
+  if (consumeChunkReloadGuard(storage)) return false;
+  return true;
+};
+
+export const buildChunkRecoveryUrl = (locationLike, stamp = Date.now()) => {
+  if (!locationLike) return '';
+
+  const base = locationLike.origin || 'https://pmworkspace.local';
+  const url = new URL(
+    `${locationLike.pathname || '/'}${locationLike.search || ''}${locationLike.hash || ''}`,
+    base
+  );
+  url.searchParams.set(CHUNK_RECOVERY_QUERY_PARAM, String(stamp));
+  return url.toString();
+};
+
+export const stripChunkRecoveryParam = (locationLike) => {
+  if (!locationLike) return '';
+
+  const base = locationLike.origin || 'https://pmworkspace.local';
+  const url = new URL(
+    `${locationLike.pathname || '/'}${locationLike.search || ''}${locationLike.hash || ''}`,
+    base
+  );
+  url.searchParams.delete(CHUNK_RECOVERY_QUERY_PARAM);
+  const search = url.searchParams.toString();
+  return `${url.pathname}${search ? `?${search}` : ''}${url.hash || ''}`;
 };

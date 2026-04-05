@@ -6,11 +6,14 @@ import App from './App';
 import './styles/index.css';
 import { registerServiceWorker } from './utils/registerServiceWorker';
 import {
+  buildChunkRecoveryUrl,
+  CHUNK_RECOVERY_QUERY_PARAM,
   clearChunkReloadGuard,
-  consumeChunkReloadGuard,
   getSafeSessionStorage,
   isLikelyChunkLoadFailure,
   markChunkReloadGuard,
+  shouldAttemptChunkRecoveryReload,
+  stripChunkRecoveryParam,
 } from './utils/appUpdateRecovery';
 
 const DEFAULT_VIEWPORT =
@@ -51,12 +54,12 @@ applyStandaloneViewport();
 
 const attemptChunkRecoveryReload = (errorLike) => {
   if (typeof window === 'undefined') return;
-  if (!isLikelyChunkLoadFailure(errorLike)) return;
   const sessionStorage = getSafeSessionStorage();
-  if (consumeChunkReloadGuard(sessionStorage)) return;
+  const isOnline = window.navigator?.onLine !== false;
+  if (!shouldAttemptChunkRecoveryReload(errorLike, sessionStorage, isOnline)) return;
 
   markChunkReloadGuard(sessionStorage);
-  window.location.reload();
+  window.location.replace(buildChunkRecoveryUrl(window.location));
 };
 
 window.addEventListener('vite:preloadError', (event) => {
@@ -64,18 +67,20 @@ window.addEventListener('vite:preloadError', (event) => {
   attemptChunkRecoveryReload(event?.payload || event?.error || event);
 });
 
-window.addEventListener('error', (event) => {
-  attemptChunkRecoveryReload(event?.error || event?.message || event);
-});
-
 window.addEventListener('unhandledrejection', (event) => {
-  attemptChunkRecoveryReload(event?.reason || event);
+  const reason = event?.reason || event;
+  if (!isLikelyChunkLoadFailure(reason)) return;
+  attemptChunkRecoveryReload(reason);
 });
 
 window.addEventListener('DOMContentLoaded', () => {
   applyStandaloneClass();
   applyStandaloneViewport();
   clearChunkReloadGuard(getSafeSessionStorage());
+  if (typeof window !== 'undefined' && window.location.search.includes(CHUNK_RECOVERY_QUERY_PARAM)) {
+    const cleanUrl = stripChunkRecoveryParam(window.location);
+    window.history.replaceState({}, '', cleanUrl);
+  }
 }, { once: true });
 window.addEventListener('pageshow', applyStandaloneViewport);
 registerServiceWorker();
