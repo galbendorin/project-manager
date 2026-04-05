@@ -95,6 +95,12 @@ function App() {
     saveLastAppPath(nextPath);
   }, []);
 
+  const openProjectSelector = useCallback(() => {
+    setCurrentProject(null);
+    clearLastProject();
+    navigateToPath('/');
+  }, [navigateToPath]);
+
   useEffect(() => {
     if (!user || currentProject || currentPath !== '/') return;
 
@@ -156,7 +162,7 @@ function App() {
               <AuthenticatedTrackShell
                 currentUserId={user.id}
                 userEmail={user.email}
-                onGoToProjects={() => navigateToPath('/')}
+                onGoToProjects={openProjectSelector}
                 onSignOut={signOut}
                 accentTheme={accentTheme}
                 onAccentThemeChange={setAccentTheme}
@@ -168,7 +174,7 @@ function App() {
                 <AuthenticatedShoppingShell
                   currentUserId={user.id}
                   userEmail={user.email}
-                  onGoToProjects={() => navigateToPath('/')}
+                  onGoToProjects={openProjectSelector}
                   onSignOut={signOut}
                   accentTheme={accentTheme}
                   onAccentThemeChange={setAccentTheme}
