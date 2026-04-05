@@ -870,6 +870,43 @@ export default function ShoppingListView({ currentUserId }) {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'manual_todos',
+          filter: `project_id=eq.${selectedProject.id}`,
+        },
+        (payload) => {
+          const previousRow = payload?.old;
+          if (!previousRow?.id) return;
+
+          const actorLabel = resolveSharedActorLabel(previousRow, selectedProject, currentUserId);
+          const isFromSomeoneElse = Boolean(actorLabel);
+
+          setTodos((previousItems) => {
+            const nextTodos = previousItems.filter((item) => item._id !== previousRow.id);
+            const cachedState = loadShoppingOfflineState(currentUserId);
+            persistOfflineState({
+              ...cachedState,
+              selectedProjectId: selectedProject.id,
+              todosByProject: {
+                ...(cachedState.todosByProject || {}),
+                [selectedProject.id]: nextTodos,
+              },
+              lastSyncedAt: new Date().toISOString(),
+            });
+            return nextTodos;
+          });
+
+          if (isFromSomeoneElse) {
+            const title = String(previousRow.title || 'an item').trim() || 'an item';
+            const message = `${actorLabel} removed ${title}.`;
+            setLiveUpdateMessage(message);
+          }
+        }
+      )
       .subscribe();
 
     shoppingRealtimeChannelRef.current = channel;
@@ -1178,6 +1215,7 @@ export default function ShoppingListView({ currentUserId }) {
       setFailedTodoId('');
       setFailedTodoMessage('');
     }
+    const deletedTodo = todos.find((item) => item._id === todoId) || null;
     const previous = todos;
     const nextTodos = todos.filter((item) => item._id !== todoId);
     setTodos(nextTodos);
@@ -1217,6 +1255,13 @@ export default function ShoppingListView({ currentUserId }) {
       },
       lastSyncedAt: new Date().toISOString(),
     });
+    if (deletedTodo?.title) {
+      await notifyShoppingListSubscribers({
+        projectId: selectedProject.id,
+        itemTitles: [deletedTodo.title],
+        eventType: 'deleted',
+      });
+    }
   }, [clearPendingCompletion, currentUserId, failedTodoId, isOnline, pendingCompleteId, persistOfflineState, selectedProject?.id, todos]);
 
   const retryTodoAction = useCallback((todo) => {

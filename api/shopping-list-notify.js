@@ -23,7 +23,11 @@ const buildActorLabel = (user = {}) => {
 
 const formatShoppingBody = ({ actorLabel, itemTitles = [], eventType = 'added' }) => {
   const titles = itemTitles.slice(0, 3);
-  const actionLabel = eventType === 'bought' ? 'bought' : 'added';
+  const actionLabel = eventType === 'bought'
+    ? 'bought'
+    : eventType === 'deleted'
+      ? 'removed'
+      : 'added';
   if (titles.length === 0) {
     return `${actorLabel} updated the Shopping List.`;
   }
@@ -89,8 +93,9 @@ export default async function handler(req, res) {
     }
 
     const projectId = String(req.body?.projectId || '').trim();
-    const eventType = String(req.body?.eventType || 'added').trim().toLowerCase() === 'bought'
-      ? 'bought'
+    const requestedEventType = String(req.body?.eventType || 'added').trim().toLowerCase();
+    const eventType = ['added', 'bought', 'deleted'].includes(requestedEventType)
+      ? requestedEventType
       : 'added';
     const itemTitles = (Array.isArray(req.body?.itemTitles) ? req.body.itemTitles : [])
       .map((value) => String(value || '').trim())
