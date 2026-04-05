@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SCHEMAS } from '../utils/constants';
 import { keyGen, filterBySearch } from '../utils/helpers';
 import { IconEyeOpen, IconEyeClosed, IconTrash } from './Icons';
@@ -26,7 +26,7 @@ const FinancialsView = ({ registers, isExternalView, onUpdateItem, onDeleteItem,
   };
 
   // Report initial view on mount
-  React.useEffect(() => {
+  useEffect(() => {
     if (onSubViewChange) onSubViewChange('costs');
   }, []);
 

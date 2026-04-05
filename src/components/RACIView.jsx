@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 
 const RACI_KEYS = ['R', 'A', 'C', 'I'];
 const RACI_COLORS = {
