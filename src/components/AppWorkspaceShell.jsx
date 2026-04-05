@@ -238,7 +238,8 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     retryProjectSync,
     reloadProject,
     setProjectData,
-    setRegisters
+    setRegisters,
+    updateRaciData,
   } = useProjectData(project.id, currentUserId);
 
   const handleRemoveFromTracker = useCallback((taskId) => {
@@ -1315,7 +1316,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
               <RACIView
                 projectData={projectData}
                 registers={registers}
-                setRegisters={setRegisters}
+                updateRaciData={updateRaciData}
               />
             </BlurOverlay>
           ) : (

@@ -83,7 +83,7 @@ export default async function handler(req, res) {
     const user = await requireAuthenticatedUser(req, res);
     if (!user) return;
 
-    const limitResult = checkRateLimit({
+    const limitResult = await checkRateLimit({
       key: `shopping-push:${user.id}:${getClientIp(req)}`,
       max: 40,
       windowMs: 5 * 60_000,

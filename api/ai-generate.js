@@ -37,7 +37,7 @@ export default async function handler(req, res) {
   const userApiKey = req.headers['x-api-key']
   const { provider, model, systemPrompt, userMessage, maxTokens = 4096, stream = false, usePlatformKey = false } = req.body || {}
 
-  const limitResult = checkRateLimit({
+  const limitResult = await checkRateLimit({
     key: `ai:${getClientIp(req)}:${usePlatformKey ? 'platform' : 'byok'}`,
     max: usePlatformKey ? 24 : 60,
     windowMs: 60_000

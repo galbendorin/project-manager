@@ -6,6 +6,11 @@ import { supabase } from '../lib/supabase';
 import { createEmptyRegisters, createEmptyStatusReport } from './projectData/defaults';
 import { normalizeLoadedProjectState, buildProjectUpdatePayload } from './projectData/loadSave';
 import {
+  buildProjectSyncOp,
+  enqueueProjectSyncOp,
+  applyProjectSyncQueueToState,
+} from './projectData/projectSync';
+import {
   addTrackedActionIfMissing,
   removeTrackedAction,
   syncTrackedActionFromTask,
@@ -41,6 +46,13 @@ import {
   enqueueUpdate,
   replaceQueuedTargetId
 } from '../utils/offlineQueue';
+import {
+  isDirectProjectMutationFallbackError,
+  syncProjectRegisterDelete,
+  syncProjectRegisterPatch,
+  syncProjectRegisterUpsert,
+  syncProjectStatusReportField,
+} from './projectData/directProjectMutations';
 
 // Helper: get ISO timestamp
 const now = () => new Date().toISOString();
@@ -140,40 +152,23 @@ const STATUS_REPORT_FIELD_LABELS = {
   additionalNotes: 'Additional notes',
 };
 
-const createProjectSyncOpId = () => (
-  typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID
-    ? globalThis.crypto.randomUUID()
-    : `project-sync-${Date.now()}-${Math.random().toString(16).slice(2)}`
-);
-
-const buildProjectSyncOp = ({ kind, targetKey, label, detail = '', createdAt = now() }) => ({
-  id: createProjectSyncOpId(),
-  kind,
-  targetKey,
-  label,
-  detail,
-  createdAt,
+const buildProjectPlanSignature = ({
+  projectData,
+  tracker,
+  baseline,
+}) => JSON.stringify({
+  tasks: projectData,
+  tracker,
+  baseline,
 });
 
-const enqueueProjectSyncOp = (queue = [], op) => {
-  const nextQueue = Array.isArray(queue) ? [...queue] : [];
-  if (!op?.targetKey) return [...nextQueue, op];
-
-  const replaceableKinds = new Set(['register-update', 'status-update']);
-  if (replaceableKinds.has(op.kind)) {
-    const existingIndex = nextQueue.findIndex((item) => item.targetKey === op.targetKey && item.kind === op.kind);
-    if (existingIndex !== -1) {
-      nextQueue[existingIndex] = {
-        ...nextQueue[existingIndex],
-        ...op,
-        id: nextQueue[existingIndex].id,
-      };
-      return nextQueue;
-    }
-  }
-
-  return [...nextQueue, op];
-};
+const buildProjectCollaborativeSignature = ({
+  registers,
+  statusReport,
+}) => JSON.stringify({
+  registers,
+  statusReport,
+});
 
 /**
  * Custom hook for managing project data (tasks, registers, tracker, status report, and todos)
@@ -210,6 +205,12 @@ export const useProjectData = (projectId, userId = null) => {
   const syncingTodoQueueRef = useRef(false);
   const todoQueueRetryTimeoutRef = useRef(null);
   const projectSyncQueueRef = useRef([]);
+  const syncingProjectQueueRef = useRef(false);
+  const supportsDirectProjectMutationsRef = useRef(true);
+  const registersRef = useRef(createEmptyRegisters());
+  const statusReportRef = useRef(createEmptyStatusReport());
+  const lastPersistedPlanSignatureRef = useRef('');
+  const lastPersistedCollaborativeSignatureRef = useRef('');
   const snapshotKey = buildProjectSnapshotKey(projectId, userId || 'anon');
 
   useEffect(() => {
@@ -219,6 +220,14 @@ export const useProjectData = (projectId, userId = null) => {
   useEffect(() => {
     projectSyncQueueRef.current = projectSyncQueue;
   }, [projectSyncQueue]);
+
+  useEffect(() => {
+    registersRef.current = registers;
+  }, [registers]);
+
+  useEffect(() => {
+    statusReportRef.current = statusReport;
+  }, [statusReport]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -245,6 +254,7 @@ export const useProjectData = (projectId, userId = null) => {
 
     setLoadingData(true);
     initialLoadDone.current = false;
+    supportsDirectProjectMutationsRef.current = true;
     setSaveConflict(false);
     setSaveError(null);
     setRemoteUpdateAvailable(false);
@@ -252,18 +262,41 @@ export const useProjectData = (projectId, userId = null) => {
     const cachedSnapshot = await readOfflineJson(snapshotKey, null);
     const cachedTodoQueue = Array.isArray(cachedSnapshot?.todoQueue) ? cachedSnapshot.todoQueue : [];
     const cachedProjectSyncQueue = Array.isArray(cachedSnapshot?.projectSyncQueue) ? cachedSnapshot.projectSyncQueue : [];
+    const pendingTodoQueue = todoQueueRef.current.length > 0 ? todoQueueRef.current : cachedTodoQueue;
+    const pendingProjectSyncQueue = projectSyncQueueRef.current.length > 0
+      ? projectSyncQueueRef.current
+      : cachedProjectSyncQueue;
     if (cachedSnapshot) {
-      setProjectData(cachedSnapshot.tasks || []);
-      setRegisters(cachedSnapshot.registers || createEmptyRegisters());
-      setBaselineState(cachedSnapshot.baseline || null);
-      setTracker(cachedSnapshot.tracker || []);
-      setStatusReport(cachedSnapshot.statusReport || createEmptyStatusReport());
+      const cachedProjectState = applyProjectSyncQueueToState({
+        tasks: cachedSnapshot.tasks || [],
+        registers: cachedSnapshot.registers || createEmptyRegisters(),
+        baseline: cachedSnapshot.baseline || null,
+        tracker: cachedSnapshot.tracker || [],
+        statusReport: cachedSnapshot.statusReport || createEmptyStatusReport(),
+      }, pendingProjectSyncQueue);
+
+      setProjectData(cachedProjectState.tasks || []);
+      setRegisters(cachedProjectState.registers || createEmptyRegisters());
+      setBaselineState(cachedProjectState.baseline || null);
+      setTracker(cachedProjectState.tracker || []);
+      setStatusReport(cachedProjectState.statusReport || createEmptyStatusReport());
       setTodos(cachedSnapshot.todos || []);
-      setTodoQueue(cachedTodoQueue);
-      setProjectSyncQueue(cachedProjectSyncQueue);
+      setTodoQueue(pendingTodoQueue);
+      setProjectSyncQueue(pendingProjectSyncQueue);
       projectVersionRef.current = Number.isInteger(cachedSnapshot.version) ? cachedSnapshot.version : 1;
+      lastPersistedPlanSignatureRef.current = buildProjectPlanSignature({
+        projectData: cachedProjectState.tasks || [],
+        tracker: cachedProjectState.tracker || [],
+        baseline: cachedProjectState.baseline || null,
+      });
+      lastPersistedCollaborativeSignatureRef.current = pendingProjectSyncQueue.length === 0
+        ? buildProjectCollaborativeSignature({
+            registers: cachedProjectState.registers || createEmptyRegisters(),
+            statusReport: cachedProjectState.statusReport || createEmptyStatusReport(),
+          })
+        : '';
       setUsingOfflineSnapshot(true);
-      setOfflinePendingSync(cachedTodoQueue.length > 0 || cachedProjectSyncQueue.length > 0);
+      setOfflinePendingSync(pendingTodoQueue.length > 0 || pendingProjectSyncQueue.length > 0);
       setLoadingData(false);
     }
 
@@ -276,11 +309,6 @@ export const useProjectData = (projectId, userId = null) => {
     if (!error && data) {
       const normalizedState = normalizeLoadedProjectState(data, now);
       let nextTodos = [];
-      setProjectData(normalizedState.tasks);
-      setRegisters(normalizedState.registers);
-      setBaselineState(normalizedState.baseline);
-      setTracker(normalizedState.tracker);
-      setStatusReport(normalizedState.statusReport);
 
       if (userId && supportsManualTodosTableRef.current) {
         const { data: todoRows, error: todoError } = await supabase
@@ -290,36 +318,60 @@ export const useProjectData = (projectId, userId = null) => {
           .order('created_at', { ascending: true });
 
         if (!todoError) {
-          nextTodos = applyQueuedTodoChanges((todoRows || []).map(mapManualTodoRow), cachedTodoQueue);
+          nextTodos = applyQueuedTodoChanges((todoRows || []).map(mapManualTodoRow), pendingTodoQueue);
           setTodos(nextTodos);
         } else if (isMissingRelationError(todoError, 'manual_todos')) {
           supportsManualTodosTableRef.current = false;
-          nextTodos = applyQueuedTodoChanges([], cachedTodoQueue);
+          nextTodos = applyQueuedTodoChanges([], pendingTodoQueue);
           setTodos(nextTodos);
         } else {
           console.error('Failed to load manual todos:', todoError);
-          nextTodos = applyQueuedTodoChanges([], cachedTodoQueue);
+          nextTodos = applyQueuedTodoChanges([], pendingTodoQueue);
           setTodos(nextTodos);
         }
       } else {
-        nextTodos = applyQueuedTodoChanges([], cachedTodoQueue);
+        nextTodos = applyQueuedTodoChanges([], pendingTodoQueue);
         setTodos(nextTodos);
       }
 
-      setTodoQueue(cachedTodoQueue);
-      setProjectSyncQueue(cachedProjectSyncQueue);
-      projectVersionRef.current = normalizedState.version;
-      setUsingOfflineSnapshot(false);
-      setOfflinePendingSync(cachedTodoQueue.length > 0 || cachedProjectSyncQueue.length > 0);
-      writeLocalJson(snapshotKey, {
+      const mergedProjectState = applyProjectSyncQueueToState({
         tasks: normalizedState.tasks,
         registers: normalizedState.registers,
         baseline: normalizedState.baseline,
         tracker: normalizedState.tracker,
         statusReport: normalizedState.statusReport,
+      }, pendingProjectSyncQueue);
+
+      setProjectData(mergedProjectState.tasks);
+      setRegisters(mergedProjectState.registers);
+      setBaselineState(mergedProjectState.baseline);
+      setTracker(mergedProjectState.tracker);
+      setStatusReport(mergedProjectState.statusReport);
+      setTodoQueue(pendingTodoQueue);
+      setProjectSyncQueue(pendingProjectSyncQueue);
+      projectVersionRef.current = normalizedState.version;
+      lastPersistedPlanSignatureRef.current = buildProjectPlanSignature({
+        projectData: mergedProjectState.tasks,
+        tracker: mergedProjectState.tracker,
+        baseline: mergedProjectState.baseline,
+      });
+      lastPersistedCollaborativeSignatureRef.current = pendingProjectSyncQueue.length === 0
+        ? buildProjectCollaborativeSignature({
+            registers: mergedProjectState.registers,
+            statusReport: mergedProjectState.statusReport,
+          })
+        : '';
+      setUsingOfflineSnapshot(false);
+      setOfflinePendingSync(pendingTodoQueue.length > 0 || pendingProjectSyncQueue.length > 0);
+      writeLocalJson(snapshotKey, {
+        tasks: mergedProjectState.tasks,
+        registers: mergedProjectState.registers,
+        baseline: mergedProjectState.baseline,
+        tracker: mergedProjectState.tracker,
+        statusReport: mergedProjectState.statusReport,
         todos: nextTodos,
-        todoQueue: cachedTodoQueue,
-        projectSyncQueue: cachedProjectSyncQueue,
+        todoQueue: pendingTodoQueue,
+        projectSyncQueue: pendingProjectSyncQueue,
         version: normalizedState.version,
         cachedAt: now(),
       });
@@ -347,6 +399,27 @@ export const useProjectData = (projectId, userId = null) => {
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
+    }
+
+    const currentPlanSignature = buildProjectPlanSignature({
+      projectData,
+      tracker,
+      baseline,
+    });
+    const currentCollaborativeSignature = buildProjectCollaborativeSignature({
+      registers,
+      statusReport,
+    });
+
+    if (supportsDirectProjectMutationsRef.current && projectSyncQueue.length > 0) {
+      return undefined;
+    }
+
+    if (
+      currentPlanSignature === lastPersistedPlanSignatureRef.current
+      && currentCollaborativeSignature === lastPersistedCollaborativeSignatureRef.current
+    ) {
+      return undefined;
     }
 
     if (!isOnline) {
@@ -378,6 +451,8 @@ export const useProjectData = (projectId, userId = null) => {
 
       if (!error && data && Number.isInteger(data.version)) {
         projectVersionRef.current = data.version;
+        lastPersistedPlanSignatureRef.current = currentPlanSignature;
+        lastPersistedCollaborativeSignatureRef.current = currentCollaborativeSignature;
         setLastSaved(new Date());
         setSaveConflict(false);
         setRemoteUpdateAvailable(false);
@@ -399,7 +474,7 @@ export const useProjectData = (projectId, userId = null) => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict, isOnline, projectSyncRetryToken]);
+  }, [projectData, registers, tracker, statusReport, baseline, projectId, userId, saveConflict, isOnline, projectSyncRetryToken, projectSyncQueue.length]);
 
   useEffect(() => {
     if (!projectId || !initialLoadDone.current) return;
@@ -593,6 +668,114 @@ export const useProjectData = (projectId, userId = null) => {
       cancelled = true;
     };
   }, [projectId, userId, isOnline, todoQueue.length, todoQueueRetryToken]);
+
+  useEffect(() => {
+    if (!projectId || !isOnline || projectSyncQueue.length === 0 || !supportsDirectProjectMutationsRef.current) {
+      return undefined;
+    }
+
+    if (syncingProjectQueueRef.current) return undefined;
+
+    let cancelled = false;
+
+    const syncProjectQueue = async () => {
+      syncingProjectQueueRef.current = true;
+
+      try {
+        while (!cancelled && projectSyncQueueRef.current.length > 0) {
+          const [op] = projectSyncQueueRef.current;
+          if (!op?.kind) break;
+
+          let result = { data: null, error: null };
+
+          if (op.kind === 'status-update') {
+            result = await syncProjectStatusReportField({
+              projectId,
+              key: op.payload?.key,
+              value: op.payload?.value ?? '',
+            });
+          } else if (op.kind === 'register-add') {
+            const items = Array.isArray(op.payload?.itemsData) ? op.payload.itemsData : [];
+
+            if (items.length > 0) {
+              for (const item of items) {
+                result = await syncProjectRegisterUpsert({
+                  projectId,
+                  registerType: op.payload?.registerType,
+                  itemData: item,
+                });
+
+                if (result.error) break;
+              }
+            } else {
+              result = await syncProjectRegisterUpsert({
+                projectId,
+                registerType: op.payload?.registerType,
+                itemData: op.payload?.itemData,
+              });
+            }
+          } else if (op.kind === 'register-update') {
+            result = await syncProjectRegisterPatch({
+              projectId,
+              registerType: op.payload?.registerType,
+              itemId: op.payload?.itemId,
+              patch: op.payload?.patch,
+            });
+          } else if (op.kind === 'register-delete') {
+            result = await syncProjectRegisterDelete({
+              projectId,
+              registerType: op.payload?.registerType,
+              itemId: op.payload?.itemId,
+            });
+          } else {
+            setProjectSyncQueue((prev) => prev.slice(1));
+            continue;
+          }
+
+          if (result.error) {
+            if (isDirectProjectMutationFallbackError(result.error)) {
+              supportsDirectProjectMutationsRef.current = false;
+              setProjectSyncRetryToken((value) => value + 1);
+              break;
+            }
+
+            setSaveError(`Project sync failed: ${result.error.message}`);
+            break;
+          }
+
+          if (result.data?.version && Number.isInteger(result.data.version)) {
+            projectVersionRef.current = result.data.version;
+          }
+
+          setSaveError(null);
+          setSaveConflict(false);
+          setRemoteUpdateAvailable(false);
+          setUsingOfflineSnapshot(false);
+          setLastSaved(new Date());
+
+          const remainingQueue = projectSyncQueueRef.current.slice(1);
+          projectSyncQueueRef.current = remainingQueue;
+          setProjectSyncQueue(remainingQueue);
+
+          if (remainingQueue.length === 0) {
+            lastPersistedCollaborativeSignatureRef.current = buildProjectCollaborativeSignature({
+              registers: registersRef.current,
+              statusReport: statusReportRef.current,
+            });
+            setOfflinePendingSync(todoQueueRef.current.length > 0);
+          }
+        }
+      } finally {
+        syncingProjectQueueRef.current = false;
+      }
+    };
+
+    void syncProjectQueue();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnline, projectId, projectSyncQueue.length, projectSyncRetryToken]);
 
   useEffect(() => {
     if (todoQueue.length === 0 && projectSyncQueue.length === 0 && !saveTimeoutRef.current && !saving) {
@@ -812,6 +995,7 @@ export const useProjectData = (projectId, userId = null) => {
       targetKey: `status:${key}`,
       label: `Updated ${STATUS_REPORT_FIELD_LABELS[key] || key}`,
       detail: 'Will sync to the project summary when saved.',
+      payload: { key, value },
     }));
   }, [queueProjectSyncOp]);
 
@@ -1064,6 +1248,18 @@ export const useProjectData = (projectId, userId = null) => {
         completion.patch,
         now()
       ));
+      const title = SCHEMAS[completion.registerType]?.title || 'Register';
+      queueProjectSyncOp(buildProjectSyncOp({
+        kind: 'register-update',
+        targetKey: `register:${completion.registerType}:${completion.itemId}`,
+        label: `Updated ${title}`,
+        detail: 'Completed from Tasks view',
+        payload: {
+          registerType: completion.registerType,
+          itemId: completion.itemId,
+          patch: completion.patch,
+        },
+      }));
       return;
     }
 
@@ -1125,6 +1321,10 @@ export const useProjectData = (projectId, userId = null) => {
       label: `Added ${title} item`,
       detail: createdItem.description || createdItem.riskdetails || createdItem.decision || createdItem.minutedescription || createdItem.issue || '',
       createdAt: ts,
+      payload: {
+        registerType,
+        itemData: createdItem,
+      },
     }));
 
     return createdItem;
@@ -1159,6 +1359,10 @@ export const useProjectData = (projectId, userId = null) => {
         ? (createdItems[0].description || createdItems[0].riskdetails || createdItems[0].decision || createdItems[0].minutedescription || '')
         : '',
       createdAt: ts,
+      payload: {
+        registerType,
+        itemsData: createdItems,
+      },
     }));
 
     return createdItems;
@@ -1175,6 +1379,14 @@ export const useProjectData = (projectId, userId = null) => {
       label: `Updated ${title}`,
       detail: `${key} changed`,
       createdAt: ts,
+      payload: {
+        registerType,
+        itemId,
+        patch: {
+          [key]: value,
+          updatedAt: ts,
+        },
+      },
     }));
   }, [queueProjectSyncOp]);
 
@@ -1188,6 +1400,10 @@ export const useProjectData = (projectId, userId = null) => {
         targetKey: `register:${registerType}:${itemId}:delete`,
         label: `Deleted ${title} item`,
         detail: deletedItem.description || deletedItem.riskdetails || deletedItem.decision || deletedItem.minutedescription || '',
+        payload: {
+          registerType,
+          itemId,
+        },
       }));
     }
     return deletedItem;
@@ -1213,6 +1429,10 @@ export const useProjectData = (projectId, userId = null) => {
       targetKey: `register:${registerType}:${restoredItem._id}:restore`,
       label: `Restored ${title} item`,
       detail: restoredItem.description || restoredItem.riskdetails || restoredItem.decision || restoredItem.minutedescription || '',
+      payload: {
+        registerType,
+        itemData: restoredItem,
+      },
     }));
 
     return restoredItem;
@@ -1220,6 +1440,7 @@ export const useProjectData = (projectId, userId = null) => {
 
   const toggleItemPublic = useCallback((registerType, itemId) => {
     const ts = now();
+    const currentItem = (registers[registerType] || []).find((item) => item._id === itemId) || null;
     setRegisters(prev => toggleRegisterItemPublicInState(prev, registerType, itemId, ts));
     const title = SCHEMAS[registerType]?.title || 'Register';
     queueProjectSyncOp(buildProjectSyncOp({
@@ -1228,8 +1449,46 @@ export const useProjectData = (projectId, userId = null) => {
       label: `Updated ${title} visibility`,
       detail: 'Visibility changed',
       createdAt: ts,
+      payload: {
+        registerType,
+        itemId,
+        patch: {
+          public: currentItem ? !currentItem.public : true,
+          updatedAt: ts,
+        },
+      },
     }));
-  }, [queueProjectSyncOp]);
+  }, [queueProjectSyncOp, registers]);
+
+  const updateRaciData = useCallback((assignments, roles) => {
+    const ts = now();
+    const currentRaci = registers._raci?.[0] || {};
+    const nextRaciItem = {
+      ...currentRaci,
+      _id: currentRaci._id || 'raci_matrix',
+      assignments,
+      roles,
+      updatedAt: ts,
+    };
+
+    setRegisters((prev) => ({
+      ...prev,
+      _raci: [nextRaciItem],
+    }));
+
+    queueProjectSyncOp(buildProjectSyncOp({
+      kind: 'register-update',
+      targetKey: 'register:_raci:raci_matrix',
+      label: 'Updated RACI',
+      detail: 'RACI assignments changed',
+      createdAt: ts,
+      payload: {
+        registerType: '_raci',
+        itemId: nextRaciItem._id,
+        patch: nextRaciItem,
+      },
+    }));
+  }, [queueProjectSyncOp, registers]);
 
   return {
     projectData,
@@ -1282,6 +1541,7 @@ export const useProjectData = (projectId, userId = null) => {
     setProjectData,
     setRegisters,
     setTracker,
-    setTodos
+    setTodos,
+    updateRaciData,
   };
 };

@@ -44,7 +44,7 @@ const DEFAULT_ROLES = [
   'Business Sponsor'
 ];
 
-const RACIView = ({ projectData, registers, setRegisters }) => {
+const RACIView = ({ projectData, registers, updateRaciData }) => {
   const raciData = useMemo(() => {
     const raw = registers?._raci?.[0];
     return {
@@ -70,11 +70,8 @@ const RACIView = ({ projectData, registers, setRegisters }) => {
   const { roles, assignments } = raciData;
 
   const saveRaci = useCallback((newAssignments, newRoles) => {
-    setRegisters(prev => ({
-      ...prev,
-      _raci: [{ assignments: newAssignments, roles: newRoles, updatedAt: new Date().toISOString() }]
-    }));
-  }, [setRegisters]);
+    updateRaciData(newAssignments, newRoles);
+  }, [updateRaciData]);
 
   const getKey = (taskId, role) => `${taskId}::${role}`;
   const getValue = (taskId, role) => normalizeRaciValue(assignments[getKey(taskId, role)] || '');

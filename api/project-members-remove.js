@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     const user = await requireAuthenticatedUser(req, res);
     if (!user) return;
 
-    const limitResult = checkRateLimit({
+    const limitResult = await checkRateLimit({
       key: `project-remove-access:${user.id}:${getClientIp(req)}`,
       max: 20,
       windowMs: 5 * 60_000,
