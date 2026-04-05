@@ -19,6 +19,14 @@ export const isLikelyChunkLoadFailure = (input) => {
   return CHUNK_LOAD_PATTERNS.some((pattern) => normalized.includes(pattern));
 };
 
+export const getSafeSessionStorage = () => {
+  try {
+    return typeof window !== 'undefined' ? window.sessionStorage : null;
+  } catch {
+    return null;
+  }
+};
+
 export const consumeChunkReloadGuard = (storage) => {
   try {
     return storage?.getItem(CHUNK_LOAD_GUARD_KEY) === '1';

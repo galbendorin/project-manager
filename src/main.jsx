@@ -8,6 +8,7 @@ import { registerServiceWorker } from './utils/registerServiceWorker';
 import {
   clearChunkReloadGuard,
   consumeChunkReloadGuard,
+  getSafeSessionStorage,
   isLikelyChunkLoadFailure,
   markChunkReloadGuard,
 } from './utils/appUpdateRecovery';
@@ -51,9 +52,10 @@ applyStandaloneViewport();
 const attemptChunkRecoveryReload = (errorLike) => {
   if (typeof window === 'undefined') return;
   if (!isLikelyChunkLoadFailure(errorLike)) return;
-  if (consumeChunkReloadGuard(window.sessionStorage)) return;
+  const sessionStorage = getSafeSessionStorage();
+  if (consumeChunkReloadGuard(sessionStorage)) return;
 
-  markChunkReloadGuard(window.sessionStorage);
+  markChunkReloadGuard(sessionStorage);
   window.location.reload();
 };
 
@@ -73,7 +75,7 @@ window.addEventListener('unhandledrejection', (event) => {
 window.addEventListener('DOMContentLoaded', () => {
   applyStandaloneClass();
   applyStandaloneViewport();
-  clearChunkReloadGuard(window.sessionStorage);
+  clearChunkReloadGuard(getSafeSessionStorage());
 }, { once: true });
 window.addEventListener('pageshow', applyStandaloneViewport);
 registerServiceWorker();
