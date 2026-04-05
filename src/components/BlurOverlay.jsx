@@ -11,7 +11,7 @@ import { usePlan } from '../contexts/PlanContext';
  *   </BlurOverlay>
  */
 const BlurOverlay = ({ tabId, children, onUpgrade }) => {
-  const { hasTabAccess, effectivePlan, isTrialActive, trialDaysLeft } = usePlan();
+  const { hasTabAccess } = usePlan();
 
   if (hasTabAccess(tabId)) {
     return children;

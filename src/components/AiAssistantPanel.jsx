@@ -78,7 +78,6 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
   const [isProcessing, setIsProcessing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [interimText, setInterimText] = useState('');
-  const [pendingTasks, setPendingTasks] = useState(null);
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -202,8 +201,6 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
         addMessage({ role: 'assistant', text: `Error: ${result.error}` });
       } else {
         const newTasks = result.tasks;
-        setPendingTasks(newTasks);
-
         if (hasTasks) {
           const diff = describeChanges(currentTasks, newTasks);
           addMessage({
@@ -236,7 +233,6 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
 
   const handleApply = useCallback((tasks) => {
     onApplyTasks(tasks);
-    setPendingTasks(null);
     // Remove the apply/discard buttons from the last message
     setMessages(prev => prev.map((msg, idx) =>
       idx === prev.length - 1 ? { ...msg, showApply: false, onApply: undefined, onDiscard: undefined } : msg
@@ -245,7 +241,6 @@ const AiAssistantPanel = ({ isOpen, onClose, aiSettings, currentTasks, onApplyTa
   }, [onApplyTasks, addMessage]);
 
   const handleDiscard = useCallback(() => {
-    setPendingTasks(null);
     setMessages(prev => prev.map((msg, idx) =>
       idx === prev.length - 1 ? { ...msg, showApply: false, onApply: undefined, onDiscard: undefined } : msg
     ));

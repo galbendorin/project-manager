@@ -7,7 +7,7 @@ import {
 
 // ── Trial Banner (shown at top of app during trial / after expiry) ───
 export const TrialBanner = ({ onUpgrade }) => {
-  const { isTrialActive, isTrialExpired, trialDaysLeft, isStarter, effectivePlan } = usePlan();
+  const { isTrialActive, isTrialExpired, trialDaysLeft, isStarter } = usePlan();
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed) return null;
@@ -95,7 +95,6 @@ export const CancellationBanner = ({ onUpgrade }) => {
 // ── Limit Hit Banner (shown inline when a specific limit is reached) ─
 export const LimitBanner = ({ type, currentTaskCount, className = '', onUpgrade }) => {
   const {
-    effectivePlan,
     isStarter,
     canCreateProject,
     canUseAiReport,
@@ -215,7 +214,7 @@ export const AiReportsCounter = () => {
 
 // ── Plan Badge (shown in header) ──────────────────────────────
 export const PlanBadge = () => {
-  const { effectivePlan, trialDaysLeft, isTrialActive, isTrialExpired, willCancel, simulatedPlan } = usePlan();
+  const { effectivePlan, trialDaysLeft, willCancel } = usePlan();
 
   const badges = {
     starter: { label: 'Starter', color: 'bg-slate-100 text-slate-600 border-slate-200' },

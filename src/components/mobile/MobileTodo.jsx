@@ -20,7 +20,7 @@ const displayDate = (d) => {
   catch { return d; }
 };
 
-const MobileTodo = ({ todos, projectData, registers, tracker, currentProject, currentUserId, onUpdateTodo, onDeleteTodo }) => {
+const MobileTodo = ({ todos, projectData, registers, tracker, onUpdateTodo, onDeleteTodo }) => {
   const [showDone, setShowDone] = useState(false);
   const [filter, setFilter] = useState('all'); // all, manual, derived
 

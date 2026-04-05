@@ -89,7 +89,7 @@ const MobileHome = ({ tasks, registers, statusReport, onUpdateTask }) => {
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
             Needs Attention
           </h3>
-          {attentionItems.map((t, idx) => {
+          {attentionItems.map((t) => {
             const rc = ragStyle(t.rag);
             return (
               <div key={t.id} className={`${rc.bg} border ${rc.border} rounded-xl p-3 mb-2`}>

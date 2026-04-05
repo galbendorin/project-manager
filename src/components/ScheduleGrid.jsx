@@ -668,7 +668,7 @@ const ScheduleGrid = ({
     [columnWidths]
   );
 
-  const { startIndex, endIndex, topSpacerHeight, bottomSpacerHeight, renderTasks } = useMemo(() => {
+  const { startIndex, topSpacerHeight, bottomSpacerHeight, renderTasks } = useMemo(() => {
     if (!isVirtualized) {
       return {
         startIndex: 0,

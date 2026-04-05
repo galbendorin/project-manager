@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src api scripts *.config.js",
+    "smoke:user": "node scripts/run-browser-smoke.mjs",
     "check:react-hooks": "node scripts/check-react-hook-imports.mjs",
     "test": "node --test ./src/**/*.test.js",
     "test:watch": "node --test --watch ./src/**/*.test.js",
@@ -37,6 +38,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
     "globals": "^17.4.0",
+    "playwright-core": "^1.59.1",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.1",
     "vite": "^5.0.8"

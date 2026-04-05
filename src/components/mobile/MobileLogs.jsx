@@ -86,7 +86,6 @@ const RegisterItemCard = ({ item, schema, onTap }) => {
 /* ── Register detail sheet ── */
 const RegisterDetailSheet = ({ item, schema, onClose, onUpdate, onDelete }) => {
   const [editField, setEditField] = useState(null);
-  const [tempValue, setTempValue] = useState('');
   const cols = schema.cols.filter(c => c !== 'Visible');
 
   const save = (col, val) => {
@@ -124,7 +123,7 @@ const RegisterDetailSheet = ({ item, schema, onClose, onUpdate, onDelete }) => {
               <div
                 key={col}
                 className="flex items-center justify-between px-4 py-3.5 border-b border-slate-50 active:bg-slate-50 cursor-pointer"
-                onClick={() => { if (!isEditing) { setEditField(col); setTempValue(val); } }}
+                onClick={() => { if (!isEditing) { setEditField(col); } }}
               >
                 <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide w-28 flex-shrink-0">{col}</span>
                 {isEditing && options ? (
@@ -162,7 +161,7 @@ const RegisterDetailSheet = ({ item, schema, onClose, onUpdate, onDelete }) => {
 };
 
 /* ── Main MobileLogs component ── */
-const MobileLogs = ({ registers, isExternalView, onUpdateItem, onDeleteItem, onTogglePublic, onAddItem }) => {
+const MobileLogs = ({ registers, isExternalView, onUpdateItem, onDeleteItem, onAddItem }) => {
   const [activeLog, setActiveLog] = useState('risks');
   const [selectedItem, setSelectedItem] = useState(null);
 

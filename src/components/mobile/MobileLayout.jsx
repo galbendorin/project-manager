@@ -36,9 +36,7 @@ const MobileLayout = ({
   removeFromTracker,
   updateTrackerItem,
   reorderTrackerItems,
-  isInTracker,
   updateStatusReport,
-  addTodo,
   updateTodo,
   deleteTodo,
   // Actions
@@ -104,11 +102,6 @@ const MobileLayout = ({
   const handleSendToActionLog = useCallback((taskId) => {
     toggleTrackTask(taskId, true);
   }, [toggleTrackTask]);
-
-  // Track item removal via the tracker view
-  const handleRemoveFromTracker = useCallback((trackerId) => {
-    removeFromTracker(trackerId);
-  }, [removeFromTracker]);
 
   const mobileHeaderModuleType = useMemo(() => {
     if (moreSubView === 'tracker') return 'tracker';

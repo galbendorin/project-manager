@@ -44,7 +44,7 @@ const DEFAULT_ROLES = [
   'Business Sponsor'
 ];
 
-const RACIView = ({ projectData, registers, updateRaciData }) => {
+const RACIView = ({ registers, updateRaciData }) => {
   const raciData = useMemo(() => {
     const raw = registers?._raci?.[0];
     return {
@@ -177,7 +177,7 @@ const RACIView = ({ projectData, registers, updateRaciData }) => {
     saveRaci(updated, roles);
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleEsc = (e) => {
       if (e.key === 'Escape') setActiveCell(null);
     };

@@ -22,7 +22,6 @@ const ScheduleView = ({
   onRemoveFromTracker,
   isInTracker,
   aiSettings,
-  onAiSettingsChange,
   onApplyAiTasks,
   usePlatformKey
 }) => {
@@ -31,7 +30,6 @@ const ScheduleView = ({
   const scrollSourceRef = useRef(null);
   const [leftPaneWidthPct, setLeftPaneWidthPct] = useState(55);
   const [showAiPanel, setShowAiPanel] = useState(false);
-  const [showAiSettings, setShowAiSettings] = useState(false);
 
   // Collapsed state lives here so both grid + Gantt stay in sync
   const [collapsedIndices, setCollapsedIndices] = useState(new Set());
@@ -227,7 +225,7 @@ const ScheduleView = ({
         aiSettings={aiSettings}
         currentTasks={tasks}
         onApplyTasks={onApplyAiTasks}
-        onOpenSettings={() => { setShowAiPanel(false); setShowAiSettings(true); }}
+        onOpenSettings={() => { setShowAiPanel(false); }}
         usePlatformKey={usePlatformKey}
       />
 

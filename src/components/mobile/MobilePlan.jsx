@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import TaskCard from './TaskCard';
 import { buildVisibleTasks } from '../../utils/helpers';
 
@@ -6,19 +6,10 @@ const FILTERS = ['All', 'Active', 'Overdue', 'Milestones', 'Red/Amber'];
 
 const MobilePlan = ({ tasks, onTaskTap, hasBaseline = false, onSetBaseline, onClearBaseline }) => {
   const [filter, setFilter] = useState('All');
-  const [collapsedIndices, setCollapsedIndices] = useState(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [showBaselineMenu, setShowBaselineMenu] = useState(false);
 
-  const toggleCollapse = useCallback((index) => {
-    setCollapsedIndices(prev => {
-      const next = new Set(prev);
-      next.has(index) ? next.delete(index) : next.add(index);
-      return next;
-    });
-  }, []);
-
-  const visibleTasks = useMemo(() => buildVisibleTasks(tasks, collapsedIndices), [tasks, collapsedIndices]);
+  const visibleTasks = useMemo(() => buildVisibleTasks(tasks, new Set()), [tasks]);
 
   const filteredTasks = useMemo(() => {
     let result = visibleTasks;

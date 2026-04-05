@@ -4,11 +4,6 @@ import { usePlan } from '../contexts/PlanContext';
 import { markBillingSyncPending } from '../utils/billingSync';
 import { supabase } from '../lib/supabase';
 
-const PRICE_IDS = {
-  monthly: 'price_1T9YcZGmvS2YZ5sJKGD1NtYT',
-  annual: 'price_1T9YdXGmvS2YZ5sJTmCV5cNY',
-};
-
 export default function PricingPage({ onClose }) {
   const [billingCycle, setBillingCycle] = useState('annual');
   const [loading, setLoading] = useState(false);

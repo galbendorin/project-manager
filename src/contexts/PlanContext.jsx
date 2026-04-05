@@ -495,7 +495,7 @@ export const PlanProvider = ({ children }) => {
     canBaseline, canUseAi, canUseAiAssistant, canExportAiReport,
     aiReportsRemaining, getTaskLimit, getTaskHardLimit, isInTaskGrace,
     incrementAiReports, refreshProjectCount, refreshProfile,
-    simulatedPlan, isAdmin,
+    simulatedPlan,
   ]);
 
   return (
