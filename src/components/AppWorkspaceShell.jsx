@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { SCHEMAS } from '../utils/constants';
 import { getCurrentDate } from '../utils/helpers';
 import AuthenticatedFooter from './AuthenticatedFooter';
