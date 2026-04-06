@@ -17,6 +17,7 @@ import { createOfflineTempId, isOfflineTempId, readLocalJson, readOfflineJson, w
 import { normalizeProjectRecord } from '../utils/projectSharing';
 import MobileSyncCenter from './MobileSyncCenter';
 import ProjectShareModal from './ProjectShareModal';
+import ShoppingListQuickAdd from './ShoppingListQuickAdd';
 import ShoppingListSidebar from './ShoppingListSidebar';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
@@ -576,65 +577,24 @@ export default function ShoppingListView({ currentUserId }) {
                   </div>
                 </div>
 
-                <form
-                  onSubmit={handleAddSubmit}
-                  className="pm-surface-soft mt-5 rounded-[28px] p-4 sm:p-5"
-                >
-                  <div className="mb-4">
-                    <p className="pm-kicker">Quick add</p>
-                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">
-                      {isMobile ? 'Quick add groceries' : 'Add groceries by text or voice'}
-                    </h3>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {isMobile ? 'Type or say a few items for the live list.' : 'Type one item, or say a few items out loud and let the list split them for you.'}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                    <div className="min-w-0 flex-1">
-                      <input
-                        type="text"
-                        value={draftTitle}
-                        onChange={(event) => setDraftTitle(event.target.value)}
-                        placeholder="Milk, eggs, tomatoes..."
-                        className="pm-input w-full rounded-2xl px-4 py-3 text-base text-slate-900 placeholder-slate-400 sm:text-sm"
-                        autoComplete="off"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={isListening ? stopListening : startListening}
-                      disabled={!voiceSupported}
-                      className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
-                        isListening
-                          ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)]'
-                          : 'pm-subtle-button'
-                      } ${!voiceSupported ? 'cursor-not-allowed opacity-50' : ''}`}
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                        {isListening ? 'Stop' : 'Voice'}
-                      </span>
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={savingItems || !draftTitle.trim() || !selectedProject}
-                      className="pm-toolbar-primary rounded-2xl px-5 py-3 text-sm font-semibold text-white transition disabled:bg-slate-200 disabled:text-slate-400"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        {savingItems ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                        Add
-                      </span>
-                    </button>
-                  </div>
-
-                  <div className="mt-3 flex flex-col gap-1 text-xs text-slate-500">
-                    <span>{interimText ? `Hearing: ${interimText}` : voiceMessage || 'Say “milk, eggs, bread” for a quick grocery add.'}</span>
-                    {!voiceSupported ? (
-                      <span>This browser does not expose speech recognition, so voice add is unavailable here.</span>
-                    ) : null}
-                  </div>
-                </form>
+                <ShoppingListQuickAdd
+                  AddIcon={Plus}
+                  LoaderIcon={Loader2}
+                  MicIcon={Mic}
+                  MicOffIcon={MicOff}
+                  draftTitle={draftTitle}
+                  handleAddSubmit={handleAddSubmit}
+                  interimText={interimText}
+                  isListening={isListening}
+                  isMobile={isMobile}
+                  savingItems={savingItems}
+                  selectedProject={selectedProject}
+                  setDraftTitle={setDraftTitle}
+                  startListening={startListening}
+                  stopListening={stopListening}
+                  voiceMessage={voiceMessage}
+                  voiceSupported={voiceSupported}
+                />
 
                 {todoError ? (
                   <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
