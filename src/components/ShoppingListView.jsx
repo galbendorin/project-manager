@@ -13,8 +13,23 @@ import { useShoppingListLiveUpdates } from '../hooks/useShoppingListLiveUpdates'
 import { useShoppingListOfflineSync } from '../hooks/useShoppingListOfflineSync';
 import { useShoppingListVoiceCapture } from '../hooks/useShoppingListVoiceCapture';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { createOfflineTempId, readLocalJson, readOfflineJson, writeLocalJson } from '../utils/offlineState';
+import { readLocalJson, writeLocalJson } from '../utils/offlineState';
 import { normalizeProjectRecord } from '../utils/projectSharing';
+import {
+  createOfflineShoppingTodo,
+  describeShoppingProject,
+  formatSyncTimeLabel,
+  generateProjectId,
+  isProjectRelationMissingError,
+  isRowLevelSecurityError,
+  loadShoppingOfflineState,
+  loadShoppingOfflineStateAsync,
+  mergeTodosById,
+  resolveSharedActorLabel,
+  saveShoppingOfflineState,
+  sortTodos,
+  splitTypedGroceries,
+} from '../utils/shoppingListViewState';
 import MobileSyncCenter from './MobileSyncCenter';
 import ShoppingListInfoPanels from './ShoppingListInfoPanels';
 import ShoppingListItemsPanel from './ShoppingListItemsPanel';
@@ -26,7 +41,6 @@ import ShoppingListSidebar from './ShoppingListSidebar';
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const SHOPPING_UI_PREFS_KEY = 'pmworkspace:shopping-ui:v1';
 const MOBILE_COMPLETE_DELAY_MS = 1000;
-const SHOPPING_OFFLINE_PREFIX = 'pmworkspace:shopping-offline:v1';
 
 const IconBase = ({ children, className = '', viewBox = '0 0 24 24' }) => (
   <svg
@@ -130,137 +144,6 @@ const ChevronDown = ({ className = '' }) => (
     <path d="m6 9 6 6 6-6" />
   </IconBase>
 );
-
-const generateProjectId = () => {
-  if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID();
-  }
-  return '';
-};
-
-const isProjectRelationMissingError = (error, relationName) => {
-  const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
-  return msg.includes(relationName.toLowerCase()) && (msg.includes('relation') || msg.includes('relationship'));
-};
-
-const isRowLevelSecurityError = (error, tableName = '') => {
-  const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
-  return msg.includes('row-level security')
-    && (!tableName || msg.includes(tableName.toLowerCase()));
-};
-
-const sortTodos = (items = []) => (
-  [...items].sort((left, right) => {
-    if (left.status !== right.status) {
-      return left.status === 'Done' ? 1 : -1;
-    }
-    const leftTime = new Date(left.createdAt || 0).getTime();
-    const rightTime = new Date(right.createdAt || 0).getTime();
-    return rightTime - leftTime;
-  })
-);
-
-const mergeTodosById = (existingItems = [], incomingItems = []) => {
-  const merged = new Map();
-
-  for (const item of existingItems || []) {
-    if (item?._id) merged.set(item._id, item);
-  }
-
-  for (const item of incomingItems || []) {
-    if (!item?._id) continue;
-    const current = merged.get(item._id) || {};
-    merged.set(item._id, { ...current, ...item });
-  }
-
-  return sortTodos(Array.from(merged.values()));
-};
-
-const formatSharedActorLabel = (value = '') => {
-  const email = String(value || '').trim().toLowerCase();
-  const localPart = email.split('@')[0] || '';
-  if (!localPart) return '';
-  return localPart
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-};
-
-const resolveSharedActorLabel = (row = {}, project, currentUserId) => {
-  const actorId = row.user_id || row.assignee_user_id || '';
-  if (!actorId || actorId === currentUserId) return '';
-  if (actorId === project?.user_id) return 'Owner';
-
-  const matchingMember = (project?.project_members || []).find((member) => member?.user_id === actorId);
-  const memberLabel = formatSharedActorLabel(matchingMember?.member_email);
-  return memberLabel || 'Someone';
-};
-
-const splitTypedGroceries = (value = '') => (
-  String(value || '')
-    .split(/\s*[,;\n]\s*/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-);
-
-const describeShoppingProject = (project, index) => {
-  if (project.isOwned) return 'Your Shopping List';
-  const createdAt = project.created_at ? new Date(project.created_at) : null;
-  if (createdAt && !Number.isNaN(createdAt.getTime())) {
-    return `Shared List · ${createdAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
-  }
-  return `Shared List ${index + 1}`;
-};
-
-const buildShoppingOfflineKey = (userId = 'anon') => `${SHOPPING_OFFLINE_PREFIX}:${userId}`;
-
-const createEmptyShoppingOfflineState = () => ({
-  projects: [],
-  selectedProjectId: '',
-  todosByProject: {},
-  queue: [],
-  lastSyncedAt: '',
-});
-
-const loadShoppingOfflineState = (userId) => (
-  readLocalJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState())
-);
-
-const loadShoppingOfflineStateAsync = async (userId) => (
-  readOfflineJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState())
-);
-
-const saveShoppingOfflineState = (userId, state) => {
-  writeLocalJson(buildShoppingOfflineKey(userId), {
-    ...createEmptyShoppingOfflineState(),
-    ...(state || {}),
-  });
-};
-
-const createOfflineShoppingTodo = ({ title, projectId, userId, status = 'Open', completedAt = '' }) => {
-  const timestamp = new Date().toISOString();
-  return {
-    _id: createOfflineTempId('offline-todo'),
-    projectId,
-    title,
-    dueDate: '',
-    owner: '',
-    assigneeUserId: userId,
-    status,
-    recurrence: null,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    completedAt,
-  };
-};
-
-const formatSyncTimeLabel = (value) => {
-  if (!value) return '';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '';
-  return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-};
 
 export default function ShoppingListView({ currentUserId }) {
   const { canCreateProject, limits, refreshProjectCount } = usePlan();
