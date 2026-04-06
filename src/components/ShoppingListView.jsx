@@ -31,7 +31,6 @@ import {
   splitTypedGroceries,
 } from '../utils/shoppingListViewState';
 import MobileSyncCenter from './MobileSyncCenter';
-import ShoppingListInfoPanels from './ShoppingListInfoPanels';
 import ShoppingListItemsPanel from './ShoppingListItemsPanel';
 import ShoppingListPageHeader from './ShoppingListPageHeader';
 import ProjectShareModal from './ProjectShareModal';
@@ -511,7 +510,7 @@ export default function ShoppingListView({ currentUserId }) {
                   </div>
                 ) : null}
 
-                <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="mt-6">
                   <ShoppingListItemsPanel
                     CheckIcon={Check}
                     ChevronDownIcon={ChevronDown}
@@ -551,10 +550,6 @@ export default function ShoppingListView({ currentUserId }) {
                     shoppingSyncSummary={shoppingSyncSummary}
                     syncingQueue={syncingQueue}
                     todos={todos}
-                  />
-
-                  <ShoppingListInfoPanels
-                    selectedProject={selectedProject}
                   />
                 </div>
               </div>
