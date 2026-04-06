@@ -335,6 +335,110 @@ export function useShoppingListActions({
     todos,
   ]);
 
+  const updateTodoTitle = useCallback(async (todo, nextTitle) => {
+    const title = String(nextTitle || '').trim();
+    if (!todo?._id) {
+      return { ok: false, message: 'Choose a grocery to update.' };
+    }
+    if (!title) {
+      return { ok: false, message: 'Enter a grocery name before saving.' };
+    }
+    if (title === todo.title) {
+      return { ok: true };
+    }
+
+    const updatedAt = new Date().toISOString();
+    const previous = todos;
+    const optimisticTodos = sortTodos(todos.map((item) => (
+      item._id === todo._id
+        ? {
+            ...item,
+            title,
+            updatedAt,
+          }
+        : item
+    )));
+
+    setFailedTodoId('');
+    setFailedTodoMessage('');
+    setSavingTodoId(todo._id);
+    setSavingTodoAction('edit');
+    setTodos(optimisticTodos);
+
+    if (!isOnline || isOfflineTempId(todo._id)) {
+      const cachedState = loadShoppingOfflineState(currentUserId);
+      persistOfflineState({
+        ...cachedState,
+        selectedProjectId: selectedProject?.id || cachedState.selectedProjectId,
+        todosByProject: {
+          ...(cachedState.todosByProject || {}),
+          [selectedProject.id]: optimisticTodos,
+        },
+        queue: enqueueUpdate(cachedState.queue || [], todo._id, {
+          title,
+          updatedAt,
+        }),
+      });
+      setSavingTodoId('');
+      setSavingTodoAction('');
+      return { ok: true };
+    }
+
+    const { data, error } = await supabase
+      .from('manual_todos')
+      .update({
+        title,
+        updated_at: updatedAt,
+      })
+      .eq('id', todo._id)
+      .select(manualTodoSelect)
+      .single();
+
+    if (error) {
+      setTodos(previous);
+      setSavingTodoId('');
+      setSavingTodoAction('');
+      return {
+        ok: false,
+        message: isOfflineBrowser()
+          ? 'Your connection dropped before this grocery name was saved. Please try again.'
+          : (error.message || 'Unable to update this grocery right now.'),
+      };
+    }
+
+    setTodos((previousItems) => {
+      const nextTodos = sortTodos(previousItems.map((item) => (
+        item._id === todo._id ? mapManualTodoRow(data) : item
+      )));
+      const cachedState = loadShoppingOfflineState(currentUserId);
+      persistOfflineState({
+        ...cachedState,
+        selectedProjectId: selectedProject?.id || cachedState.selectedProjectId,
+        todosByProject: {
+          ...(cachedState.todosByProject || {}),
+          [selectedProject.id]: nextTodos,
+        },
+        lastSyncedAt: new Date().toISOString(),
+      });
+      return nextTodos;
+    });
+
+    setSavingTodoId('');
+    setSavingTodoAction('');
+    return { ok: true };
+  }, [
+    currentUserId,
+    isOnline,
+    loadShoppingOfflineState,
+    manualTodoSelect,
+    mapManualTodoRow,
+    persistOfflineState,
+    selectedProject?.id,
+    setTodos,
+    sortTodos,
+    todos,
+  ]);
+
   const retryTodoAction = useCallback((todo) => {
     setFailedTodoId('');
     setFailedTodoMessage('');
@@ -359,6 +463,7 @@ export function useShoppingListActions({
     setPendingCompleteId,
     setPendingCompleteSeconds,
     toggleTodoStatus,
+    updateTodoTitle,
     completionIntervalRef,
     completionTimeoutRef,
   };

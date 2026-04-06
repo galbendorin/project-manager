@@ -152,6 +152,9 @@ export default function ShoppingListView({ currentUserId }) {
   const [draftTitle, setDraftTitle] = useState('');
   const [shareOpen, setShareOpen] = useState(false);
   const [showBought, setShowBought] = useState(false);
+  const [editingTodoId, setEditingTodoId] = useState('');
+  const [editingTitle, setEditingTitle] = useState('');
+  const [editingError, setEditingError] = useState('');
   const [desktopCompact, setDesktopCompact] = useState(() => {
     const prefs = readLocalJson(SHOPPING_UI_PREFS_KEY, {});
     return prefs?.desktopCompact ?? true;
@@ -281,6 +284,7 @@ export default function ShoppingListView({ currentUserId }) {
     setPendingCompleteId,
     setPendingCompleteSeconds,
     toggleTodoStatus,
+    updateTodoTitle,
   } = useShoppingListActions({
     currentUserId,
     isOnline,
@@ -317,6 +321,48 @@ export default function ShoppingListView({ currentUserId }) {
     setDraftTitle('');
     setVoiceMessage(items.length === 1 ? `Added ${items[0]}.` : `Added ${items.length} groceries.`);
   }, [addItems, draftTitle, setVoiceMessage]);
+
+  const handleStartEditingTodo = useCallback((todo) => {
+    clearPendingCompletion();
+    setEditingTodoId(todo._id);
+    setEditingTitle(todo.title || '');
+    setEditingError('');
+  }, [clearPendingCompletion]);
+
+  const handleCancelEditingTodo = useCallback(() => {
+    setEditingTodoId('');
+    setEditingTitle('');
+    setEditingError('');
+  }, []);
+
+  const handleEditingTitleChange = useCallback((value) => {
+    setEditingTitle(value);
+    if (editingError) {
+      setEditingError('');
+    }
+  }, [editingError]);
+
+  const handleSaveEditingTodo = useCallback(async (todo) => {
+    const result = await updateTodoTitle(todo, editingTitle);
+    if (result?.ok) {
+      const label = String(editingTitle || '').trim() || todo.title;
+      setVoiceMessage(`Updated ${label}.`);
+      handleCancelEditingTodo();
+      return;
+    }
+    setEditingError(result?.message || 'Unable to update this grocery right now.');
+  }, [editingTitle, handleCancelEditingTodo, setVoiceMessage, updateTodoTitle]);
+
+  useEffect(() => {
+    if (!editingTodoId) return;
+    if (!todos.some((todo) => todo._id === editingTodoId)) {
+      handleCancelEditingTodo();
+    }
+  }, [editingTodoId, handleCancelEditingTodo, todos]);
+
+  useEffect(() => {
+    handleCancelEditingTodo();
+  }, [handleCancelEditingTodo, selectedProjectId]);
 
   const handleToggleTodo = useCallback((todo) => {
     if (todo.status === 'Done' || !isMobile) {
@@ -476,8 +522,14 @@ export default function ShoppingListView({ currentUserId }) {
                     completedTodos={completedTodos}
                     deleteTodo={deleteTodo}
                     desktopCompact={desktopCompact}
+                    editingError={editingError}
+                    editingTitle={editingTitle}
+                    editingTodoId={editingTodoId}
                     failedTodoId={failedTodoId}
                     failedTodoMessage={failedTodoMessage}
+                    handleCancelEditingTodo={handleCancelEditingTodo}
+                    handleSaveEditingTodo={handleSaveEditingTodo}
+                    handleStartEditingTodo={handleStartEditingTodo}
                     handleToggleTodo={handleToggleTodo}
                     isCompactDesktop={isCompactDesktop}
                     isMobile={isMobile}
@@ -492,6 +544,7 @@ export default function ShoppingListView({ currentUserId }) {
                     savingTodoAction={savingTodoAction}
                     savingTodoId={savingTodoId}
                     setDesktopCompact={setDesktopCompact}
+                    setEditingTitle={handleEditingTitleChange}
                     shouldCollapseBought={shouldCollapseBought}
                     showBought={showBought}
                     setShowBought={setShowBought}

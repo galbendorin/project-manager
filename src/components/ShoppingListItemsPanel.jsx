@@ -11,8 +11,14 @@ export default function ShoppingListItemsPanel({
   completedTodos,
   deleteTodo,
   desktopCompact,
+  editingError,
+  editingTitle,
+  editingTodoId,
   failedTodoId,
   failedTodoMessage,
+  handleCancelEditingTodo,
+  handleSaveEditingTodo,
+  handleStartEditingTodo,
   handleToggleTodo,
   isCompactDesktop,
   isMobile,
@@ -27,6 +33,7 @@ export default function ShoppingListItemsPanel({
   savingTodoAction,
   savingTodoId,
   setDesktopCompact,
+  setEditingTitle,
   shouldCollapseBought,
   showBought,
   setShowBought,
@@ -161,7 +168,34 @@ export default function ShoppingListItemsPanel({
                       <div className="min-w-0 flex-1">
                         <div className={`flex justify-between gap-3 ${isCompactDesktop ? 'items-center' : 'items-start'}`}>
                           <div className="min-w-0 flex-1">
-                            <p className={`font-semibold text-slate-900 ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
+                            {editingTodoId === todo._id ? (
+                              <div>
+                                <input
+                                  type="text"
+                                  value={editingTitle}
+                                  onChange={(event) => setEditingTitle(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                      event.preventDefault();
+                                      void handleSaveEditingTodo(todo);
+                                    }
+                                    if (event.key === 'Escape') {
+                                      event.preventDefault();
+                                      handleCancelEditingTodo();
+                                    }
+                                  }}
+                                  autoFocus
+                                  className={`w-full rounded-2xl border border-[var(--pm-accent)] bg-white px-3 py-2 font-semibold text-slate-900 outline-none focus:border-[var(--pm-accent-strong)] ${
+                                    isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'
+                                  }`}
+                                />
+                                {editingError ? (
+                                  <p className="mt-2 text-xs font-medium text-rose-700">{editingError}</p>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <p className={`font-semibold text-slate-900 ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
+                            )}
                           </div>
                           <div className="flex shrink-0 flex-col items-end gap-1">
                             {savingTodoId === todo._id ? (
@@ -189,10 +223,12 @@ export default function ShoppingListItemsPanel({
                                 : 'text-slate-400'
                           }`}>
                             {savingTodoId === todo._id
-                              ? (savingTodoAction === 'complete' ? `Saving ${todo.title} as bought...` : 'Saving...')
+                              ? (savingTodoAction === 'complete' ? `Saving ${todo.title} as bought...` : savingTodoAction === 'edit' ? `Saving ${todo.title}...` : 'Saving...')
                               : pendingCompleteId === todo._id
                                 ? `Marking bought in ${pendingCompleteSeconds}s. Tap again to cancel.`
-                                : (isMobile ? 'Tap Bought to move it off the live list.' : 'Tap the check to mark this item as bought.')}
+                                : editingTodoId === todo._id
+                                  ? 'Update the grocery name, then save it.'
+                                  : (isMobile ? 'Tap Bought to move it off the live list.' : 'Tap the check to mark this item as bought.')}
                           </p>
                         ) : null}
                         {failedTodoId === todo._id ? (
@@ -209,43 +245,105 @@ export default function ShoppingListItemsPanel({
                         ) : null}
                         {isMobile ? (
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleTodo(todo)}
-                              disabled={savingTodoId === todo._id}
-                              className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition ${
-                                pendingCompleteId === todo._id
-                                  ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent-strong)]'
-                                  : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                              }`}
-                            >
-                              <CheckIcon className="h-4 w-4" />
-                              {pendingCompleteId === todo._id ? `Bought in ${pendingCompleteSeconds}s` : 'Bought'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => deleteTodo(todo._id)}
-                              disabled={savingTodoId === todo._id}
-                              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                              Delete
-                            </button>
+                            {editingTodoId === todo._id ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSaveEditingTodo(todo)}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[var(--pm-accent)] bg-[var(--pm-accent-tint)] px-3.5 text-sm font-semibold text-[var(--pm-accent-strong)] transition hover:bg-white"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEditingTodo}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleTodo(todo)}
+                                  disabled={savingTodoId === todo._id}
+                                  className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition ${
+                                    pendingCompleteId === todo._id
+                                      ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent-strong)]'
+                                      : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                  }`}
+                                >
+                                  <CheckIcon className="h-4 w-4" />
+                                  {pendingCompleteId === todo._id ? `Bought in ${pendingCompleteSeconds}s` : 'Bought'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditingTodo(todo)}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteTodo(todo._id)}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                                >
+                                  <TrashIcon className="h-4 w-4" />
+                                  Delete
+                                </button>
+                              </>
+                            )}
                           </div>
                         ) : null}
                       </div>
                       {!isMobile ? (
-                        <button
-                          type="button"
-                          onClick={() => deleteTodo(todo._id)}
-                          disabled={savingTodoId === todo._id}
-                          className={`inline-flex shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${
-                            isCompactDesktop ? 'h-9 w-9' : 'h-11 w-11'
-                          }`}
-                          aria-label={`Delete ${todo.title}`}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {editingTodoId === todo._id ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveEditingTodo(todo)}
+                                disabled={savingTodoId === todo._id}
+                                className="inline-flex items-center rounded-full border border-[var(--pm-accent)] bg-[var(--pm-accent-tint)] px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)] transition hover:bg-white"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditingTodo}
+                                disabled={savingTodoId === todo._id}
+                                className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditingTodo(todo)}
+                              disabled={savingTodoId === todo._id}
+                              className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                            >
+                              Edit
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => deleteTodo(todo._id)}
+                            disabled={savingTodoId === todo._id}
+                            className={`inline-flex shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${
+                              isCompactDesktop ? 'h-9 w-9' : 'h-11 w-11'
+                            }`}
+                            aria-label={`Delete ${todo.title}`}
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -308,7 +406,36 @@ export default function ShoppingListItemsPanel({
                       )}
                       <div className="min-w-0 flex-1">
                         <div className={`flex justify-between gap-3 ${isCompactDesktop ? 'items-center' : 'items-start'}`}>
-                          <p className={`font-semibold text-slate-400 line-through ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
+                          <div className="min-w-0 flex-1">
+                            {editingTodoId === todo._id ? (
+                              <div>
+                                <input
+                                  type="text"
+                                  value={editingTitle}
+                                  onChange={(event) => setEditingTitle(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                      event.preventDefault();
+                                      void handleSaveEditingTodo(todo);
+                                    }
+                                    if (event.key === 'Escape') {
+                                      event.preventDefault();
+                                      handleCancelEditingTodo();
+                                    }
+                                  }}
+                                  autoFocus
+                                  className={`w-full rounded-2xl border border-[var(--pm-accent)] bg-white px-3 py-2 font-semibold text-slate-700 outline-none focus:border-[var(--pm-accent-strong)] ${
+                                    isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'
+                                  }`}
+                                />
+                                {editingError ? (
+                                  <p className="mt-2 text-xs font-medium text-rose-700">{editingError}</p>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <p className={`font-semibold text-slate-400 line-through ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
+                            )}
+                          </div>
                           {syncState ? (
                             <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
                               syncState === 'syncing'
@@ -322,8 +449,10 @@ export default function ShoppingListItemsPanel({
                         {(isMobile || savingTodoId === todo._id || failedTodoId === todo._id || !isCompactDesktop) ? (
                           <p className={`mt-1 text-xs ${savingTodoId === todo._id ? 'text-emerald-700' : 'text-slate-400'}`}>
                             {savingTodoId === todo._id
-                              ? (savingTodoAction === 'reopen' ? `Saving ${todo.title}...` : 'Saving...')
-                              : (isMobile ? 'Use Undo if this needs to go back on the live list.' : 'Tap the check if you need to reopen it.')}
+                              ? (savingTodoAction === 'reopen' ? `Saving ${todo.title}...` : savingTodoAction === 'edit' ? `Saving ${todo.title}...` : 'Saving...')
+                              : editingTodoId === todo._id
+                                ? 'Update the grocery name, then save it.'
+                                : (isMobile ? 'Use Undo if this needs to go back on the live list.' : 'Tap the check if you need to reopen it.')}
                           </p>
                         ) : null}
                         {failedTodoId === todo._id ? (
@@ -340,39 +469,101 @@ export default function ShoppingListItemsPanel({
                         ) : null}
                         {isMobile ? (
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleTodo(todo)}
-                              disabled={savingTodoId === todo._id}
-                              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-                            >
-                              <CheckIcon className="h-4 w-4" />
-                              Undo
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => deleteTodo(todo._id)}
-                              disabled={savingTodoId === todo._id}
-                              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                              Delete
-                            </button>
+                            {editingTodoId === todo._id ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSaveEditingTodo(todo)}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center rounded-full border border-[var(--pm-accent)] bg-[var(--pm-accent-tint)] px-3.5 text-sm font-semibold text-[var(--pm-accent-strong)] transition hover:bg-white"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEditingTodo}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleTodo(todo)}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  <CheckIcon className="h-4 w-4" />
+                                  Undo
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditingTodo(todo)}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteTodo(todo._id)}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                                >
+                                  <TrashIcon className="h-4 w-4" />
+                                  Delete
+                                </button>
+                              </>
+                            )}
                           </div>
                         ) : null}
                       </div>
                       {!isMobile ? (
-                        <button
-                          type="button"
-                          onClick={() => deleteTodo(todo._id)}
-                          disabled={savingTodoId === todo._id}
-                          className={`inline-flex shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${
-                            isCompactDesktop ? 'h-9 w-9' : 'h-11 w-11'
-                          }`}
-                          aria-label={`Delete ${todo.title}`}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {editingTodoId === todo._id ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveEditingTodo(todo)}
+                                disabled={savingTodoId === todo._id}
+                                className="inline-flex items-center rounded-full border border-[var(--pm-accent)] bg-[var(--pm-accent-tint)] px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)] transition hover:bg-white"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditingTodo}
+                                disabled={savingTodoId === todo._id}
+                                className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditingTodo(todo)}
+                              disabled={savingTodoId === todo._id}
+                              className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                            >
+                              Edit
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => deleteTodo(todo._id)}
+                            disabled={savingTodoId === todo._id}
+                            className={`inline-flex shrink-0 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${
+                              isCompactDesktop ? 'h-9 w-9' : 'h-11 w-11'
+                            }`}
+                            aria-label={`Delete ${todo.title}`}
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   </div>
