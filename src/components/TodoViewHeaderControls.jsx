@@ -54,7 +54,7 @@ export default function TodoViewHeaderControls({
               onClick={() => setViewMode('list')}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'list'
-                  ? 'bg-white text-slate-900 shadow-sm'
+                  ? 'bg-[var(--pm-accent)] text-white shadow-sm'
                   : 'text-slate-500'
               }`}
             >
@@ -65,7 +65,7 @@ export default function TodoViewHeaderControls({
               onClick={() => setViewMode('board')}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'board'
-                  ? 'bg-white text-slate-900 shadow-sm'
+                  ? 'bg-[var(--pm-accent)] text-white shadow-sm'
                   : 'text-slate-500'
               }`}
             >
