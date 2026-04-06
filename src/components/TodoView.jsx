@@ -282,30 +282,6 @@ const TodoView = ({
     };
   }, [scope, currentUserId]);
 
-  useEffect(() => {
-    if (!pendingFocusTodoId) return undefined;
-
-    const matchingTodo = mergedOpenTodos.find((item) => item._id === pendingFocusTodoId);
-    if (!matchingTodo) return undefined;
-
-    if (isMobile) {
-      setSelectedMobileTodo(matchingTodo);
-      onTodoFocusHandled?.();
-      return undefined;
-    }
-
-    const frameId = window.requestAnimationFrame(() => {
-      const input = titleInputRefs.current.get(pendingFocusTodoId);
-      if (input) {
-        input.focus();
-        input.select();
-      }
-      onTodoFocusHandled?.();
-    });
-
-    return () => window.cancelAnimationFrame(frameId);
-  }, [isMobile, mergedOpenTodos, onTodoFocusHandled, pendingFocusTodoId]);
-
   const {
     activeFilterCount,
     allTodoItems,
@@ -333,6 +309,30 @@ const TodoView = ({
     todos,
     tracker,
   });
+
+  useEffect(() => {
+    if (!pendingFocusTodoId) return undefined;
+
+    const matchingTodo = mergedOpenTodos.find((item) => item._id === pendingFocusTodoId);
+    if (!matchingTodo) return undefined;
+
+    if (isMobile) {
+      setSelectedMobileTodo(matchingTodo);
+      onTodoFocusHandled?.();
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const input = titleInputRefs.current.get(pendingFocusTodoId);
+      if (input) {
+        input.focus();
+        input.select();
+      }
+      onTodoFocusHandled?.();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isMobile, mergedOpenTodos, onTodoFocusHandled, pendingFocusTodoId]);
 
   useEffect(() => {
     if (!selectedMobileTodo) return;
