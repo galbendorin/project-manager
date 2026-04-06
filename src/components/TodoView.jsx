@@ -5,7 +5,9 @@ import {
 } from '../utils/helpers';
 import { supabase } from '../lib/supabase';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { readLocalJson, writeLocalJson } from '../utils/offlineState';
 import { useTodoViewDerivedData } from '../hooks/useTodoViewDerivedData';
+import TodoBoardView from './TodoBoardView';
 import TodoBucketSection from './TodoBucketSection';
 import MobileTodoDetailSheet from './MobileTodoDetailSheet';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
@@ -60,6 +62,7 @@ const DESKTOP_COMPLETE_DELAY_MS = 1600;
 const MOBILE_COMPLETE_DELAY_MS = 3200;
 
 const STATUS_OPTIONS = ['Open', 'Done'];
+const TODO_VIEW_MODE_KEY = 'pmworkspace:todo-view-mode:v1';
 
 const TodoView = ({
   todos,
@@ -91,6 +94,10 @@ const TodoView = ({
   const [mobileEditingTitleTodoId, setMobileEditingTitleTodoId] = useState(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [selectedMobileTodo, setSelectedMobileTodo] = useState(null);
+  const [viewMode, setViewMode] = useState(() => {
+    const cached = readLocalJson(TODO_VIEW_MODE_KEY, {});
+    return cached?.mode === 'board' ? 'board' : 'list';
+  });
   const [quickAddValues, setQuickAddValues] = useState({});
   const [pendingCompletedTodos, setPendingCompletedTodos] = useState({});
   const draftEditsRef = useRef({});
@@ -129,6 +136,10 @@ const TodoView = ({
   useEffect(() => {
     draftEditsRef.current = draftEdits;
   }, [draftEdits]);
+
+  useEffect(() => {
+    writeLocalJson(TODO_VIEW_MODE_KEY, { mode: viewMode });
+  }, [viewMode]);
 
   useEffect(() => {
     if (!isMobile && showMobileFilters) {
@@ -418,6 +429,22 @@ const TodoView = ({
   const showCompletionTick = !isExternalView;
   const showQuickAdd = !isExternalView;
 
+  const bucketSections = bucketedTodos.map((bucket) => {
+    const displayItems = [...bucket.items];
+    filteredTransientTodos
+      .filter((entry) => entry.bucketKey === bucket.key)
+      .sort((a, b) => a.displayIndex - b.displayIndex)
+      .forEach((entry) => {
+        const insertAt = Math.max(0, Math.min(entry.displayIndex, displayItems.length));
+        displayItems.splice(insertAt, 0, entry.todo);
+      });
+
+    return {
+      ...bucket,
+      displayItems,
+    };
+  });
+
   const clearAllFilters = useCallback(() => {
     setProjectFilter([]);
     setSourceFilter([]);
@@ -451,30 +478,41 @@ const TodoView = ({
           setScope={setScope}
           setSearchQuery={setSearchQuery}
           setShowMobileFilters={setShowMobileFilters}
+          setViewMode={setViewMode}
           showMobileFilters={showMobileFilters}
           sourceFilter={sourceFilter}
           sourceOptions={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
           setSourceFilter={setSourceFilter}
+          viewMode={viewMode}
           visibleOpenTodos={visibleOpenTodos}
         />
 
-        <div className="px-5 py-4 space-y-4">
-          {bucketedTodos.map((bucket) => {
-            const displayItems = [...bucket.items];
-            filteredTransientTodos
-              .filter((entry) => entry.bucketKey === bucket.key)
-              .sort((a, b) => a.displayIndex - b.displayIndex)
-              .forEach((entry) => {
-                const insertAt = Math.max(0, Math.min(entry.displayIndex, displayItems.length));
-                displayItems.splice(insertAt, 0, entry.todo);
-              });
-
-            return (
+        {viewMode === 'board' ? (
+          <TodoBoardView
+            bucketSections={bucketSections}
+            formatQuickAddDueHint={formatQuickAddDueHint}
+            handleCompleteTodo={handleCompleteTodo}
+            handleQuickAddSubmit={handleQuickAddSubmit}
+            isExternalView={isExternalView}
+            isMobile={isMobile}
+            onDeleteTodo={onDeleteTodo}
+            pendingCompletedTodos={pendingCompletedTodos}
+            quickAddValues={quickAddValues}
+            setQuickAddInputRef={setQuickAddInputRef}
+            setQuickAddValue={setQuickAddValue}
+            setSelectedMobileTodo={setSelectedMobileTodo}
+            showCompletionTick={showCompletionTick}
+            showQuickAdd={showQuickAdd}
+            statusClass={statusClass}
+          />
+        ) : (
+          <div className="px-5 py-4 space-y-4">
+            {bucketSections.map((bucket) => (
               <TodoBucketSection
                 key={bucket.key}
                 bucket={bucket}
                 commitDraftValue={commitDraftValue}
-                displayItems={displayItems}
+                displayItems={bucket.displayItems}
                 formatQuickAddDueHint={formatQuickAddDueHint}
                 getDraftValue={getDraftValue}
                 handleCompleteTodo={handleCompleteTodo}
@@ -500,9 +538,9 @@ const TodoView = ({
                 statusClass={statusClass}
                 statusOptions={STATUS_OPTIONS}
               />
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {isMobile && selectedMobileTodo ? (

@@ -31,9 +31,11 @@ export default function TodoViewHeaderControls({
   setSearchQuery,
   setShowMobileFilters,
   setSourceFilter,
+  setViewMode,
   showMobileFilters,
   sourceFilter,
   sourceOptions,
+  viewMode,
   visibleOpenTodos,
 }) {
   return (
@@ -45,13 +47,39 @@ export default function TodoViewHeaderControls({
             Scope-aware task view with manual + derived items, project filters, and recurring rules.
           </p>
         </div>
-        <input
-          type="text"
-          placeholder="Search tasks..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="px-3 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500'
+              }`}
+            >
+              List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('board')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                viewMode === 'board'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500'
+              }`}
+            >
+              Board
+            </button>
+          </div>
+          <input
+            type="text"
+            placeholder="Search tasks..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+          />
+        </div>
       </div>
 
       {isMobile ? (
