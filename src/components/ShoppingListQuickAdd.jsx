@@ -76,6 +76,12 @@ export default function ShoppingListQuickAdd({
         {!voiceSupported ? (
           <span>This browser does not expose speech recognition, so voice add is unavailable here.</span>
         ) : null}
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-600">
+            <MicIcon className="h-3.5 w-3.5 text-[var(--pm-accent)]" />
+            {voiceSupported ? 'Speech recognition available here' : 'Speech recognition not available in this browser'}
+          </span>
+        </div>
       </div>
     </form>
   );

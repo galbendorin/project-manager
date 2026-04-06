@@ -554,12 +554,7 @@ export default function ShoppingListView({ currentUserId }) {
                   />
 
                   <ShoppingListInfoPanels
-                    canShareProject={canShareProject}
-                    onOpenShare={() => setShareOpen(true)}
                     selectedProject={selectedProject}
-                    shareIcon={Share2}
-                    voiceIcon={Mic}
-                    voiceSupported={voiceSupported}
                   />
                 </div>
               </div>

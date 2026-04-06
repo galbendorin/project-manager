@@ -77,10 +77,10 @@ export default function ShoppingListSidebar({
               <button
                 type="button"
                 onClick={onOpenShare}
-                className="pm-subtle-button mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition"
+                className="pm-toolbar-primary mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold text-white transition"
               >
                 <ShareIcon className="h-3.5 w-3.5" />
-                Share this list
+                Share with household
               </button>
             ) : null}
           </div>
