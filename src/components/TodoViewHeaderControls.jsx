@@ -13,6 +13,8 @@ export default function TodoViewHeaderControls({
   bucketFilter,
   bucketOptions,
   clearAllFilters,
+  futureItemCount,
+  futureMonthCount,
   isMobile,
   loadingAllProjects,
   ownerFilter,
@@ -29,15 +31,23 @@ export default function TodoViewHeaderControls({
   setRecurrenceFilter,
   setScope,
   setSearchQuery,
+  setShowFutureMonths,
   setShowMobileFilters,
   setSourceFilter,
   setViewMode,
+  showFutureMonths,
   showMobileFilters,
   sourceFilter,
   sourceOptions,
   viewMode,
   visibleOpenTodos,
 }) {
+  const futureToggleLabel = showFutureMonths
+    ? 'Hide next 12 months'
+    : futureMonthCount > 0
+      ? `Show next 12 months (${futureMonthCount})`
+      : 'Show next 12 months';
+
   return (
     <div className="px-4 sm:px-6 py-4 border-b border-slate-200 rounded-t-xl space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -79,6 +89,19 @@ export default function TodoViewHeaderControls({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
           />
+          {futureMonthCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowFutureMonths((value) => !value)}
+              className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                showFutureMonths
+                  ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)]'
+                  : 'border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              {futureToggleLabel}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -121,7 +144,26 @@ export default function TodoViewHeaderControls({
                 Clear
               </button>
             ) : null}
+            {futureMonthCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowFutureMonths((value) => !value)}
+                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  showFutureMonths
+                    ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)]'
+                    : 'border-slate-200 bg-white text-slate-600'
+                }`}
+              >
+                {showFutureMonths ? 'Hide next 12 months' : `Show next 12 months (${futureMonthCount})`}
+              </button>
+            ) : null}
           </div>
+
+          {!showFutureMonths && futureItemCount > 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500">
+              {futureItemCount} task{futureItemCount !== 1 ? 's' : ''} scheduled across the next {futureMonthCount} month{futureMonthCount !== 1 ? 's' : ''} are hidden.
+            </div>
+          ) : null}
 
           {showMobileFilters ? (
             <div className="fixed inset-0 z-[70] flex flex-col sm:hidden">
@@ -214,7 +256,14 @@ export default function TodoViewHeaderControls({
           ) : null}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
+        <div className="space-y-2.5">
+          {!showFutureMonths && futureItemCount > 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500">
+              {futureItemCount} task{futureItemCount !== 1 ? 's' : ''} scheduled across the next {futureMonthCount} month{futureMonthCount !== 1 ? 's' : ''} are hidden.
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
           <select
             value={scope}
             onChange={(e) => {
@@ -262,6 +311,7 @@ export default function TodoViewHeaderControls({
             selectedValues={bucketFilter}
             onChange={setBucketFilter}
           />
+          </div>
         </div>
       )}
 

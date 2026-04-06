@@ -2,10 +2,8 @@ import { useCallback, useMemo } from 'react';
 import {
   filterBySearch,
   collectDerivedTodos,
-  bucketByDeadline,
 } from '../utils/helpers';
 import {
-  matchesBucketSelection,
   matchesOwnerSelection,
   matchesProjectSelection,
   matchesRecurrenceSelection,
@@ -169,11 +167,6 @@ export function useTodoViewDerivedData({
     return filteredOpenTodos.filter((item) => !hiddenIds.has(item._id));
   }, [filteredOpenTodos, pendingCompletedTodos]);
 
-  const bucketedTodos = useMemo(() => {
-    const grouped = bucketByDeadline(visibleOpenTodos);
-    return grouped.filter((bucket) => matchesBucketSelection(bucketFilter, bucket.key));
-  }, [visibleOpenTodos, bucketFilter]);
-
   const projectSelectOptions = useMemo(() => {
     if (scope === 'project') {
       return [
@@ -199,7 +192,6 @@ export function useTodoViewDerivedData({
   return {
     activeFilterCount,
     allTodoItems,
-    bucketedTodos,
     filteredTransientTodos,
     mergedOpenTodos,
     ownerOptions,

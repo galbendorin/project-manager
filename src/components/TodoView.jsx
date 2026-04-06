@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  getTodoBucketDefaultDueDate,
-  TODO_BUCKETS
-} from '../utils/helpers';
 import { supabase } from '../lib/supabase';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { readLocalJson, writeLocalJson } from '../utils/offlineState';
 import { useTodoViewDerivedData } from '../hooks/useTodoViewDerivedData';
+import {
+  buildTodoCalendarSections,
+  getTodoSectionDefaultDueDate,
+} from '../utils/todoCalendarSections';
 import TodoBoardView from './TodoBoardView';
 import TodoBucketSection from './TodoBucketSection';
 import MobileTodoDetailSheet from './MobileTodoDetailSheet';
@@ -47,7 +47,7 @@ const statusClass = (status) => {
 };
 
 const formatQuickAddDueHint = (bucketKey) => {
-  const defaultDueDate = getTodoBucketDefaultDueDate(bucketKey);
+  const defaultDueDate = getTodoSectionDefaultDueDate(bucketKey);
   if (!defaultDueDate) return 'No deadline';
 
   const parsed = new Date(`${defaultDueDate}T00:00:00`);
@@ -63,6 +63,7 @@ const MOBILE_COMPLETE_DELAY_MS = 3200;
 
 const STATUS_OPTIONS = ['Open', 'Done'];
 const TODO_VIEW_MODE_KEY = 'pmworkspace:todo-view-mode:v1';
+const TODO_FUTURE_MONTHS_KEY = 'pmworkspace:todo-future-months:v1';
 
 const TodoView = ({
   todos,
@@ -97,6 +98,10 @@ const TodoView = ({
   const [viewMode, setViewMode] = useState(() => {
     const cached = readLocalJson(TODO_VIEW_MODE_KEY, {});
     return cached?.mode === 'board' ? 'board' : 'list';
+  });
+  const [showFutureMonths, setShowFutureMonths] = useState(() => {
+    const cached = readLocalJson(TODO_FUTURE_MONTHS_KEY, {});
+    return cached?.show === true;
   });
   const [quickAddValues, setQuickAddValues] = useState({});
   const [pendingCompletedTodos, setPendingCompletedTodos] = useState({});
@@ -142,10 +147,22 @@ const TodoView = ({
   }, [viewMode]);
 
   useEffect(() => {
+    writeLocalJson(TODO_FUTURE_MONTHS_KEY, { show: showFutureMonths });
+  }, [showFutureMonths]);
+
+  useEffect(() => {
     if (!isMobile && showMobileFilters) {
       setShowMobileFilters(false);
     }
   }, [isMobile, showMobileFilters]);
+
+  useEffect(() => {
+    if (showFutureMonths) return;
+    setBucketFilter((prev) => {
+      const next = prev.filter((value) => !String(value).startsWith('month:'));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [showFutureMonths]);
 
   useEffect(() => () => {
     completionTimeoutsRef.current.forEach((timeoutId) => {
@@ -285,7 +302,6 @@ const TodoView = ({
   const {
     activeFilterCount,
     allTodoItems,
-    bucketedTodos,
     filteredTransientTodos,
     mergedOpenTodos,
     ownerOptions,
@@ -415,7 +431,7 @@ const TodoView = ({
     await onAddTodo({
       title,
       projectId: currentProject?.id || null,
-      dueDate: getTodoBucketDefaultDueDate(bucketKey)
+      dueDate: getTodoSectionDefaultDueDate(bucketKey)
     });
 
     window.requestAnimationFrame(() => {
@@ -429,7 +445,23 @@ const TodoView = ({
   const showCompletionTick = !isExternalView;
   const showQuickAdd = !isExternalView;
 
-  const bucketSections = bucketedTodos.map((bucket) => {
+  const {
+    sections: allBucketSections,
+    futureMonthSections,
+    futureItemCount,
+  } = buildTodoCalendarSections(visibleOpenTodos, {
+    showFutureMonths,
+  });
+
+  const filterableBucketSections = showFutureMonths
+    ? allBucketSections
+    : allBucketSections.filter((bucket) => !bucket.key.startsWith('month:'));
+
+  const filteredBucketSections = filterableBucketSections.filter((bucket) => (
+    bucketFilter.length === 0 || bucketFilter.includes(bucket.key)
+  ));
+
+  const bucketSections = filteredBucketSections.map((bucket) => {
     const displayItems = [...bucket.items];
     filteredTransientTodos
       .filter((entry) => entry.bucketKey === bucket.key)
@@ -459,8 +491,10 @@ const TodoView = ({
         <TodoViewHeaderControls
           activeFilterCount={activeFilterCount}
           bucketFilter={bucketFilter}
-          bucketOptions={TODO_BUCKETS.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
+          bucketOptions={filterableBucketSections.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
           clearAllFilters={clearAllFilters}
+          futureItemCount={futureItemCount}
+          futureMonthCount={futureMonthSections.length}
           isMobile={isMobile}
           loadingAllProjects={loadingAllProjects}
           ownerFilter={ownerFilter}
@@ -477,8 +511,10 @@ const TodoView = ({
           setRecurrenceFilter={setRecurrenceFilter}
           setScope={setScope}
           setSearchQuery={setSearchQuery}
+          setShowFutureMonths={setShowFutureMonths}
           setShowMobileFilters={setShowMobileFilters}
           setViewMode={setViewMode}
+          showFutureMonths={showFutureMonths}
           showMobileFilters={showMobileFilters}
           sourceFilter={sourceFilter}
           sourceOptions={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
