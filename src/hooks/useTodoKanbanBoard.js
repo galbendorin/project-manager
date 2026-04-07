@@ -71,8 +71,8 @@ export function useTodoKanbanBoard({
 
   const projectId = currentProject?.id || null;
 
-  const manualKanbanTodos = useMemo(() => (
-    (visibleOpenTodos || []).filter((todo) => !todo.isDerived && todo.projectId === projectId)
+  const projectKanbanTodos = useMemo(() => (
+    (visibleOpenTodos || []).filter((todo) => todo.projectId === projectId)
   ), [projectId, visibleOpenTodos]);
 
   const loadColumns = useCallback(async () => {
@@ -156,7 +156,7 @@ export function useTodoKanbanBoard({
 
     const firstColumnId = normalizedColumns[0]?.id || null;
     return normalizedColumns.map((column) => {
-      const cards = manualKanbanTodos.filter((todo) => (
+      const cards = projectKanbanTodos.filter((todo) => (
         (todo.kanbanColumnId || firstColumnId) === column.id
       ));
       return {
@@ -164,7 +164,7 @@ export function useTodoKanbanBoard({
         cards: sortCards(cards),
       };
     });
-  }, [manualKanbanTodos, normalizedColumns]);
+  }, [projectKanbanTodos, normalizedColumns]);
 
   const createCardInColumn = useCallback(async (columnId, title) => {
     const trimmedTitle = String(title || '').trim();
