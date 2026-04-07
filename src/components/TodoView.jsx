@@ -9,8 +9,11 @@ import {
 } from '../utils/todoCalendarSections';
 import TodoBoardView from './TodoBoardView';
 import TodoBucketSection from './TodoBucketSection';
+import TodoKanbanBoard from './TodoKanbanBoard';
+import DesktopTodoDetailModal from './DesktopTodoDetailModal';
 import MobileTodoDetailSheet from './MobileTodoDetailSheet';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
+import { useTodoKanbanBoard } from '../hooks/useTodoKanbanBoard';
 
 const SOURCE_FILTER_OPTIONS = [
   { value: 'all', label: 'All Sources' },
@@ -94,10 +97,12 @@ const TodoView = ({
   const [draftEdits, setDraftEdits] = useState({});
   const [mobileEditingTitleTodoId, setMobileEditingTitleTodoId] = useState(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const [selectedMobileTodo, setSelectedMobileTodo] = useState(null);
+  const [selectedTodo, setSelectedTodo] = useState(null);
   const [viewMode, setViewMode] = useState(() => {
     const cached = readLocalJson(TODO_VIEW_MODE_KEY, {});
-    return cached?.mode === 'board' ? 'board' : 'list';
+    if (cached?.mode === 'kanban') return 'kanban';
+    if (cached?.mode === 'board' || cached?.mode === 'timeline') return 'timeline';
+    return 'list';
   });
   const [showFutureMonths, setShowFutureMonths] = useState(() => {
     const cached = readLocalJson(TODO_FUTURE_MONTHS_KEY, {});
@@ -333,7 +338,7 @@ const TodoView = ({
     if (!matchingTodo) return undefined;
 
     if (isMobile) {
-      setSelectedMobileTodo(matchingTodo);
+      setSelectedTodo(matchingTodo);
       onTodoFocusHandled?.();
       return undefined;
     }
@@ -351,17 +356,17 @@ const TodoView = ({
   }, [isMobile, mergedOpenTodos, onTodoFocusHandled, pendingFocusTodoId]);
 
   useEffect(() => {
-    if (!selectedMobileTodo) return;
-    const selectedId = selectedMobileTodo._id || selectedMobileTodo.id;
+    if (!selectedTodo) return;
+    const selectedId = selectedTodo._id || selectedTodo.id;
     const nextSelected = allTodoItems.find((item) => (item._id || item.id) === selectedId) || null;
     if (!nextSelected) {
-      setSelectedMobileTodo(null);
+      setSelectedTodo(null);
       return;
     }
-    if (nextSelected !== selectedMobileTodo) {
-      setSelectedMobileTodo(nextSelected);
+    if (nextSelected !== selectedTodo) {
+      setSelectedTodo(nextSelected);
     }
-  }, [allTodoItems, selectedMobileTodo]);
+  }, [allTodoItems, selectedTodo]);
 
   const clearPendingCompletion = useCallback((todoId) => {
     const existingTimeoutId = completionTimeoutsRef.current.get(todoId);
@@ -485,6 +490,27 @@ const TodoView = ({
     setBucketFilter([]);
   }, []);
 
+  const {
+    addColumn,
+    columns,
+    columnsLoading,
+    createCardInColumn,
+    kanbanAvailable,
+    kanbanMessage,
+    moveCardToColumn,
+    renameColumn,
+  } = useTodoKanbanBoard({
+    currentProject,
+    currentUserId,
+    isExternalView,
+    onAddTodo,
+    onUpdateTodo,
+    scope,
+    visibleOpenTodos,
+  });
+
+  const selectedTodoCanEdit = !isExternalView && !selectedTodo?.isDerived && selectedTodo?.status !== 'Done';
+
   return (
     <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
       <div className="max-w-[1480px] mx-auto bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-h-[500px]">
@@ -523,22 +549,39 @@ const TodoView = ({
           visibleOpenTodos={visibleOpenTodos}
         />
 
-        {viewMode === 'board' ? (
+        {viewMode === 'timeline' ? (
           <TodoBoardView
             bucketSections={bucketSections}
             formatQuickAddDueHint={formatQuickAddDueHint}
             handleCompleteTodo={handleCompleteTodo}
             handleQuickAddSubmit={handleQuickAddSubmit}
             isExternalView={isExternalView}
-            isMobile={isMobile}
             onDeleteTodo={onDeleteTodo}
+            onOpenTodo={setSelectedTodo}
             pendingCompletedTodos={pendingCompletedTodos}
             quickAddValues={quickAddValues}
             setQuickAddInputRef={setQuickAddInputRef}
             setQuickAddValue={setQuickAddValue}
-            setSelectedMobileTodo={setSelectedMobileTodo}
             showCompletionTick={showCompletionTick}
             showQuickAdd={showQuickAdd}
+            statusClass={statusClass}
+          />
+        ) : viewMode === 'kanban' ? (
+          <TodoKanbanBoard
+            addColumn={addColumn}
+            columns={columns}
+            columnsLoading={columnsLoading}
+            createCardInColumn={createCardInColumn}
+            handleCompleteTodo={handleCompleteTodo}
+            isExternalView={isExternalView}
+            kanbanAvailable={kanbanAvailable}
+            kanbanMessage={kanbanMessage}
+            moveCardToColumn={moveCardToColumn}
+            onDeleteTodo={onDeleteTodo}
+            onOpenTodo={setSelectedTodo}
+            pendingCompletedTodos={pendingCompletedTodos}
+            renameColumn={renameColumn}
+            showCompletionTick={showCompletionTick}
             statusClass={statusClass}
           />
         ) : (
@@ -565,7 +608,7 @@ const TodoView = ({
                 recurrenceOptions={RECURRENCE_OPTIONS}
                 setDraftValue={setDraftValue}
                 setMobileEditingTitleTodoId={setMobileEditingTitleTodoId}
-                setSelectedMobileTodo={setSelectedMobileTodo}
+                setSelectedMobileTodo={setSelectedTodo}
                 setQuickAddInputRef={setQuickAddInputRef}
                 setQuickAddValue={setQuickAddValue}
                 setTitleInputRef={setTitleInputRef}
@@ -579,16 +622,30 @@ const TodoView = ({
         )}
       </div>
 
-      {isMobile && selectedMobileTodo ? (
+      {isMobile && selectedTodo ? (
         <MobileTodoDetailSheet
-          todo={selectedMobileTodo}
-          canEdit={!isExternalView && !selectedMobileTodo.isDerived && selectedMobileTodo.status !== 'Done'}
+          todo={selectedTodo}
+          canEdit={selectedTodoCanEdit}
           projectOptions={projectOptions}
-          onClose={() => setSelectedMobileTodo(null)}
+          onClose={() => setSelectedTodo(null)}
           onDeleteTodo={onDeleteTodo}
           onUpdateTodo={onUpdateTodo}
           recurrenceOptions={RECURRENCE_OPTIONS}
           recurrenceLabel={recurrenceLabel}
+          statusClass={statusClass}
+        />
+      ) : null}
+
+      {!isMobile && selectedTodo ? (
+        <DesktopTodoDetailModal
+          todo={selectedTodo}
+          canEdit={selectedTodoCanEdit}
+          projectOptions={projectOptions}
+          onClose={() => setSelectedTodo(null)}
+          onDeleteTodo={onDeleteTodo}
+          onUpdateTodo={onUpdateTodo}
+          recurrenceLabel={recurrenceLabel}
+          recurrenceOptions={RECURRENCE_OPTIONS}
           statusClass={statusClass}
         />
       ) : null}

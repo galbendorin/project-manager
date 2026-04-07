@@ -54,7 +54,7 @@ export default function TodoViewHeaderControls({
         <div>
           <h2 className="text-base font-bold text-slate-800 tracking-tight">Tasks</h2>
           <p className="text-[11px] text-slate-400 mt-1">
-            Scope-aware task view with manual + derived items, project filters, and recurring rules.
+            Switch between detailed list, deadline timeline, and Trello-style Kanban views.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -72,14 +72,25 @@ export default function TodoViewHeaderControls({
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('board')}
+              onClick={() => setViewMode('timeline')}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                viewMode === 'board'
+                viewMode === 'timeline'
                   ? 'bg-[var(--pm-accent)] text-white shadow-sm'
                   : 'text-slate-500'
               }`}
             >
-              Board
+              Timeline
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('kanban')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                viewMode === 'kanban'
+                  ? 'bg-[var(--pm-accent)] text-white shadow-sm'
+                  : 'text-slate-500'
+              }`}
+            >
+              Kanban
             </button>
           </div>
           <input

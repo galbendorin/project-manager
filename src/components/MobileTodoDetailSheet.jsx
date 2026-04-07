@@ -106,6 +106,20 @@ export default function MobileTodoDetailSheet({
                 )}
               </MobileField>
 
+              <MobileField label="Description">
+                {canEdit ? (
+                  <textarea
+                    value={todo.description || ''}
+                    onChange={(e) => onUpdateTodo(todo._id, 'description', e.target.value)}
+                    rows={4}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300"
+                    placeholder="Add more detail..."
+                  />
+                ) : (
+                  <MobileValue>{todo.description || 'No description'}</MobileValue>
+                )}
+              </MobileField>
+
               <MobileField label="Project">
                 {canEdit ? (
                   <select

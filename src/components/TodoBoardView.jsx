@@ -28,15 +28,14 @@ const CompletionTickButton = ({ checked, onClick, label }) => (
 const TodoBoardCard = ({
   bucketKey,
   displayIndex,
-  isExternalView,
-  isMobile,
   onDeleteTodo,
+  onOpenTodo,
   pendingCompletedTodos,
-  setSelectedMobileTodo,
   showCompletionTick,
   statusClass,
   todo,
   handleCompleteTodo,
+  isExternalView,
 }) => {
   const isCompleted = todo.status === 'Done';
   const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id);
@@ -70,16 +69,18 @@ const TodoBoardCard = ({
         <div className="min-w-0 flex-1">
           <button
             type="button"
-            onClick={() => {
-              if (isMobile) {
-                setSelectedMobileTodo(todo);
-              }
-            }}
-            className={`min-w-0 text-left ${isMobile ? 'cursor-pointer' : 'cursor-default'}`}
+            onClick={() => onOpenTodo(todo)}
+            className="min-w-0 text-left"
           >
             <div className={`text-[15px] font-semibold leading-5 ${isCompleted ? 'line-through text-slate-400' : 'text-slate-900'}`}>
               {todo.title || 'Untitled'}
             </div>
+
+            {todo.description ? (
+              <div className="mt-2 line-clamp-3 text-[12px] leading-5 text-slate-500">
+                {todo.description}
+              </div>
+            ) : null}
 
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600">
@@ -135,13 +136,12 @@ export default function TodoBoardView({
   handleCompleteTodo,
   handleQuickAddSubmit,
   isExternalView,
-  isMobile,
   onDeleteTodo,
+  onOpenTodo,
   pendingCompletedTodos,
   quickAddValues,
   setQuickAddInputRef,
   setQuickAddValue,
-  setSelectedMobileTodo,
   showCompletionTick,
   showQuickAdd,
   statusClass,
@@ -173,10 +173,9 @@ export default function TodoBoardView({
                   displayIndex={displayIndex}
                   handleCompleteTodo={handleCompleteTodo}
                   isExternalView={isExternalView}
-                  isMobile={isMobile}
                   onDeleteTodo={onDeleteTodo}
+                  onOpenTodo={onOpenTodo}
                   pendingCompletedTodos={pendingCompletedTodos}
-                  setSelectedMobileTodo={setSelectedMobileTodo}
                   showCompletionTick={showCompletionTick}
                   statusClass={statusClass}
                   todo={todo}

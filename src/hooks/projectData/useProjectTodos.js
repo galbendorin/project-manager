@@ -9,8 +9,10 @@ import {
 } from './todos';
 import {
   MANUAL_TODO_SELECT,
+  LEGACY_MANUAL_TODO_SELECT,
   mapManualTodoRow,
   isMissingRelationError,
+  isMissingSchemaFieldError,
 } from './manualTodoUtils';
 import {
   createOfflineTempId,
@@ -23,19 +25,31 @@ import {
   replaceQueuedTargetId,
 } from '../../utils/offlineQueue';
 
-const buildManualTodoInsertPayload = (todo, userId) => ({
-  user_id: userId,
-  project_id: todo.projectId || null,
-  title: todo.title || '',
-  due_date: todo.dueDate || null,
-  owner_text: todo.owner || '',
-  assignee_user_id: todo.assigneeUserId || userId || null,
-  status: todo.status === 'Done' ? 'Done' : 'Open',
-  recurrence: todo.recurrence,
-  completed_at: todo.completedAt || null,
-});
+const EXTENDED_MANUAL_TODO_FIELDS = ['description', 'kanban_column_id', 'kanban_position'];
 
-const buildManualTodoUpdatePayload = (patch = {}) => {
+const buildManualTodoInsertPayload = (todo, userId, supportsExtendedFields = true) => {
+  const payload = {
+    user_id: userId,
+    project_id: todo.projectId || null,
+    title: todo.title || '',
+    due_date: todo.dueDate || null,
+    owner_text: todo.owner || '',
+    assignee_user_id: todo.assigneeUserId || userId || null,
+    status: todo.status === 'Done' ? 'Done' : 'Open',
+    recurrence: todo.recurrence,
+    completed_at: todo.completedAt || null,
+  };
+
+  if (supportsExtendedFields) {
+    payload.description = todo.description || '';
+    payload.kanban_column_id = todo.kanbanColumnId || null;
+    payload.kanban_position = Number.isFinite(Number(todo.kanbanPosition)) ? Number(todo.kanbanPosition) : 0;
+  }
+
+  return payload;
+};
+
+const buildManualTodoUpdatePayload = (patch = {}, supportsExtendedFields = true) => {
   const nextPatch = {};
   if (Object.prototype.hasOwnProperty.call(patch, 'projectId')) nextPatch.project_id = patch.projectId || null;
   if (Object.prototype.hasOwnProperty.call(patch, 'title')) nextPatch.title = patch.title || '';
@@ -46,6 +60,13 @@ const buildManualTodoUpdatePayload = (patch = {}) => {
   if (Object.prototype.hasOwnProperty.call(patch, 'recurrence')) nextPatch.recurrence = patch.recurrence || null;
   if (Object.prototype.hasOwnProperty.call(patch, 'completedAt')) nextPatch.completed_at = patch.completedAt || null;
   if (Object.prototype.hasOwnProperty.call(patch, 'updatedAt')) nextPatch.updated_at = patch.updatedAt;
+
+  if (supportsExtendedFields) {
+    if (Object.prototype.hasOwnProperty.call(patch, 'description')) nextPatch.description = patch.description || '';
+    if (Object.prototype.hasOwnProperty.call(patch, 'kanbanColumnId')) nextPatch.kanban_column_id = patch.kanbanColumnId || null;
+    if (Object.prototype.hasOwnProperty.call(patch, 'kanbanPosition')) nextPatch.kanban_position = Number.isFinite(Number(patch.kanbanPosition)) ? Number(patch.kanbanPosition) : 0;
+  }
+
   return nextPatch;
 };
 
@@ -53,11 +74,14 @@ const buildQueuedManualTodo = (todoId, record = {}, now) => ({
   _id: todoId,
   projectId: record.projectId || null,
   title: record.title || 'New Task',
+  description: record.description || '',
   dueDate: record.dueDate || '',
   owner: record.owner || 'PM',
   assigneeUserId: record.assigneeUserId || null,
   status: record.status === 'Done' ? 'Done' : 'Open',
   recurrence: record.recurrence || null,
+  kanbanColumnId: record.kanbanColumnId || null,
+  kanbanPosition: Number.isFinite(Number(record.kanbanPosition)) ? Number(record.kanbanPosition) : 0,
   createdAt: record.createdAt || now(),
   updatedAt: record.updatedAt || record.createdAt || now(),
   completedAt: record.completedAt || '',
@@ -67,11 +91,16 @@ const applyManualTodoLocalPatch = (todo, patch = {}) => ({
   ...todo,
   projectId: Object.prototype.hasOwnProperty.call(patch, 'projectId') ? (patch.projectId || null) : todo.projectId,
   title: Object.prototype.hasOwnProperty.call(patch, 'title') ? (patch.title || '') : todo.title,
+  description: Object.prototype.hasOwnProperty.call(patch, 'description') ? (patch.description || '') : todo.description,
   dueDate: Object.prototype.hasOwnProperty.call(patch, 'dueDate') ? (patch.dueDate || '') : todo.dueDate,
   owner: Object.prototype.hasOwnProperty.call(patch, 'owner') ? (patch.owner || '') : todo.owner,
   assigneeUserId: Object.prototype.hasOwnProperty.call(patch, 'assigneeUserId') ? (patch.assigneeUserId || null) : todo.assigneeUserId,
   status: Object.prototype.hasOwnProperty.call(patch, 'status') ? (patch.status === 'Done' ? 'Done' : 'Open') : todo.status,
   recurrence: Object.prototype.hasOwnProperty.call(patch, 'recurrence') ? (patch.recurrence || null) : todo.recurrence,
+  kanbanColumnId: Object.prototype.hasOwnProperty.call(patch, 'kanbanColumnId') ? (patch.kanbanColumnId || null) : todo.kanbanColumnId,
+  kanbanPosition: Object.prototype.hasOwnProperty.call(patch, 'kanbanPosition')
+    ? (Number.isFinite(Number(patch.kanbanPosition)) ? Number(patch.kanbanPosition) : 0)
+    : todo.kanbanPosition,
   updatedAt: patch.updatedAt || todo.updatedAt,
   completedAt: Object.prototype.hasOwnProperty.call(patch, 'completedAt') ? (patch.completedAt || '') : todo.completedAt,
 });
@@ -122,6 +151,7 @@ export function useProjectTodos({
   const [todoQueueRetryToken, setTodoQueueRetryToken] = useState(0);
 
   const supportsManualTodosTableRef = useRef(true);
+  const supportsExtendedManualTodoFieldsRef = useRef(true);
   const todoQueueRef = useRef([]);
   const syncingTodoQueueRef = useRef(false);
   const todoQueueRetryTimeoutRef = useRef(null);
@@ -140,11 +170,24 @@ export function useProjectTodos({
     let nextTodos = [];
 
     if (userId && supportsManualTodosTableRef.current) {
-      const { data: todoRows, error: todoError } = await supabase
+      let selectClause = supportsExtendedManualTodoFieldsRef.current
+        ? MANUAL_TODO_SELECT
+        : LEGACY_MANUAL_TODO_SELECT;
+      let { data: todoRows, error: todoError } = await supabase
         .from('manual_todos')
-        .select(MANUAL_TODO_SELECT)
+        .select(selectClause)
         .eq('project_id', projectId)
         .order('created_at', { ascending: true });
+
+      if (todoError && supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(todoError, EXTENDED_MANUAL_TODO_FIELDS)) {
+        supportsExtendedManualTodoFieldsRef.current = false;
+        selectClause = LEGACY_MANUAL_TODO_SELECT;
+        ({ data: todoRows, error: todoError } = await supabase
+          .from('manual_todos')
+          .select(selectClause)
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: true }));
+      }
 
       if (!todoError) {
         nextTodos = applyQueuedTodoChanges((todoRows || []).map(mapManualTodoRow), pendingTodoQueue, now);
@@ -192,11 +235,34 @@ export function useProjectTodos({
           if (!op) break;
 
           if (op.kind === 'create') {
-            const { data, error } = await supabase
+            let selectClause = supportsExtendedManualTodoFieldsRef.current
+              ? MANUAL_TODO_SELECT
+              : LEGACY_MANUAL_TODO_SELECT;
+            let insertPayload = buildManualTodoInsertPayload(
+              buildQueuedManualTodo(op.targetId, op.record, now),
+              userId,
+              supportsExtendedManualTodoFieldsRef.current
+            );
+            let { data, error } = await supabase
               .from('manual_todos')
-              .insert(buildManualTodoInsertPayload(buildQueuedManualTodo(op.targetId, op.record, now), userId))
-              .select(MANUAL_TODO_SELECT)
+              .insert(insertPayload)
+              .select(selectClause)
               .single();
+
+            if (error && supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(error, EXTENDED_MANUAL_TODO_FIELDS)) {
+              supportsExtendedManualTodoFieldsRef.current = false;
+              selectClause = LEGACY_MANUAL_TODO_SELECT;
+              insertPayload = buildManualTodoInsertPayload(
+                buildQueuedManualTodo(op.targetId, op.record, now),
+                userId,
+                false
+              );
+              ({ data, error } = await supabase
+                .from('manual_todos')
+                .insert(insertPayload)
+                .select(selectClause)
+                .single());
+            }
 
             if (error && isMissingRelationError(error, 'manual_todos')) {
               supportsManualTodosTableRef.current = false;
@@ -227,12 +293,28 @@ export function useProjectTodos({
           }
 
           if (op.kind === 'update') {
-            const { data, error } = await supabase
+            let selectClause = supportsExtendedManualTodoFieldsRef.current
+              ? MANUAL_TODO_SELECT
+              : LEGACY_MANUAL_TODO_SELECT;
+            let updatePayload = buildManualTodoUpdatePayload(op.patch, supportsExtendedManualTodoFieldsRef.current);
+            let { data, error } = await supabase
               .from('manual_todos')
-              .update(buildManualTodoUpdatePayload(op.patch))
+              .update(updatePayload)
               .eq('id', op.targetId)
-              .select(MANUAL_TODO_SELECT)
+              .select(selectClause)
               .single();
+
+            if (error && supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(error, EXTENDED_MANUAL_TODO_FIELDS)) {
+              supportsExtendedManualTodoFieldsRef.current = false;
+              selectClause = LEGACY_MANUAL_TODO_SELECT;
+              updatePayload = buildManualTodoUpdatePayload(op.patch, false);
+              ({ data, error } = await supabase
+                .from('manual_todos')
+                .update(updatePayload)
+                .eq('id', op.targetId)
+                .select(selectClause)
+                .single());
+            }
 
             if (error && isMissingRelationError(error, 'manual_todos')) {
               supportsManualTodosTableRef.current = false;
@@ -318,11 +400,14 @@ export function useProjectTodos({
         localId: localTodo._id,
         projectId: localTodo.projectId,
         title: localTodo.title,
+        description: localTodo.description,
         dueDate: localTodo.dueDate,
         owner: localTodo.owner,
         assigneeUserId: localTodo.assigneeUserId,
         status: localTodo.status,
         recurrence: localTodo.recurrence,
+        kanbanColumnId: localTodo.kanbanColumnId,
+        kanbanPosition: localTodo.kanbanPosition,
         createdAt: localTodo.createdAt,
         updatedAt: localTodo.updatedAt,
         completedAt: localTodo.completedAt,
@@ -331,21 +416,26 @@ export function useProjectTodos({
       return localTodo;
     }
 
-    const { data, error } = await supabase
+    let selectClause = supportsExtendedManualTodoFieldsRef.current
+      ? MANUAL_TODO_SELECT
+      : LEGACY_MANUAL_TODO_SELECT;
+    let insertPayload = buildManualTodoInsertPayload(localTodoBase, userId, supportsExtendedManualTodoFieldsRef.current);
+    let { data, error } = await supabase
       .from('manual_todos')
-      .insert({
-        user_id: userId,
-        project_id: localTodoBase.projectId,
-        title: localTodoBase.title,
-        due_date: localTodoBase.dueDate || null,
-        owner_text: localTodoBase.owner,
-        assignee_user_id: localTodoBase.assigneeUserId,
-        status: localTodoBase.status,
-        recurrence: localTodoBase.recurrence,
-        completed_at: localTodoBase.completedAt || null,
-      })
-      .select(MANUAL_TODO_SELECT)
+      .insert(insertPayload)
+      .select(selectClause)
       .single();
+
+    if (error && supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(error, EXTENDED_MANUAL_TODO_FIELDS)) {
+      supportsExtendedManualTodoFieldsRef.current = false;
+      selectClause = LEGACY_MANUAL_TODO_SELECT;
+      insertPayload = buildManualTodoInsertPayload(localTodoBase, userId, false);
+      ({ data, error } = await supabase
+        .from('manual_todos')
+        .insert(insertPayload)
+        .select(selectClause)
+        .single());
+    }
 
     if (!error && data) {
       const savedTodo = mapManualTodoRow(data);
@@ -372,11 +462,14 @@ export function useProjectTodos({
       localId: localTodo._id,
       projectId: localTodo.projectId,
       title: localTodo.title,
+      description: localTodo.description,
       dueDate: localTodo.dueDate,
       owner: localTodo.owner,
       assigneeUserId: localTodo.assigneeUserId,
       status: localTodo.status,
       recurrence: localTodo.recurrence,
+      kanbanColumnId: localTodo.kanbanColumnId,
+      kanbanPosition: localTodo.kanbanPosition,
       createdAt: localTodo.createdAt,
       updatedAt: localTodo.updatedAt,
       completedAt: localTodo.completedAt,
@@ -406,11 +499,18 @@ export function useProjectTodos({
 
     const queuePatch = { updatedAt: localUpdated.updatedAt };
     if (key === 'title') queuePatch.title = localUpdated.title;
+    if (key === 'description') queuePatch.description = localUpdated.description;
     if (key === 'dueDate') queuePatch.dueDate = localUpdated.dueDate;
     if (key === 'owner') queuePatch.owner = localUpdated.owner;
     if (key === 'projectId') queuePatch.projectId = localUpdated.projectId;
     if (key === 'assigneeUserId') queuePatch.assigneeUserId = localUpdated.assigneeUserId;
     if (key === 'recurrence') queuePatch.recurrence = localUpdated.recurrence;
+    if (key === 'kanbanColumnId') queuePatch.kanbanColumnId = localUpdated.kanbanColumnId;
+    if (key === 'kanbanPosition') queuePatch.kanbanPosition = localUpdated.kanbanPosition;
+    if (key === 'kanbanMeta') {
+      queuePatch.kanbanColumnId = localUpdated.kanbanColumnId;
+      queuePatch.kanbanPosition = localUpdated.kanbanPosition;
+    }
     if (key === 'status') {
       queuePatch.status = localUpdated.status;
       queuePatch.completedAt = localUpdated.completedAt || '';
@@ -428,11 +528,14 @@ export function useProjectTodos({
             localId: queuedFollowUp._id,
             projectId: queuedFollowUp.projectId,
             title: queuedFollowUp.title,
+            description: queuedFollowUp.description,
             dueDate: queuedFollowUp.dueDate,
             owner: queuedFollowUp.owner,
             assigneeUserId: queuedFollowUp.assigneeUserId,
             status: queuedFollowUp.status,
             recurrence: queuedFollowUp.recurrence,
+            kanbanColumnId: queuedFollowUp.kanbanColumnId,
+            kanbanPosition: queuedFollowUp.kanbanPosition,
             createdAt: queuedFollowUp.createdAt,
             updatedAt: queuedFollowUp.updatedAt,
             completedAt: queuedFollowUp.completedAt,
@@ -453,12 +556,28 @@ export function useProjectTodos({
       ts,
     });
 
-    const { data: updatedRow, error: updateError } = await supabase
+    let selectClause = supportsExtendedManualTodoFieldsRef.current
+      ? MANUAL_TODO_SELECT
+      : LEGACY_MANUAL_TODO_SELECT;
+    let updatePayload = patch;
+    let { data: updatedRow, error: updateError } = await supabase
       .from('manual_todos')
-      .update(patch)
+      .update(updatePayload)
       .eq('id', todoId)
-      .select(MANUAL_TODO_SELECT)
+      .select(selectClause)
       .single();
+
+    if (updateError && supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(updateError, EXTENDED_MANUAL_TODO_FIELDS)) {
+      supportsExtendedManualTodoFieldsRef.current = false;
+      selectClause = LEGACY_MANUAL_TODO_SELECT;
+      updatePayload = buildManualTodoUpdatePayload(queuePatch, false);
+      ({ data: updatedRow, error: updateError } = await supabase
+        .from('manual_todos')
+        .update(updatePayload)
+        .eq('id', todoId)
+        .select(selectClause)
+        .single());
+    }
 
     if (updateError && isMissingRelationError(updateError, 'manual_todos')) {
       supportsManualTodosTableRef.current = false;
@@ -480,13 +599,17 @@ export function useProjectTodos({
           localUpdated,
           normalizedRecurrence,
           nextRecurringDueDate,
+          supportsExtendedFields: supportsExtendedManualTodoFieldsRef.current,
         }))
-        .select(MANUAL_TODO_SELECT)
+        .select(selectClause)
         .single();
 
       if (!insertError && insertedRow) {
         followUpDbRow = insertedRow;
       } else if (insertError) {
+        if (supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(insertError, EXTENDED_MANUAL_TODO_FIELDS)) {
+          supportsExtendedManualTodoFieldsRef.current = false;
+        }
         if (isMissingRelationError(insertError, 'manual_todos')) {
           supportsManualTodosTableRef.current = false;
         }

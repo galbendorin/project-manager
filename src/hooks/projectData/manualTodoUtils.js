@@ -1,6 +1,7 @@
 const now = () => new Date().toISOString();
 
-export const MANUAL_TODO_SELECT = 'id, project_id, title, due_date, owner_text, assignee_user_id, status, recurrence, created_at, updated_at, completed_at';
+export const MANUAL_TODO_SELECT = 'id, project_id, title, description, due_date, owner_text, assignee_user_id, status, recurrence, kanban_column_id, kanban_position, created_at, updated_at, completed_at';
+export const LEGACY_MANUAL_TODO_SELECT = 'id, project_id, title, due_date, owner_text, assignee_user_id, status, recurrence, created_at, updated_at, completed_at';
 
 export const createManualTodoId = () => `todo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -36,11 +37,14 @@ export const mapManualTodoRow = (row = {}) => ({
   _id: row.id || createManualTodoId(),
   projectId: row.project_id || null,
   title: row.title || '',
+  description: row.description || '',
   dueDate: row.due_date || '',
   owner: row.owner_text || '',
   assigneeUserId: row.assignee_user_id || null,
   status: row.status === 'Done' ? 'Done' : 'Open',
   recurrence: normalizeTodoRecurrence(row.recurrence),
+  kanbanColumnId: row.kanban_column_id || null,
+  kanbanPosition: Number.isFinite(Number(row.kanban_position)) ? Number(row.kanban_position) : 0,
   createdAt: row.created_at || now(),
   updatedAt: row.updated_at || now(),
   completedAt: row.completed_at || ''
@@ -49,4 +53,10 @@ export const mapManualTodoRow = (row = {}) => ({
 export const isMissingRelationError = (error, relationName) => {
   const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
   return msg.includes('relation') && msg.includes(relationName.toLowerCase());
+};
+
+export const isMissingSchemaFieldError = (error, fieldNames = []) => {
+  const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  if (!msg) return false;
+  return fieldNames.some((fieldName) => msg.includes(String(fieldName || '').toLowerCase()));
 };
