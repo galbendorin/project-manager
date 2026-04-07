@@ -11,6 +11,14 @@ const sourceAccentClass = (source) => {
   return 'bg-slate-300';
 };
 
+const ownerBadgeLabel = (owner) => {
+  const text = String(owner || '').trim();
+  if (!text) return '';
+  const parts = text.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return parts.slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase();
+};
+
 const CardTickButton = ({ checked, onClick, label }) => (
   <button
     type="button"
@@ -121,35 +129,35 @@ const KanbanCard = ({
             className="w-full min-w-0 text-left"
           >
             <div className="mb-1.5 flex items-center gap-1.5">
-              <span className={`inline-flex h-2 min-w-8 rounded-full ${sourceAccentClass(todo.source)}`} />
-              {todo.source && todo.source !== 'Manual' ? (
-                <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
-                  {todo.source}
-                </span>
-              ) : null}
+              <span className={`inline-flex h-1.5 min-w-8 rounded-full ${sourceAccentClass(todo.source)}`} />
             </div>
 
-            <div className={`text-[13px] font-medium leading-[1.3] ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+            <div className={`text-[12px] font-medium leading-[1.28] ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
               {todo.title || 'Untitled'}
             </div>
 
             {todo.description ? (
-              <div className="mt-1.5 line-clamp-2 text-[11px] leading-[1.35] text-slate-500">
+              <div className="mt-1 line-clamp-2 text-[10px] leading-[1.3] text-slate-500">
                 {todo.description}
               </div>
             ) : null}
 
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-semibold ${statusClass(todo.status)}`}>
-                {isPendingCompletion ? 'Completing...' : (todo.status || 'Open')}
-              </span>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {isPendingCompletion || (todo.status && todo.status !== 'Open') ? (
+                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[8px] font-semibold ${statusClass(todo.status)}`}>
+                  {isPendingCompletion ? 'Completing...' : todo.status}
+                </span>
+              ) : null}
               {todo.owner ? (
-                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
-                  {todo.owner}
+                <span
+                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-200 px-1.5 text-[8px] font-semibold text-slate-600"
+                  title={todo.owner}
+                >
+                  {ownerBadgeLabel(todo.owner)}
                 </span>
               ) : null}
               {todo.dueDate ? (
-                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
+                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[8px] font-medium text-slate-500">
                   {formatDate(todo.dueDate)}
                 </span>
               ) : null}
@@ -310,13 +318,13 @@ export default function TodoKanbanBoard({
         </div>
       ) : null}
 
-      <div className="grid min-w-max grid-flow-col auto-cols-[minmax(260px,292px)] gap-3.5 pb-3">
+      <div className="grid min-w-max grid-flow-col auto-cols-[minmax(248px,280px)] gap-3 pb-3">
         {activeColumns.map((column) => (
           <section
             key={column.id}
-            className="flex min-h-[460px] flex-col rounded-[16px] bg-[#f1f2f4] shadow-[0_1px_0_rgba(9,30,66,0.08)]"
+            className="flex min-h-[440px] flex-col rounded-[16px] bg-[#f1f2f4] shadow-[0_1px_0_rgba(9,30,66,0.08)]"
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-[16px] bg-[#f1f2f4] px-3 py-3">
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-[16px] bg-[#f1f2f4] px-3 py-2.5">
               {editingColumnId === column.id ? (
                 <input
                   autoFocus
@@ -345,19 +353,19 @@ export default function TodoKanbanBoard({
                     setEditingColumnId(column.id);
                     setEditingColumnTitle(column.title || '');
                   }}
-                  className={`text-left text-[18px] font-semibold ${isExternalView ? 'cursor-default text-slate-800' : 'text-slate-800 hover:text-slate-900'}`}
+                  className={`text-left text-[16px] font-semibold ${isExternalView ? 'cursor-default text-slate-800' : 'text-slate-800 hover:text-slate-900'}`}
                 >
                   {column.title}
                 </button>
               )}
               <div className="flex items-center gap-1">
-                <span className="text-[11px] font-medium text-slate-400">{column.cards.length}</span>
+                <span className="text-[10px] font-medium text-slate-400">{column.cards.length}</span>
                 <button
                   type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200/80 hover:text-slate-600"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200/80 hover:text-slate-600"
                   title="List options"
                 >
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <circle cx="5" cy="10" r="1.5" />
                     <circle cx="10" cy="10" r="1.5" />
                     <circle cx="15" cy="10" r="1.5" />
@@ -367,7 +375,7 @@ export default function TodoKanbanBoard({
             </div>
 
             <div
-              className="flex-1 space-y-2 overflow-y-auto px-2 pb-2"
+              className="flex-1 space-y-1.5 overflow-y-auto px-2 pb-2"
               onDragOver={(event) => handleColumnSurfaceDragOver(event, column.id, column.cards.length)}
               onDrop={(event) => handleColumnSurfaceDrop(event, column.id, column.cards.length)}
             >
