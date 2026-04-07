@@ -20,8 +20,8 @@ const sortColumns = (columns = []) => (
 
 const sortCards = (cards = []) => (
   [...cards].sort((left, right) => {
-    const leftPos = Number(left.kanbanPosition) || 0;
-    const rightPos = Number(right.kanbanPosition) || 0;
+    const leftPos = Number.isFinite(Number(left.boardPosition)) ? Number(left.boardPosition) : (Number(left.kanbanPosition) || 0);
+    const rightPos = Number.isFinite(Number(right.boardPosition)) ? Number(right.boardPosition) : (Number(right.kanbanPosition) || 0);
     if (leftPos !== rightPos) return leftPos - rightPos;
     return String(left.title || '').localeCompare(String(right.title || ''));
   })
@@ -36,6 +36,26 @@ const buildFallbackColumns = () => (
   }))
 );
 
+const buildCardKey = (todo = {}) => {
+  if (!todo?.isDerived) {
+    return `manual:${todo?._id || todo?.id || ''}`;
+  }
+
+  if (todo.originType === 'register' && todo.originRegisterType && todo.originItemId) {
+    return `register:${todo.originRegisterType}:${todo.originItemId}`;
+  }
+
+  if (todo.originType === 'tracker' && todo.originItemId) {
+    return `tracker:${todo.originItemId}`;
+  }
+
+  if (todo.originType === 'schedule' && (todo.originTaskId !== null && todo.originTaskId !== undefined)) {
+    return `schedule:${todo.originTaskId}`;
+  }
+
+  return `derived:${todo?._id || todo?.id || ''}`;
+};
+
 const isMissingRelationError = (error, relationName) => {
   const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
   return message.includes('relation') && message.includes(relationName.toLowerCase());
@@ -45,8 +65,12 @@ const computeNextPosition = (cards = [], targetIndex) => {
   const ordered = sortCards(cards);
   const previous = targetIndex > 0 ? ordered[targetIndex - 1] : null;
   const next = targetIndex < ordered.length ? ordered[targetIndex] : null;
-  const previousPos = previous ? Number(previous.kanbanPosition) || 0 : null;
-  const nextPos = next ? Number(next.kanbanPosition) || 0 : null;
+  const previousPos = previous
+    ? (Number.isFinite(Number(previous.boardPosition)) ? Number(previous.boardPosition) : (Number(previous.kanbanPosition) || 0))
+    : null;
+  const nextPos = next
+    ? (Number.isFinite(Number(next.boardPosition)) ? Number(next.boardPosition) : (Number(next.kanbanPosition) || 0))
+    : null;
 
   if (previousPos === null && nextPos === null) return 1024;
   if (previousPos === null) return nextPos - 1024;
@@ -65,9 +89,10 @@ export function useTodoKanbanBoard({
 }) {
   const [columns, setColumns] = useState([]);
   const [columnsLoading, setColumnsLoading] = useState(false);
+  const [cardOverrides, setCardOverrides] = useState({});
   const [kanbanMessage, setKanbanMessage] = useState('');
   const supportsPersistentColumnsRef = useRef(true);
-  const loadingColumnsRef = useRef(false);
+  const supportsPersistentCardsRef = useRef(true);
 
   const projectId = currentProject?.id || null;
 
@@ -88,7 +113,6 @@ export function useTodoKanbanBoard({
     }
 
     setColumnsLoading(true);
-    loadingColumnsRef.current = true;
 
     const { data, error } = await supabase
       .from('task_board_columns')
@@ -96,7 +120,6 @@ export function useTodoKanbanBoard({
       .eq('project_id', projectId)
       .order('position', { ascending: true });
 
-    loadingColumnsRef.current = false;
     setColumnsLoading(false);
 
     if (error) {
@@ -145,6 +168,52 @@ export function useTodoKanbanBoard({
     void loadColumns();
   }, [loadColumns]);
 
+  const loadCardOverrides = useCallback(async () => {
+    if (!projectId || scope !== 'project') {
+      setCardOverrides({});
+      return {};
+    }
+
+    if (!supportsPersistentCardsRef.current) {
+      setCardOverrides({});
+      return {};
+    }
+
+    const { data, error } = await supabase
+      .from('task_board_cards')
+      .select('card_key, column_id, position')
+      .eq('project_id', projectId);
+
+    if (error) {
+      if (isMissingRelationError(error, 'task_board_cards')) {
+        supportsPersistentCardsRef.current = false;
+        setCardOverrides({});
+        setKanbanMessage((prev) => prev || 'Kanban card positions are using a local fallback until the board migration is applied.');
+        return {};
+      }
+
+      console.error('Failed to load Kanban card positions:', error);
+      setKanbanMessage('Unable to load Kanban card positions right now.');
+      return {};
+    }
+
+    const nextOverrides = Object.fromEntries(
+      (data || []).map((item) => [
+        item.card_key,
+        {
+          columnId: item.column_id || null,
+          position: Number(item.position) || 0,
+        }
+      ])
+    );
+    setCardOverrides(nextOverrides);
+    return nextOverrides;
+  }, [projectId, scope]);
+
+  useEffect(() => {
+    void loadCardOverrides();
+  }, [loadCardOverrides]);
+
   const normalizedColumns = useMemo(() => {
     if (columns.length > 0) return columns;
     if (!projectId || scope !== 'project') return [];
@@ -156,15 +225,37 @@ export function useTodoKanbanBoard({
 
     const firstColumnId = normalizedColumns[0]?.id || null;
     return normalizedColumns.map((column) => {
-      const cards = projectKanbanTodos.filter((todo) => (
-        (todo.kanbanColumnId || firstColumnId) === column.id
-      ));
+      const cards = projectKanbanTodos
+        .map((todo) => {
+          const cardKey = buildCardKey(todo);
+          const override = cardOverrides[cardKey];
+          const boardColumnId = todo.isDerived
+            ? (override?.columnId || firstColumnId)
+            : (todo.kanbanColumnId || firstColumnId);
+          const boardPosition = todo.isDerived
+            ? (Number.isFinite(Number(override?.position)) ? Number(override.position) : 0)
+            : (Number.isFinite(Number(todo.kanbanPosition)) ? Number(todo.kanbanPosition) : 0);
+
+          return {
+            ...todo,
+            kanbanCardKey: cardKey,
+            boardColumnId,
+            boardPosition,
+          };
+        })
+        .filter((todo) => todo.boardColumnId === column.id);
+
       return {
         ...column,
-        cards: sortCards(cards),
+        cards: [...cards].sort((left, right) => {
+          const leftPos = Number(left.boardPosition) || 0;
+          const rightPos = Number(right.boardPosition) || 0;
+          if (leftPos !== rightPos) return leftPos - rightPos;
+          return String(left.title || '').localeCompare(String(right.title || ''));
+        }),
       };
     });
-  }, [projectKanbanTodos, normalizedColumns]);
+  }, [cardOverrides, projectKanbanTodos, normalizedColumns]);
 
   const createCardInColumn = useCallback(async (columnId, title) => {
     const trimmedTitle = String(title || '').trim();
@@ -183,7 +274,7 @@ export function useTodoKanbanBoard({
   }, [columnsWithCards, onAddTodo, projectId]);
 
   const moveCardToColumn = useCallback(async (todo, targetColumnId, targetIndex) => {
-    if (!todo?._id || !onUpdateTodo) return;
+    if (!todo?._id) return;
 
     const targetColumn = columnsWithCards.find((column) => column.id === targetColumnId);
     if (!targetColumn) return;
@@ -191,11 +282,49 @@ export function useTodoKanbanBoard({
     const cardsWithoutDragged = targetColumn.cards.filter((card) => card._id !== todo._id);
     const nextPosition = computeNextPosition(cardsWithoutDragged, targetIndex);
 
-    await onUpdateTodo(todo._id, 'kanbanMeta', {
-      kanbanColumnId: targetColumnId,
-      kanbanPosition: nextPosition,
-    });
-  }, [columnsWithCards, onUpdateTodo]);
+    if (!todo.isDerived) {
+      if (!onUpdateTodo) return;
+      await onUpdateTodo(todo._id, 'kanbanMeta', {
+        kanbanColumnId: targetColumnId,
+        kanbanPosition: nextPosition,
+      });
+      return;
+    }
+
+    const cardKey = buildCardKey(todo);
+    setCardOverrides((prev) => ({
+      ...prev,
+      [cardKey]: {
+        columnId: targetColumnId,
+        position: nextPosition,
+      }
+    }));
+
+    if (!supportsPersistentCardsRef.current || !currentUserId || isExternalView || !projectId) return;
+
+    const { error } = await supabase
+      .from('task_board_cards')
+      .upsert({
+        user_id: currentUserId,
+        project_id: projectId,
+        card_key: cardKey,
+        column_id: targetColumnId,
+        position: nextPosition,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'project_id,card_key' });
+
+    if (error) {
+      if (isMissingRelationError(error, 'task_board_cards')) {
+        supportsPersistentCardsRef.current = false;
+        setKanbanMessage((prev) => prev || 'Kanban card positions are using a local fallback until the board migration is applied.');
+        return;
+      }
+
+      console.error('Failed to persist Kanban card position:', error);
+      setKanbanMessage('Unable to save this Kanban move right now.');
+      void loadCardOverrides();
+    }
+  }, [columnsWithCards, currentUserId, isExternalView, loadCardOverrides, onUpdateTodo, projectId]);
 
   const renameColumn = useCallback(async (columnId, title) => {
     const trimmedTitle = String(title || '').trim();

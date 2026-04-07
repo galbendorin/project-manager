@@ -29,6 +29,7 @@ const KanbanCard = ({
   displayIndex,
   draggedTodoId,
   handleCompleteTodo,
+  isExternalView,
   onDeleteTodo,
   onDragEnd,
   onDragStart,
@@ -43,7 +44,7 @@ const KanbanCard = ({
 
   return (
     <article
-      draggable={!todo.isDerived && todo.status !== 'Done'}
+      draggable={!isExternalView && todo.status !== 'Done'}
       onDragStart={(event) => onDragStart(event, todo)}
       onDragEnd={onDragEnd}
       className={`rounded-2xl border px-3.5 py-3 shadow-sm transition-all ${
@@ -288,6 +289,7 @@ export default function TodoKanbanBoard({
                     displayIndex={displayIndex}
                     draggedTodoId={draggedTodoId}
                     handleCompleteTodo={handleCompleteTodo}
+                    isExternalView={isExternalView}
                     onDeleteTodo={onDeleteTodo}
                     onDragEnd={handleDragEnd}
                     onDragStart={handleDragStart}
