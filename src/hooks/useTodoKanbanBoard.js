@@ -279,8 +279,18 @@ export function useTodoKanbanBoard({
     const targetColumn = columnsWithCards.find((column) => column.id === targetColumnId);
     if (!targetColumn) return;
 
+    const sourceColumn = columnsWithCards.find((column) => (
+      column.cards.some((card) => card._id === todo._id)
+    ));
+    const sourceIndex = sourceColumn
+      ? sourceColumn.cards.findIndex((card) => card._id === todo._id)
+      : -1;
+
     const cardsWithoutDragged = targetColumn.cards.filter((card) => card._id !== todo._id);
-    const nextPosition = computeNextPosition(cardsWithoutDragged, targetIndex);
+    const adjustedTargetIndex = sourceColumn?.id === targetColumnId && sourceIndex >= 0 && sourceIndex < targetIndex
+      ? Math.max(0, targetIndex - 1)
+      : targetIndex;
+    const nextPosition = computeNextPosition(cardsWithoutDragged, adjustedTargetIndex);
 
     if (!todo.isDerived) {
       if (!onUpdateTodo) return;
