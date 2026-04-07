@@ -1,23 +1,33 @@
 import React, { useMemo, useState } from 'react';
 import { formatDate } from '../utils/helpers';
 
+const sourceAccentClass = (source) => {
+  if (source === 'Manual') return 'bg-sky-400';
+  if (source === 'Action Log') return 'bg-amber-400';
+  if (source === 'Issue Log') return 'bg-rose-400';
+  if (source === 'Change Log') return 'bg-violet-400';
+  if (source === 'Master Tracker') return 'bg-emerald-400';
+  if (source === 'Project Plan') return 'bg-slate-400';
+  return 'bg-slate-300';
+};
+
 const CardTickButton = ({ checked, onClick, label }) => (
   <button
     type="button"
     onClick={onClick}
     aria-label={label}
-    className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition-all ${
+    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border transition-all ${
       checked
         ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-        : 'border-slate-300 bg-white text-transparent hover:border-indigo-400 hover:bg-indigo-50'
+        : 'border-slate-300 bg-white text-transparent hover:border-slate-400 hover:bg-slate-50'
     } focus:outline-none focus:ring-2 focus:ring-indigo-400/30`}
   >
     {checked ? (
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
       </svg>
     ) : (
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
       </svg>
     )}
@@ -30,8 +40,8 @@ const KanbanDropSlot = ({ active, onDragOver, onDrop }) => (
     onDrop={onDrop}
     className={`rounded-xl transition-all ${
       active
-        ? 'my-3 h-4 bg-[var(--pm-accent)]/18 ring-2 ring-[var(--pm-accent)]/30'
-        : 'my-2 h-3 bg-transparent'
+        ? 'my-2.5 h-2.5 bg-[var(--pm-accent)]/18 ring-2 ring-[var(--pm-accent)]/28'
+        : 'my-2 h-2 bg-transparent'
     }`}
   />
 );
@@ -59,18 +69,18 @@ const KanbanCard = ({
       draggable={!isExternalView && todo.status !== 'Done'}
       onDragStart={(event) => onDragStart(event, todo)}
       onDragEnd={onDragEnd}
-      className={`group rounded-[22px] border px-4 py-3.5 shadow-sm transition-all duration-150 ${
+      className={`group rounded-[14px] border px-3 py-3 shadow-[0_1px_0_rgba(9,30,66,0.08),0_1px_3px_rgba(9,30,66,0.14)] transition-all duration-150 ${
         isCompleted
-          ? 'border-emerald-200 bg-emerald-50/85'
+          ? 'border-emerald-200 bg-emerald-50/90'
           : draggedTodoId === todo._id
-            ? 'border-indigo-300 bg-indigo-50/70 shadow-md'
-            : 'border-slate-200/90 bg-white/95 hover:-translate-y-px hover:border-slate-300 hover:shadow-md'
+            ? 'border-[var(--pm-accent)]/35 bg-white ring-2 ring-[var(--pm-accent)]/35'
+            : 'border-white bg-white hover:bg-slate-50/60'
       }`}
       style={{ cursor: !isExternalView && todo.status !== 'Done' ? 'grab' : 'default' }}
       data-column-id={columnId}
       data-display-index={displayIndex}
     >
-      <div className="flex items-start gap-3.5">
+      <div className="flex items-start gap-2.5">
         {!isExternalView && todo.status !== 'Done' ? (
           <div
             className="select-none pt-1 text-slate-300 transition group-hover:text-slate-400"
@@ -110,27 +120,36 @@ const KanbanCard = ({
             onClick={() => onOpenTodo(todo)}
             className="w-full min-w-0 text-left"
           >
-            <div className={`text-[15px] font-semibold leading-[1.35] ${isCompleted ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className={`inline-flex h-2.5 min-w-10 rounded-full ${sourceAccentClass(todo.source)}`} />
+              {todo.source && todo.source !== 'Manual' ? (
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  {todo.source}
+                </span>
+              ) : null}
+            </div>
+
+            <div className={`text-[15px] font-medium leading-[1.35] ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
               {todo.title || 'Untitled'}
             </div>
 
             {todo.description ? (
-              <div className="mt-2.5 line-clamp-3 text-[12px] leading-[1.45] text-slate-500">
+              <div className="mt-2 line-clamp-3 text-[12px] leading-[1.45] text-slate-500">
                 {todo.description}
               </div>
             ) : null}
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass(todo.status)}`}>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className={`inline-flex items-center rounded-md px-2 py-1 text-[10px] font-semibold ${statusClass(todo.status)}`}>
                 {isPendingCompletion ? 'Completing...' : (todo.status || 'Open')}
               </span>
               {todo.owner ? (
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
+                <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
                   {todo.owner}
                 </span>
               ) : null}
               {todo.dueDate ? (
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
+                <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
                   {formatDate(todo.dueDate)}
                 </span>
               ) : null}
@@ -142,7 +161,7 @@ const KanbanCard = ({
           <button
             type="button"
             onClick={() => onDeleteTodo(todo._id)}
-            className="rounded-full p-1 text-slate-300 transition hover:bg-rose-50 hover:text-rose-500"
+            className="rounded-md p-1 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
             title="Delete Task"
           >
             ×
@@ -172,6 +191,8 @@ export default function TodoKanbanBoard({
 }) {
   const [draftColumnTitle, setDraftColumnTitle] = useState('');
   const [draftCards, setDraftCards] = useState({});
+  const [activeCardComposerColumnId, setActiveCardComposerColumnId] = useState(null);
+  const [showAddColumnComposer, setShowAddColumnComposer] = useState(false);
   const [draggedTodo, setDraggedTodo] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const [editingColumnId, setEditingColumnId] = useState(null);
@@ -190,6 +211,7 @@ export default function TodoKanbanBoard({
     if (!title) return;
     await createCardInColumn(columnId, title);
     setDraftCards((prev) => ({ ...prev, [columnId]: '' }));
+    setActiveCardComposerColumnId(null);
   };
 
   const handleColumnRename = async (columnId) => {
@@ -288,13 +310,13 @@ export default function TodoKanbanBoard({
         </div>
       ) : null}
 
-      <div className="grid min-w-max grid-flow-col auto-cols-[minmax(320px,360px)] gap-5 pb-3">
+      <div className="grid min-w-max grid-flow-col auto-cols-[minmax(280px,320px)] gap-4 pb-3">
         {activeColumns.map((column) => (
           <section
             key={column.id}
-            className="flex min-h-[500px] flex-col rounded-[28px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.94))] shadow-[0_14px_34px_rgba(15,23,42,0.06)] backdrop-blur-sm"
+            className="flex min-h-[460px] flex-col rounded-[16px] bg-[#f1f2f4] shadow-[0_1px_0_rgba(9,30,66,0.08)]"
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-[28px] border-b border-slate-200/90 bg-white/88 px-5 py-3.5 backdrop-blur-sm">
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-[16px] bg-[#f1f2f4] px-3 py-3">
               {editingColumnId === column.id ? (
                 <input
                   autoFocus
@@ -312,7 +334,7 @@ export default function TodoKanbanBoard({
                       setEditingColumnTitle('');
                     }
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-300"
+                  className="w-full rounded-[10px] border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-300"
                 />
               ) : (
                 <button
@@ -323,18 +345,29 @@ export default function TodoKanbanBoard({
                     setEditingColumnId(column.id);
                     setEditingColumnTitle(column.title || '');
                   }}
-                  className={`text-left text-[13px] font-semibold uppercase tracking-[0.18em] ${isExternalView ? 'cursor-default text-slate-700' : 'text-slate-700 hover:text-slate-900'}`}
+                  className={`text-left text-[18px] font-semibold ${isExternalView ? 'cursor-default text-slate-800' : 'text-slate-800 hover:text-slate-900'}`}
                 >
                   {column.title}
                 </button>
               )}
-              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-sm">
-                {column.cards.length}
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[12px] font-medium text-slate-400">{column.cards.length}</span>
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200/80 hover:text-slate-600"
+                  title="List options"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="10" r="1.5" />
+                    <circle cx="10" cy="10" r="1.5" />
+                    <circle cx="15" cy="10" r="1.5" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <div
-              className="flex-1 space-y-4 overflow-y-auto px-3.5 py-4"
+              className="flex-1 space-y-2.5 overflow-y-auto px-2.5 pb-2"
               onDragOver={(event) => handleColumnSurfaceDragOver(event, column.id, column.cards.length)}
               onDrop={(event) => handleColumnSurfaceDrop(event, column.id, column.cards.length)}
             >
@@ -342,7 +375,7 @@ export default function TodoKanbanBoard({
                 <div
                   onDragOver={(event) => handleDragOverColumn(event, column.id, 0)}
                   onDrop={(event) => handleDrop(event, column.id, 0)}
-                  className="rounded-[22px] border border-dashed border-slate-200 bg-white/85 px-4 py-6 text-sm text-slate-400 shadow-sm"
+                  className="rounded-[12px] border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-400 shadow-[0_1px_0_rgba(9,30,66,0.08)]"
                 >
                   {draggedTodo ? 'Drop card here' : 'No cards yet'}
                 </div>
@@ -362,7 +395,7 @@ export default function TodoKanbanBoard({
                           column.id,
                           dropTarget?.columnId === column.id ? dropTarget.index : displayIndex
                         )}
-                        className="rounded-[22px]"
+                        className="rounded-[14px]"
                         style={dropTarget?.columnId === column.id && draggedTodoId !== todo._id
                           ? (
                               dropTarget.index === displayIndex
@@ -401,59 +434,117 @@ export default function TodoKanbanBoard({
             </div>
 
             {!isExternalView ? (
-              <div className="border-t border-slate-200/90 bg-white/82 px-4 py-3.5">
-                <input
-                  type="text"
-                  value={draftCards[column.id] || ''}
-                  onChange={(event) => handleCardDraftChange(column.id, event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void handleAddCard(column.id);
-                    }
-                  }}
-                  placeholder={`Add a card to ${String(column.title || '').toLowerCase()}`}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-3 text-[13px] text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
-                />
+              <div className="px-2.5 pb-2.5 pt-1">
+                {activeCardComposerColumnId === column.id ? (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={draftCards[column.id] || ''}
+                      onChange={(event) => handleCardDraftChange(column.id, event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          void handleAddCard(column.id);
+                        }
+                        if (event.key === 'Escape') {
+                          setActiveCardComposerColumnId(null);
+                        }
+                      }}
+                      placeholder="Enter a title for this card..."
+                      className="w-full rounded-[12px] border border-slate-300 bg-white px-3 py-2.5 text-[14px] text-slate-900 shadow-[0_1px_0_rgba(9,30,66,0.08)] outline-none focus:border-indigo-300"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleAddCard(column.id)}
+                        className="rounded-[10px] bg-[var(--pm-accent)] px-3 py-2 text-[13px] font-semibold text-white transition hover:brightness-95"
+                      >
+                        Add card
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveCardComposerColumnId(null)}
+                        className="rounded-[10px] px-2 py-2 text-[13px] font-medium text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setActiveCardComposerColumnId(column.id)}
+                    className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2.5 text-left text-[14px] font-medium text-slate-600 transition hover:bg-slate-200/80 hover:text-slate-800"
+                  >
+                    <span className="text-[18px] leading-none">+</span>
+                    <span>Add a card</span>
+                  </button>
+                )}
               </div>
             ) : null}
           </section>
         ))}
 
         {!isExternalView ? (
-          <section className="flex min-h-[500px] flex-col rounded-[28px] border border-dashed border-slate-200 bg-white/78 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.04)]">
-            <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Add list</div>
-            <div className="mt-3 flex flex-1 flex-col justify-between gap-3">
-              <input
-                type="text"
-                value={draftColumnTitle}
-                onChange={(event) => setDraftColumnTitle(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    const title = String(draftColumnTitle || '').trim();
-                    if (!title) return;
-                    void addColumn(title).then(() => {
+          <section className="flex min-h-[64px] flex-col rounded-[14px] bg-[#ffffff8a] p-2 shadow-[0_1px_0_rgba(9,30,66,0.08)]">
+            {showAddColumnComposer ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  autoFocus
+                  value={draftColumnTitle}
+                  onChange={(event) => setDraftColumnTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      const title = String(draftColumnTitle || '').trim();
+                      if (!title) return;
+                      void addColumn(title).then(() => {
+                        setDraftColumnTitle('');
+                        setShowAddColumnComposer(false);
+                      });
+                    }
+                    if (event.key === 'Escape') {
+                      setShowAddColumnComposer(false);
+                    }
+                  }}
+                  placeholder="Enter list title..."
+                  className="w-full rounded-[12px] border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-indigo-300"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const title = String(draftColumnTitle || '').trim();
+                      if (!title) return;
+                      await addColumn(title);
                       setDraftColumnTitle('');
-                    });
-                  }
-                }}
-                placeholder="New list name"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none focus:border-indigo-300"
-              />
+                      setShowAddColumnComposer(false);
+                    }}
+                    className="rounded-[10px] bg-[var(--pm-accent)] px-3 py-2 text-[13px] font-semibold text-white transition hover:brightness-95"
+                  >
+                    Add list
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddColumnComposer(false)}
+                    className="rounded-[10px] px-2 py-2 text-[13px] font-medium text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
               <button
                 type="button"
-                onClick={async () => {
-                  const title = String(draftColumnTitle || '').trim();
-                  if (!title) return;
-                  await addColumn(title);
-                  setDraftColumnTitle('');
-                }}
-                className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                onClick={() => setShowAddColumnComposer(true)}
+                className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2.5 text-left text-[14px] font-medium text-slate-600 transition hover:bg-slate-200/80 hover:text-slate-800"
               >
-                Add list
+                <span className="text-[18px] leading-none">+</span>
+                <span>Add another list</span>
               </button>
-            </div>
+            )}
           </section>
         ) : null}
       </div>
