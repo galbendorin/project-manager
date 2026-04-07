@@ -200,6 +200,18 @@ export default function TodoKanbanBoard({
     setDropTarget({ columnId, index });
   };
 
+  const handleDragOverCard = (event, columnId, displayIndex) => {
+    if (!draggedTodo) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const midpoint = rect.top + (rect.height / 2);
+    setDropTarget({
+      columnId,
+      index: event.clientY >= midpoint ? displayIndex + 1 : displayIndex,
+    });
+  };
+
   const handleDrop = async (event, columnId, index) => {
     if (!draggedTodo) return;
     event.preventDefault();
@@ -301,21 +313,40 @@ export default function TodoKanbanBoard({
                         onDragOver={(event) => handleDragOverColumn(event, column.id, displayIndex)}
                         onDrop={(event) => handleDrop(event, column.id, displayIndex)}
                       />
-                      <KanbanCard
-                        columnId={column.id}
-                        displayIndex={displayIndex}
-                        draggedTodoId={draggedTodoId}
-                        handleCompleteTodo={handleCompleteTodo}
-                        isExternalView={isExternalView}
-                        onDeleteTodo={onDeleteTodo}
-                        onDragEnd={handleDragEnd}
-                        onDragStart={handleDragStart}
-                        onOpenTodo={onOpenTodo}
-                        pendingCompletedTodos={pendingCompletedTodos}
-                        showCompletionTick={showCompletionTick}
-                        statusClass={statusClass}
-                        todo={todo}
-                      />
+                      <div
+                        onDragOver={(event) => handleDragOverCard(event, column.id, displayIndex)}
+                        onDrop={(event) => handleDrop(
+                          event,
+                          column.id,
+                          dropTarget?.columnId === column.id ? dropTarget.index : displayIndex
+                        )}
+                        className="rounded-2xl"
+                        style={dropTarget?.columnId === column.id && draggedTodoId !== todo._id
+                          ? (
+                              dropTarget.index === displayIndex
+                                ? { boxShadow: 'inset 0 3px 0 var(--pm-accent)' }
+                                : dropTarget.index === displayIndex + 1
+                                  ? { boxShadow: 'inset 0 -3px 0 var(--pm-accent)' }
+                                  : undefined
+                            )
+                          : undefined}
+                      >
+                        <KanbanCard
+                          columnId={column.id}
+                          displayIndex={displayIndex}
+                          draggedTodoId={draggedTodoId}
+                          handleCompleteTodo={handleCompleteTodo}
+                          isExternalView={isExternalView}
+                          onDeleteTodo={onDeleteTodo}
+                          onDragEnd={handleDragEnd}
+                          onDragStart={handleDragStart}
+                          onOpenTodo={onOpenTodo}
+                          pendingCompletedTodos={pendingCompletedTodos}
+                          showCompletionTick={showCompletionTick}
+                          statusClass={statusClass}
+                          todo={todo}
+                        />
+                      </div>
                     </React.Fragment>
                   ))}
                   <KanbanDropSlot
