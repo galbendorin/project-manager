@@ -71,6 +71,23 @@ const KanbanCard = ({
       data-display-index={displayIndex}
     >
       <div className="flex items-start gap-3">
+        {!isExternalView && todo.status !== 'Done' ? (
+          <div
+            className="select-none pt-1 text-slate-300"
+            title="Drag card"
+            aria-hidden="true"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+              <circle cx="5" cy="4" r="1.1" />
+              <circle cx="11" cy="4" r="1.1" />
+              <circle cx="5" cy="8" r="1.1" />
+              <circle cx="11" cy="8" r="1.1" />
+              <circle cx="5" cy="12" r="1.1" />
+              <circle cx="11" cy="12" r="1.1" />
+            </svg>
+          </div>
+        ) : null}
+
         {showCompletionTick ? (
           <div className="pt-0.5">
             <CardTickButton
@@ -221,6 +238,27 @@ export default function TodoKanbanBoard({
     setDropTarget(null);
   };
 
+  const handleColumnSurfaceDragOver = (event, columnId, fallbackIndex) => {
+    if (!draggedTodo) return;
+    event.preventDefault();
+
+    if (event.target === event.currentTarget) {
+      setDropTarget({ columnId, index: fallbackIndex });
+    }
+  };
+
+  const handleColumnSurfaceDrop = async (event, columnId, fallbackIndex) => {
+    if (!draggedTodo) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const resolvedIndex = dropTarget?.columnId === columnId
+      ? dropTarget.index
+      : fallbackIndex;
+    await moveCardToColumn(draggedTodo, columnId, resolvedIndex);
+    setDraggedTodo(null);
+    setDropTarget(null);
+  };
+
   const handleDragEnd = () => {
     setDraggedTodo(null);
     setDropTarget(null);
@@ -295,7 +333,11 @@ export default function TodoKanbanBoard({
               </span>
             </div>
 
-            <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+            <div
+              className="flex-1 space-y-3 overflow-y-auto px-3 py-3"
+              onDragOver={(event) => handleColumnSurfaceDragOver(event, column.id, column.cards.length)}
+              onDrop={(event) => handleColumnSurfaceDrop(event, column.id, column.cards.length)}
+            >
               {column.cards.length === 0 ? (
                 <div
                   onDragOver={(event) => handleDragOverColumn(event, column.id, 0)}
