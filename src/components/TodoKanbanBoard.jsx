@@ -24,6 +24,18 @@ const CardTickButton = ({ checked, onClick, label }) => (
   </button>
 );
 
+const KanbanDropSlot = ({ active, onDragOver, onDrop }) => (
+  <div
+    onDragOver={onDragOver}
+    onDrop={onDrop}
+    className={`rounded-xl transition-all ${
+      active
+        ? 'my-2 h-3 bg-[var(--pm-accent)]/25 ring-2 ring-[var(--pm-accent)]/35'
+        : 'my-1 h-2 bg-transparent'
+    }`}
+  />
+);
+
 const KanbanCard = ({
   columnId,
   displayIndex,
@@ -54,6 +66,7 @@ const KanbanCard = ({
             ? 'border-indigo-300 bg-indigo-50/60'
             : 'border-slate-200 bg-white'
       }`}
+      style={{ cursor: !isExternalView && todo.status !== 'Done' ? 'grab' : 'default' }}
       data-column-id={columnId}
       data-display-index={displayIndex}
     >
@@ -183,12 +196,14 @@ export default function TodoKanbanBoard({
   const handleDragOverColumn = (event, columnId, index) => {
     if (!draggedTodo) return;
     event.preventDefault();
+    event.stopPropagation();
     setDropTarget({ columnId, index });
   };
 
   const handleDrop = async (event, columnId, index) => {
     if (!draggedTodo) return;
     event.preventDefault();
+    event.stopPropagation();
     await moveCardToColumn(draggedTodo, columnId, index);
     setDraggedTodo(null);
     setDropTarget(null);
@@ -228,8 +243,6 @@ export default function TodoKanbanBoard({
           <section
             key={column.id}
             className="flex min-h-[460px] flex-col rounded-[24px] border border-slate-200 bg-slate-50/80"
-            onDragOver={(event) => handleDragOverColumn(event, column.id, column.cards.length)}
-            onDrop={(event) => handleDrop(event, column.id, column.cards.length)}
           >
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
               {editingColumnId === column.id ? (
@@ -272,35 +285,46 @@ export default function TodoKanbanBoard({
 
             <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
               {column.cards.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-400">
-                  No cards yet
-                </div>
-              ) : column.cards.map((todo, displayIndex) => (
                 <div
-                  key={todo._id}
-                  onDragOver={(event) => handleDragOverColumn(event, column.id, displayIndex)}
-                  onDrop={(event) => handleDrop(event, column.id, displayIndex)}
-                  style={dropTarget?.columnId === column.id && dropTarget?.index === displayIndex && draggedTodoId !== todo._id
-                    ? { boxShadow: 'inset 0 2px 0 var(--pm-accent)' }
-                    : undefined}
+                  onDragOver={(event) => handleDragOverColumn(event, column.id, 0)}
+                  onDrop={(event) => handleDrop(event, column.id, 0)}
+                  className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-400"
                 >
-                  <KanbanCard
-                    columnId={column.id}
-                    displayIndex={displayIndex}
-                    draggedTodoId={draggedTodoId}
-                    handleCompleteTodo={handleCompleteTodo}
-                    isExternalView={isExternalView}
-                    onDeleteTodo={onDeleteTodo}
-                    onDragEnd={handleDragEnd}
-                    onDragStart={handleDragStart}
-                    onOpenTodo={onOpenTodo}
-                    pendingCompletedTodos={pendingCompletedTodos}
-                    showCompletionTick={showCompletionTick}
-                    statusClass={statusClass}
-                    todo={todo}
-                  />
+                  {draggedTodo ? 'Drop card here' : 'No cards yet'}
                 </div>
-              ))}
+              ) : (
+                <>
+                  {column.cards.map((todo, displayIndex) => (
+                    <React.Fragment key={todo._id}>
+                      <KanbanDropSlot
+                        active={dropTarget?.columnId === column.id && dropTarget?.index === displayIndex && draggedTodoId !== todo._id}
+                        onDragOver={(event) => handleDragOverColumn(event, column.id, displayIndex)}
+                        onDrop={(event) => handleDrop(event, column.id, displayIndex)}
+                      />
+                      <KanbanCard
+                        columnId={column.id}
+                        displayIndex={displayIndex}
+                        draggedTodoId={draggedTodoId}
+                        handleCompleteTodo={handleCompleteTodo}
+                        isExternalView={isExternalView}
+                        onDeleteTodo={onDeleteTodo}
+                        onDragEnd={handleDragEnd}
+                        onDragStart={handleDragStart}
+                        onOpenTodo={onOpenTodo}
+                        pendingCompletedTodos={pendingCompletedTodos}
+                        showCompletionTick={showCompletionTick}
+                        statusClass={statusClass}
+                        todo={todo}
+                      />
+                    </React.Fragment>
+                  ))}
+                  <KanbanDropSlot
+                    active={dropTarget?.columnId === column.id && dropTarget?.index === column.cards.length}
+                    onDragOver={(event) => handleDragOverColumn(event, column.id, column.cards.length)}
+                    onDrop={(event) => handleDrop(event, column.id, column.cards.length)}
+                  />
+                </>
+              )}
             </div>
 
             {!isExternalView ? (
