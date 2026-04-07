@@ -224,25 +224,39 @@ export function useTodoKanbanBoard({
     if (normalizedColumns.length === 0) return [];
 
     const firstColumnId = normalizedColumns[0]?.id || null;
-    return normalizedColumns.map((column) => {
-      const cards = projectKanbanTodos
-        .map((todo) => {
-          const cardKey = buildCardKey(todo);
-          const override = cardOverrides[cardKey];
-          const boardColumnId = todo.isDerived
-            ? (override?.columnId || firstColumnId)
-            : (todo.kanbanColumnId || firstColumnId);
-          const boardPosition = todo.isDerived
-            ? (Number.isFinite(Number(override?.position)) ? Number(override.position) : 0)
-            : (Number.isFinite(Number(todo.kanbanPosition)) ? Number(todo.kanbanPosition) : 0);
+    const todosWithBoardMeta = projectKanbanTodos.map((todo, index) => {
+      const cardKey = buildCardKey(todo);
+      const override = cardOverrides[cardKey];
+      const fallbackPosition = (index + 1) * 1024;
+      const hasManualColumn = !todo.isDerived && Boolean(todo.kanbanColumnId);
+      const hasManualPosition = !todo.isDerived && Number.isFinite(Number(todo.kanbanPosition)) && Number(todo.kanbanPosition) !== 0;
 
-          return {
-            ...todo,
-            kanbanCardKey: cardKey,
-            boardColumnId,
-            boardPosition,
-          };
-        })
+      const boardColumnId = todo.isDerived
+        ? (override?.columnId || firstColumnId)
+        : (hasManualColumn ? todo.kanbanColumnId : firstColumnId);
+
+      const boardPosition = todo.isDerived
+        ? (
+            override && Number.isFinite(Number(override.position))
+              ? Number(override.position)
+              : fallbackPosition
+          )
+        : (
+            hasManualColumn || hasManualPosition
+              ? (Number.isFinite(Number(todo.kanbanPosition)) ? Number(todo.kanbanPosition) : fallbackPosition)
+              : fallbackPosition
+          );
+
+      return {
+        ...todo,
+        kanbanCardKey: cardKey,
+        boardColumnId,
+        boardPosition,
+      };
+    });
+
+    return normalizedColumns.map((column) => {
+      const cards = todosWithBoardMeta
         .filter((todo) => todo.boardColumnId === column.id);
 
       return {
