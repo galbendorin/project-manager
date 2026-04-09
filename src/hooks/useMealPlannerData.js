@@ -28,6 +28,12 @@ const isMissingRelationError = (error, relationName) => {
   return msg.includes(relationName.toLowerCase()) && (msg.includes('relation') || msg.includes('does not exist'));
 };
 
+const toNullableFiniteNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const next = Number(value);
+  return Number.isFinite(next) ? next : null;
+};
+
 const mapRecipeRow = (row = {}, ingredients = []) => ({
   id: row.id,
   externalId: row.external_id || '',
@@ -37,7 +43,7 @@ const mapRecipeRow = (row = {}, ingredients = []) => ({
   name: row.name || '',
   ingredientsRaw: row.ingredients_raw || '',
   howToMake: row.how_to_make || '',
-  estimatedKcal: Number.isFinite(Number(row.estimated_kcal)) ? Number(row.estimated_kcal) : null,
+  estimatedKcal: toNullableFiniteNumber(row.estimated_kcal),
   imageRef: row.image_ref || '',
   recipeOrigin: row.recipe_origin || 'manual',
   ingredients,
@@ -49,17 +55,17 @@ const mapIngredientRow = (row = {}) => ({
   id: row.id,
   rawText: row.raw_text || row.ingredient_name || '',
   ingredientName: row.ingredient_name || row.raw_text || '',
-  quantityValue: Number.isFinite(Number(row.quantity_value)) ? Number(row.quantity_value) : null,
+  quantityValue: toNullableFiniteNumber(row.quantity_value),
   quantityUnit: row.quantity_unit || '',
   notes: row.notes || '',
-  parseConfidence: Number.isFinite(Number(row.parse_confidence)) ? Number(row.parse_confidence) : 0,
+  parseConfidence: toNullableFiniteNumber(row.parse_confidence) ?? 0,
 });
 
 const mapWeekRow = (row = {}) => ({
   id: row.id,
   weekStartDate: row.week_start_date || formatDateKey(new Date()),
-  adultCount: Number.isFinite(Number(row.adult_count)) ? Number(row.adult_count) : 1,
-  kidCount: Number.isFinite(Number(row.kid_count)) ? Number(row.kid_count) : 0,
+  adultCount: toNullableFiniteNumber(row.adult_count) ?? 1,
+  kidCount: toNullableFiniteNumber(row.kid_count) ?? 0,
 });
 
 const mapEntryRow = (row = {}) => ({
@@ -67,7 +73,7 @@ const mapEntryRow = (row = {}) => ({
   date: row.date,
   mealSlot: row.meal_slot,
   mealId: row.meal_id,
-  servingMultiplier: Number.isFinite(Number(row.serving_multiplier)) ? Number(row.serving_multiplier) : null,
+  servingMultiplier: toNullableFiniteNumber(row.serving_multiplier),
 });
 
 const sortRecipes = (recipes = []) => (
@@ -436,7 +442,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       date,
       meal_slot: mealSlot,
       meal_id: mealId,
-      serving_multiplier: Number.isFinite(Number(servingMultiplier)) ? Number(servingMultiplier) : null,
+      serving_multiplier: toNullableFiniteNumber(servingMultiplier),
     };
 
     const existingEntry = entries.find((entry) => entry.date === date && entry.mealSlot === mealSlot) || null;

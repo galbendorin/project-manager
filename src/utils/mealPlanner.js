@@ -18,6 +18,11 @@ const SLOT_LABELS = {
 const SIZE_WORDS = new Set(['small', 'medium', 'large']);
 
 const normalizeSpace = (value = '') => String(value || '').replace(/\s+/g, ' ').trim();
+const toNullableFiniteNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const next = Number(value);
+  return Number.isFinite(next) ? next : null;
+};
 
 export const normalizeMealSlot = (value = '') => {
   const key = normalizeSpace(value).toLowerCase();
@@ -204,7 +209,7 @@ export const parseRecipeImportText = (rawText = '', mealSlot = '') => {
       name: normalizeSpace(name),
       ingredientsRaw: normalizeSpace(ingredients),
       howToMake: normalizeSpace(howToMake),
-      estimatedKcal: Number.isFinite(Number(estimatedKcal)) ? Number(estimatedKcal) : null,
+      estimatedKcal: toNullableFiniteNumber(estimatedKcal),
       imageRef: normalizeSpace(imageRef),
       ingredientLines,
     });
@@ -298,7 +303,7 @@ export const buildMealLibraryRecords = (rows = [], origin = 'imported') => (
     name: row.name || '',
     ingredients_raw: row.ingredientsRaw || serializeIngredientLines(row.ingredientLines),
     how_to_make: row.howToMake || '',
-    estimated_kcal: Number.isFinite(Number(row.estimatedKcal)) ? Number(row.estimatedKcal) : null,
+    estimated_kcal: toNullableFiniteNumber(row.estimatedKcal),
     image_ref: row.imageRef || '',
     recipe_origin: origin,
   }))
@@ -308,10 +313,10 @@ export const buildMealIngredientRecords = (ingredientLines = []) => (
   ingredientLines.map((ingredient) => ({
     raw_text: ingredient.rawText || ingredient.ingredientName || '',
     ingredient_name: ingredient.ingredientName || ingredient.rawText || '',
-    quantity_value: Number.isFinite(Number(ingredient.quantityValue)) ? Number(ingredient.quantityValue) : null,
+    quantity_value: toNullableFiniteNumber(ingredient.quantityValue),
     quantity_unit: ingredient.quantityUnit || '',
     notes: ingredient.notes || '',
-    parse_confidence: Number.isFinite(Number(ingredient.parseConfidence)) ? Number(ingredient.parseConfidence) : 0,
+    parse_confidence: toNullableFiniteNumber(ingredient.parseConfidence) ?? 0,
   }))
 );
 
@@ -329,14 +334,13 @@ export const buildGroceryDraft = ({
     const recipe = recipeMap.get(entry.mealId);
     if (!recipe) continue;
 
-    const multiplier = Number.isFinite(Number(entry.servingMultiplier))
-      ? Number(entry.servingMultiplier)
-      : defaultMultiplier;
+    const multiplier = toNullableFiniteNumber(entry.servingMultiplier) ?? defaultMultiplier;
 
     for (const ingredient of recipe.ingredients || []) {
       const ingredientName = normalizeSpace(ingredient.ingredientName || ingredient.rawText || '');
       const quantityUnit = normalizeSpace(ingredient.quantityUnit || '');
-      const key = Number.isFinite(Number(ingredient.quantityValue)) && ingredientName
+      const hasParsedQuantity = toNullableFiniteNumber(ingredient.quantityValue) !== null;
+      const key = hasParsedQuantity && ingredientName
         ? `${normalizeIngredientKey(ingredientName)}::${normalizeUnitKey(quantityUnit)}`
         : `raw::${normalizeIngredientKey(ingredient.rawText || ingredientName)}`;
 
@@ -360,8 +364,9 @@ export const buildGroceryDraft = ({
         mealSlot: entry.mealSlot,
       });
 
-      if (Number.isFinite(Number(ingredient.quantityValue))) {
-        const nextQuantity = Number(current.quantityValue || 0) + (Number(ingredient.quantityValue) * multiplier);
+      const parsedQuantity = toNullableFiniteNumber(ingredient.quantityValue);
+      if (parsedQuantity !== null) {
+        const nextQuantity = Number(current.quantityValue || 0) + (parsedQuantity * multiplier);
         current.quantityValue = roundQuantity(nextQuantity);
         current.quantityUnit = quantityUnit;
       }

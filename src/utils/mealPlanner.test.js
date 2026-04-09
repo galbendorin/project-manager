@@ -81,6 +81,35 @@ test('buildGroceryDraft aggregates repeated meals by ingredient and unit', () =>
   assert.equal(milk.quantityUnit, 'ml');
 });
 
+test('buildGroceryDraft uses the household default multiplier when serving multiplier is unset', () => {
+  const recipes = [
+    {
+      id: 'meal_eggs',
+      name: 'Toast with egg and pepper',
+      ingredients: splitIngredientList('eggs 2, wholegrain bread 50g, greens'),
+    },
+  ];
+
+  const draft = buildGroceryDraft({
+    recipes,
+    entries: [
+      { id: 'entry_eggs', mealId: 'meal_eggs', mealSlot: 'breakfast', date: '2026-04-13', servingMultiplier: null },
+    ],
+    adultCount: 2,
+    kidCount: 1,
+  });
+
+  const eggs = draft.find((item) => item.title === 'eggs');
+  const bread = draft.find((item) => item.title === 'wholegrain bread');
+  const greens = draft.find((item) => item.title === 'greens');
+
+  assert.equal(eggs.quantityValue, 5);
+  assert.equal(eggs.quantityUnit, 'pcs');
+  assert.equal(bread.quantityValue, 125);
+  assert.equal(bread.quantityUnit, 'g');
+  assert.equal(greens.quantityValue, null);
+});
+
 test('getDefaultServingMultiplier treats kids as half portions', () => {
   assert.equal(getDefaultServingMultiplier({ adultCount: 1, kidCount: 1 }), 1.5);
   assert.equal(getDefaultServingMultiplier({ adultCount: 2, kidCount: 0 }), 2);

@@ -35,6 +35,18 @@ test('mapManualTodoRow maps DB fields into UI shape', () => {
   assert.equal(row.createdAt, '2026-02-01T10:00:00.000Z');
 });
 
+test('mapManualTodoRow keeps missing shopping quantities as null', () => {
+  const row = mapManualTodoRow({
+    id: 'todo_2',
+    title: 'Eggs',
+    quantity_value: null,
+    quantity_unit: 'pcs',
+  });
+
+  assert.equal(row.quantityValue, null);
+  assert.equal(row.quantityUnit, 'pcs');
+});
+
 test('isMissingRelationError detects relation-missing failures', () => {
   const relationError = { message: 'relation "public.manual_todos" does not exist' };
   assert.equal(isMissingRelationError(relationError, 'manual_todos'), true);

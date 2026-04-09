@@ -81,7 +81,11 @@ export function useShoppingListActions({
 
         return {
           title: String(item?.title || '').trim(),
-          quantityValue: Number.isFinite(Number(item?.quantityValue)) ? Number(item.quantityValue) : null,
+          quantityValue: (
+            item?.quantityValue === null || item?.quantityValue === undefined || item?.quantityValue === ''
+              ? null
+              : (Number.isFinite(Number(item?.quantityValue)) ? Number(item.quantityValue) : null)
+          ),
           quantityUnit: String(item?.quantityUnit || '').trim(),
           sourceType: String(item?.sourceType || '').trim(),
           sourceBatchId: item?.sourceBatchId || null,

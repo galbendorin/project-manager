@@ -1,4 +1,9 @@
 const now = () => new Date().toISOString();
+const toNullableFiniteNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const next = Number(value);
+  return Number.isFinite(next) ? next : null;
+};
 
 export const MANUAL_TODO_SELECT = 'id, project_id, title, description, due_date, owner_text, assignee_user_id, status, recurrence, kanban_column_id, kanban_position, created_at, updated_at, completed_at';
 export const LEGACY_MANUAL_TODO_SELECT = 'id, project_id, title, due_date, owner_text, assignee_user_id, status, recurrence, created_at, updated_at, completed_at';
@@ -47,7 +52,7 @@ export const mapManualTodoRow = (row = {}) => ({
   recurrence: normalizeTodoRecurrence(row.recurrence),
   kanbanColumnId: row.kanban_column_id || null,
   kanbanPosition: Number.isFinite(Number(row.kanban_position)) ? Number(row.kanban_position) : 0,
-  quantityValue: Number.isFinite(Number(row.quantity_value)) ? Number(row.quantity_value) : null,
+  quantityValue: toNullableFiniteNumber(row.quantity_value),
   quantityUnit: row.quantity_unit || '',
   sourceType: row.source_type || '',
   sourceBatchId: row.source_batch_id || null,

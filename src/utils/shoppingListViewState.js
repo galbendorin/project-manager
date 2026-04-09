@@ -121,6 +121,11 @@ export const createOfflineShoppingTodo = ({
   sourceBatchId = null,
   meta = {},
 }) => {
+  const normalizedQuantityValue = (
+    quantityValue === null || quantityValue === undefined || quantityValue === ''
+      ? null
+      : (Number.isFinite(Number(quantityValue)) ? Number(quantityValue) : null)
+  );
   const timestamp = new Date().toISOString();
   return {
     _id: createOfflineTempId('offline-todo'),
@@ -131,7 +136,7 @@ export const createOfflineShoppingTodo = ({
     assigneeUserId: userId,
     status,
     recurrence: null,
-    quantityValue: Number.isFinite(Number(quantityValue)) ? Number(quantityValue) : null,
+    quantityValue: normalizedQuantityValue,
     quantityUnit,
     sourceType,
     sourceBatchId,
