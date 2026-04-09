@@ -6,10 +6,12 @@ export function useShoppingListData({
   createEmptyProjectSnapshot,
   currentUserId,
   generateProjectId,
+  isMissingSchemaFieldError,
   isMissingTodoRelationError,
   isOnline,
   isProjectRelationMissingError,
   isRowLevelSecurityError,
+  legacyManualTodoSelect,
   limits,
   loadShoppingOfflineState,
   loadShoppingOfflineStateAsync,
@@ -19,6 +21,7 @@ export function useShoppingListData({
   persistOfflineState,
   refreshProjectCount,
   shoppingProjectName,
+  shoppingExtraFields = [],
   sortTodos,
   supportsProjectMembersRef,
   ensuringProjectRef,
@@ -30,6 +33,7 @@ export function useShoppingListData({
   const [todos, setTodos] = useState([]);
   const [loadingTodos, setLoadingTodos] = useState(false);
   const [todoError, setTodoError] = useState('');
+  const [supportsShoppingFields, setSupportsShoppingFields] = useState(true);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) || null,
@@ -229,12 +233,24 @@ export function useShoppingListData({
       return;
     }
 
-    const { data, error } = await supabase
+    let selectClause = supportsShoppingFields ? manualTodoSelect : legacyManualTodoSelect;
+    let { data, error } = await supabase
       .from('manual_todos')
-      .select(manualTodoSelect)
+      .select(selectClause)
       .eq('project_id', selectedProject.id)
       .order('status', { ascending: true })
       .order('created_at', { ascending: true });
+
+    if (error && supportsShoppingFields && isMissingSchemaFieldError(error, shoppingExtraFields)) {
+      setSupportsShoppingFields(false);
+      selectClause = legacyManualTodoSelect;
+      ({ data, error } = await supabase
+        .from('manual_todos')
+        .select(selectClause)
+        .eq('project_id', selectedProject.id)
+        .order('status', { ascending: true })
+        .order('created_at', { ascending: true }));
+    }
 
     if (error) {
       if (isMissingTodoRelationError(error, 'manual_todos')) {
@@ -260,14 +276,18 @@ export function useShoppingListData({
     setLoadingTodos(false);
   }, [
     currentUserId,
+    isMissingSchemaFieldError,
     isMissingTodoRelationError,
     isOnline,
+    legacyManualTodoSelect,
     loadShoppingOfflineStateAsync,
     manualTodoSelect,
     mapManualTodoRow,
     persistOfflineState,
     selectedProject?.id,
+    shoppingExtraFields,
     sortTodos,
+    supportsShoppingFields,
   ]);
 
   useEffect(() => {

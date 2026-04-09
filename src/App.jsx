@@ -15,6 +15,7 @@ const ProjectSelector = lazy(() => import('./components/ProjectSelector'));
 const MainApp = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.MainApp })));
 const AuthenticatedTrackShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedTrackShell })));
 const AuthenticatedShoppingShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedShoppingShell })));
+const AuthenticatedMealPlannerShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedMealPlannerShell })));
 
 const normalizeAppPath = (value = '/') => {
   const normalized = String(value || '/').replace(/\/+$/, '');
@@ -212,6 +213,18 @@ function App() {
                 />,
                 'Loading Shopping List...'
               )
+            : currentPath === '/meals'
+              ? renderLazyPage(
+                  <AuthenticatedMealPlannerShell
+                    currentUserId={user.id}
+                    userEmail={user.email}
+                    onGoToProjects={openProjectSelector}
+                    onSignOut={signOut}
+                    accentTheme={accentTheme}
+                    onAccentThemeChange={setAccentTheme}
+                  />,
+                  'Loading Meal Planner...'
+                )
             : renderLazyPage(
                 <ProjectSelector
                   onSelectProject={(project) => {
@@ -221,6 +234,7 @@ function App() {
                   }}
                   onOpenTrack={() => navigateToPath('/track')}
                   onOpenShopping={() => navigateToPath('/shopping')}
+                  onOpenMeals={() => navigateToPath('/meals')}
                   accentTheme={accentTheme}
                   onAccentThemeChange={setAccentTheme}
                 />,

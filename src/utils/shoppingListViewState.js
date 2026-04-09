@@ -109,7 +109,18 @@ export const saveShoppingOfflineState = (userId, state) => {
   });
 };
 
-export const createOfflineShoppingTodo = ({ title, projectId, userId, status = 'Open', completedAt = '' }) => {
+export const createOfflineShoppingTodo = ({
+  title,
+  projectId,
+  userId,
+  status = 'Open',
+  completedAt = '',
+  quantityValue = null,
+  quantityUnit = '',
+  sourceType = '',
+  sourceBatchId = null,
+  meta = {},
+}) => {
   const timestamp = new Date().toISOString();
   return {
     _id: createOfflineTempId('offline-todo'),
@@ -120,6 +131,11 @@ export const createOfflineShoppingTodo = ({ title, projectId, userId, status = '
     assigneeUserId: userId,
     status,
     recurrence: null,
+    quantityValue: Number.isFinite(Number(quantityValue)) ? Number(quantityValue) : null,
+    quantityUnit,
+    sourceType,
+    sourceBatchId,
+    meta: meta && typeof meta === 'object' ? meta : {},
     createdAt: timestamp,
     updatedAt: timestamp,
     completedAt,

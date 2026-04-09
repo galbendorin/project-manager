@@ -3,7 +3,11 @@ import { usePlan } from '../contexts/PlanContext';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
 import {
+  LEGACY_MANUAL_TODO_SELECT,
   MANUAL_TODO_SELECT,
+  SHOPPING_MANUAL_TODO_EXTRA_FIELDS,
+  SHOPPING_MANUAL_TODO_SELECT,
+  isMissingSchemaFieldError,
   isMissingRelationError as isMissingTodoRelationError,
   mapManualTodoRow,
 } from '../hooks/projectData/manualTodoUtils';
@@ -196,19 +200,22 @@ export default function ShoppingListView({ currentUserId }) {
     createEmptyProjectSnapshot,
     currentUserId,
     generateProjectId,
+    isMissingSchemaFieldError,
     isMissingTodoRelationError: isMissingTodoRelationError,
     isOnline,
     isProjectRelationMissingError,
     isRowLevelSecurityError,
+    legacyManualTodoSelect: LEGACY_MANUAL_TODO_SELECT,
     limits,
     loadShoppingOfflineState,
     loadShoppingOfflineStateAsync,
-    manualTodoSelect: MANUAL_TODO_SELECT,
+    manualTodoSelect: SHOPPING_MANUAL_TODO_SELECT,
     mapManualTodoRow,
     normalizeProjectRecord,
     persistOfflineState,
     refreshProjectCount,
     shoppingProjectName: SHOPPING_PROJECT_NAME,
+    shoppingExtraFields: SHOPPING_MANUAL_TODO_EXTRA_FIELDS,
     sortTodos,
     supportsProjectMembersRef,
     ensuringProjectRef,
@@ -296,8 +303,11 @@ export default function ShoppingListView({ currentUserId }) {
     sortTodos,
     mergeTodosById,
     createOfflineShoppingTodo,
+    isMissingSchemaFieldError,
+    legacyManualTodoSelect: MANUAL_TODO_SELECT,
     mapManualTodoRow,
-    manualTodoSelect: MANUAL_TODO_SELECT,
+    manualTodoSelect: SHOPPING_MANUAL_TODO_SELECT,
+    shoppingExtraFields: SHOPPING_MANUAL_TODO_EXTRA_FIELDS,
   });
   const {
     isListening,

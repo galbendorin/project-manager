@@ -20,8 +20,11 @@ export function useShoppingListActions({
   sortTodos,
   mergeTodosById,
   createOfflineShoppingTodo,
+  isMissingSchemaFieldError,
+  legacyManualTodoSelect,
   mapManualTodoRow,
   manualTodoSelect,
+  shoppingExtraFields = [],
 }) {
   const [savingItems, setSavingItems] = useState(false);
   const [pendingCompleteId, setPendingCompleteId] = useState('');
@@ -32,6 +35,7 @@ export function useShoppingListActions({
   const [failedTodoMessage, setFailedTodoMessage] = useState('');
   const completionTimeoutRef = useRef(null);
   const completionIntervalRef = useRef(null);
+  const supportsShoppingFieldsRef = useRef(true);
 
   useEffect(() => {
     return () => {
@@ -43,6 +47,10 @@ export function useShoppingListActions({
       }
     };
   }, []);
+
+  const getSelectClause = useCallback(() => (
+    supportsShoppingFieldsRef.current ? manualTodoSelect : legacyManualTodoSelect
+  ), [legacyManualTodoSelect, manualTodoSelect]);
 
   const clearPendingCompletion = useCallback(() => {
     if (completionTimeoutRef.current) {
@@ -58,20 +66,45 @@ export function useShoppingListActions({
   }, []);
 
   const addItems = useCallback(async (titles) => {
-    const normalizedTitles = (titles || [])
-      .map((title) => String(title || '').trim())
-      .filter(Boolean);
+    const normalizedItems = (titles || [])
+      .map((item) => {
+        if (typeof item === 'string') {
+          return {
+            title: String(item || '').trim(),
+            quantityValue: null,
+            quantityUnit: '',
+            sourceType: '',
+            sourceBatchId: null,
+            meta: {},
+          };
+        }
 
-    if (!selectedProject?.id || normalizedTitles.length === 0) return;
+        return {
+          title: String(item?.title || '').trim(),
+          quantityValue: Number.isFinite(Number(item?.quantityValue)) ? Number(item.quantityValue) : null,
+          quantityUnit: String(item?.quantityUnit || '').trim(),
+          sourceType: String(item?.sourceType || '').trim(),
+          sourceBatchId: item?.sourceBatchId || null,
+          meta: item?.meta && typeof item.meta === 'object' ? item.meta : {},
+        };
+      })
+      .filter((item) => item.title);
+
+    if (!selectedProject?.id || normalizedItems.length === 0) return;
 
     setSavingItems(true);
     setTodoError('');
 
     if (!isOnline) {
-      const offlineItems = normalizedTitles.map((title) => createOfflineShoppingTodo({
-        title,
+      const offlineItems = normalizedItems.map((item) => createOfflineShoppingTodo({
+        title: item.title,
         projectId: selectedProject.id,
         userId: currentUserId,
+        quantityValue: item.quantityValue,
+        quantityUnit: item.quantityUnit,
+        sourceType: item.sourceType,
+        sourceBatchId: item.sourceBatchId,
+        meta: item.meta,
       }));
       const nextTodos = sortTodos([...todos, ...offlineItems]);
       const cachedState = loadShoppingOfflineState(currentUserId);
@@ -100,22 +133,49 @@ export function useShoppingListActions({
       return;
     }
 
-    const rows = normalizedTitles.map((title) => ({
+    const rows = normalizedItems.map((item) => ({
       user_id: currentUserId,
       project_id: selectedProject.id,
-      title,
+      title: item.title,
       due_date: null,
       owner_text: '',
       assignee_user_id: currentUserId,
       status: 'Open',
       recurrence: null,
       completed_at: null,
+      ...(supportsShoppingFieldsRef.current ? {
+        quantity_value: item.quantityValue,
+        quantity_unit: item.quantityUnit || '',
+        source_type: item.sourceType || '',
+        source_batch_id: item.sourceBatchId || null,
+        meta: item.meta || {},
+      } : {}),
     }));
 
-    const { data, error } = await supabase
+    let selectClause = getSelectClause();
+    let { data, error } = await supabase
       .from('manual_todos')
       .insert(rows)
-      .select(manualTodoSelect);
+      .select(selectClause);
+
+    if (error && supportsShoppingFieldsRef.current && isMissingSchemaFieldError(error, shoppingExtraFields)) {
+      supportsShoppingFieldsRef.current = false;
+      selectClause = legacyManualTodoSelect;
+      ({ data, error } = await supabase
+        .from('manual_todos')
+        .insert(normalizedItems.map((item) => ({
+          user_id: currentUserId,
+          project_id: selectedProject.id,
+          title: item.title,
+          due_date: null,
+          owner_text: '',
+          assignee_user_id: currentUserId,
+          status: 'Open',
+          recurrence: null,
+          completed_at: null,
+        })))
+        .select(selectClause));
+    }
 
     if (error) {
       setTodoError(error.message || 'Unable to add groceries right now.');
@@ -146,15 +206,18 @@ export function useShoppingListActions({
   }, [
     createOfflineShoppingTodo,
     currentUserId,
+    getSelectClause,
+    isMissingSchemaFieldError,
     isOnline,
+    legacyManualTodoSelect,
     loadShoppingOfflineState,
-    manualTodoSelect,
     mapManualTodoRow,
     mergeTodosById,
     persistOfflineState,
     selectedProject?.id,
     setTodoError,
     setTodos,
+    shoppingExtraFields,
     sortTodos,
     todos,
   ]);
@@ -202,7 +265,8 @@ export function useShoppingListActions({
       return;
     }
 
-    const { data, error } = await supabase
+    let selectClause = getSelectClause();
+    let { data, error } = await supabase
       .from('manual_todos')
       .update({
         status: nextStatus,
@@ -210,8 +274,23 @@ export function useShoppingListActions({
         updated_at: new Date().toISOString(),
       })
       .eq('id', todo._id)
-      .select(manualTodoSelect)
+      .select(selectClause)
       .single();
+
+    if (error && supportsShoppingFieldsRef.current && isMissingSchemaFieldError(error, shoppingExtraFields)) {
+      supportsShoppingFieldsRef.current = false;
+      selectClause = legacyManualTodoSelect;
+      ({ data, error } = await supabase
+        .from('manual_todos')
+        .update({
+          status: nextStatus,
+          completed_at: completedAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', todo._id)
+        .select(selectClause)
+        .single());
+    }
 
     if (error) {
       setTodos(previous);
@@ -255,13 +334,16 @@ export function useShoppingListActions({
     setFailedTodoMessage('');
   }, [
     currentUserId,
+    getSelectClause,
+    isMissingSchemaFieldError,
     isOnline,
+    legacyManualTodoSelect,
     loadShoppingOfflineState,
-    manualTodoSelect,
     mapManualTodoRow,
     persistOfflineState,
     selectedProject?.id,
     setTodos,
+    shoppingExtraFields,
     sortTodos,
     todos,
   ]);
@@ -384,15 +466,30 @@ export function useShoppingListActions({
       return { ok: true };
     }
 
-    const { data, error } = await supabase
+    let selectClause = getSelectClause();
+    let { data, error } = await supabase
       .from('manual_todos')
       .update({
         title,
         updated_at: updatedAt,
       })
       .eq('id', todo._id)
-      .select(manualTodoSelect)
+      .select(selectClause)
       .single();
+
+    if (error && supportsShoppingFieldsRef.current && isMissingSchemaFieldError(error, shoppingExtraFields)) {
+      supportsShoppingFieldsRef.current = false;
+      selectClause = legacyManualTodoSelect;
+      ({ data, error } = await supabase
+        .from('manual_todos')
+        .update({
+          title,
+          updated_at: updatedAt,
+        })
+        .eq('id', todo._id)
+        .select(selectClause)
+        .single());
+    }
 
     if (error) {
       setTodos(previous);
@@ -428,13 +525,16 @@ export function useShoppingListActions({
     return { ok: true };
   }, [
     currentUserId,
+    getSelectClause,
+    isMissingSchemaFieldError,
     isOnline,
+    legacyManualTodoSelect,
     loadShoppingOfflineState,
-    manualTodoSelect,
     mapManualTodoRow,
     persistOfflineState,
     selectedProject?.id,
     setTodos,
+    shoppingExtraFields,
     sortTodos,
     todos,
   ]);

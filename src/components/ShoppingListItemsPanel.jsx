@@ -1,6 +1,37 @@
 import React from 'react';
 import { isOfflineTempId } from '../utils/offlineState';
 
+const formatQuantity = (value) => {
+  if (!Number.isFinite(Number(value))) return '';
+  const rounded = Math.round(Number(value) * 100) / 100;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
+};
+
+const ShoppingItemMeta = ({ todo }) => {
+  const quantityLabel = todo.quantityValue !== null
+    ? `${formatQuantity(todo.quantityValue)} ${todo.quantityUnit || ''}`.trim()
+    : '';
+  const mealPlanLabel = todo.sourceType === 'meal_plan' ? 'Meal plan' : '';
+
+  if (!quantityLabel && !mealPlanLabel) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {quantityLabel ? (
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+          {quantityLabel}
+        </span>
+      ) : null}
+      {mealPlanLabel ? (
+        <span className="rounded-full border border-[var(--pm-accent)]/25 bg-[var(--pm-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--pm-accent-strong)]">
+          {mealPlanLabel}
+        </span>
+      ) : null}
+    </div>
+  );
+};
+
 export default function ShoppingListItemsPanel({
   CheckIcon,
   ChevronDownIcon,
@@ -194,7 +225,10 @@ export default function ShoppingListItemsPanel({
                                 ) : null}
                               </div>
                             ) : (
-                              <p className={`font-semibold text-slate-900 ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
+                              <>
+                                <p className={`font-semibold text-slate-900 ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
+                                <ShoppingItemMeta todo={todo} />
+                              </>
                             )}
                           </div>
                           <div className="flex shrink-0 flex-col items-end gap-1">
@@ -433,7 +467,10 @@ export default function ShoppingListItemsPanel({
                                 ) : null}
                               </div>
                             ) : (
-                              <p className={`font-semibold text-slate-400 line-through ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
+                              <>
+                                <p className={`font-semibold text-slate-400 line-through ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
+                                <ShoppingItemMeta todo={todo} />
+                              </>
                             )}
                           </div>
                           {syncState ? (

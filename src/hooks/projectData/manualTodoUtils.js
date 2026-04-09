@@ -2,6 +2,8 @@ const now = () => new Date().toISOString();
 
 export const MANUAL_TODO_SELECT = 'id, project_id, title, description, due_date, owner_text, assignee_user_id, status, recurrence, kanban_column_id, kanban_position, created_at, updated_at, completed_at';
 export const LEGACY_MANUAL_TODO_SELECT = 'id, project_id, title, due_date, owner_text, assignee_user_id, status, recurrence, created_at, updated_at, completed_at';
+export const SHOPPING_MANUAL_TODO_SELECT = 'id, project_id, title, description, due_date, owner_text, assignee_user_id, status, recurrence, kanban_column_id, kanban_position, quantity_value, quantity_unit, source_type, source_batch_id, meta, created_at, updated_at, completed_at';
+export const SHOPPING_MANUAL_TODO_EXTRA_FIELDS = ['quantity_value', 'quantity_unit', 'source_type', 'source_batch_id', 'meta'];
 
 export const createManualTodoId = () => `todo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -45,6 +47,11 @@ export const mapManualTodoRow = (row = {}) => ({
   recurrence: normalizeTodoRecurrence(row.recurrence),
   kanbanColumnId: row.kanban_column_id || null,
   kanbanPosition: Number.isFinite(Number(row.kanban_position)) ? Number(row.kanban_position) : 0,
+  quantityValue: Number.isFinite(Number(row.quantity_value)) ? Number(row.quantity_value) : null,
+  quantityUnit: row.quantity_unit || '',
+  sourceType: row.source_type || '',
+  sourceBatchId: row.source_batch_id || null,
+  meta: row.meta && typeof row.meta === 'object' ? row.meta : {},
   createdAt: row.created_at || now(),
   updatedAt: row.updated_at || now(),
   completedAt: row.completed_at || ''
