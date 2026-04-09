@@ -19,6 +19,7 @@ import { STARTER_MEAL_IMPORT_TEXT_BY_SLOT } from '../utils/mealPlannerSeedData';
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const STARTER_LIBRARY_ALLOWED_EMAILS = new Set([
   'dorin.galben@yahoo.com',
+  'galben.dorin@yahoo.com',
   'irina.urmanschi@gmail.com',
 ]);
 
