@@ -881,6 +881,19 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     setCopyPrompt(null);
   };
 
+  const dismissCopyUiForSlot = (dateKey, mealSlot) => {
+    setCopyPrompt((previous) => (
+      previous && previous.dateKey === dateKey && previous.mealSlot === mealSlot
+        ? null
+        : previous
+    ));
+    setMultiDayPrompt((previous) => (
+      previous && previous.dateKey === dateKey && previous.mealSlot === mealSlot
+        ? null
+        : previous
+    ));
+  };
+
   const openPicker = (dateKey, mealSlot) => {
     setPickerContext({ dateKey, mealSlot });
   };
@@ -1107,7 +1120,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       {SLOT_ORDER.map((slot) => {
                         const entry = entryMap[`${day.key}:${slot}`];
                         const recipe = entry ? recipeMap.get(entry.mealId) : null;
-                        const isCopyPromptVisible = copyPrompt && copyPrompt.dateKey === day.key && copyPrompt.mealSlot === slot;
+                        const isCopyPromptVisible = Boolean(recipe) && copyPrompt && copyPrompt.dateKey === day.key && copyPrompt.mealSlot === slot;
 
                         return (
                           <div key={`${day.key}-${slot}`} className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
@@ -1155,7 +1168,10 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => void clearMealEntry({ date: day.key, mealSlot: slot })}
+                                  onClick={async () => {
+                                    dismissCopyUiForSlot(day.key, slot);
+                                    await clearMealEntry({ date: day.key, mealSlot: slot });
+                                  }}
                                   className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
                                 >
                                   Clear
@@ -1323,6 +1339,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           }}
           onRemoveFromDay={async () => {
             try {
+              dismissCopyUiForSlot(detailContext.dateKey, detailContext.mealSlot);
               await clearMealEntry({ date: detailContext.dateKey, mealSlot: detailContext.mealSlot });
               setDetailContext(null);
             } catch {
