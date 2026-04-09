@@ -380,12 +380,40 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
     const nextAdultCount = Math.max(0, Number(adultCount || 0));
     const nextKidCount = Math.max(0, Number(kidCount || 0));
+    const previousDefaultMultiplier = getDefaultServingMultiplier({
+      adultCount: week?.adultCount ?? 1,
+      kidCount: week?.kidCount ?? 0,
+    });
+    const entryIdsFollowingDefault = entries
+      .filter((entry) => (
+        entry.servingMultiplier === null
+        || entry.servingMultiplier === previousDefaultMultiplier
+      ))
+      .map((entry) => entry.id);
 
     setWeek((previous) => previous ? {
       ...previous,
       adultCount: nextAdultCount,
       kidCount: nextKidCount,
     } : previous);
+    setEntries((previous) => previous.map((entry) => (
+      entryIdsFollowingDefault.includes(entry.id)
+        ? { ...entry, servingMultiplier: null }
+        : entry
+    )));
+
+    if (entryIdsFollowingDefault.length > 0) {
+      const { error: normalizeEntriesError } = await supabase
+        .from('meal_plan_entries')
+        .update({
+          serving_multiplier: null,
+        })
+        .in('id', entryIdsFollowingDefault);
+
+      if (normalizeEntriesError) {
+        setError(normalizeEntriesError.message || 'Unable to refresh serving multipliers right now.');
+      }
+    }
 
     const { error: updateError } = await supabase
       .from('meal_plan_weeks')
@@ -398,7 +426,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     if (updateError) {
       setError(updateError.message || 'Unable to update household counts right now.');
     }
-  }, [week?.id]);
+  }, [entries, week?.adultCount, week?.id, week?.kidCount]);
 
   const upsertMealEntry = useCallback(async ({ date, mealSlot, mealId, servingMultiplier = null }) => {
     if (!week?.id) return null;
@@ -572,9 +600,11 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     }
   }, [loadRecipes]);
 
-  const confirmGroceryDraft = useCallback(async () => {
+  const confirmGroceryDraft = useCallback(async (draftOverride = null) => {
     if (!week?.id) return null;
-    if (groceryDraft.length === 0) {
+    const draftRows = Array.isArray(draftOverride) ? draftOverride : groceryDraft;
+
+    if (draftRows.length === 0) {
       throw new Error('Plan at least one meal before generating groceries.');
     }
 
@@ -626,7 +656,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
       if (deleteExistingError) throw deleteExistingError;
 
-      const rows = groceryDraft.map((item) => ({
+      const rows = draftRows.map((item) => ({
         user_id: currentUserId,
         project_id: shoppingProject.id,
         title: item.title,

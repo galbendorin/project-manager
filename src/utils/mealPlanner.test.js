@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildNextDayCopyPrompt,
   buildGroceryDraft,
   getDefaultServingMultiplier,
+  getWeekDayEntries,
   parseIngredientText,
   parseRecipeImportText,
   splitIngredientList,
@@ -82,4 +84,42 @@ test('buildGroceryDraft aggregates repeated meals by ingredient and unit', () =>
 test('getDefaultServingMultiplier treats kids as half portions', () => {
   assert.equal(getDefaultServingMultiplier({ adultCount: 1, kidCount: 1 }), 1.5);
   assert.equal(getDefaultServingMultiplier({ adultCount: 2, kidCount: 0 }), 2);
+});
+
+test('buildNextDayCopyPrompt only suggests copying forward for breakfast, lunch, and dinner with a following day', () => {
+  const weekDays = getWeekDayEntries('2026-04-13');
+
+  assert.deepEqual(
+    buildNextDayCopyPrompt({
+      weekDays,
+      dateKey: '2026-04-14',
+      mealSlot: 'breakfast',
+      recipeId: 'recipe_1',
+    }),
+    {
+      dateKey: '2026-04-14',
+      mealSlot: 'breakfast',
+      recipeId: 'recipe_1',
+    }
+  );
+
+  assert.equal(
+    buildNextDayCopyPrompt({
+      weekDays,
+      dateKey: '2026-04-14',
+      mealSlot: 'snack',
+      recipeId: 'recipe_1',
+    }),
+    null
+  );
+
+  assert.equal(
+    buildNextDayCopyPrompt({
+      weekDays,
+      dateKey: '2026-04-19',
+      mealSlot: 'dinner',
+      recipeId: 'recipe_1',
+    }),
+    null
+  );
 });

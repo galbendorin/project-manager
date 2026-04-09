@@ -259,6 +259,28 @@ export const getDefaultServingMultiplier = ({ adultCount = 1, kidCount = 0 } = {
   Math.max(0.5, Number(adultCount || 0) + (Number(kidCount || 0) * 0.5))
 );
 
+export const buildNextDayCopyPrompt = ({
+  weekDays = [],
+  dateKey = '',
+  mealSlot = '',
+  recipeId = '',
+} = {}) => {
+  if (normalizeMealSlot(mealSlot) === 'snack') {
+    return null;
+  }
+
+  const currentIndex = weekDays.findIndex((day) => day.key === dateKey);
+  if (currentIndex < 0 || currentIndex >= weekDays.length - 1) {
+    return null;
+  }
+
+  return {
+    dateKey,
+    mealSlot,
+    recipeId,
+  };
+};
+
 const normalizeIngredientKey = (value = '') => normalizeSpace(value).toLowerCase();
 const normalizeUnitKey = (value = '') => normalizeSpace(value).toLowerCase();
 

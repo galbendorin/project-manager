@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMealPlannerData } from '../hooks/useMealPlannerData';
 import {
+  buildNextDayCopyPrompt,
   formatDateKey,
   formatIngredientQuantity,
   getMealSlotLabel,
@@ -712,6 +713,16 @@ function RecipeDetailModal({
 }
 
 function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
+  const [removedKeys, setRemovedKeys] = useState([]);
+
+  useEffect(() => {
+    setRemovedKeys([]);
+  }, [draft]);
+
+  const visibleDraft = useMemo(() => (
+    draft.filter((item) => !removedKeys.includes(item.key))
+  ), [draft, removedKeys]);
+
   return (
     <ModalShell onClose={onClose} wide>
       <div className="p-5 sm:p-6">
@@ -726,8 +737,14 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
           </button>
         </div>
 
+        {removedKeys.length > 0 ? (
+          <div className="mt-4 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {removedKeys.length} ingredient{removedKeys.length === 1 ? '' : 's'} excluded from this shopping draft.
+          </div>
+        ) : null}
+
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {draft.map((item) => (
+          {visibleDraft.map((item) => (
             <div key={item.key} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -746,15 +763,30 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
                 {item.sourceMeals.slice(0, 3).map((meal) => meal.recipeName).join(', ')}
                 {item.sourceMeals.length > 3 ? ` +${item.sourceMeals.length - 3} more` : ''}
               </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setRemovedKeys((previous) => [...previous, item.key])}
+                  className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                >
+                  Remove from this draft
+                </button>
+              </div>
             </div>
           ))}
         </div>
+
+        {visibleDraft.length === 0 ? (
+          <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+            There are no grocery lines left in this draft. Keep at least one ingredient if you want to send groceries to Shopping List.
+          </div>
+        ) : null}
 
         <div className="mt-6 flex justify-end gap-3">
           <button type="button" onClick={onClose} className="pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold">
             Close
           </button>
-          <button type="button" onClick={onApprove} disabled={saving} className="pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+          <button type="button" onClick={() => onApprove(visibleDraft)} disabled={saving || visibleDraft.length === 0} className="pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
             {saving ? 'Adding groceries…' : 'Add to Shopping List'}
           </button>
         </div>
@@ -869,35 +901,33 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       dates,
       mealSlot,
       mealId: recipeId,
-      servingMultiplier: sourceEntry?.servingMultiplier ?? defaultServingMultiplier,
+      servingMultiplier: sourceEntry?.servingMultiplier ?? null,
     });
   };
 
   const handleRecipePicked = async (recipe) => {
     if (!pickerContext) return;
-    const existingEntry = entryMap[`${pickerContext.dateKey}:${pickerContext.mealSlot}`];
+    const selectionContext = pickerContext;
+    const existingEntry = entryMap[`${selectionContext.dateKey}:${selectionContext.mealSlot}`];
+    const nextCopyPrompt = buildNextDayCopyPrompt({
+      weekDays,
+      dateKey: selectionContext.dateKey,
+      mealSlot: selectionContext.mealSlot,
+      recipeId: recipe.id,
+    });
 
     await upsertMealEntry({
-      date: pickerContext.dateKey,
-      mealSlot: pickerContext.mealSlot,
+      date: selectionContext.dateKey,
+      mealSlot: selectionContext.mealSlot,
       mealId: recipe.id,
-      servingMultiplier: existingEntry?.servingMultiplier ?? defaultServingMultiplier,
+      servingMultiplier: existingEntry?.servingMultiplier ?? null,
     });
 
     setPickerContext(null);
 
-    if (pickerContext.mealSlot !== 'snack') {
-      const currentIndex = weekDays.findIndex((day) => day.key === pickerContext.dateKey);
-      if (currentIndex >= 0 && currentIndex < weekDays.length - 1) {
-        setCopyPrompt({
-          dateKey: pickerContext.dateKey,
-          mealSlot: pickerContext.mealSlot,
-          recipeId: recipe.id,
-        });
-      } else {
-        setCopyPrompt(null);
-      }
-    } else {
+    if (nextCopyPrompt) {
+      setCopyPrompt(nextCopyPrompt);
+    } else if (selectionContext.mealSlot !== 'snack') {
       setCopyPrompt(null);
     }
   };
@@ -942,9 +972,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     setFormState(null);
   };
 
-  const handleApproveGroceries = async () => {
+  const handleApproveGroceries = async (draftOverride = groceryDraft) => {
     try {
-      await confirmGroceryDraft();
+      await confirmGroceryDraft(draftOverride);
       setShowReviewModal(false);
     } catch {
       // Error is surfaced through the shared banner state.
@@ -1375,7 +1405,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       {showReviewModal ? (
         <GroceryReviewModal
           draft={groceryDraft}
-          onApprove={() => void handleApproveGroceries()}
+          onApprove={(draftOverride) => void handleApproveGroceries(draftOverride)}
           onClose={() => setShowReviewModal(false)}
           saving={saving}
           weekLabel={weekLabel}
