@@ -830,6 +830,17 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   ), [librarySearch, librarySlotFilter, recipes]);
 
   const weekLabel = useMemo(() => formatWeekLabel(weekDays), [weekDays]);
+  const dayCaloriesByKey = useMemo(() => (
+    weekDays.reduce((accumulator, day) => {
+      const total = SLOT_ORDER.reduce((slotTotal, slot) => {
+        const entry = entryMap[`${day.key}:${slot}`];
+        const recipe = entry ? recipeMap.get(entry.mealId) : null;
+        return slotTotal + (recipe?.estimatedKcal || 0);
+      }, 0);
+      accumulator[day.key] = total;
+      return accumulator;
+    }, {})
+  ), [entryMap, recipeMap, weekDays]);
 
   const handleMoveWeek = (offset) => {
     const date = new Date(selectedWeekStart);
@@ -1053,6 +1064,12 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{day.shortLabel}</p>
                         <h3 className="mt-1 text-lg font-semibold text-slate-950">{day.dayLabel}</h3>
+                      </div>
+                      <div className="shrink-0 rounded-[20px] border border-amber-200 bg-amber-50 px-3 py-2 text-right">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">Approx total</p>
+                        <p className="mt-1 text-sm font-semibold text-amber-800">
+                          {dayCaloriesByKey[day.key] > 0 ? `${dayCaloriesByKey[day.key]} kcal` : 'No meals yet'}
+                        </p>
                       </div>
                     </div>
 
