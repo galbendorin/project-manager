@@ -8,6 +8,7 @@ import {
   buildMealIngredientRecords,
   buildMealLibraryRecords,
   formatDateKey,
+  getAdultServingTotal,
   getDefaultServingMultiplier,
   getWeekDayEntries,
   getWeekStartMonday,
@@ -18,6 +19,8 @@ import {
 import { STARTER_MEAL_IMPORT_TEXT_BY_SLOT } from '../utils/mealPlannerSeedData';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
+const MEAL_PLAN_WEEK_SELECT_BASE = 'id, week_start_date, adult_count, kid_count';
+const MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS = `${MEAL_PLAN_WEEK_SELECT_BASE}, adult_portion_total`;
 const MEAL_LIBRARY_SELECT_BASE = 'id, external_id, source_pdf, suggested_day, meal_slot, name, ingredients_raw, how_to_make, estimated_kcal, image_ref, recipe_origin, created_at, updated_at';
 const MEAL_LIBRARY_SELECT_WITH_BATCH = `${MEAL_LIBRARY_SELECT_BASE}, yield_mode, batch_yield_portions`;
 const STARTER_LIBRARY_ALLOWED_EMAILS = new Set([
@@ -92,7 +95,15 @@ const mapIngredientRow = (row = {}) => ({
 const mapWeekRow = (row = {}) => ({
   id: row.id,
   weekStartDate: row.week_start_date || formatDateKey(new Date()),
-  adultCount: toNullableFiniteNumber(row.adult_count) ?? 1,
+  adultCount: getAdultServingTotal({
+    adultPortionTotal: row.adult_portion_total,
+    adultCount: (() => {
+      const legacyAdultCount = toNullableFiniteNumber(row.adult_count);
+      if (legacyAdultCount === null) return null;
+      if (legacyAdultCount > 1) return legacyAdultCount;
+      return 1.75;
+    })(),
+  }),
   kidCount: toNullableFiniteNumber(row.kid_count) ?? 0,
 });
 
@@ -185,7 +196,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   const mealPlanPreview = useMemo(() => buildMealPlanPreview({
     recipes,
     entries,
-    adultCount: week?.adultCount ?? 1,
+    adultPortionTotal: week?.adultCount ?? 1.75,
     kidCount: week?.kidCount ?? 0,
   }), [entries, recipes, week?.adultCount, week?.kidCount]);
 
@@ -356,11 +367,21 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
   const ensureWeek = useCallback(async (weekStartDate) => {
     const normalizedWeekStart = formatDateKey(weekStartDate);
-    const { data: existingWeek, error: existingError } = await supabase
+    let existingWeekResult = await supabase
       .from('meal_plan_weeks')
-      .select('id, week_start_date, adult_count, kid_count')
+      .select(MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS)
       .eq('week_start_date', normalizedWeekStart)
       .maybeSingle();
+
+    if (existingWeekResult.error && isMissingMealPlannerFieldError(existingWeekResult.error, ['adult_portion_total'])) {
+      existingWeekResult = await supabase
+        .from('meal_plan_weeks')
+        .select(MEAL_PLAN_WEEK_SELECT_BASE)
+        .eq('week_start_date', normalizedWeekStart)
+        .maybeSingle();
+    }
+
+    const { data: existingWeek, error: existingError } = existingWeekResult;
 
     if (existingError) throw existingError;
 
@@ -369,17 +390,32 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       return existingWeek.id;
     }
 
-    const { data: createdWeek, error: createError } = await supabase
+    let createdWeekResult = await supabase
       .from('meal_plan_weeks')
       .insert({
         user_id: currentUserId,
         week_start_date: normalizedWeekStart,
         adult_count: 1,
+        adult_portion_total: 1.75,
         kid_count: 0,
       })
-      .select('id, week_start_date, adult_count, kid_count')
+      .select(MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS)
       .single();
 
+    if (createdWeekResult.error && isMissingMealPlannerFieldError(createdWeekResult.error, ['adult_portion_total'])) {
+      createdWeekResult = await supabase
+        .from('meal_plan_weeks')
+        .insert({
+          user_id: currentUserId,
+          week_start_date: normalizedWeekStart,
+          adult_count: 1,
+          kid_count: 0,
+        })
+        .select(MEAL_PLAN_WEEK_SELECT_BASE)
+        .single();
+    }
+
+    const { data: createdWeek, error: createError } = createdWeekResult;
     if (createError || !createdWeek) {
       throw createError || new Error('Unable to create meal planning week.');
     }
@@ -421,7 +457,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         isMissingRelationError(nextError, 'meal_library_meals')
         || isMissingRelationError(nextError, 'meal_plan_weeks')
         || isMissingRelationError(nextError, 'meal_plan_entries')
-        || isMissingMealPlannerFieldError(nextError, ['audience', 'entry_position'])
+        || isMissingMealPlannerFieldError(nextError, ['audience', 'entry_position', 'adult_portion_total'])
       ) {
         setError('Meal Planner needs the latest SQL migration before it can load.');
       } else {
@@ -442,7 +478,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     const nextAdultCount = Math.max(0, Number(adultCount || 0));
     const nextKidCount = Math.max(0, Number(kidCount || 0));
     const previousDefaultMultiplier = getDefaultServingMultiplier({
-      adultCount: week?.adultCount ?? 1,
+      adultPortionTotal: week?.adultCount ?? 1.75,
       kidCount: week?.kidCount ?? 0,
     });
     const entryIdsFollowingDefault = entries
@@ -480,9 +516,15 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       .from('meal_plan_weeks')
       .update({
         adult_count: nextAdultCount,
+        adult_portion_total: nextAdultCount,
         kid_count: nextKidCount,
       })
       .eq('id', week.id);
+
+    if (updateError && isMissingMealPlannerFieldError(updateError, ['adult_portion_total'])) {
+      setError('Meal Planner needs the latest SQL migration before partner portion settings can be saved.');
+      return;
+    }
 
     if (updateError) {
       setError(updateError.message || 'Unable to update household counts right now.');
@@ -846,7 +888,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     weekDays,
     duplicateRecipe,
     defaultServingMultiplier: getDefaultServingMultiplier({
-      adultCount: week?.adultCount ?? 1,
+      adultPortionTotal: week?.adultCount ?? 1.75,
       kidCount: week?.kidCount ?? 0,
     }),
   };

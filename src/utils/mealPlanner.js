@@ -23,8 +23,8 @@ const SLOT_SORT_ORDER = {
 };
 
 const AUDIENCE_LABELS = {
-  all: 'All',
-  adults: 'Adults',
+  all: 'Household',
+  adults: 'You + Partner',
   kids: 'Kids',
 };
 
@@ -296,23 +296,53 @@ export const getWeekDayEntries = (weekStartDate) => {
   });
 };
 
-export const getDefaultServingMultiplier = ({ adultCount = 1, kidCount = 0 } = {}) => (
-  Math.max(0.5, Number(adultCount || 0) + (Number(kidCount || 0) * 0.5))
+export const getAdultServingTotal = ({
+  adultCount = null,
+  adultPortionTotal = null,
+  partnerServingMultiplier = null,
+} = {}) => {
+  const explicitAdultPortionTotal = toNullableFiniteNumber(adultPortionTotal);
+  if (explicitAdultPortionTotal !== null) {
+    return Math.max(0, explicitAdultPortionTotal);
+  }
+
+  const explicitAdultCount = toNullableFiniteNumber(adultCount);
+  if (explicitAdultCount !== null) {
+    return Math.max(0, explicitAdultCount);
+  }
+
+  const resolvedPartnerMultiplier = toNullableFiniteNumber(partnerServingMultiplier);
+  return Math.max(0, 1 + (resolvedPartnerMultiplier ?? 0.75));
+};
+
+export const getDefaultServingMultiplier = ({
+  adultCount = null,
+  adultPortionTotal = null,
+  partnerServingMultiplier = null,
+  kidCount = 0,
+} = {}) => (
+  Math.max(
+    0.5,
+    getAdultServingTotal({ adultCount, adultPortionTotal, partnerServingMultiplier })
+      + (Number(kidCount || 0) * 0.5)
+  )
 );
 
 export const getAudienceServingMultiplier = ({
   audience = 'all',
-  adultCount = 1,
+  adultCount = null,
+  adultPortionTotal = null,
+  partnerServingMultiplier = null,
   kidCount = 0,
 } = {}) => {
   const normalizedAudience = normalizeMealAudience(audience);
   if (normalizedAudience === 'adults') {
-    return Math.max(0, Number(adultCount || 0));
+    return getAdultServingTotal({ adultCount, adultPortionTotal, partnerServingMultiplier });
   }
   if (normalizedAudience === 'kids') {
     return Math.max(0, Number(kidCount || 0) * 0.5);
   }
-  return getDefaultServingMultiplier({ adultCount, kidCount });
+  return getDefaultServingMultiplier({ adultCount, adultPortionTotal, partnerServingMultiplier, kidCount });
 };
 
 export const buildNextDayCopyPrompt = ({
@@ -363,7 +393,15 @@ const sortMealEntriesForPreview = (entries = []) => (
   ))
 );
 
-const getEntryServingMultiplier = (entry = {}, { adultCount = 1, kidCount = 0 } = {}) => {
+const getEntryServingMultiplier = (
+  entry = {},
+  {
+    adultCount = null,
+    adultPortionTotal = null,
+    partnerServingMultiplier = null,
+    kidCount = 0,
+  } = {}
+) => {
   const explicitMultiplier = toNullableFiniteNumber(entry.servingMultiplier);
   if (explicitMultiplier !== null) {
     return explicitMultiplier;
@@ -371,6 +409,8 @@ const getEntryServingMultiplier = (entry = {}, { adultCount = 1, kidCount = 0 } 
   return getAudienceServingMultiplier({
     audience: entry.audience,
     adultCount,
+    adultPortionTotal,
+    partnerServingMultiplier,
     kidCount,
   });
 };
@@ -461,7 +501,9 @@ export const buildMealIngredientRecords = (ingredientLines = []) => (
 export const buildMealPlanPreview = ({
   recipes = [],
   entries = [],
-  adultCount = 1,
+  adultCount = null,
+  adultPortionTotal = null,
+  partnerServingMultiplier = null,
   kidCount = 0,
 }) => {
   const recipeMap = new Map(recipes.map((recipe) => [recipe.id, recipe]));
@@ -473,7 +515,12 @@ export const buildMealPlanPreview = ({
     const recipe = recipeMap.get(entry.mealId);
     if (!recipe) continue;
 
-    const requiredPortions = getEntryServingMultiplier(entry, { adultCount, kidCount });
+    const requiredPortions = getEntryServingMultiplier(entry, {
+      adultCount,
+      adultPortionTotal,
+      partnerServingMultiplier,
+      kidCount,
+    });
     if (requiredPortions <= 0) continue;
 
     const roundedRequiredPortions = roundQuantity(requiredPortions) ?? requiredPortions;
@@ -569,13 +616,17 @@ export const buildMealPlanPreview = ({
 export const buildGroceryDraft = ({
   recipes = [],
   entries = [],
-  adultCount = 1,
+  adultCount = null,
+  adultPortionTotal = null,
+  partnerServingMultiplier = null,
   kidCount = 0,
 }) => (
   buildMealPlanPreview({
     recipes,
     entries,
     adultCount,
+    adultPortionTotal,
+    partnerServingMultiplier,
     kidCount,
   }).groceryDraft
 );

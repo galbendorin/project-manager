@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  getAdultServingTotal,
   buildNextDayCopyPrompt,
   buildMealPlanPreview,
   buildGroceryDraft,
@@ -82,6 +83,25 @@ test('buildGroceryDraft aggregates repeated meals by ingredient and unit', () =>
   assert.equal(oats.quantityUnit, 'g');
   assert.equal(milk.quantityValue, 625);
   assert.equal(milk.quantityUnit, 'ml');
+});
+
+test('buildGroceryDraft supports household portion totals plus kids', () => {
+  const draft = buildGroceryDraft({
+    recipes: [
+      {
+        id: 'meal_eggs',
+        name: 'Eggs for household',
+        ingredients: splitIngredientList('eggs 2'),
+      },
+    ],
+    entries: [
+      { id: 'entry_household', mealId: 'meal_eggs', mealSlot: 'breakfast', date: '2026-04-13', servingMultiplier: null, audience: 'all' },
+    ],
+    adultPortionTotal: 1.75,
+    kidCount: 1,
+  });
+
+  assert.equal(draft.find((item) => item.title === 'eggs')?.quantityValue, 4.5);
 });
 
 test('buildGroceryDraft uses the household default multiplier when serving multiplier is unset', () => {
@@ -210,6 +230,7 @@ test('buildGroceryDraft keeps one batch when later kid servings are fully covere
 test('getDefaultServingMultiplier treats kids as half portions', () => {
   assert.equal(getDefaultServingMultiplier({ adultCount: 1, kidCount: 1 }), 1.5);
   assert.equal(getDefaultServingMultiplier({ adultCount: 2, kidCount: 0 }), 2);
+  assert.equal(getDefaultServingMultiplier({ adultPortionTotal: 1.75, kidCount: 1 }), 2.25);
 });
 
 test('normalizeMealAudience and getAudienceServingMultiplier support all, adults, and kids', () => {
@@ -220,6 +241,14 @@ test('normalizeMealAudience and getAudienceServingMultiplier support all, adults
   assert.equal(getAudienceServingMultiplier({ audience: 'all', adultCount: 2, kidCount: 1 }), 2.5);
   assert.equal(getAudienceServingMultiplier({ audience: 'adults', adultCount: 2, kidCount: 1 }), 2);
   assert.equal(getAudienceServingMultiplier({ audience: 'kids', adultCount: 2, kidCount: 1 }), 0.5);
+  assert.equal(getAudienceServingMultiplier({ audience: 'adults', adultPortionTotal: 1.75, kidCount: 2 }), 1.75);
+  assert.equal(getAudienceServingMultiplier({ audience: 'all', adultPortionTotal: 1.75, kidCount: 2 }), 2.75);
+});
+
+test('getAdultServingTotal prefers explicit adult portion totals and falls back safely', () => {
+  assert.equal(getAdultServingTotal({ adultPortionTotal: 1.75 }), 1.75);
+  assert.equal(getAdultServingTotal({ adultCount: 2 }), 2);
+  assert.equal(getAdultServingTotal({ partnerServingMultiplier: 0.75 }), 1.75);
 });
 
 test('buildNextDayCopyPrompt only suggests copying forward for breakfast, lunch, and dinner with a following day', () => {

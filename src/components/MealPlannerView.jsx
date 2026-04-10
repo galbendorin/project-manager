@@ -1228,13 +1228,17 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   ), [librarySearch, librarySlotFilter, recipes]);
 
   const weekLabel = useMemo(() => formatWeekLabel(weekDays), [weekDays]);
+  const partnerServingMultiplier = Math.max(0, (week?.adultCount ?? 1.75) - 1);
   const dayCaloriesByKey = useMemo(() => (
     weekDays.reduce((accumulator, day) => {
       const total = entries
         .filter((entry) => entry.date === day.key)
         .reduce((sum, entry) => {
           const recipe = recipeMap.get(entry.mealId);
-          return sum + (recipe?.estimatedKcal || 0);
+          if (!recipe?.estimatedKcal) return sum;
+          return entry.audience === 'kids'
+            ? sum
+            : sum + recipe.estimatedKcal;
         }, 0);
       accumulator[day.key] = total;
       return accumulator;
@@ -1490,13 +1494,21 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 </div>
 
                 <div className="flex flex-wrap gap-3">
+                  <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-3 py-2">
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">You</span>
+                    <span className="mt-1 block text-base font-semibold text-slate-900">1.0</span>
+                  </div>
                   <label className="rounded-[22px] border border-slate-200 bg-slate-50 px-3 py-2">
-                    <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Adults</span>
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Partner</span>
                     <input
                       type="number"
                       min="0"
-                      value={week?.adultCount ?? 1}
-                      onChange={(event) => void updateWeekCounts({ adultCount: event.target.value, kidCount: week?.kidCount ?? 0 })}
+                      step="0.05"
+                      value={partnerServingMultiplier}
+                      onChange={(event) => void updateWeekCounts({
+                        adultCount: 1 + Math.max(0, Number(event.target.value || 0)),
+                        kidCount: week?.kidCount ?? 0,
+                      })}
                       className="mt-1 w-20 bg-transparent text-base font-semibold text-slate-900 outline-none"
                     />
                   </label>
@@ -1506,7 +1518,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       type="number"
                       min="0"
                       value={week?.kidCount ?? 0}
-                      onChange={(event) => void updateWeekCounts({ adultCount: week?.adultCount ?? 1, kidCount: event.target.value })}
+                      onChange={(event) => void updateWeekCounts({ adultCount: week?.adultCount ?? 1.75, kidCount: event.target.value })}
                       className="mt-1 w-20 bg-transparent text-base font-semibold text-slate-900 outline-none"
                     />
                   </label>
@@ -1517,7 +1529,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Default multiplier {defaultServingMultiplier}x</span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Household total {defaultServingMultiplier}x</span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Adults total {week?.adultCount ?? 1.75}x</span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Your calories use 1.0 serving only</span>
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Kids count as 0.5 portion</span>
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Breakfast, lunch, and dinner can copy forward</span>
               </div>
@@ -1531,7 +1545,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         <h3 className="mt-1 text-lg font-semibold text-slate-950">{day.dayLabel}</h3>
                       </div>
                       <div className="shrink-0 rounded-[20px] border border-amber-200 bg-amber-50 px-3 py-2 text-right">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">Approx total</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">Your total</p>
                         <p className="mt-1 text-sm font-semibold text-amber-800">
                           {dayCaloriesByKey[day.key] > 0 ? `${dayCaloriesByKey[day.key]} kcal` : 'No meals yet'}
                         </p>
