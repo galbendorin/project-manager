@@ -522,14 +522,131 @@ function ChooseMoreDaysModal({ days, onClose, onConfirm }) {
   );
 }
 
+function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, initialAudience = 'all', onClose, onAdd }) {
+  const [dateKey, setDateKey] = useState(initialDateKey || weekDays?.[0]?.key || '');
+  const [mealSlot, setMealSlot] = useState(initialSlot || recipe?.mealSlot || 'breakfast');
+  const [audience, setAudience] = useState(initialAudience);
+
+  useEffect(() => {
+    setDateKey(initialDateKey || weekDays?.[0]?.key || '');
+  }, [initialDateKey, weekDays]);
+
+  useEffect(() => {
+    setMealSlot(initialSlot || recipe?.mealSlot || 'breakfast');
+  }, [initialSlot, recipe?.id, recipe?.mealSlot]);
+
+  useEffect(() => {
+    setAudience(initialAudience || 'all');
+  }, [initialAudience]);
+
+  if (!recipe) return null;
+
+  return (
+    <ModalShell onClose={onClose}>
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="pm-kicker">Add to planner</p>
+            <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">{recipe.name}</h3>
+            <p className="mt-2 text-sm text-slate-500">Pick a day, slot, and audience for this recipe. Any recipe can be used in any slot.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
+            <Close className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Day</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {weekDays.map((day) => (
+                <button
+                  key={day.key}
+                  type="button"
+                  onClick={() => setDateKey(day.key)}
+                  className={`rounded-2xl border px-3 py-3 text-left text-sm font-semibold transition ${
+                    dateKey === day.key
+                      ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)]'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {day.dayLabel}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Slot</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {SLOT_ORDER.map((slot) => (
+                <button
+                  key={slot}
+                  type="button"
+                  onClick={() => setMealSlot(slot)}
+                  className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                    mealSlot === slot
+                      ? 'bg-[var(--pm-accent)] text-white'
+                      : 'border border-slate-200 bg-white text-slate-600'
+                  }`}
+                >
+                  {getMealSlotLabel(slot)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Audience</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {AUDIENCE_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setAudience(option)}
+                  className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                    audience === option
+                      ? 'bg-[var(--pm-accent)] text-white'
+                      : 'border border-slate-200 bg-white text-slate-600'
+                  }`}
+                >
+                  {getMealAudienceLabel(option)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onAdd({ dateKey, mealSlot, audience })}
+            className="pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white"
+          >
+            Add to planner
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
 function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, onClose, onPick }) {
   const [search, setSearch] = useState('');
   const filteredRecipes = useMemo(() => (
-    (recipes || []).filter((recipe) => {
-      const haystack = `${recipe.name} ${recipe.sourcePdf} ${summarizeRecipeIngredients(recipe, 4)}`.toLowerCase();
-      return haystack.includes(search.toLowerCase());
-    })
-  ), [recipes, search]);
+    (recipes || [])
+      .filter((recipe) => {
+        const haystack = `${recipe.name} ${recipe.sourcePdf} ${summarizeRecipeIngredients(recipe, 4)} ${getMealSlotLabel(recipe.mealSlot)}`.toLowerCase();
+        return haystack.includes(search.toLowerCase());
+      })
+      .sort((left, right) => (
+        Number(right.mealSlot === slot) - Number(left.mealSlot === slot)
+        || left.name.localeCompare(right.name)
+      ))
+  ), [recipes, search, slot]);
 
   return (
     <ModalShell onClose={onClose} wide>
@@ -538,7 +655,10 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
           <div>
             <p className="pm-kicker">{getMealSlotLabel(slot)}</p>
             <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">Choose a recipe</h3>
-            <p className="mt-2 text-sm text-slate-500">This meal will be planned for <span className="font-semibold text-slate-700">{getMealAudienceLabel(audience).toLowerCase()}</span>.</p>
+            <p className="mt-2 text-sm text-slate-500">
+              This meal will be planned for <span className="font-semibold text-slate-700">{getMealAudienceLabel(audience).toLowerCase()}</span>.
+              Any recipe can be used here, and recipes already matching {getMealSlotLabel(slot).toLowerCase()} are shown first.
+            </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
@@ -583,6 +703,9 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
               className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--pm-accent)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.12)]"
             >
               <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+                  {getMealSlotLabel(recipe.mealSlot)}
+                </span>
                 {recipe.sourcePdf ? (
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{recipe.sourcePdf}</span>
                 ) : null}
@@ -912,7 +1035,6 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     lastImportedCount,
     loading,
     recipes,
-    recipesBySlot,
     saving,
     seedStarterLibrary,
     selectedWeekStart,
@@ -931,6 +1053,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const [formState, setFormState] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [quickPlanContext, setQuickPlanContext] = useState(null);
   const [copyPrompt, setCopyPrompt] = useState(null);
   const [multiDayPrompt, setMultiDayPrompt] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
@@ -988,6 +1111,11 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     setCopyPrompt(null);
   };
 
+  const getPreferredDayKeyForSlot = (mealSlot) => {
+    const firstEmpty = weekDays.find((day) => (entriesBySlotKey[`${day.key}:${mealSlot}`] || []).length === 0);
+    return firstEmpty?.key || weekDays[0]?.key || '';
+  };
+
   const dismissCopyUiForEntry = (entryId) => {
     setCopyPrompt((previous) => (
       previous && previous.sourceEntryId === entryId
@@ -1007,6 +1135,17 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       mealSlot,
       entryId: options.entryId || '',
       audience: options.audience || 'all',
+    });
+  };
+
+  const openQuickPlan = (recipe) => {
+    if (!recipe) return;
+    const initialSlot = recipe.mealSlot || 'breakfast';
+    setQuickPlanContext({
+      recipe,
+      initialSlot,
+      initialDateKey: getPreferredDayKeyForSlot(initialSlot),
+      initialAudience: 'all',
     });
   };
 
@@ -1108,6 +1247,35 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       setShowReviewModal(false);
     } catch {
       // Error is surfaced through the shared banner state.
+    }
+  };
+
+  const handleQuickPlanRecipe = async ({ recipe, dateKey, mealSlot, audience }) => {
+    try {
+      const savedEntry = await upsertMealEntry({
+        date: dateKey,
+        mealSlot,
+        mealId: recipe.id,
+        audience,
+        servingMultiplier: null,
+      });
+
+      const nextCopyPrompt = buildNextDayCopyPrompt({
+        weekDays,
+        dateKey,
+        mealSlot,
+        recipeId: recipe.id,
+        sourceEntryId: savedEntry?.id || '',
+        audience,
+      });
+
+      setQuickPlanContext(null);
+
+      if (nextCopyPrompt) {
+        setCopyPrompt(nextCopyPrompt);
+      }
+    } catch {
+      // Error banner already set in the data hook.
     }
   };
 
@@ -1423,6 +1591,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         </span>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" onClick={() => openQuickPlan(recipe)} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Add to week</button>
                         <button type="button" onClick={() => setFormState(buildRecipeFormState(recipe))} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Edit</button>
                         <button type="button" onClick={() => void duplicateRecipe(recipe)} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Duplicate</button>
                         <button type="button" onClick={() => void deleteRecipe(recipe.id)} className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Delete</button>
@@ -1459,7 +1628,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
       {pickerContext ? (
         <RecipePickerModal
-          recipes={recipesBySlot[pickerContext.mealSlot] || []}
+          recipes={recipes}
           slot={pickerContext.mealSlot}
           audience={pickerContext.audience || 'all'}
           onAudienceChange={(audience) => setPickerContext((previous) => (
@@ -1467,6 +1636,23 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           ))}
           onClose={() => setPickerContext(null)}
           onPick={(recipe) => void handleRecipePicked(recipe)}
+        />
+      ) : null}
+
+      {quickPlanContext ? (
+        <QuickPlanRecipeModal
+          recipe={quickPlanContext.recipe}
+          weekDays={weekDays}
+          initialDateKey={quickPlanContext.initialDateKey}
+          initialSlot={quickPlanContext.initialSlot}
+          initialAudience={quickPlanContext.initialAudience}
+          onClose={() => setQuickPlanContext(null)}
+          onAdd={({ dateKey, mealSlot, audience }) => void handleQuickPlanRecipe({
+            recipe: quickPlanContext.recipe,
+            dateKey,
+            mealSlot,
+            audience,
+          })}
         />
       ) : null}
 
