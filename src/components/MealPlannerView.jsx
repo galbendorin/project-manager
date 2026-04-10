@@ -1469,6 +1469,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                   servingMultiplier,
                 },
               } : previous);
+              setDetailContext(null);
             } catch {
               // Error banner already set in the data hook.
             }
