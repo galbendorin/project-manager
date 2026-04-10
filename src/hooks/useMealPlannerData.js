@@ -11,6 +11,7 @@ import {
   getDefaultServingMultiplier,
   getWeekDayEntries,
   getWeekStartMonday,
+  normalizeMealAudience,
   serializeIngredientLines,
   splitIngredientList,
 } from '../utils/mealPlanner';
@@ -26,6 +27,20 @@ const STARTER_LIBRARY_ALLOWED_EMAILS = new Set([
 const isMissingRelationError = (error, relationName) => {
   const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
   return msg.includes(relationName.toLowerCase()) && (msg.includes('relation') || msg.includes('does not exist'));
+};
+
+const isMissingMealPlannerFieldError = (error, fieldNames = []) => {
+  const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return fieldNames.some((fieldName) => msg.includes(String(fieldName || '').toLowerCase()));
+};
+
+const isOutdatedMealPlannerSlotConstraintError = (error) => {
+  const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return (
+    msg.includes('meal_plan_entries_week_id_date_meal_slot_key')
+    || (msg.includes('duplicate key') && msg.includes('meal_plan_entries'))
+    || (msg.includes('unique constraint') && msg.includes('meal_slot'))
+  );
 };
 
 const toNullableFiniteNumber = (value) => {
@@ -74,7 +89,17 @@ const mapEntryRow = (row = {}) => ({
   mealSlot: row.meal_slot,
   mealId: row.meal_id,
   servingMultiplier: toNullableFiniteNumber(row.serving_multiplier),
+  audience: normalizeMealAudience(row.audience),
+  entryPosition: Number.isFinite(Number(row.entry_position)) ? Number(row.entry_position) : 0,
 });
+
+const sortEntries = (entries = []) => (
+  [...entries].sort((left, right) => (
+    `${left.date}-${left.mealSlot}`.localeCompare(`${right.date}-${right.mealSlot}`)
+    || ((left.entryPosition ?? 0) - (right.entryPosition ?? 0))
+    || `${left.id}`.localeCompare(`${right.id}`)
+  ))
+);
 
 const sortRecipes = (recipes = []) => (
   [...recipes].sort((left, right) => (
@@ -143,13 +168,6 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       return accumulator;
     }, {})
   ), [recipes]);
-
-  const entryMap = useMemo(() => (
-    entries.reduce((accumulator, entry) => {
-      accumulator[`${entry.date}:${entry.mealSlot}`] = entry;
-      return accumulator;
-    }, {})
-  ), [entries]);
 
   const groceryDraft = useMemo(() => buildGroceryDraft({
     recipes,
@@ -340,12 +358,15 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   const loadEntries = useCallback(async (weekId) => {
     const { data, error: entriesError } = await supabase
       .from('meal_plan_entries')
-      .select('id, date, meal_slot, meal_id, serving_multiplier')
+      .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position')
       .eq('week_id', weekId)
-      .order('date', { ascending: true });
+      .order('date', { ascending: true })
+      .order('meal_slot', { ascending: true })
+      .order('entry_position', { ascending: true })
+      .order('created_at', { ascending: true });
 
     if (entriesError) throw entriesError;
-    setEntries((data || []).map(mapEntryRow));
+    setEntries(sortEntries((data || []).map(mapEntryRow)));
   }, []);
 
   const reload = useCallback(async () => {
@@ -367,6 +388,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         isMissingRelationError(nextError, 'meal_library_meals')
         || isMissingRelationError(nextError, 'meal_plan_weeks')
         || isMissingRelationError(nextError, 'meal_plan_entries')
+        || isMissingMealPlannerFieldError(nextError, ['audience', 'entry_position'])
       ) {
         setError('Meal Planner needs the latest SQL migration before it can load.');
       } else {
@@ -434,49 +456,81 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     }
   }, [entries, week?.adultCount, week?.id, week?.kidCount]);
 
-  const upsertMealEntry = useCallback(async ({ date, mealSlot, mealId, servingMultiplier = null }) => {
+  const upsertMealEntry = useCallback(async ({
+    entryId = '',
+    date,
+    mealSlot,
+    mealId,
+    servingMultiplier = null,
+    audience = 'all',
+    entryPosition = null,
+  }) => {
     if (!week?.id) return null;
 
-    const payload = {
-      week_id: week.id,
-      date,
-      meal_slot: mealSlot,
-      meal_id: mealId,
-      serving_multiplier: toNullableFiniteNumber(servingMultiplier),
-    };
+    try {
+      const normalizedAudience = normalizeMealAudience(audience);
+      const existingEntry = entryId
+        ? (entries.find((entry) => entry.id === entryId) || null)
+        : null;
+      const payload = {
+        week_id: week.id,
+        date,
+        meal_slot: mealSlot,
+        meal_id: mealId,
+        serving_multiplier: toNullableFiniteNumber(servingMultiplier),
+        audience: normalizedAudience,
+        entry_position: entryPosition ?? existingEntry?.entryPosition ?? (
+          entries
+            .filter((entry) => entry.date === date && entry.mealSlot === mealSlot)
+            .reduce((highest, entry) => Math.max(highest, entry.entryPosition ?? 0), -1) + 1
+        ),
+      };
 
-    const existingEntry = entries.find((entry) => entry.date === date && entry.mealSlot === mealSlot) || null;
-    if (existingEntry) {
-      const { data, error: updateError } = await supabase
+      if (existingEntry) {
+        const { data, error: updateError } = await supabase
+          .from('meal_plan_entries')
+          .update({
+            meal_id: mealId,
+            serving_multiplier: payload.serving_multiplier,
+            audience: payload.audience,
+            entry_position: payload.entry_position,
+          })
+          .eq('id', existingEntry.id)
+          .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position')
+          .single();
+
+        if (updateError || !data) throw updateError || new Error('Unable to update planned meal.');
+
+        const nextEntry = mapEntryRow(data);
+        setEntries((previous) => sortEntries(previous.map((entry) => entry.id === existingEntry.id ? nextEntry : entry)));
+        return nextEntry;
+      }
+
+      const { data, error: insertError } = await supabase
         .from('meal_plan_entries')
-        .update({
-          meal_id: mealId,
-          serving_multiplier: payload.serving_multiplier,
-        })
-        .eq('id', existingEntry.id)
-        .select('id, date, meal_slot, meal_id, serving_multiplier')
+        .insert(payload)
+        .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position')
         .single();
 
-      if (updateError || !data) throw updateError || new Error('Unable to update planned meal.');
+      if (insertError || !data) throw insertError || new Error('Unable to save planned meal.');
 
-      setEntries((previous) => previous.map((entry) => entry.id === existingEntry.id ? mapEntryRow(data) : entry));
-      return mapEntryRow(data);
+      const nextEntry = mapEntryRow(data);
+      setEntries((previous) => sortEntries([...previous, nextEntry]));
+      return nextEntry;
+    } catch (nextError) {
+      if (isOutdatedMealPlannerSlotConstraintError(nextError)) {
+        setError('Meal Planner needs the latest SQL migration before multiple meals can be saved in the same slot.');
+      } else {
+        setError(nextError?.message || 'Unable to save planned meal right now.');
+      }
+      throw nextError;
     }
-
-    const { data, error: insertError } = await supabase
-      .from('meal_plan_entries')
-      .insert(payload)
-      .select('id, date, meal_slot, meal_id, serving_multiplier')
-      .single();
-
-    if (insertError || !data) throw insertError || new Error('Unable to save planned meal.');
-
-    setEntries((previous) => [...previous, mapEntryRow(data)]);
-    return mapEntryRow(data);
   }, [entries, week?.id]);
 
-  const clearMealEntry = useCallback(async ({ date, mealSlot }) => {
-    const existingEntry = entries.find((entry) => entry.date === date && entry.mealSlot === mealSlot);
+  const clearMealEntry = useCallback(async ({ entryId = '', date, mealSlot }) => {
+    const existingEntry = entryId
+      ? (entries.find((entry) => entry.id === entryId) || null)
+      : (entries.find((entry) => entry.date === date && entry.mealSlot === mealSlot) || null);
     if (!existingEntry) return;
 
     const { error: deleteError } = await supabase
@@ -489,9 +543,9 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setEntries((previous) => previous.filter((entry) => entry.id !== existingEntry.id));
   }, [entries]);
 
-  const applyMealToDates = useCallback(async ({ dates = [], mealSlot, mealId, servingMultiplier = null }) => {
+  const applyMealToDates = useCallback(async ({ dates = [], mealSlot, mealId, servingMultiplier = null, audience = 'all' }) => {
     for (const date of dates) {
-      await upsertMealEntry({ date, mealSlot, mealId, servingMultiplier });
+      await upsertMealEntry({ date, mealSlot, mealId, servingMultiplier, audience });
     }
   }, [upsertMealEntry]);
 
@@ -707,7 +761,6 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     createRecipe,
     deleteRecipe,
     entries,
-    entryMap,
     error,
     groceryDraft,
     importRowsIntoLibrary,

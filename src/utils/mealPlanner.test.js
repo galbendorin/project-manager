@@ -4,8 +4,10 @@ import assert from 'node:assert/strict';
 import {
   buildNextDayCopyPrompt,
   buildGroceryDraft,
+  getAudienceServingMultiplier,
   getDefaultServingMultiplier,
   getWeekDayEntries,
+  normalizeMealAudience,
   parseIngredientText,
   parseRecipeImportText,
   splitIngredientList,
@@ -110,9 +112,54 @@ test('buildGroceryDraft uses the household default multiplier when serving multi
   assert.equal(greens.quantityValue, null);
 });
 
+test('buildGroceryDraft scales meals by audience tags', () => {
+  const recipes = [
+    {
+      id: 'meal_shared',
+      name: 'Family eggs',
+      ingredients: splitIngredientList('eggs 2'),
+    },
+    {
+      id: 'meal_adults',
+      name: 'Adults yogurt',
+      ingredients: splitIngredientList('Greek yogurt 100g'),
+    },
+    {
+      id: 'meal_kids',
+      name: 'Kids berries',
+      ingredients: splitIngredientList('berries 40g'),
+    },
+  ];
+
+  const draft = buildGroceryDraft({
+    recipes,
+    entries: [
+      { id: 'entry_all', mealId: 'meal_shared', mealSlot: 'breakfast', date: '2026-04-13', servingMultiplier: null, audience: 'all' },
+      { id: 'entry_adults', mealId: 'meal_adults', mealSlot: 'lunch', date: '2026-04-13', servingMultiplier: null, audience: 'adults' },
+      { id: 'entry_kids', mealId: 'meal_kids', mealSlot: 'snack', date: '2026-04-13', servingMultiplier: null, audience: 'kids' },
+    ],
+    adultCount: 2,
+    kidCount: 2,
+  });
+
+  assert.equal(draft.find((item) => item.title === 'eggs')?.quantityValue, 6);
+  assert.equal(draft.find((item) => item.title === 'Greek yogurt')?.quantityValue, 200);
+  assert.equal(draft.find((item) => item.title === 'berries')?.quantityValue, 40);
+});
+
 test('getDefaultServingMultiplier treats kids as half portions', () => {
   assert.equal(getDefaultServingMultiplier({ adultCount: 1, kidCount: 1 }), 1.5);
   assert.equal(getDefaultServingMultiplier({ adultCount: 2, kidCount: 0 }), 2);
+});
+
+test('normalizeMealAudience and getAudienceServingMultiplier support all, adults, and kids', () => {
+  assert.equal(normalizeMealAudience('adult'), 'adults');
+  assert.equal(normalizeMealAudience('children'), 'kids');
+  assert.equal(normalizeMealAudience('anything else'), 'all');
+
+  assert.equal(getAudienceServingMultiplier({ audience: 'all', adultCount: 2, kidCount: 1 }), 2.5);
+  assert.equal(getAudienceServingMultiplier({ audience: 'adults', adultCount: 2, kidCount: 1 }), 2);
+  assert.equal(getAudienceServingMultiplier({ audience: 'kids', adultCount: 2, kidCount: 1 }), 0.5);
 });
 
 test('buildNextDayCopyPrompt only suggests copying forward for breakfast, lunch, and dinner with a following day', () => {
@@ -124,11 +171,15 @@ test('buildNextDayCopyPrompt only suggests copying forward for breakfast, lunch,
       dateKey: '2026-04-14',
       mealSlot: 'breakfast',
       recipeId: 'recipe_1',
+      sourceEntryId: 'entry_1',
+      audience: 'adults',
     }),
     {
       dateKey: '2026-04-14',
       mealSlot: 'breakfast',
       recipeId: 'recipe_1',
+      sourceEntryId: 'entry_1',
+      audience: 'adults',
     }
   );
 

@@ -4,12 +4,24 @@ import {
   buildNextDayCopyPrompt,
   formatDateKey,
   formatIngredientQuantity,
+  getMealAudienceLabel,
   getMealSlotLabel,
   parseRecipeImportText,
   summarizeRecipeIngredients,
 } from '../utils/mealPlanner';
 
 const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
+const AUDIENCE_OPTIONS = ['all', 'adults', 'kids'];
+
+const getAudiencePillClasses = (audience) => {
+  if (audience === 'adults') {
+    return 'bg-sky-50 text-sky-700';
+  }
+  if (audience === 'kids') {
+    return 'bg-violet-50 text-violet-700';
+  }
+  return 'bg-emerald-50 text-emerald-700';
+};
 
 const IconBase = ({ children, className = '', viewBox = '0 0 24 24' }) => (
   <svg
@@ -509,7 +521,7 @@ function ChooseMoreDaysModal({ days, onClose, onConfirm }) {
   );
 }
 
-function RecipePickerModal({ recipes, slot, onClose, onPick }) {
+function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, onClose, onPick }) {
   const [search, setSearch] = useState('');
   const filteredRecipes = useMemo(() => (
     (recipes || []).filter((recipe) => {
@@ -525,10 +537,28 @@ function RecipePickerModal({ recipes, slot, onClose, onPick }) {
           <div>
             <p className="pm-kicker">{getMealSlotLabel(slot)}</p>
             <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">Choose a recipe</h3>
+            <p className="mt-2 text-sm text-slate-500">This meal will be planned for <span className="font-semibold text-slate-700">{getMealAudienceLabel(audience).toLowerCase()}</span>.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
           </button>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          {AUDIENCE_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onAudienceChange?.(option)}
+              className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                audience === option
+                  ? 'bg-[var(--pm-accent)] text-white'
+                  : 'border border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              {getMealAudienceLabel(option)}
+            </button>
+          ))}
         </div>
 
         <div className="mt-5">
@@ -587,14 +617,16 @@ function RecipeDetailModal({
   onEditRecipe,
   onOpenPicker,
   onRemoveFromDay,
-  onSaveMultiplier,
+  onSaveEntryDetails,
 }) {
   const recipe = context?.recipe;
   const [servingMultiplier, setServingMultiplier] = useState(context?.entry?.servingMultiplier ?? context?.defaultServingMultiplier ?? 1);
+  const [audience, setAudience] = useState(context?.entry?.audience || 'all');
 
   useEffect(() => {
     setServingMultiplier(context?.entry?.servingMultiplier ?? context?.defaultServingMultiplier ?? 1);
-  }, [context?.defaultServingMultiplier, context?.entry?.servingMultiplier, context?.recipe?.id]);
+    setAudience(context?.entry?.audience || 'all');
+  }, [context?.defaultServingMultiplier, context?.entry?.audience, context?.entry?.servingMultiplier, context?.recipe?.id]);
 
   if (!recipe) return null;
 
@@ -607,6 +639,11 @@ function RecipeDetailModal({
               <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{getMealSlotLabel(recipe.mealSlot)}</span>
               {recipe.sourcePdf ? (
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{recipe.sourcePdf}</span>
+              ) : null}
+              {context?.entry ? (
+                <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(context.entry.audience)}`}>
+                  {getMealAudienceLabel(context.entry.audience)}
+                </span>
               ) : null}
               {recipe.suggestedDay ? (
                 <span className="rounded-full border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-2.5 py-1 text-[var(--pm-accent-strong)]">
@@ -686,8 +723,22 @@ function RecipeDetailModal({
 
             {context?.entry ? (
               <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
-                <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Serving multiplier</h4>
-                <p className="mt-2 text-sm text-slate-500">Override the household default for this one slot if needed.</p>
+                <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Meal details</h4>
+                <p className="mt-2 text-sm text-slate-500">Choose who this meal is for and optionally override the default serving multiplier.</p>
+                <label className="mt-4 block">
+                  <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Audience</span>
+                  <select
+                    value={audience}
+                    onChange={(event) => setAudience(event.target.value)}
+                    className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm"
+                  >
+                    {AUDIENCE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{getMealAudienceLabel(option)}</option>
+                    ))}
+                  </select>
+                </label>
+                <h4 className="mt-4 text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Serving multiplier</h4>
+                <p className="mt-2 text-sm text-slate-500">Leave it aligned to the audience default, or override it for this one meal.</p>
                 <input
                   type="number"
                   min="0.5"
@@ -698,10 +749,13 @@ function RecipeDetailModal({
                 />
                 <button
                   type="button"
-                  onClick={() => onSaveMultiplier(Number(servingMultiplier))}
+                  onClick={() => onSaveEntryDetails({
+                    audience,
+                    servingMultiplier: Number(servingMultiplier),
+                  })}
                   className="pm-toolbar-primary mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white"
                 >
-                  Save multiplier
+                  Save meal details
                 </button>
               </div>
             ) : null}
@@ -806,7 +860,6 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     deleteRecipe,
     duplicateRecipe,
     entries,
-    entryMap,
     error,
     groceryDraft,
     importRowsIntoLibrary,
@@ -850,6 +903,14 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   }, [lastApprovedCount]);
 
   const recipeMap = useMemo(() => new Map(recipes.map((recipe) => [recipe.id, recipe])), [recipes]);
+  const entriesBySlotKey = useMemo(() => (
+    entries.reduce((accumulator, entry) => {
+      const key = `${entry.date}:${entry.mealSlot}`;
+      if (!accumulator[key]) accumulator[key] = [];
+      accumulator[key].push(entry);
+      return accumulator;
+    }, {})
+  ), [entries]);
 
   const filteredLibraryRecipes = useMemo(() => (
     recipes.filter((recipe) => {
@@ -864,15 +925,16 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const weekLabel = useMemo(() => formatWeekLabel(weekDays), [weekDays]);
   const dayCaloriesByKey = useMemo(() => (
     weekDays.reduce((accumulator, day) => {
-      const total = SLOT_ORDER.reduce((slotTotal, slot) => {
-        const entry = entryMap[`${day.key}:${slot}`];
-        const recipe = entry ? recipeMap.get(entry.mealId) : null;
-        return slotTotal + (recipe?.estimatedKcal || 0);
-      }, 0);
+      const total = entries
+        .filter((entry) => entry.date === day.key)
+        .reduce((sum, entry) => {
+          const recipe = recipeMap.get(entry.mealId);
+          return sum + (recipe?.estimatedKcal || 0);
+        }, 0);
       accumulator[day.key] = total;
       return accumulator;
     }, {})
-  ), [entryMap, recipeMap, weekDays]);
+  ), [entries, recipeMap, weekDays]);
 
   const handleMoveWeek = (offset) => {
     const date = new Date(selectedWeekStart);
@@ -881,67 +943,72 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     setCopyPrompt(null);
   };
 
-  const dismissCopyUiForSlot = (dateKey, mealSlot) => {
+  const dismissCopyUiForEntry = (entryId) => {
     setCopyPrompt((previous) => (
-      previous && previous.dateKey === dateKey && previous.mealSlot === mealSlot
+      previous && previous.sourceEntryId === entryId
         ? null
         : previous
     ));
     setMultiDayPrompt((previous) => (
-      previous && previous.dateKey === dateKey && previous.mealSlot === mealSlot
+      previous && previous.sourceEntryId === entryId
         ? null
         : previous
     ));
   };
 
-  const openPicker = (dateKey, mealSlot) => {
-    setPickerContext({ dateKey, mealSlot });
+  const openPicker = (dateKey, mealSlot, options = {}) => {
+    setPickerContext({
+      dateKey,
+      mealSlot,
+      entryId: options.entryId || '',
+      audience: options.audience || 'all',
+    });
   };
 
-  const applyCopyToDates = async ({ recipeId, mealSlot, dates, sourceDate }) => {
-    const sourceEntry = entryMap[`${sourceDate}:${mealSlot}`];
-    const conflictingDates = dates.filter((date) => {
-      const existing = entryMap[`${date}:${mealSlot}`];
-      return existing && existing.mealId !== recipeId;
-    });
-
-    if (conflictingDates.length > 0) {
-      const confirmed = window.confirm(`This will replace ${conflictingDates.length} planned ${mealSlot} slot${conflictingDates.length === 1 ? '' : 's'}. Continue?`);
-      if (!confirmed) return;
-    }
-
+  const applyCopyToDates = async ({ recipeId, mealSlot, dates, sourceEntryId, audience }) => {
+    const sourceEntry = entries.find((entry) => entry.id === sourceEntryId) || null;
     await applyMealToDates({
       dates,
       mealSlot,
       mealId: recipeId,
       servingMultiplier: sourceEntry?.servingMultiplier ?? null,
+      audience: sourceEntry?.audience || audience || 'all',
     });
   };
 
   const handleRecipePicked = async (recipe) => {
     if (!pickerContext) return;
-    const selectionContext = pickerContext;
-    const existingEntry = entryMap[`${selectionContext.dateKey}:${selectionContext.mealSlot}`];
-    const nextCopyPrompt = buildNextDayCopyPrompt({
-      weekDays,
-      dateKey: selectionContext.dateKey,
-      mealSlot: selectionContext.mealSlot,
-      recipeId: recipe.id,
-    });
+    try {
+      const selectionContext = pickerContext;
+      const savedEntry = await upsertMealEntry({
+        entryId: selectionContext.entryId,
+        date: selectionContext.dateKey,
+        mealSlot: selectionContext.mealSlot,
+        mealId: recipe.id,
+        audience: selectionContext.audience,
+        servingMultiplier: selectionContext.entryId
+          ? (entries.find((entry) => entry.id === selectionContext.entryId)?.servingMultiplier ?? null)
+          : null,
+      });
 
-    await upsertMealEntry({
-      date: selectionContext.dateKey,
-      mealSlot: selectionContext.mealSlot,
-      mealId: recipe.id,
-      servingMultiplier: existingEntry?.servingMultiplier ?? null,
-    });
+      const nextCopyPrompt = buildNextDayCopyPrompt({
+        weekDays,
+        dateKey: selectionContext.dateKey,
+        mealSlot: selectionContext.mealSlot,
+        recipeId: recipe.id,
+        sourceEntryId: savedEntry?.id || '',
+        audience: selectionContext.audience,
+      });
 
-    setPickerContext(null);
+      setPickerContext(null);
 
-    if (nextCopyPrompt) {
-      setCopyPrompt(nextCopyPrompt);
-    } else if (selectionContext.mealSlot !== 'snack') {
-      setCopyPrompt(null);
+      if (nextCopyPrompt) {
+        setCopyPrompt(nextCopyPrompt);
+      } else if (selectionContext.mealSlot !== 'snack') {
+        setCopyPrompt(null);
+      }
+    } catch {
+      // Error banner already set in the data hook.
     }
   };
 
@@ -954,13 +1021,18 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       return;
     }
 
-    await applyCopyToDates({
-      recipeId: copyPrompt.recipeId,
-      mealSlot: copyPrompt.mealSlot,
-      dates: [nextDay.key],
-      sourceDate: copyPrompt.dateKey,
-    });
-    setCopyPrompt(null);
+    try {
+      await applyCopyToDates({
+        recipeId: copyPrompt.recipeId,
+        mealSlot: copyPrompt.mealSlot,
+        dates: [nextDay.key],
+        sourceEntryId: copyPrompt.sourceEntryId,
+        audience: copyPrompt.audience,
+      });
+      setCopyPrompt(null);
+    } catch {
+      // Error banner already set in the data hook.
+    }
   };
 
   const handleChooseMoreDays = () => {
@@ -1118,83 +1190,109 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
                     <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                       {SLOT_ORDER.map((slot) => {
-                        const entry = entryMap[`${day.key}:${slot}`];
-                        const recipe = entry ? recipeMap.get(entry.mealId) : null;
-                        const isCopyPromptVisible = Boolean(recipe) && copyPrompt && copyPrompt.dateKey === day.key && copyPrompt.mealSlot === slot;
+                        const slotEntries = (entriesBySlotKey[`${day.key}:${slot}`] || [])
+                          .map((entry) => ({
+                            entry,
+                            recipe: recipeMap.get(entry.mealId),
+                          }))
+                          .filter(({ recipe }) => Boolean(recipe));
 
                         return (
                           <div key={`${day.key}-${slot}`} className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
                             <div className="flex items-center justify-between gap-3">
                               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{getMealSlotLabel(slot)}</p>
-                              {entry?.servingMultiplier ? (
-                                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
-                                  {entry.servingMultiplier}x
-                                </span>
-                              ) : null}
+                              <div className="flex items-center gap-2">
+                                {slotEntries.length > 1 ? (
+                                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                                    {slotEntries.length} meals
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
 
-                            {recipe ? (
+                            <div className="mt-3 space-y-3">
+                              {slotEntries.map(({ entry, recipe }) => {
+                                const isCopyPromptVisible = Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
+                                return (
+                                  <div key={entry.id} className="rounded-[22px] border border-slate-200 bg-slate-50/60 px-3 py-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => setDetailContext({ recipe, entry, dateKey: day.key, mealSlot: slot, defaultServingMultiplier })}
+                                      className="block w-full text-left transition hover:text-[var(--pm-accent-strong)]"
+                                    >
+                                      <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                                        <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(entry.audience)}`}>
+                                          {getMealAudienceLabel(entry.audience)}
+                                        </span>
+                                        {entry.servingMultiplier ? (
+                                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
+                                            {entry.servingMultiplier}x
+                                          </span>
+                                        ) : null}
+                                        {recipe.sourcePdf ? (
+                                          <span className="rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm">
+                                            {recipe.sourcePdf}
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                      <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
+                                      <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 3)}</p>
+                                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+                                        {recipe.estimatedKcal ? (
+                                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{recipe.estimatedKcal} kcal</span>
+                                        ) : null}
+                                      </div>
+                                    </button>
+
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => openPicker(day.key, slot, { entryId: entry.id, audience: entry.audience || 'all' })}
+                                        className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold"
+                                      >
+                                        Change
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          dismissCopyUiForEntry(entry.id);
+                                          await clearMealEntry({ entryId: entry.id });
+                                        }}
+                                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+
+                                    {isCopyPromptVisible ? (
+                                      <div className="mt-3 rounded-[20px] border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-3 py-3">
+                                        <p className="text-sm font-semibold text-[var(--pm-accent-strong)]">Use the same for tomorrow?</p>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          <button type="button" onClick={() => void handleCopyToTomorrow()} className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)] shadow-sm">
+                                            Yes, add to next day
+                                          </button>
+                                          <button type="button" onClick={() => setCopyPrompt(null)} className="rounded-full border border-white/70 px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)]">
+                                            No
+                                          </button>
+                                          <button type="button" onClick={handleChooseMoreDays} className="rounded-full border border-white/70 px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)]">
+                                            Choose more days
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+
                               <button
                                 type="button"
-                                onClick={() => setDetailContext({ recipe, entry, dateKey: day.key, mealSlot: slot, defaultServingMultiplier })}
-                                className="mt-3 block w-full rounded-[22px] border border-slate-200 bg-slate-50/60 px-3 py-3 text-left transition hover:border-[var(--pm-accent)] hover:bg-white"
-                              >
-                                <h4 className="text-base font-semibold text-slate-950">{recipe.name}</h4>
-                                <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 3)}</p>
-                                <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
-                                  {recipe.estimatedKcal ? (
-                                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{recipe.estimatedKcal} kcal</span>
-                                  ) : null}
-                                  {recipe.sourcePdf ? (
-                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{recipe.sourcePdf}</span>
-                                  ) : null}
-                                </div>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => openPicker(day.key, slot)}
-                                className="mt-3 flex w-full items-center justify-center gap-2 rounded-[22px] border border-dashed border-slate-300 px-3 py-4 text-sm font-semibold text-slate-500 transition hover:border-[var(--pm-accent)] hover:text-[var(--pm-accent-strong)]"
+                                onClick={() => openPicker(day.key, slot, { audience: 'all' })}
+                                className="flex w-full items-center justify-center gap-2 rounded-[22px] border border-dashed border-slate-300 px-3 py-4 text-sm font-semibold text-slate-500 transition hover:border-[var(--pm-accent)] hover:text-[var(--pm-accent-strong)]"
                               >
                                 <Plus className="h-4 w-4" />
-                                Select recipe
+                                {slotEntries.length > 0 ? 'Add another meal' : 'Select recipe'}
                               </button>
-                            )}
-
-                            {recipe ? (
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                <button type="button" onClick={() => openPicker(day.key, slot)} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">
-                                  Change
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    dismissCopyUiForSlot(day.key, slot);
-                                    await clearMealEntry({ date: day.key, mealSlot: slot });
-                                  }}
-                                  className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
-                                >
-                                  Clear
-                                </button>
-                              </div>
-                            ) : null}
-
-                            {isCopyPromptVisible ? (
-                              <div className="mt-3 rounded-[20px] border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-3 py-3">
-                                <p className="text-sm font-semibold text-[var(--pm-accent-strong)]">Use the same for tomorrow?</p>
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <button type="button" onClick={() => void handleCopyToTomorrow()} className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)] shadow-sm">
-                                    Yes, add to next day
-                                  </button>
-                                  <button type="button" onClick={() => setCopyPrompt(null)} className="rounded-full border border-white/70 px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)]">
-                                    No
-                                  </button>
-                                  <button type="button" onClick={handleChooseMoreDays} className="rounded-full border border-white/70 px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)]">
-                                    Choose more days
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
+                            </div>
                           </div>
                         );
                       })}
@@ -1302,6 +1400,10 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
         <RecipePickerModal
           recipes={recipesBySlot[pickerContext.mealSlot] || []}
           slot={pickerContext.mealSlot}
+          audience={pickerContext.audience || 'all'}
+          onAudienceChange={(audience) => setPickerContext((previous) => (
+            previous ? { ...previous, audience } : previous
+          ))}
           onClose={() => setPickerContext(null)}
           onPick={(recipe) => void handleRecipePicked(recipe)}
         />
@@ -1335,30 +1437,36 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
             setPickerContext({
               dateKey: detailContext.dateKey,
               mealSlot: detailContext.mealSlot,
+              entryId: detailContext.entry?.id || '',
+              audience: detailContext.entry?.audience || 'all',
             });
           }}
           onRemoveFromDay={async () => {
             try {
-              dismissCopyUiForSlot(detailContext.dateKey, detailContext.mealSlot);
-              await clearMealEntry({ date: detailContext.dateKey, mealSlot: detailContext.mealSlot });
+              dismissCopyUiForEntry(detailContext.entry?.id);
+              await clearMealEntry({ entryId: detailContext.entry?.id || '' });
               setDetailContext(null);
             } catch {
               // Error banner already set in the data hook.
             }
           }}
-          onSaveMultiplier={async (multiplier) => {
+          onSaveEntryDetails={async ({ audience, servingMultiplier }) => {
             try {
               await upsertMealEntry({
+                entryId: detailContext.entry?.id || '',
                 date: detailContext.dateKey,
                 mealSlot: detailContext.mealSlot,
                 mealId: detailContext.recipe.id,
-                servingMultiplier: multiplier,
+                audience,
+                servingMultiplier,
+                entryPosition: detailContext.entry?.entryPosition ?? null,
               });
               setDetailContext((previous) => previous ? {
                 ...previous,
                 entry: {
                   ...previous.entry,
-                  servingMultiplier: multiplier,
+                  audience,
+                  servingMultiplier,
                 },
               } : previous);
             } catch {
@@ -1408,7 +1516,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 recipeId: multiDayPrompt.recipeId,
                 mealSlot: multiDayPrompt.mealSlot,
                 dates: selectedDays,
-                sourceDate: multiDayPrompt.dateKey,
+                sourceEntryId: multiDayPrompt.sourceEntryId,
+                audience: multiDayPrompt.audience,
               });
               setMultiDayPrompt(null);
               setCopyPrompt(null);

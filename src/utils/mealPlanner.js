@@ -15,6 +15,12 @@ const SLOT_LABELS = {
   snack: 'Snack',
 };
 
+const AUDIENCE_LABELS = {
+  all: 'All',
+  adults: 'Adults',
+  kids: 'Kids',
+};
+
 const SIZE_WORDS = new Set(['small', 'medium', 'large']);
 
 const normalizeSpace = (value = '') => String(value || '').replace(/\s+/g, ' ').trim();
@@ -34,6 +40,15 @@ export const normalizeMealSlot = (value = '') => {
 };
 
 export const getMealSlotLabel = (slot) => SLOT_LABELS[slot] || 'Meal';
+
+export const normalizeMealAudience = (value = '') => {
+  const key = normalizeSpace(value).toLowerCase();
+  if (key === 'adults' || key === 'adult') return 'adults';
+  if (key === 'kids' || key === 'kid' || key === 'children' || key === 'child') return 'kids';
+  return 'all';
+};
+
+export const getMealAudienceLabel = (audience) => AUDIENCE_LABELS[normalizeMealAudience(audience)] || 'All';
 
 export const normalizeSuggestedDay = (value = '') => {
   const key = normalizeSpace(value).slice(0, 3).toLowerCase();
@@ -264,11 +279,28 @@ export const getDefaultServingMultiplier = ({ adultCount = 1, kidCount = 0 } = {
   Math.max(0.5, Number(adultCount || 0) + (Number(kidCount || 0) * 0.5))
 );
 
+export const getAudienceServingMultiplier = ({
+  audience = 'all',
+  adultCount = 1,
+  kidCount = 0,
+} = {}) => {
+  const normalizedAudience = normalizeMealAudience(audience);
+  if (normalizedAudience === 'adults') {
+    return Math.max(0, Number(adultCount || 0));
+  }
+  if (normalizedAudience === 'kids') {
+    return Math.max(0, Number(kidCount || 0) * 0.5);
+  }
+  return getDefaultServingMultiplier({ adultCount, kidCount });
+};
+
 export const buildNextDayCopyPrompt = ({
   weekDays = [],
   dateKey = '',
   mealSlot = '',
   recipeId = '',
+  sourceEntryId = '',
+  audience = 'all',
 } = {}) => {
   if (normalizeMealSlot(mealSlot) === 'snack') {
     return null;
@@ -283,6 +315,8 @@ export const buildNextDayCopyPrompt = ({
     dateKey,
     mealSlot,
     recipeId,
+    sourceEntryId,
+    audience: normalizeMealAudience(audience),
   };
 };
 
@@ -327,14 +361,19 @@ export const buildGroceryDraft = ({
   kidCount = 0,
 }) => {
   const recipeMap = new Map(recipes.map((recipe) => [recipe.id, recipe]));
-  const defaultMultiplier = getDefaultServingMultiplier({ adultCount, kidCount });
   const draftMap = new Map();
 
   for (const entry of entries) {
     const recipe = recipeMap.get(entry.mealId);
     if (!recipe) continue;
 
-    const multiplier = toNullableFiniteNumber(entry.servingMultiplier) ?? defaultMultiplier;
+    const multiplier = toNullableFiniteNumber(entry.servingMultiplier)
+      ?? getAudienceServingMultiplier({
+        audience: entry.audience,
+        adultCount,
+        kidCount,
+      });
+    if (multiplier <= 0) continue;
 
     for (const ingredient of recipe.ingredients || []) {
       const ingredientName = normalizeSpace(ingredient.ingredientName || ingredient.rawText || '');
