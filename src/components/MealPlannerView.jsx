@@ -636,9 +636,28 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
 
 function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, onClose, onPick }) {
   const [search, setSearch] = useState('');
+  const [selectedMealFilters, setSelectedMealFilters] = useState([slot]);
+
+  useEffect(() => {
+    setSelectedMealFilters([slot]);
+  }, [slot]);
+
+  const toggleMealFilter = (nextSlot) => {
+    setSelectedMealFilters((previous) => {
+      if (previous.includes(nextSlot)) {
+        const remaining = previous.filter((value) => value !== nextSlot);
+        return remaining.length > 0 ? remaining : [slot];
+      }
+      return [...previous, nextSlot];
+    });
+  };
+
   const filteredRecipes = useMemo(() => (
     (recipes || [])
       .filter((recipe) => {
+        if (selectedMealFilters.length > 0 && !selectedMealFilters.includes(recipe.mealSlot)) {
+          return false;
+        }
         const haystack = `${recipe.name} ${recipe.sourcePdf} ${summarizeRecipeIngredients(recipe, 4)} ${getMealSlotLabel(recipe.mealSlot)}`.toLowerCase();
         return haystack.includes(search.toLowerCase());
       })
@@ -646,7 +665,7 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
         Number(right.mealSlot === slot) - Number(left.mealSlot === slot)
         || left.name.localeCompare(right.name)
       ))
-  ), [recipes, search, slot]);
+  ), [recipes, search, selectedMealFilters, slot]);
 
   return (
     <ModalShell onClose={onClose} wide>
@@ -683,6 +702,42 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
         </div>
 
         <div className="mt-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Recipe types to show</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedMealFilters([])}
+              className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                selectedMealFilters.length === 0
+                  ? 'bg-[var(--pm-accent)] text-white'
+                  : 'border border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              All
+            </button>
+            {SLOT_ORDER.map((filterSlot) => (
+              <button
+                key={filterSlot}
+                type="button"
+                onClick={() => toggleMealFilter(filterSlot)}
+                className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                  selectedMealFilters.includes(filterSlot)
+                    ? 'bg-[var(--pm-accent)] text-white'
+                    : 'border border-slate-200 bg-white text-slate-600'
+                }`}
+              >
+                {getMealSlotLabel(filterSlot)}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {selectedMealFilters.length === 0
+              ? 'Showing recipes from every meal type.'
+              : `Showing ${selectedMealFilters.map((value) => getMealSlotLabel(value).toLowerCase()).join(', ')} recipes.`}
+          </p>
+        </div>
+
+        <div className="mt-5">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
@@ -694,40 +749,46 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
           </label>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredRecipes.map((recipe) => (
-            <button
-              key={recipe.id}
-              type="button"
-              onClick={() => onPick(recipe)}
-              className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--pm-accent)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.12)]"
-            >
-              <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
-                  {getMealSlotLabel(recipe.mealSlot)}
-                </span>
-                {recipe.sourcePdf ? (
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{recipe.sourcePdf}</span>
-                ) : null}
-                {recipe.suggestedDay ? (
-                  <span className="rounded-full border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-2.5 py-1 text-[var(--pm-accent-strong)]">
-                    Suggested {recipe.suggestedDay.toUpperCase()}
+        {filteredRecipes.length > 0 ? (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredRecipes.map((recipe) => (
+              <button
+                key={recipe.id}
+                type="button"
+                onClick={() => onPick(recipe)}
+                className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--pm-accent)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.12)]"
+              >
+                <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+                    {getMealSlotLabel(recipe.mealSlot)}
                   </span>
-                ) : null}
-              </div>
-              <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
-              <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 4)}</p>
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                {recipe.estimatedKcal ? (
-                  <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{recipe.estimatedKcal} kcal</span>
-                ) : null}
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">
-                  {(recipe.ingredients || []).length} ingredients
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
+                  {recipe.sourcePdf ? (
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{recipe.sourcePdf}</span>
+                  ) : null}
+                  {recipe.suggestedDay ? (
+                    <span className="rounded-full border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-2.5 py-1 text-[var(--pm-accent-strong)]">
+                      Suggested {recipe.suggestedDay.toUpperCase()}
+                    </span>
+                  ) : null}
+                </div>
+                <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
+                <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 4)}</p>
+                <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                  {recipe.estimatedKcal ? (
+                    <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{recipe.estimatedKcal} kcal</span>
+                  ) : null}
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">
+                    {(recipe.ingredients || []).length} ingredients
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+            No recipes match the selected meal-type filters and search.
+          </div>
+        )}
       </div>
     </ModalShell>
   );
