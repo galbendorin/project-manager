@@ -4,6 +4,7 @@ import {
   buildNextDayCopyPrompt,
   formatDateKey,
   formatIngredientQuantity,
+  getAudienceServingMultiplier,
   getMealAudienceLabel,
   getMealSlotLabel,
   parseRecipeImportText,
@@ -620,15 +621,41 @@ function RecipeDetailModal({
   onSaveEntryDetails,
 }) {
   const recipe = context?.recipe;
-  const [servingMultiplier, setServingMultiplier] = useState(context?.entry?.servingMultiplier ?? context?.defaultServingMultiplier ?? 1);
+  const audienceDefaultMultipliers = useMemo(() => ({
+    all: getAudienceServingMultiplier({
+      audience: 'all',
+      adultCount: context?.adultCount ?? 1,
+      kidCount: context?.kidCount ?? 0,
+    }),
+    adults: getAudienceServingMultiplier({
+      audience: 'adults',
+      adultCount: context?.adultCount ?? 1,
+      kidCount: context?.kidCount ?? 0,
+    }),
+    kids: getAudienceServingMultiplier({
+      audience: 'kids',
+      adultCount: context?.adultCount ?? 1,
+      kidCount: context?.kidCount ?? 0,
+    }),
+  }), [context?.adultCount, context?.kidCount]);
+  const getDefaultMultiplierForAudience = (nextAudience) => (
+    audienceDefaultMultipliers[nextAudience] ?? audienceDefaultMultipliers.all
+  );
   const [audience, setAudience] = useState(context?.entry?.audience || 'all');
+  const [servingMultiplier, setServingMultiplier] = useState(
+    context?.entry?.servingMultiplier ?? getDefaultMultiplierForAudience(context?.entry?.audience || 'all')
+  );
 
   useEffect(() => {
-    setServingMultiplier(context?.entry?.servingMultiplier ?? context?.defaultServingMultiplier ?? 1);
+    const entryAudience = context?.entry?.audience || 'all';
+    const defaultMultiplierForEntryAudience = audienceDefaultMultipliers[entryAudience] ?? audienceDefaultMultipliers.all;
+    setServingMultiplier(context?.entry?.servingMultiplier ?? defaultMultiplierForEntryAudience);
     setAudience(context?.entry?.audience || 'all');
-  }, [context?.defaultServingMultiplier, context?.entry?.audience, context?.entry?.servingMultiplier, context?.recipe?.id]);
+  }, [audienceDefaultMultipliers, context?.entry?.audience, context?.entry?.servingMultiplier, context?.recipe?.id]);
 
   if (!recipe) return null;
+
+  const audienceDefaultMultiplier = getDefaultMultiplierForAudience(audience);
 
   return (
     <ModalShell onClose={onClose} wide>
@@ -641,8 +668,8 @@ function RecipeDetailModal({
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{recipe.sourcePdf}</span>
               ) : null}
               {context?.entry ? (
-                <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(context.entry.audience)}`}>
-                  {getMealAudienceLabel(context.entry.audience)}
+                <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(audience)}`}>
+                  {getMealAudienceLabel(audience)}
                 </span>
               ) : null}
               {recipe.suggestedDay ? (
@@ -729,7 +756,17 @@ function RecipeDetailModal({
                   <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Audience</span>
                   <select
                     value={audience}
-                    onChange={(event) => setAudience(event.target.value)}
+                    onChange={(event) => {
+                      const nextAudience = event.target.value;
+                      const previousDefault = getDefaultMultiplierForAudience(audience);
+                      setAudience(nextAudience);
+                      setServingMultiplier((previous) => {
+                        const numericPrevious = Number(previous);
+                        return Number.isFinite(numericPrevious) && numericPrevious !== previousDefault
+                          ? previous
+                          : getDefaultMultiplierForAudience(nextAudience);
+                      });
+                    }}
                     className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm"
                   >
                     {AUDIENCE_OPTIONS.map((option) => (
@@ -738,7 +775,10 @@ function RecipeDetailModal({
                   </select>
                 </label>
                 <h4 className="mt-4 text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Serving multiplier</h4>
-                <p className="mt-2 text-sm text-slate-500">Leave it aligned to the audience default, or override it for this one meal.</p>
+                <p className="mt-2 text-sm text-slate-500">
+                  Leave it aligned to the audience default, or override it for this one meal.
+                  <span className="mt-1 block font-semibold text-slate-700">Default for {getMealAudienceLabel(audience).toLowerCase()}: {audienceDefaultMultiplier}x</span>
+                </p>
                 <input
                   type="number"
                   min="0.5"
@@ -751,7 +791,12 @@ function RecipeDetailModal({
                   type="button"
                   onClick={() => onSaveEntryDetails({
                     audience,
-                    servingMultiplier: Number(servingMultiplier),
+                    servingMultiplier: (() => {
+                      const numericMultiplier = Number(servingMultiplier);
+                      return Number.isFinite(numericMultiplier) && numericMultiplier !== audienceDefaultMultiplier
+                        ? numericMultiplier
+                        : null;
+                    })(),
                   })}
                   className="pm-toolbar-primary mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white"
                 >
@@ -1217,7 +1262,15 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                   <div key={entry.id} className="rounded-[22px] border border-slate-200 bg-slate-50/60 px-3 py-3">
                                     <button
                                       type="button"
-                                      onClick={() => setDetailContext({ recipe, entry, dateKey: day.key, mealSlot: slot, defaultServingMultiplier })}
+                                      onClick={() => setDetailContext({
+                                        recipe,
+                                        entry,
+                                        dateKey: day.key,
+                                        mealSlot: slot,
+                                        defaultServingMultiplier,
+                                        adultCount: week?.adultCount ?? 1,
+                                        kidCount: week?.kidCount ?? 0,
+                                      })}
                                       className="block w-full text-left transition hover:text-[var(--pm-accent-strong)]"
                                     >
                                       <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
@@ -1343,7 +1396,15 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 <div className="mt-4 max-h-[720px] space-y-3 overflow-y-auto pr-1">
                   {filteredLibraryRecipes.map((recipe) => (
                     <div key={recipe.id} className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
-                      <button type="button" onClick={() => setDetailContext({ recipe, entry: null, dateKey: '', mealSlot: recipe.mealSlot, defaultServingMultiplier })} className="block w-full text-left">
+                      <button type="button" onClick={() => setDetailContext({
+                        recipe,
+                        entry: null,
+                        dateKey: '',
+                        mealSlot: recipe.mealSlot,
+                        defaultServingMultiplier,
+                        adultCount: week?.adultCount ?? 1,
+                        kidCount: week?.kidCount ?? 0,
+                      })} className="block w-full text-left">
                         <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
                           <span className="rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm">{getMealSlotLabel(recipe.mealSlot)}</span>
                           {recipe.sourcePdf ? (
