@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { createEmptyProjectSnapshot } from './projectData/defaults';
 import { generateProjectId } from '../utils/shoppingListViewState';
 import {
-  buildGroceryDraft,
+  buildMealPlanPreview,
   buildImportedMealRows,
   buildMealIngredientRecords,
   buildMealLibraryRecords,
@@ -18,6 +18,8 @@ import {
 import { STARTER_MEAL_IMPORT_TEXT_BY_SLOT } from '../utils/mealPlannerSeedData';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
+const MEAL_LIBRARY_SELECT_BASE = 'id, external_id, source_pdf, suggested_day, meal_slot, name, ingredients_raw, how_to_make, estimated_kcal, image_ref, recipe_origin, created_at, updated_at';
+const MEAL_LIBRARY_SELECT_WITH_BATCH = `${MEAL_LIBRARY_SELECT_BASE}, yield_mode, batch_yield_portions`;
 const STARTER_LIBRARY_ALLOWED_EMAILS = new Set([
   'dorin.galben@yahoo.com',
   'galben.dorin@yahoo.com',
@@ -49,6 +51,15 @@ const toNullableFiniteNumber = (value) => {
   return Number.isFinite(next) ? next : null;
 };
 
+const stripMealBatchFields = (payload = {}) => {
+  const {
+    yield_mode,
+    batch_yield_portions,
+    ...rest
+  } = payload;
+  return rest;
+};
+
 const mapRecipeRow = (row = {}, ingredients = []) => ({
   id: row.id,
   externalId: row.external_id || '',
@@ -61,6 +72,8 @@ const mapRecipeRow = (row = {}, ingredients = []) => ({
   estimatedKcal: toNullableFiniteNumber(row.estimated_kcal),
   imageRef: row.image_ref || '',
   recipeOrigin: row.recipe_origin || 'manual',
+  yieldMode: row.yield_mode || 'flexible',
+  batchYieldPortions: toNullableFiniteNumber(row.batch_yield_portions),
   ingredients,
   createdAt: row.created_at || '',
   updatedAt: row.updated_at || '',
@@ -169,23 +182,36 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     }, {})
   ), [recipes]);
 
-  const groceryDraft = useMemo(() => buildGroceryDraft({
+  const mealPlanPreview = useMemo(() => buildMealPlanPreview({
     recipes,
     entries,
     adultCount: week?.adultCount ?? 1,
     kidCount: week?.kidCount ?? 0,
   }), [entries, recipes, week?.adultCount, week?.kidCount]);
 
+  const groceryDraft = mealPlanPreview.groceryDraft;
+  const entryUsageById = mealPlanPreview.entryUsageById;
+
   const loadRecipes = useCallback(async () => {
-    const { data: mealRows, error: mealError } = await supabase
+    let mealResult = await supabase
       .from('meal_library_meals')
-      .select('id, external_id, source_pdf, suggested_day, meal_slot, name, ingredients_raw, how_to_make, estimated_kcal, image_ref, recipe_origin, created_at, updated_at')
+      .select(MEAL_LIBRARY_SELECT_WITH_BATCH)
       .order('meal_slot', { ascending: true })
       .order('name', { ascending: true });
 
-    if (mealError) {
-      throw mealError;
+    if (mealResult.error && isMissingMealPlannerFieldError(mealResult.error, ['yield_mode', 'batch_yield_portions'])) {
+      mealResult = await supabase
+        .from('meal_library_meals')
+        .select(MEAL_LIBRARY_SELECT_BASE)
+        .order('meal_slot', { ascending: true })
+        .order('name', { ascending: true });
     }
+
+    if (mealResult.error) {
+      throw mealResult.error;
+    }
+
+    const mealRows = mealResult.data || [];
 
     const mealIds = (mealRows || []).map((row) => row.id);
     let ingredientRows = [];
@@ -266,10 +292,17 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       .filter((row) => !row.external_id || !existingMap.has(row.external_id));
 
     if (inserts.length > 0) {
-      const { error: insertError } = await supabase
+      let insertResult = await supabase
         .from('meal_library_meals')
         .insert(inserts);
-      if (insertError) throw insertError;
+
+      if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['yield_mode', 'batch_yield_portions'])) {
+        insertResult = await supabase
+          .from('meal_library_meals')
+          .insert(inserts.map(stripMealBatchFields));
+      }
+
+      if (insertResult.error) throw insertResult.error;
     }
 
     const refreshedMeals = await supabase
@@ -554,6 +587,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setError('');
     try {
       const ingredientLines = recipeInput.ingredientLines || splitIngredientList(recipeInput.ingredientsRaw || '');
+      const isBatchRecipeInput = String(recipeInput.yieldMode || 'flexible') === 'batch';
       const mealPayload = buildMealLibraryRecords([{
         externalId: '',
         sourcePdf: recipeInput.sourcePdf || '',
@@ -565,9 +599,11 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         estimatedKcal: recipeInput.estimatedKcal || null,
         imageRef: recipeInput.imageRef || '',
         ingredientLines,
+        yieldMode: recipeInput.yieldMode || 'flexible',
+        batchYieldPortions: recipeInput.batchYieldPortions ?? null,
       }], 'manual')[0];
 
-      const { data, error: insertError } = await supabase
+      let insertResult = await supabase
         .from('meal_library_meals')
         .insert({
           user_id: currentUserId,
@@ -576,6 +612,21 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         .select('id')
         .single();
 
+      if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['yield_mode', 'batch_yield_portions'])) {
+        if (isBatchRecipeInput) {
+          throw new Error('Meal Planner needs the latest SQL migration before batch recipes can be saved.');
+        }
+        insertResult = await supabase
+          .from('meal_library_meals')
+          .insert({
+            user_id: currentUserId,
+            ...stripMealBatchFields(mealPayload),
+          })
+          .select('id')
+          .single();
+      }
+
+      const { data, error: insertError } = insertResult;
       if (insertError || !data) throw insertError || new Error('Unable to create recipe.');
       await replaceRecipeIngredients(data.id, ingredientLines);
       await loadRecipes();
@@ -592,6 +643,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setError('');
     try {
       const ingredientLines = recipeInput.ingredientLines || splitIngredientList(recipeInput.ingredientsRaw || '');
+      const isBatchRecipeInput = String(recipeInput.yieldMode || 'flexible') === 'batch';
       const mealPayload = buildMealLibraryRecords([{
         externalId: recipeInput.externalId || '',
         sourcePdf: recipeInput.sourcePdf || '',
@@ -603,14 +655,26 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         estimatedKcal: recipeInput.estimatedKcal || null,
         imageRef: recipeInput.imageRef || '',
         ingredientLines,
+        yieldMode: recipeInput.yieldMode || 'flexible',
+        batchYieldPortions: recipeInput.batchYieldPortions ?? null,
       }], recipeInput.recipeOrigin || 'manual')[0];
 
-      const { error: updateError } = await supabase
+      let updateResult = await supabase
         .from('meal_library_meals')
         .update(mealPayload)
         .eq('id', recipeId);
 
-      if (updateError) throw updateError;
+      if (updateResult.error && isMissingMealPlannerFieldError(updateResult.error, ['yield_mode', 'batch_yield_portions'])) {
+        if (isBatchRecipeInput) {
+          throw new Error('Meal Planner needs the latest SQL migration before batch recipes can be saved.');
+        }
+        updateResult = await supabase
+          .from('meal_library_meals')
+          .update(stripMealBatchFields(mealPayload))
+          .eq('id', recipeId);
+      }
+
+      if (updateResult.error) throw updateResult.error;
       await replaceRecipeIngredients(recipeId, ingredientLines);
       await loadRecipes();
     } catch (nextError) {
@@ -762,6 +826,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     deleteRecipe,
     entries,
     error,
+    entryUsageById,
     groceryDraft,
     importRowsIntoLibrary,
     lastApprovedCount,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildNextDayCopyPrompt,
+  buildMealPlanPreview,
   buildGroceryDraft,
   getAudienceServingMultiplier,
   getDefaultServingMultiplier,
@@ -145,6 +146,65 @@ test('buildGroceryDraft scales meals by audience tags', () => {
   assert.equal(draft.find((item) => item.title === 'eggs')?.quantityValue, 6);
   assert.equal(draft.find((item) => item.title === 'Greek yogurt')?.quantityValue, 200);
   assert.equal(draft.find((item) => item.title === 'berries')?.quantityValue, 40);
+});
+
+test('buildMealPlanPreview carries batch leftovers into later days before adding new groceries', () => {
+  const preview = buildMealPlanPreview({
+    recipes: [
+      {
+        id: 'meal_cake',
+        name: 'Cake',
+        yieldMode: 'batch',
+        batchYieldPortions: 4,
+        ingredients: splitIngredientList('eggs 4, flour 200g'),
+      },
+    ],
+    entries: [
+      { id: 'entry_day_1', mealId: 'meal_cake', mealSlot: 'snack', date: '2026-04-13', servingMultiplier: null, audience: 'all', entryPosition: 0 },
+      { id: 'entry_day_2', mealId: 'meal_cake', mealSlot: 'snack', date: '2026-04-14', servingMultiplier: null, audience: 'all', entryPosition: 0 },
+    ],
+    adultCount: 2,
+    kidCount: 1,
+  });
+
+  assert.equal(preview.entryUsageById.entry_day_1.requiredPortions, 2.5);
+  assert.equal(preview.entryUsageById.entry_day_1.cookedBatchCount, 1);
+  assert.equal(preview.entryUsageById.entry_day_1.createdCarryoverPortions, 1.5);
+
+  assert.equal(preview.entryUsageById.entry_day_2.usedCarryoverPortions, 1.5);
+  assert.equal(preview.entryUsageById.entry_day_2.carryoverSourceDate, '2026-04-13');
+  assert.equal(preview.entryUsageById.entry_day_2.cookedBatchCount, 1);
+
+  const eggs = preview.groceryDraft.find((item) => item.title === 'eggs');
+  const flour = preview.groceryDraft.find((item) => item.title === 'flour');
+
+  assert.equal(eggs.quantityValue, 8);
+  assert.equal(eggs.quantityUnit, 'pcs');
+  assert.equal(flour.quantityValue, 400);
+  assert.equal(flour.quantityUnit, 'g');
+});
+
+test('buildGroceryDraft keeps one batch when later kid servings are fully covered by carryover', () => {
+  const draft = buildGroceryDraft({
+    recipes: [
+      {
+        id: 'meal_muffins',
+        name: 'Muffins',
+        yieldMode: 'batch',
+        batchYieldPortions: 4,
+        ingredients: splitIngredientList('eggs 2, oats 120g'),
+      },
+    ],
+    entries: [
+      { id: 'entry_monday', mealId: 'meal_muffins', mealSlot: 'snack', date: '2026-04-13', servingMultiplier: null, audience: 'kids', entryPosition: 0 },
+      { id: 'entry_tuesday', mealId: 'meal_muffins', mealSlot: 'snack', date: '2026-04-14', servingMultiplier: null, audience: 'kids', entryPosition: 0 },
+    ],
+    adultCount: 2,
+    kidCount: 1,
+  });
+
+  assert.equal(draft.find((item) => item.title === 'eggs')?.quantityValue, 2);
+  assert.equal(draft.find((item) => item.title === 'oats')?.quantityValue, 120);
 });
 
 test('getDefaultServingMultiplier treats kids as half portions', () => {

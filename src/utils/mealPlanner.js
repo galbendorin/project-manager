@@ -15,10 +15,22 @@ const SLOT_LABELS = {
   snack: 'Snack',
 };
 
+const SLOT_SORT_ORDER = {
+  breakfast: 0,
+  lunch: 1,
+  dinner: 2,
+  snack: 3,
+};
+
 const AUDIENCE_LABELS = {
   all: 'All',
   adults: 'Adults',
   kids: 'Kids',
+};
+
+const RECIPE_YIELD_MODE_LABELS = {
+  flexible: 'Flexible portions',
+  batch: 'Batch recipe',
 };
 
 const SIZE_WORDS = new Set(['small', 'medium', 'large']);
@@ -49,6 +61,15 @@ export const normalizeMealAudience = (value = '') => {
 };
 
 export const getMealAudienceLabel = (audience) => AUDIENCE_LABELS[normalizeMealAudience(audience)] || 'All';
+
+export const normalizeRecipeYieldMode = (value = '') => {
+  const key = normalizeSpace(value).toLowerCase();
+  return key === 'batch' ? 'batch' : 'flexible';
+};
+
+export const getRecipeYieldModeLabel = (yieldMode) => (
+  RECIPE_YIELD_MODE_LABELS[normalizeRecipeYieldMode(yieldMode)] || 'Flexible portions'
+);
 
 export const normalizeSuggestedDay = (value = '') => {
   const key = normalizeSpace(value).slice(0, 3).toLowerCase();
@@ -328,6 +349,87 @@ const roundQuantity = (value) => {
   return Math.round(Number(value) * 100) / 100;
 };
 
+const toPositiveFiniteNumber = (value) => {
+  const next = toNullableFiniteNumber(value);
+  return next !== null && next > 0 ? next : null;
+};
+
+const sortMealEntriesForPreview = (entries = []) => (
+  [...entries].sort((left, right) => (
+    `${left.date}`.localeCompare(`${right.date}`)
+    || ((SLOT_SORT_ORDER[left.mealSlot] ?? 99) - (SLOT_SORT_ORDER[right.mealSlot] ?? 99))
+    || ((Number(left.entryPosition) || 0) - (Number(right.entryPosition) || 0))
+    || `${left.id || ''}`.localeCompare(`${right.id || ''}`)
+  ))
+);
+
+const getEntryServingMultiplier = (entry = {}, { adultCount = 1, kidCount = 0 } = {}) => {
+  const explicitMultiplier = toNullableFiniteNumber(entry.servingMultiplier);
+  if (explicitMultiplier !== null) {
+    return explicitMultiplier;
+  }
+  return getAudienceServingMultiplier({
+    audience: entry.audience,
+    adultCount,
+    kidCount,
+  });
+};
+
+const getRecipeBatchYieldPortions = (recipe = {}) => (
+  toPositiveFiniteNumber(recipe.batchYieldPortions)
+);
+
+const isBatchRecipe = (recipe = {}) => (
+  normalizeRecipeYieldMode(recipe.yieldMode) === 'batch'
+  && getRecipeBatchYieldPortions(recipe) !== null
+);
+
+const addIngredientToDraft = ({
+  draftMap,
+  ingredient,
+  entry,
+  recipe,
+  scalingFactor,
+  sourceMeta = {},
+}) => {
+  const ingredientName = normalizeSpace(ingredient.ingredientName || ingredient.rawText || '');
+  const quantityUnit = normalizeSpace(ingredient.quantityUnit || '');
+  const hasParsedQuantity = toNullableFiniteNumber(ingredient.quantityValue) !== null;
+  const key = hasParsedQuantity && ingredientName
+    ? `${normalizeIngredientKey(ingredientName)}::${normalizeUnitKey(quantityUnit)}`
+    : `raw::${normalizeIngredientKey(ingredient.rawText || ingredientName)}`;
+
+  const current = draftMap.get(key) || {
+    key,
+    title: ingredientName || ingredient.rawText || 'Unknown ingredient',
+    rawText: ingredient.rawText || ingredientName || '',
+    quantityValue: null,
+    quantityUnit,
+    occurrenceCount: 0,
+    sourceMeals: [],
+    parseConfidence: ingredient.parseConfidence || 0,
+  };
+
+  current.occurrenceCount += 1;
+  current.sourceMeals.push({
+    entryId: entry.id,
+    recipeId: recipe.id,
+    recipeName: recipe.name,
+    date: entry.date,
+    mealSlot: entry.mealSlot,
+    ...sourceMeta,
+  });
+
+  const parsedQuantity = toNullableFiniteNumber(ingredient.quantityValue);
+  if (parsedQuantity !== null) {
+    const nextQuantity = Number(current.quantityValue || 0) + (parsedQuantity * scalingFactor);
+    current.quantityValue = roundQuantity(nextQuantity);
+    current.quantityUnit = quantityUnit;
+  }
+
+  draftMap.set(key, current);
+};
+
 export const buildMealLibraryRecords = (rows = [], origin = 'imported') => (
   rows.map((row) => ({
     external_id: row.externalId || null,
@@ -340,6 +442,8 @@ export const buildMealLibraryRecords = (rows = [], origin = 'imported') => (
     estimated_kcal: toNullableFiniteNumber(row.estimatedKcal),
     image_ref: row.imageRef || '',
     recipe_origin: origin,
+    yield_mode: normalizeRecipeYieldMode(row.yieldMode),
+    batch_yield_portions: toPositiveFiniteNumber(row.batchYieldPortions),
   }))
 );
 
@@ -354,7 +458,7 @@ export const buildMealIngredientRecords = (ingredientLines = []) => (
   }))
 );
 
-export const buildGroceryDraft = ({
+export const buildMealPlanPreview = ({
   recipes = [],
   entries = [],
   adultCount = 1,
@@ -362,60 +466,119 @@ export const buildGroceryDraft = ({
 }) => {
   const recipeMap = new Map(recipes.map((recipe) => [recipe.id, recipe]));
   const draftMap = new Map();
+  const carryoverLedger = new Map();
+  const entryUsageById = {};
 
-  for (const entry of entries) {
+  for (const entry of sortMealEntriesForPreview(entries)) {
     const recipe = recipeMap.get(entry.mealId);
     if (!recipe) continue;
 
-    const multiplier = toNullableFiniteNumber(entry.servingMultiplier)
-      ?? getAudienceServingMultiplier({
-        audience: entry.audience,
-        adultCount,
-        kidCount,
-      });
-    if (multiplier <= 0) continue;
+    const requiredPortions = getEntryServingMultiplier(entry, { adultCount, kidCount });
+    if (requiredPortions <= 0) continue;
 
-    for (const ingredient of recipe.ingredients || []) {
-      const ingredientName = normalizeSpace(ingredient.ingredientName || ingredient.rawText || '');
-      const quantityUnit = normalizeSpace(ingredient.quantityUnit || '');
-      const hasParsedQuantity = toNullableFiniteNumber(ingredient.quantityValue) !== null;
-      const key = hasParsedQuantity && ingredientName
-        ? `${normalizeIngredientKey(ingredientName)}::${normalizeUnitKey(quantityUnit)}`
-        : `raw::${normalizeIngredientKey(ingredient.rawText || ingredientName)}`;
+    const roundedRequiredPortions = roundQuantity(requiredPortions) ?? requiredPortions;
+    const usage = {
+      entryId: entry.id,
+      recipeId: recipe.id,
+      recipeName: recipe.name,
+      requiredPortions: roundedRequiredPortions,
+      usedCarryoverPortions: 0,
+      carryoverSourceDate: '',
+      cookedBatchCount: 0,
+      batchYieldPortions: null,
+      createdCarryoverPortions: 0,
+      leftoverAfterPortions: 0,
+      effectiveIngredientMultiplier: roundedRequiredPortions,
+      yieldMode: normalizeRecipeYieldMode(recipe.yieldMode),
+    };
 
-      const current = draftMap.get(key) || {
-        key,
-        title: ingredientName || ingredient.rawText || 'Unknown ingredient',
-        rawText: ingredient.rawText || ingredientName || '',
-        quantityValue: null,
-        quantityUnit,
-        occurrenceCount: 0,
-        sourceMeals: [],
-        parseConfidence: ingredient.parseConfidence || 0,
+    if (isBatchRecipe(recipe)) {
+      const batchYieldPortions = getRecipeBatchYieldPortions(recipe);
+      const ledger = carryoverLedger.get(recipe.id) || {
+        remainingPortions: 0,
+        sourceDate: '',
       };
+      const availableCarryover = ledger.remainingPortions || 0;
+      const usedCarryoverPortions = Math.min(availableCarryover, requiredPortions);
+      const remainingNeed = requiredPortions - usedCarryoverPortions;
+      const cookedBatchCount = remainingNeed > 0
+        ? Math.ceil(remainingNeed / batchYieldPortions)
+        : 0;
+      const producedPortions = cookedBatchCount * batchYieldPortions;
+      const leftoverAfterPortions = Math.max(
+        0,
+        (availableCarryover - usedCarryoverPortions) + (producedPortions - remainingNeed)
+      );
 
-      current.occurrenceCount += 1;
-      current.sourceMeals.push({
-        entryId: entry.id,
-        recipeId: recipe.id,
-        recipeName: recipe.name,
-        date: entry.date,
-        mealSlot: entry.mealSlot,
+      usage.usedCarryoverPortions = roundQuantity(usedCarryoverPortions) ?? 0;
+      usage.carryoverSourceDate = usedCarryoverPortions > 0 ? ledger.sourceDate : '';
+      usage.cookedBatchCount = cookedBatchCount;
+      usage.batchYieldPortions = batchYieldPortions;
+      usage.createdCarryoverPortions = roundQuantity(leftoverAfterPortions) ?? 0;
+      usage.leftoverAfterPortions = roundQuantity(leftoverAfterPortions) ?? 0;
+      usage.effectiveIngredientMultiplier = cookedBatchCount;
+
+      carryoverLedger.set(recipe.id, {
+        remainingPortions: leftoverAfterPortions,
+        sourceDate: cookedBatchCount > 0 ? entry.date : ledger.sourceDate,
       });
 
-      const parsedQuantity = toNullableFiniteNumber(ingredient.quantityValue);
-      if (parsedQuantity !== null) {
-        const nextQuantity = Number(current.quantityValue || 0) + (parsedQuantity * multiplier);
-        current.quantityValue = roundQuantity(nextQuantity);
-        current.quantityUnit = quantityUnit;
+      if (cookedBatchCount > 0) {
+        for (const ingredient of recipe.ingredients || []) {
+          addIngredientToDraft({
+            draftMap,
+            ingredient,
+            entry,
+            recipe,
+            scalingFactor: cookedBatchCount,
+            sourceMeta: {
+              scalingMode: 'batch',
+              batchCount: cookedBatchCount,
+              batchYieldPortions,
+              requiredPortions: roundedRequiredPortions,
+              usedCarryoverPortions: usage.usedCarryoverPortions,
+            },
+          });
+        }
       }
-
-      draftMap.set(key, current);
+    } else {
+      for (const ingredient of recipe.ingredients || []) {
+        addIngredientToDraft({
+          draftMap,
+          ingredient,
+          entry,
+          recipe,
+          scalingFactor: requiredPortions,
+          sourceMeta: {
+            scalingMode: 'portion',
+            requiredPortions: roundedRequiredPortions,
+          },
+        });
+      }
     }
+
+    entryUsageById[entry.id] = usage;
   }
 
-  return Array.from(draftMap.values()).sort((left, right) => left.title.localeCompare(right.title));
+  return {
+    groceryDraft: Array.from(draftMap.values()).sort((left, right) => left.title.localeCompare(right.title)),
+    entryUsageById,
+  };
 };
+
+export const buildGroceryDraft = ({
+  recipes = [],
+  entries = [],
+  adultCount = 1,
+  kidCount = 0,
+}) => (
+  buildMealPlanPreview({
+    recipes,
+    entries,
+    adultCount,
+    kidCount,
+  }).groceryDraft
+);
 
 export const formatIngredientQuantity = (value) => {
   if (!Number.isFinite(Number(value))) return '';

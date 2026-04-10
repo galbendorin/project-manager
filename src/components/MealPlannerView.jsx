@@ -7,6 +7,7 @@ import {
   getAudienceServingMultiplier,
   getMealAudienceLabel,
   getMealSlotLabel,
+  getRecipeYieldModeLabel,
   parseRecipeImportText,
   summarizeRecipeIngredients,
 } from '../utils/mealPlanner';
@@ -123,6 +124,8 @@ const DEFAULT_FORM_STATE = {
   ingredientLines: [
     { ingredientName: '', quantityValue: '', quantityUnit: '', notes: '' },
   ],
+  yieldMode: 'flexible',
+  batchYieldPortions: '',
   recipeOrigin: 'manual',
   externalId: '',
 };
@@ -150,6 +153,13 @@ const formatWeekLabel = (weekDays = []) => {
   return `${start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 };
 
+const formatCarryoverDayLabel = (dateKey = '') => {
+  if (!dateKey) return '';
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  if (!year || !month || !day) return '';
+  return new Date(year, month - 1, day).toLocaleDateString('en-GB', { weekday: 'short' });
+};
+
 const buildRecipeFormState = (recipe) => {
   if (!recipe) return DEFAULT_FORM_STATE;
   return {
@@ -167,6 +177,8 @@ const buildRecipeFormState = (recipe) => {
       quantityUnit: ingredient.quantityUnit || '',
       notes: ingredient.notes || '',
     })).concat((recipe.ingredients || []).length === 0 ? [{ ingredientName: '', quantityValue: '', quantityUnit: '', notes: '' }] : []),
+    yieldMode: recipe.yieldMode || 'flexible',
+    batchYieldPortions: recipe.batchYieldPortions ?? '',
     recipeOrigin: recipe.recipeOrigin || 'manual',
     externalId: recipe.externalId || '',
   };
@@ -208,6 +220,9 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
     await onSave({
       ...form,
       estimatedKcal: form.estimatedKcal === '' ? null : Number(form.estimatedKcal),
+      batchYieldPortions: form.yieldMode === 'batch' && form.batchYieldPortions !== ''
+        ? Number(form.batchYieldPortions)
+        : null,
       ingredientLines,
       ingredientsRaw: ingredientLines.map((line) => line.rawText).join(', '),
     });
@@ -302,6 +317,46 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
               placeholder="D1_R1"
             />
           </label>
+        </div>
+
+        <div className="mt-4 rounded-[26px] border border-slate-200 bg-slate-50/70 p-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Recipe scaling</span>
+              <select
+                value={form.yieldMode}
+                onChange={(event) => setForm((previous) => ({
+                  ...previous,
+                  yieldMode: event.target.value,
+                  batchYieldPortions: event.target.value === 'batch' ? previous.batchYieldPortions : '',
+                }))}
+                className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm"
+              >
+                <option value="flexible">Flexible portions</option>
+                <option value="batch">Batch recipe</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Batch yields</span>
+              <input
+                type="number"
+                min="0.5"
+                step="0.5"
+                value={form.yieldMode === 'batch' ? form.batchYieldPortions : ''}
+                onChange={(event) => setForm((previous) => ({ ...previous, batchYieldPortions: event.target.value }))}
+                className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                placeholder="4 portions"
+                disabled={form.yieldMode !== 'batch'}
+                required={form.yieldMode === 'batch'}
+              />
+            </label>
+          </div>
+          <p className="mt-3 text-sm text-slate-500">
+            {form.yieldMode === 'batch'
+              ? 'Batch recipes cook once and then reuse leftovers on later days before adding more ingredients to groceries.'
+              : 'Flexible recipes scale ingredient quantities directly from the serving multiplier on each planned meal.'}
+          </p>
         </div>
 
         <label className="mt-4 block">
@@ -777,6 +832,11 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
                   {recipe.estimatedKcal ? (
                     <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{recipe.estimatedKcal} kcal</span>
                   ) : null}
+                  {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
+                    <span className="rounded-full bg-sky-50 px-2.5 py-1 font-semibold text-sky-700">
+                      Batch {recipe.batchYieldPortions} portions
+                    </span>
+                  ) : null}
                   <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">
                     {(recipe.ingredients || []).length} ingredients
                   </span>
@@ -851,6 +911,11 @@ function RecipeDetailModal({
               {recipe.sourcePdf ? (
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{recipe.sourcePdf}</span>
               ) : null}
+              {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
+                <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-700">
+                  Batch {recipe.batchYieldPortions} portions
+                </span>
+              ) : null}
               {context?.entry ? (
                 <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(audience)}`}>
                   {getMealAudienceLabel(audience)}
@@ -897,6 +962,15 @@ function RecipeDetailModal({
               <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">How to make</h4>
               <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                 {recipe.howToMake || 'No method saved yet.'}
+              </p>
+            </div>
+
+            <div className="mt-5 rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
+              <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Recipe scaling</h4>
+              <p className="mt-3 text-sm leading-6 text-slate-700">
+                {recipe.yieldMode === 'batch' && recipe.batchYieldPortions
+                  ? `Batch recipe: one cook makes ${recipe.batchYieldPortions} portion${recipe.batchYieldPortions === 1 ? '' : 's'}, and the planner reuses leftovers later in the same week before adding more groceries.`
+                  : `${getRecipeYieldModeLabel(recipe.yieldMode)}: ingredient quantities scale directly with the serving multiplier for this meal.`}
               </p>
             </div>
           </div>
@@ -1014,6 +1088,7 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
             <p className="pm-kicker">Grocery review</p>
             <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">Weekly shopping draft</h3>
             <p className="mt-2 text-sm text-slate-500">Review totals for {weekLabel} before they are added into Shopping List.</p>
+            <p className="mt-2 text-sm text-slate-500">Batch recipes reuse carryover first, so only newly needed ingredients appear in this draft.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
@@ -1088,6 +1163,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     defaultServingMultiplier,
     deleteRecipe,
     duplicateRecipe,
+    entryUsageById,
     entries,
     error,
     groceryDraft,
@@ -1487,6 +1563,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                             <div className="mt-3 space-y-3">
                               {slotEntries.map(({ entry, recipe }) => {
                                 const isCopyPromptVisible = Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
+                                const entryUsage = entryUsageById?.[entry.id] || null;
                                 return (
                                   <div key={entry.id} className="rounded-[22px] border border-slate-200 bg-slate-50/60 px-3 py-3">
                                     <button
@@ -1516,6 +1593,11 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                             {recipe.sourcePdf}
                                           </span>
                                         ) : null}
+                                        {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
+                                          <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">
+                                            Batch {recipe.batchYieldPortions}
+                                          </span>
+                                        ) : null}
                                       </div>
                                       <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
                                       <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 3)}</p>
@@ -1524,6 +1606,17 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                           <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{recipe.estimatedKcal} kcal</span>
                                         ) : null}
                                       </div>
+                                      {entryUsage?.usedCarryoverPortions > 0 ? (
+                                        <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700">
+                                          Carryover {formatIngredientQuantity(entryUsage.usedCarryoverPortions)} portions
+                                          {entryUsage.carryoverSourceDate ? ` from ${formatCarryoverDayLabel(entryUsage.carryoverSourceDate)}` : ''}
+                                        </div>
+                                      ) : null}
+                                      {entryUsage?.usedCarryoverPortions === 0 && entryUsage?.createdCarryoverPortions > 0 ? (
+                                        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700">
+                                          Carryover ready: {formatIngredientQuantity(entryUsage.createdCarryoverPortions)} portions
+                                        </div>
+                                      ) : null}
                                     </button>
 
                                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1646,6 +1739,11 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       <div className="mt-3 flex flex-wrap gap-2">
                         {recipe.estimatedKcal ? (
                           <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">{recipe.estimatedKcal} kcal</span>
+                        ) : null}
+                        {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
+                          <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
+                            Batch {recipe.batchYieldPortions} portions
+                          </span>
                         ) : null}
                         <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
                           {recipe.recipeOrigin === 'manual' ? 'Manual' : 'Imported'}
