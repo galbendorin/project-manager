@@ -21,6 +21,7 @@ const PERSONAL_DAILY_TARGETS = {
   proteinG: 77,
   fatG: 62,
   carbsG: 233,
+  fiberG: 30,
 };
 
 const getAudiencePillClasses = (audience) => {
@@ -1965,6 +1966,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                     <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-700">Protein target {PERSONAL_DAILY_TARGETS.proteinG}g</span>
                     <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-700">Fat target {PERSONAL_DAILY_TARGETS.fatG}g</span>
                     <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-indigo-700">Carbs target {PERSONAL_DAILY_TARGETS.carbsG}g</span>
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700">Fibre reference {PERSONAL_DAILY_TARGETS.fiberG}g</span>
                   </div>
                 </div>
                 <button
