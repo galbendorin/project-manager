@@ -1865,7 +1865,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
           <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_360px]">
             <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="grid gap-3 xl:grid-cols-[auto_minmax(0,1fr)] xl:items-start">
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={() => handleMoveWeek(-1)} className="pm-subtle-button rounded-full p-2.5">
                     <ChevronLeft className="h-4 w-4" />
@@ -1878,12 +1878,12 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                   </button>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
-                  <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="grid gap-2 sm:grid-cols-3 xl:justify-self-end">
+                  <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-3 py-2.5">
                     <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">You</span>
-                    <span className="mt-1 block text-base font-semibold text-slate-900">1.0</span>
+                    <span className="mt-1 block text-[15px] font-semibold text-slate-900">1.0</span>
                   </div>
-                  <label className="rounded-[22px] border border-slate-200 bg-slate-50 px-3 py-2">
+                  <label className="rounded-[20px] border border-slate-200 bg-slate-50 px-3 py-2.5">
                     <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Partner</span>
                     <input
                       type="number"
@@ -1894,31 +1894,37 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         adultCount: 1 + Math.max(0, Number(event.target.value || 0)),
                         kidCount: week?.kidCount ?? 0,
                       })}
-                      className="mt-1 w-20 bg-transparent text-base font-semibold text-slate-900 outline-none"
+                      className="mt-1 w-16 bg-transparent text-[15px] font-semibold text-slate-900 outline-none"
                     />
                   </label>
-                  <label className="rounded-[22px] border border-slate-200 bg-slate-50 px-3 py-2">
+                  <label className="rounded-[20px] border border-slate-200 bg-slate-50 px-3 py-2.5">
                     <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Kids</span>
                     <input
                       type="number"
                       min="0"
                       value={week?.kidCount ?? 0}
                       onChange={(event) => void updateWeekCounts({ adultCount: week?.adultCount ?? 1.75, kidCount: event.target.value })}
-                      className="mt-1 w-20 bg-transparent text-base font-semibold text-slate-900 outline-none"
+                      className="mt-1 w-16 bg-transparent text-[15px] font-semibold text-slate-900 outline-none"
                     />
                   </label>
-                  <button type="button" onClick={() => setShowReviewModal(true)} className="pm-toolbar-primary rounded-2xl px-4 py-3 text-sm font-semibold text-white">
-                    Review groceries
-                  </button>
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Household total {defaultServingMultiplier}x</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Adults total {week?.adultCount ?? 1.75}x</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Your calories use 1.0 serving only</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Kids count as 0.5 portion</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Breakfast, lunch, and dinner can copy forward</span>
+              <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Household total {defaultServingMultiplier}x</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Adults total {week?.adultCount ?? 1.75}x</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Your calories use 1.0 serving only</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Kids count as 0.5 portion</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Breakfast, lunch, and dinner can copy forward</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowReviewModal(true)}
+                  className="pm-toolbar-primary shrink-0 rounded-full px-4 py-3 text-sm font-semibold text-white xl:self-start"
+                >
+                  Review groceries
+                </button>
               </div>
 
               <div className="mt-5 space-y-4">
