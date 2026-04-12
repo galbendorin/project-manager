@@ -17,6 +17,11 @@ import { estimateRecipeNutritionFromStarterCatalog } from '../utils/mealCalorieC
 const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 const AUDIENCE_OPTIONS = ['all', 'adults', 'kids'];
 const INGREDIENT_UNIT_SUGGESTIONS = ['pcs', 'g', 'ml', 'tsp', 'tbsp', 'cup'];
+const PERSONAL_DAILY_TARGETS = {
+  proteinG: 77,
+  fatG: 62,
+  carbsG: 233,
+};
 
 const getAudiencePillClasses = (audience) => {
   if (audience === 'adults') {
@@ -1947,13 +1952,20 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
               </div>
 
               <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Household total {defaultServingMultiplier}x</span>
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Adults total {week?.adultCount ?? 1.75}x</span>
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Your calories use 1.0 serving only</span>
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Kids count as 0.5 portion</span>
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Daily P / C / F are approximate from recipe ingredients</span>
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Breakfast, lunch, and dinner can copy forward</span>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Household total {defaultServingMultiplier}x</span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Adults total {week?.adultCount ?? 1.75}x</span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Your calories use 1.0 serving only</span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Kids count as 0.5 portion</span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Daily P / C / Fib are approximate from recipe ingredients</span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Breakfast, lunch, and dinner can copy forward</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-700">Protein target {PERSONAL_DAILY_TARGETS.proteinG}g</span>
+                    <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-700">Fat target {PERSONAL_DAILY_TARGETS.fatG}g</span>
+                    <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-indigo-700">Carbs target {PERSONAL_DAILY_TARGETS.carbsG}g</span>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -1986,7 +1998,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                               C {formatMacroTotal(dayNutritionByKey[day.key]?.carbsG)}g
                             </span>
                             <span className="rounded-full bg-white px-2 py-1 text-emerald-700">
-                              F {formatMacroTotal(dayNutritionByKey[day.key]?.fiberG)}g
+                              Fib {formatMacroTotal(dayNutritionByKey[day.key]?.fiberG)}g
                             </span>
                           </div>
                         ) : null}
