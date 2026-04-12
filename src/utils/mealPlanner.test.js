@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildMealIngredientRecords,
   getAdultServingTotal,
   buildNextDayCopyPrompt,
   buildMealPlanPreview,
@@ -14,6 +15,32 @@ import {
   parseRecipeImportText,
   splitIngredientList,
 } from './mealPlanner.js';
+
+test('buildMealIngredientRecords keeps per-ingredient calorie metadata', () => {
+  const [row] = buildMealIngredientRecords([
+    {
+      rawText: 'egg 2 pcs',
+      ingredientName: 'egg',
+      quantityValue: 2,
+      quantityUnit: 'pcs',
+      notes: '',
+      estimatedKcal: 143,
+      manualKcal: 150,
+      kcalSource: 'manual',
+      kcalPer100: 143,
+      linkedFdcId: 123,
+      matchedFoodLabel: 'Egg, whole, raw',
+      parseConfidence: 1,
+    },
+  ]);
+
+  assert.equal(row.estimated_kcal, 143);
+  assert.equal(row.manual_kcal, 150);
+  assert.equal(row.kcal_source, 'manual');
+  assert.equal(row.kcal_per_100, 143);
+  assert.equal(row.linked_fdc_id, 123);
+  assert.equal(row.matched_food_label, 'Egg, whole, raw');
+});
 
 test('parseIngredientText parses simple quantity and unit combinations', () => {
   assert.deepEqual(parseIngredientText('oats 60g'), {

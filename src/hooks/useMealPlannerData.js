@@ -89,6 +89,12 @@ const mapIngredientRow = (row = {}) => ({
   quantityValue: toNullableFiniteNumber(row.quantity_value),
   quantityUnit: row.quantity_unit || '',
   notes: row.notes || '',
+  estimatedKcal: toNullableFiniteNumber(row.estimated_kcal),
+  manualKcal: toNullableFiniteNumber(row.manual_kcal),
+  kcalSource: row.kcal_source || '',
+  kcalPer100: toNullableFiniteNumber(row.kcal_per_100),
+  linkedFdcId: toNullableFiniteNumber(row.linked_fdc_id),
+  matchedFoodLabel: row.matched_food_label || '',
   parseConfidence: toNullableFiniteNumber(row.parse_confidence) ?? 0,
 });
 
@@ -229,15 +235,27 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     if (mealIds.length > 0) {
       const ingredientsResult = await supabase
         .from('meal_library_ingredients')
-        .select('id, meal_id, raw_text, ingredient_name, quantity_value, quantity_unit, notes, parse_confidence, created_at, updated_at')
+        .select('id, meal_id, raw_text, ingredient_name, quantity_value, quantity_unit, notes, estimated_kcal, manual_kcal, kcal_source, kcal_per_100, linked_fdc_id, matched_food_label, parse_confidence, created_at, updated_at')
         .in('meal_id', mealIds)
         .order('created_at', { ascending: true });
 
-      if (ingredientsResult.error) {
-        throw ingredientsResult.error;
-      }
+      if (ingredientsResult.error && isMissingMealPlannerFieldError(ingredientsResult.error, ['estimated_kcal', 'manual_kcal', 'kcal_source', 'kcal_per_100', 'linked_fdc_id', 'matched_food_label'])) {
+        const fallbackIngredientsResult = await supabase
+          .from('meal_library_ingredients')
+          .select('id, meal_id, raw_text, ingredient_name, quantity_value, quantity_unit, notes, parse_confidence, created_at, updated_at')
+          .in('meal_id', mealIds)
+          .order('created_at', { ascending: true });
 
-      ingredientRows = ingredientsResult.data || [];
+        if (fallbackIngredientsResult.error) {
+          throw fallbackIngredientsResult.error;
+        }
+
+        ingredientRows = fallbackIngredientsResult.data || [];
+      } else if (ingredientsResult.error) {
+        throw ingredientsResult.error;
+      } else {
+        ingredientRows = ingredientsResult.data || [];
+      }
     }
 
     const ingredientMap = ingredientRows.reduce((accumulator, row) => {
@@ -267,11 +285,25 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       return;
     }
 
-    const { error: insertError } = await supabase
+    let insertResult = await supabase
       .from('meal_library_ingredients')
       .insert(ingredientRows);
 
-    if (insertError) throw insertError;
+    if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['estimated_kcal', 'manual_kcal', 'kcal_source', 'kcal_per_100', 'linked_fdc_id', 'matched_food_label'])) {
+      insertResult = await supabase
+        .from('meal_library_ingredients')
+        .insert(ingredientRows.map(({
+          estimated_kcal,
+          manual_kcal,
+          kcal_source,
+          kcal_per_100,
+          linked_fdc_id,
+          matched_food_label,
+          ...rest
+        }) => rest));
+    }
+
+    if (insertResult.error) throw insertResult.error;
   }, []);
 
   const importRowsIntoLibrary = useCallback(async (rows = [], { origin = 'imported' } = {}) => {

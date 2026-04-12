@@ -14,6 +14,12 @@ const ALLOWED_ORIGINS = [
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+const supabaseAuthKey = supabaseServiceRoleKey || process.env.VITE_SUPABASE_ANON_KEY;
+
+const authSupabase = supabaseUrl && supabaseAuthKey
+  ? createClient(supabaseUrl, supabaseAuthKey)
+  : null;
 
 const adminSupabase = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey)
@@ -35,8 +41,27 @@ export const getBearerToken = (req) => {
   return authHeader.slice(7).trim();
 };
 
+export const getUserSupabase = (req) => {
+  const accessToken = getBearerToken(req);
+  if (!supabaseUrl || !supabaseAnonKey || !accessToken) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  });
+};
+
 export const requireAuthenticatedUser = async (req, res) => {
-  if (!adminSupabase) {
+  if (!authSupabase) {
     res.status(500).json({ error: 'Server authentication is not configured.' });
     return null;
   }
@@ -47,7 +72,7 @@ export const requireAuthenticatedUser = async (req, res) => {
     return null;
   }
 
-  const { data, error } = await adminSupabase.auth.getUser(accessToken);
+  const { data, error } = await authSupabase.auth.getUser(accessToken);
   if (error || !data?.user) {
     res.status(401).json({ error: 'Invalid or expired session.' });
     return null;

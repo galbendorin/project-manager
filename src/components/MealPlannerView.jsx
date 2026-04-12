@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMealPlannerData } from '../hooks/useMealPlannerData';
+import { supabase } from '../lib/supabase';
 import {
   buildNextDayCopyPrompt,
   formatDateKey,
@@ -14,6 +15,7 @@ import {
 
 const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 const AUDIENCE_OPTIONS = ['all', 'adults', 'kids'];
+const INGREDIENT_UNIT_SUGGESTIONS = ['pcs', 'g', 'ml', 'tsp', 'tbsp', 'cup'];
 
 const getAudiencePillClasses = (audience) => {
   if (audience === 'adults') {
@@ -122,7 +124,18 @@ const DEFAULT_FORM_STATE = {
   imageRef: '',
   howToMake: '',
   ingredientLines: [
-    { ingredientName: '', quantityValue: '', quantityUnit: '', notes: '' },
+    {
+      ingredientName: '',
+      quantityValue: '',
+      quantityUnit: '',
+      notes: '',
+      estimatedKcal: '',
+      manualKcal: '',
+      kcalSource: '',
+      kcalPer100: '',
+      linkedFdcId: '',
+      matchedFoodLabel: '',
+    },
   ],
   yieldMode: 'flexible',
   batchYieldPortions: '',
@@ -142,8 +155,42 @@ const compileIngredientRow = (row = {}) => {
     quantityValue: quantityValue === '' ? null : Number(quantityValue),
     quantityUnit,
     notes,
+    estimatedKcal: row.estimatedKcal === '' || row.estimatedKcal === null || row.estimatedKcal === undefined
+      ? null
+      : Number(row.estimatedKcal),
+    manualKcal: row.manualKcal === '' || row.manualKcal === null || row.manualKcal === undefined
+      ? null
+      : Number(row.manualKcal),
+    kcalSource: String(row.kcalSource || '').trim(),
+    kcalPer100: row.kcalPer100 === '' || row.kcalPer100 === null || row.kcalPer100 === undefined
+      ? null
+      : Number(row.kcalPer100),
+    linkedFdcId: row.linkedFdcId === '' || row.linkedFdcId === null || row.linkedFdcId === undefined
+      ? null
+      : Number(row.linkedFdcId),
+    matchedFoodLabel: String(row.matchedFoodLabel || '').trim(),
     parseConfidence: ingredientName && quantityValue ? 1 : 0.6,
   };
+};
+
+const getIngredientDisplayKcal = (ingredient = {}) => {
+  const manual = ingredient.manualKcal === '' || ingredient.manualKcal === null || ingredient.manualKcal === undefined
+    ? null
+    : Number(ingredient.manualKcal);
+  if (Number.isFinite(manual)) return manual;
+  const estimated = ingredient.estimatedKcal === '' || ingredient.estimatedKcal === null || ingredient.estimatedKcal === undefined
+    ? null
+    : Number(ingredient.estimatedKcal);
+  return Number.isFinite(estimated) ? estimated : null;
+};
+
+const getKcalSourceBadgeLabel = (source = '') => {
+  if (source === 'manual') return 'Manual';
+  if (source === 'remembered') return 'Saved recipe';
+  if (source === 'starter') return 'Starter catalog';
+  if (source === 'cached') return 'Saved lookup';
+  if (source === 'usda') return 'USDA lookup';
+  return '';
 };
 
 const formatWeekLabel = (weekDays = []) => {
@@ -176,12 +223,72 @@ const buildRecipeFormState = (recipe) => {
       quantityValue: ingredient.quantityValue ?? '',
       quantityUnit: ingredient.quantityUnit || '',
       notes: ingredient.notes || '',
-    })).concat((recipe.ingredients || []).length === 0 ? [{ ingredientName: '', quantityValue: '', quantityUnit: '', notes: '' }] : []),
+      estimatedKcal: ingredient.estimatedKcal ?? '',
+      manualKcal: ingredient.manualKcal ?? '',
+      kcalSource: ingredient.kcalSource || '',
+      kcalPer100: ingredient.kcalPer100 ?? '',
+      linkedFdcId: ingredient.linkedFdcId ?? '',
+      matchedFoodLabel: ingredient.matchedFoodLabel || '',
+    })).concat((recipe.ingredients || []).length === 0 ? [{
+      ingredientName: '',
+      quantityValue: '',
+      quantityUnit: '',
+      notes: '',
+      estimatedKcal: '',
+      manualKcal: '',
+      kcalSource: '',
+      kcalPer100: '',
+      linkedFdcId: '',
+      matchedFoodLabel: '',
+    }] : []),
     yieldMode: recipe.yieldMode || 'flexible',
     batchYieldPortions: recipe.batchYieldPortions ?? '',
     recipeOrigin: recipe.recipeOrigin || 'manual',
     externalId: recipe.externalId || '',
   };
+};
+
+const fetchRecipeCalorieEstimate = async ({
+  ingredientLines = [],
+  yieldMode = 'flexible',
+  batchYieldPortions = null,
+}) => {
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data?.session?.access_token || '';
+
+  let response;
+  try {
+    response = await fetch('/api/meal-estimate-calories', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({
+        ingredientLines,
+        yieldMode,
+        batchYieldPortions,
+      }),
+    });
+  } catch {
+    const isLocal = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    throw new Error(
+      isLocal
+        ? 'Local API is not running. Start `vercel dev --listen 3001` in a second terminal, then try again.'
+        : 'Unable to estimate calories right now.'
+    );
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const isLocal = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const fallbackMessage = isLocal
+      ? 'Local calorie API did not respond. Check that `vercel dev --listen 3001` is running, then try again.'
+      : 'Unable to estimate calories right now.';
+    throw new Error(payload.error || fallbackMessage);
+  }
+
+  return payload;
 };
 
 function ModalShell({ children, onClose, wide = false }) {
@@ -197,16 +304,50 @@ function ModalShell({ children, onClose, wide = false }) {
 
 function RecipeFormModal({ initialState, onClose, onSave, saving }) {
   const [form, setForm] = useState(initialState);
+  const [estimateState, setEstimateState] = useState({
+    loading: false,
+    error: '',
+    result: null,
+  });
+
+  const clearEstimateFeedback = () => {
+    setEstimateState((previous) => (
+      previous.loading || (!previous.error && !previous.result)
+        ? previous
+        : { loading: false, error: '', result: null }
+    ));
+  };
 
   useEffect(() => {
     setForm(initialState);
+    setEstimateState({
+      loading: false,
+      error: '',
+      result: null,
+    });
   }, [initialState]);
 
   const handleIngredientChange = (index, key, value) => {
+    clearEstimateFeedback();
     setForm((previous) => ({
       ...previous,
       ingredientLines: previous.ingredientLines.map((line, lineIndex) => (
-        lineIndex === index ? { ...line, [key]: value } : line
+        lineIndex === index ? {
+          ...line,
+          [key]: value,
+          ...(key === 'manualKcal'
+            ? { kcalSource: value === '' ? (line.estimatedKcal ? line.kcalSource : '') : 'manual' }
+            : {}),
+          ...(key !== 'manualKcal'
+            ? {
+              estimatedKcal: ['ingredientName', 'quantityValue', 'quantityUnit', 'notes'].includes(key) ? '' : line.estimatedKcal,
+              kcalSource: ['ingredientName', 'quantityValue', 'quantityUnit', 'notes'].includes(key) && line.manualKcal === '' ? '' : line.kcalSource,
+              kcalPer100: ['ingredientName', 'quantityValue', 'quantityUnit', 'notes'].includes(key) ? '' : line.kcalPer100,
+              linkedFdcId: ['ingredientName', 'quantityValue', 'quantityUnit', 'notes'].includes(key) ? '' : line.linkedFdcId,
+              matchedFoodLabel: ['ingredientName', 'quantityValue', 'quantityUnit', 'notes'].includes(key) ? '' : line.matchedFoodLabel,
+            }
+            : {}),
+        } : line
       )),
     }));
   };
@@ -227,6 +368,108 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
       ingredientsRaw: ingredientLines.map((line) => line.rawText).join(', '),
     });
   };
+
+  const handleEstimateCalories = async () => {
+    const ingredientLines = form.ingredientLines
+      .map(compileIngredientRow)
+      .filter((row) => row.ingredientName && row.quantityValue !== null);
+
+    if (ingredientLines.length === 0) {
+      setEstimateState({
+        loading: false,
+        error: 'Add ingredient names and quantities before estimating calories.',
+        result: null,
+      });
+      return;
+    }
+
+    setEstimateState({
+      loading: true,
+      error: '',
+      result: null,
+    });
+
+    try {
+      const result = await fetchRecipeCalorieEstimate({
+        ingredientLines,
+        yieldMode: form.yieldMode,
+        batchYieldPortions: form.yieldMode === 'batch' && form.batchYieldPortions !== ''
+          ? Number(form.batchYieldPortions)
+          : null,
+      });
+
+      if (result.perServingKcal !== null) {
+        setForm((previous) => ({
+          ...previous,
+          ingredientLines: previous.ingredientLines.map((line, index) => {
+            const ingredientResult = result.ingredientResults?.[index];
+            if (!ingredientResult) return line;
+            const hasManualKcal = line.manualKcal !== '' && line.manualKcal !== null && line.manualKcal !== undefined;
+            return {
+              ...line,
+              estimatedKcal: ingredientResult.estimatedKcal ?? '',
+              kcalSource: hasManualKcal
+                ? 'manual'
+                : (ingredientResult.lookupSource || ''),
+              kcalPer100: ingredientResult.kcalPer100 ?? '',
+              linkedFdcId: ingredientResult.matchedFood?.fdcId ?? '',
+              matchedFoodLabel: ingredientResult.matchedFood?.description || '',
+            };
+          }),
+          estimatedKcal: String(result.perServingKcal),
+        }));
+      } else {
+        setForm((previous) => ({
+          ...previous,
+          ingredientLines: previous.ingredientLines.map((line, index) => {
+            const ingredientResult = result.ingredientResults?.[index];
+            if (!ingredientResult) return line;
+            const hasManualKcal = line.manualKcal !== '' && line.manualKcal !== null && line.manualKcal !== undefined;
+            return {
+              ...line,
+              estimatedKcal: ingredientResult.estimatedKcal ?? '',
+              kcalSource: hasManualKcal
+                ? 'manual'
+                : (ingredientResult.lookupSource || ''),
+              kcalPer100: ingredientResult.kcalPer100 ?? '',
+              linkedFdcId: ingredientResult.matchedFood?.fdcId ?? '',
+              matchedFoodLabel: ingredientResult.matchedFood?.description || '',
+            };
+          }),
+        }));
+      }
+
+      setEstimateState({
+        loading: false,
+        error: '',
+        result,
+      });
+    } catch (error) {
+      setEstimateState({
+        loading: false,
+        error: error?.message || 'Unable to estimate calories right now.',
+        result: null,
+      });
+    }
+  };
+
+  const canEstimateCalories = form.ingredientLines.some((line) => (
+    String(line.ingredientName || '').trim()
+    && String(line.quantityValue || '').trim()
+  ));
+  const ingredientTotalKcal = form.ingredientLines.reduce((sum, ingredient) => {
+    const next = getIngredientDisplayKcal(ingredient);
+    return sum + (Number.isFinite(next) ? next : 0);
+  }, 0);
+  const ingredientKcalCount = form.ingredientLines.filter((ingredient) => Number.isFinite(getIngredientDisplayKcal(ingredient))).length;
+  const ingredientDerivedPerServing = form.yieldMode === 'batch'
+    ? (
+      form.batchYieldPortions !== ''
+      && Number(form.batchYieldPortions) > 0
+        ? Math.round((ingredientTotalKcal / Number(form.batchYieldPortions)) * 10) / 10
+        : null
+    )
+    : Math.round(ingredientTotalKcal * 10) / 10;
 
   return (
     <ModalShell onClose={onClose} wide>
@@ -306,6 +549,51 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
               className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm"
               placeholder="450"
             />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleEstimateCalories}
+                disabled={estimateState.loading || !canEstimateCalories}
+                className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {estimateState.loading ? 'Estimating...' : 'Estimate from ingredients'}
+              </button>
+              <span className="text-xs text-slate-500">Fills this field from the ingredient rows below. You can still edit it manually.</span>
+            </div>
+            {estimateState.error ? (
+              <div className="mt-3 rounded-[18px] border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {estimateState.error}
+              </div>
+            ) : null}
+            {estimateState.result ? (
+              <div className="mt-3 rounded-[18px] border border-emerald-200 bg-emerald-50/70 px-3 py-3 text-xs text-slate-700">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-700">
+                    Total recipe: {estimateState.result.totalKcal} kcal
+                  </span>
+                  {estimateState.result.perServingKcal !== null ? (
+                    <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-emerald-700">
+                      Saved here as {estimateState.result.perServingKcal} kcal per 1 serving
+                    </span>
+                  ) : null}
+                  <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
+                    {estimateState.result.resolvedIngredientCount}/{estimateState.result.totalIngredients} ingredients matched
+                  </span>
+                </div>
+                {estimateState.result.warnings?.length ? (
+                  <p className="mt-3 text-slate-600">{estimateState.result.warnings.join(' ')}</p>
+                ) : null}
+                {estimateState.result.unresolvedIngredients?.length ? (
+                  <p className="mt-2 text-slate-600">
+                    Review: {estimateState.result.unresolvedIngredients.map((item) => item.ingredientName).join(', ')}.
+                  </p>
+                ) : null}
+                <p className="mt-2 text-slate-500">
+                  Source: {estimateState.result.source}
+                  {estimateState.result.usesDemoKey ? ' using the shared demo key.' : '.'}
+                </p>
+              </div>
+            ) : null}
           </label>
 
           <label className="block">
@@ -325,11 +613,14 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
               <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Recipe scaling</span>
               <select
                 value={form.yieldMode}
-                onChange={(event) => setForm((previous) => ({
-                  ...previous,
-                  yieldMode: event.target.value,
-                  batchYieldPortions: event.target.value === 'batch' ? previous.batchYieldPortions : '',
-                }))}
+                onChange={(event) => {
+                  clearEstimateFeedback();
+                  setForm((previous) => ({
+                    ...previous,
+                    yieldMode: event.target.value,
+                    batchYieldPortions: event.target.value === 'batch' ? previous.batchYieldPortions : '',
+                  }));
+                }}
                 className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm"
               >
                 <option value="flexible">Flexible portions</option>
@@ -344,7 +635,10 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
                 min="0.5"
                 step="0.5"
                 value={form.yieldMode === 'batch' ? form.batchYieldPortions : ''}
-                onChange={(event) => setForm((previous) => ({ ...previous, batchYieldPortions: event.target.value }))}
+                onChange={(event) => {
+                  clearEstimateFeedback();
+                  setForm((previous) => ({ ...previous, batchYieldPortions: event.target.value }));
+                }}
                 className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 placeholder="4 portions"
                 disabled={form.yieldMode !== 'batch'}
@@ -374,14 +668,28 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Ingredients</p>
-              <p className="mt-1 text-sm text-slate-500">Enter one structured line per ingredient.</p>
+              <p className="mt-1 text-sm text-slate-500">Enter one structured line per ingredient. Supported units: {INGREDIENT_UNIT_SUGGESTIONS.join(', ')}.</p>
             </div>
             <button
               type="button"
-              onClick={() => setForm((previous) => ({
-                ...previous,
-                ingredientLines: [...previous.ingredientLines, { ingredientName: '', quantityValue: '', quantityUnit: '', notes: '' }],
-              }))}
+              onClick={() => {
+                clearEstimateFeedback();
+                setForm((previous) => ({
+                  ...previous,
+                  ingredientLines: [...previous.ingredientLines, {
+                    ingredientName: '',
+                    quantityValue: '',
+                    quantityUnit: '',
+                    notes: '',
+                    estimatedKcal: '',
+                    manualKcal: '',
+                    kcalSource: '',
+                    kcalPer100: '',
+                    linkedFdcId: '',
+                    matchedFoodLabel: '',
+                  }],
+                }));
+              }}
               className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold"
             >
               <span className="inline-flex items-center gap-2">
@@ -391,44 +699,114 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
             </button>
           </div>
 
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+            {INGREDIENT_UNIT_SUGGESTIONS.map((unit) => (
+              <span key={unit} className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-semibold">
+                {unit}
+              </span>
+            ))}
+            {ingredientKcalCount > 0 ? (
+              <>
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">
+                  Ingredient total {Math.round(ingredientTotalKcal)} kcal
+                </span>
+                {ingredientDerivedPerServing !== null ? (
+                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+                    {Math.round(ingredientDerivedPerServing)} kcal per serving
+                  </span>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+
           <div className="mt-3 space-y-3">
             {form.ingredientLines.map((line, index) => (
-              <div key={`ingredient-${index}`} className="grid gap-3 rounded-[24px] border border-slate-200 bg-slate-50/70 p-3 sm:grid-cols-[minmax(0,2fr)_120px_120px_minmax(0,1.2fr)_auto]">
-                <input
-                  value={line.ingredientName}
-                  onChange={(event) => handleIngredientChange(index, 'ingredientName', event.target.value)}
-                  className="pm-input rounded-2xl px-4 py-3 text-sm"
-                  placeholder="Ingredient name"
-                />
-                <input
-                  value={line.quantityValue}
-                  onChange={(event) => handleIngredientChange(index, 'quantityValue', event.target.value)}
-                  className="pm-input rounded-2xl px-4 py-3 text-sm"
-                  placeholder="Qty"
-                />
-                <input
-                  value={line.quantityUnit}
-                  onChange={(event) => handleIngredientChange(index, 'quantityUnit', event.target.value)}
-                  className="pm-input rounded-2xl px-4 py-3 text-sm"
-                  placeholder="Unit"
-                />
-                <input
-                  value={line.notes}
-                  onChange={(event) => handleIngredientChange(index, 'notes', event.target.value)}
-                  className="pm-input rounded-2xl px-4 py-3 text-sm"
-                  placeholder="Notes (optional)"
-                />
-                <button
-                  type="button"
-                  onClick={() => setForm((previous) => ({
-                    ...previous,
-                    ingredientLines: previous.ingredientLines.filter((_, lineIndex) => lineIndex !== index),
-                  }))}
-                  className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-2 text-slate-500 transition hover:bg-slate-100"
-                  aria-label="Remove ingredient"
-                >
-                  <Trash className="h-4 w-4" />
-                </button>
+              <div key={`ingredient-${index}`} className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-3">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_110px_110px_150px_minmax(0,1.2fr)_auto]">
+                  <input
+                    value={line.ingredientName}
+                    onChange={(event) => handleIngredientChange(index, 'ingredientName', event.target.value)}
+                    className="pm-input rounded-2xl px-4 py-3 text-sm"
+                    placeholder="Ingredient name"
+                  />
+                  <input
+                    value={line.quantityValue}
+                    onChange={(event) => handleIngredientChange(index, 'quantityValue', event.target.value)}
+                    className="pm-input rounded-2xl px-4 py-3 text-sm"
+                    placeholder="Qty"
+                  />
+                  <input
+                    value={line.quantityUnit}
+                    onChange={(event) => handleIngredientChange(index, 'quantityUnit', event.target.value)}
+                    className="pm-input rounded-2xl px-4 py-3 text-sm"
+                    placeholder="pcs / g / ml"
+                    list={`ingredient-unit-suggestions-${index}`}
+                  />
+                  <datalist id={`ingredient-unit-suggestions-${index}`}>
+                    {INGREDIENT_UNIT_SUGGESTIONS.map((unit) => (
+                      <option key={unit} value={unit} />
+                    ))}
+                  </datalist>
+                  <input
+                    value={line.manualKcal !== '' && line.manualKcal !== null && line.manualKcal !== undefined
+                      ? line.manualKcal
+                      : (line.estimatedKcal ?? '')}
+                    onChange={(event) => handleIngredientChange(index, 'manualKcal', event.target.value)}
+                    className="pm-input rounded-2xl px-4 py-3 text-sm"
+                    placeholder="kcal"
+                    type="number"
+                    min="0"
+                  />
+                  <input
+                    value={line.notes}
+                    onChange={(event) => handleIngredientChange(index, 'notes', event.target.value)}
+                    className="pm-input rounded-2xl px-4 py-3 text-sm"
+                    placeholder="Notes (optional)"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearEstimateFeedback();
+                      setForm((previous) => ({
+                        ...previous,
+                        ingredientLines: previous.ingredientLines.filter((_, lineIndex) => lineIndex !== index),
+                      }));
+                    }}
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-2 text-slate-500 transition hover:bg-slate-100"
+                    aria-label="Remove ingredient"
+                  >
+                    <Trash className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                  <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
+                    Units: pcs, g, ml, tsp, tbsp, cup
+                  </span>
+                  {Number.isFinite(getIngredientDisplayKcal(line)) ? (
+                    <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">
+                      {Math.round(getIngredientDisplayKcal(line))} kcal
+                    </span>
+                  ) : null}
+                  {line.manualKcal !== '' && line.manualKcal !== null && line.manualKcal !== undefined ? (
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+                      Manual
+                    </span>
+                  ) : getKcalSourceBadgeLabel(line.kcalSource) ? (
+                    <span className="rounded-full bg-sky-50 px-2.5 py-1 font-semibold text-sky-700">
+                      {getKcalSourceBadgeLabel(line.kcalSource)}
+                    </span>
+                  ) : null}
+                  {line.kcalPer100 ? (
+                    <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
+                      {Math.round(line.kcalPer100)} kcal / 100g
+                    </span>
+                  ) : null}
+                  {line.matchedFoodLabel ? (
+                    <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
+                      {line.matchedFoodLabel}
+                    </span>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
@@ -950,8 +1328,15 @@ function RecipeDetailModal({
                         <p className="mt-1 text-xs text-slate-500">{ingredient.notes}</p>
                       ) : null}
                     </div>
-                    <div className="shrink-0 text-sm font-semibold text-slate-500">
-                      {ingredient.quantityValue !== null ? `${formatIngredientQuantity(ingredient.quantityValue)} ${ingredient.quantityUnit}`.trim() : ingredient.rawText}
+                    <div className="shrink-0 text-right">
+                      <div className="text-sm font-semibold text-slate-500">
+                        {ingredient.quantityValue !== null ? `${formatIngredientQuantity(ingredient.quantityValue)} ${ingredient.quantityUnit}`.trim() : ingredient.rawText}
+                      </div>
+                      {Number.isFinite(getIngredientDisplayKcal(ingredient)) ? (
+                        <div className="mt-1 text-xs font-semibold text-amber-700">
+                          {Math.round(getIngredientDisplayKcal(ingredient))} kcal
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))}

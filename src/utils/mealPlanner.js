@@ -494,6 +494,12 @@ export const buildMealIngredientRecords = (ingredientLines = []) => (
     quantity_value: toNullableFiniteNumber(ingredient.quantityValue),
     quantity_unit: ingredient.quantityUnit || '',
     notes: ingredient.notes || '',
+    estimated_kcal: toNullableFiniteNumber(ingredient.estimatedKcal),
+    manual_kcal: toNullableFiniteNumber(ingredient.manualKcal),
+    kcal_source: normalizeSpace(ingredient.kcalSource || '') || null,
+    kcal_per_100: toNullableFiniteNumber(ingredient.kcalPer100),
+    linked_fdc_id: toNullableFiniteNumber(ingredient.linkedFdcId),
+    matched_food_label: normalizeSpace(ingredient.matchedFoodLabel || '') || null,
     parse_confidence: toNullableFiniteNumber(ingredient.parseConfidence) ?? 0,
   }))
 );
