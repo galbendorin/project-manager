@@ -22,6 +22,7 @@ const PERSONAL_DAILY_TARGETS = {
   fatG: 62,
   carbsG: 233,
   fiberG: 30,
+  caloriesFor64KgKcal: 1485,
 };
 
 const getAudiencePillClasses = (audience) => {
@@ -1963,6 +1964,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Breakfast, lunch, and dinner can copy forward</span>
                   </div>
                   <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700">64kg calories ~{PERSONAL_DAILY_TARGETS.caloriesFor64KgKcal} kcal</span>
                     <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-700">Protein target {PERSONAL_DAILY_TARGETS.proteinG}g</span>
                     <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-700">Fat target {PERSONAL_DAILY_TARGETS.fatG}g</span>
                     <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-indigo-700">Carbs target {PERSONAL_DAILY_TARGETS.carbsG}g</span>
