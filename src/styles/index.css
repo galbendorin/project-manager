@@ -293,6 +293,26 @@ body {
   box-shadow: 0 22px 44px -34px rgba(15, 23, 42, 0.18);
 }
 
+.pm-scroll-optimize-day,
+.pm-scroll-optimize-card {
+  contain: layout paint style;
+}
+
+@supports (content-visibility: auto) {
+  .pm-scroll-optimize-day,
+  .pm-scroll-optimize-card {
+    content-visibility: auto;
+  }
+
+  .pm-scroll-optimize-day {
+    contain-intrinsic-size: 760px;
+  }
+
+  .pm-scroll-optimize-card {
+    contain-intrinsic-size: 220px;
+  }
+}
+
 .pm-ai-banner {
   background: linear-gradient(135deg, #1a1830 0%, #24274a 48%, #4f46a8 100%);
   border-bottom: 1px solid rgba(129, 140, 248, 0.22);

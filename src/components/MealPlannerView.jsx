@@ -1982,7 +1982,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
               <div className="mt-5 space-y-4">
                 {weekDays.map((day) => (
-                  <div key={day.key} className="rounded-[26px] border border-slate-200 bg-slate-50/70 p-4">
+                  <div key={day.key} className="pm-scroll-optimize-day rounded-[26px] border border-slate-200 bg-slate-50/70 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{day.shortLabel}</p>
@@ -2019,7 +2019,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                           .filter(({ recipe }) => Boolean(recipe));
 
                         return (
-                          <div key={`${day.key}-${slot}`} className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
+                          <div key={`${day.key}-${slot}`} className="pm-scroll-optimize-card rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
                             <div className="flex items-center justify-between gap-3">
                               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{getMealSlotLabel(slot)}</p>
                               <div className="flex items-center gap-2">
@@ -2036,7 +2036,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 const isCopyPromptVisible = Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
                                 const entryUsage = entryUsageById?.[entry.id] || null;
                                 return (
-                                  <div key={entry.id} className="rounded-[22px] border border-slate-200 bg-slate-50/60 px-3 py-3">
+                                  <div key={entry.id} className="pm-scroll-optimize-card rounded-[22px] border border-slate-200 bg-slate-50/60 px-3 py-3">
                                     <button
                                       type="button"
                                       onClick={() => setDetailContext({
@@ -2188,7 +2188,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
                 <div className="mt-4 max-h-[720px] space-y-3 overflow-y-auto pr-1">
                   {filteredLibraryRecipes.map((recipe) => (
-                    <div key={recipe.id} className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
+                    <div key={recipe.id} className="pm-scroll-optimize-card rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
                       <button type="button" onClick={() => setDetailContext({
                         recipe,
                         entry: null,
