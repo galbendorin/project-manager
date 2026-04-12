@@ -51,6 +51,12 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(next) ? next : null;
 };
 
+const hasPositiveCalorieEstimate = (result = {}) => {
+  const estimatedKcal = toFiniteNumber(result.estimatedKcal);
+  const kcalPer100 = toFiniteNumber(result.kcalPer100);
+  return (estimatedKcal !== null && estimatedKcal > 0) || (kcalPer100 !== null && kcalPer100 > 0);
+};
+
 const normalizeIngredientInput = (ingredient = {}) => ({
   rawText: String(ingredient.rawText || ingredient.ingredientName || '').trim(),
   ingredientName: String(ingredient.ingredientName || ingredient.rawText || '').trim(),
@@ -120,6 +126,7 @@ const readCachedIngredientEstimate = async (ingredient = {}) => {
   }
 
   if (!data?.payload) return null;
+  if (!hasPositiveCalorieEstimate(data.payload)) return null;
   return {
     ...data.payload,
     cacheHit: true,
@@ -144,7 +151,7 @@ const loadRememberedIngredientRows = async ({ userId, userSupabase }) => {
   ].join(', ');
 
   try {
-    if (userSupabase) {
+      if (userSupabase) {
       const { data, error } = await userSupabase
         .from('meal_library_ingredients')
         .select(ingredientSelect)
@@ -154,9 +161,9 @@ const loadRememberedIngredientRows = async ({ userId, userSupabase }) => {
       if (error) throw error;
 
       return (data || []).filter((row) => (
-        toFiniteNumber(row.kcal_per_100) !== null
-        || toFiniteNumber(row.manual_kcal) !== null
-        || toFiniteNumber(row.estimated_kcal) !== null
+        (toFiniteNumber(row.kcal_per_100) !== null && Number(row.kcal_per_100) > 0)
+        || (toFiniteNumber(row.manual_kcal) !== null && Number(row.manual_kcal) > 0)
+        || (toFiniteNumber(row.estimated_kcal) !== null && Number(row.estimated_kcal) > 0)
       ));
     }
 
@@ -184,9 +191,9 @@ const loadRememberedIngredientRows = async ({ userId, userSupabase }) => {
     if (error) throw error;
 
     return (data || []).filter((row) => (
-      toFiniteNumber(row.kcal_per_100) !== null
-      || toFiniteNumber(row.manual_kcal) !== null
-      || toFiniteNumber(row.estimated_kcal) !== null
+      (toFiniteNumber(row.kcal_per_100) !== null && Number(row.kcal_per_100) > 0)
+      || (toFiniteNumber(row.manual_kcal) !== null && Number(row.manual_kcal) > 0)
+      || (toFiniteNumber(row.estimated_kcal) !== null && Number(row.estimated_kcal) > 0)
     ));
   } catch (error) {
     console.warn('Meal ingredient memory lookup failed:', error?.message || error);
@@ -315,22 +322,6 @@ export default async function handler(req, res) {
         continue;
       }
 
-      const rememberedIngredientResult = findRememberedIngredientEstimate({
-        ingredient,
-        rememberedRows: rememberedIngredientRows,
-      });
-      if (rememberedIngredientResult) {
-        const rememberedResult = {
-          ...rememberedIngredientResult,
-          searchQuery,
-          cacheHit: false,
-          lookupSource: 'remembered',
-        };
-        ingredientResults.push(rememberedResult);
-        await writeCachedIngredientEstimate(ingredient, rememberedResult, searchQuery);
-        continue;
-      }
-
       const starterFoodMatch = findStarterCalorieFoodMatch(ingredient);
       if (starterFoodMatch) {
         const starterResult = {
@@ -344,6 +335,22 @@ export default async function handler(req, res) {
         };
         ingredientResults.push(starterResult);
         await writeCachedIngredientEstimate(ingredient, starterResult, searchQuery);
+        continue;
+      }
+
+      const rememberedIngredientResult = findRememberedIngredientEstimate({
+        ingredient,
+        rememberedRows: rememberedIngredientRows,
+      });
+      if (rememberedIngredientResult) {
+        const rememberedResult = {
+          ...rememberedIngredientResult,
+          searchQuery,
+          cacheHit: false,
+          lookupSource: 'remembered',
+        };
+        ingredientResults.push(rememberedResult);
+        await writeCachedIngredientEstimate(ingredient, rememberedResult, searchQuery);
         continue;
       }
 

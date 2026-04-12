@@ -255,6 +255,11 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(next) ? next : null;
 };
 
+const toPositiveFiniteNumber = (value) => {
+  const next = toFiniteNumber(value);
+  return next !== null && next > 0 ? next : null;
+};
+
 const buildRememberedMatchedFood = (row = {}, ingredientName = '') => ({
   fdcId: toFiniteNumber(row.linkedFdcId ?? row.linked_fdc_id),
   description: row.matchedFoodLabel
@@ -274,9 +279,9 @@ const getRememberedMatchScore = (row = {}, ingredient = {}) => {
   if (!ingredientKey || !rowKey || ingredientKey !== rowKey) return 0;
 
   let score = 100;
-  if (toFiniteNumber(row.kcalPer100 ?? row.kcal_per_100) !== null) score += 24;
-  if (toFiniteNumber(row.manualKcal ?? row.manual_kcal) !== null) score += 12;
-  if (toFiniteNumber(row.estimatedKcal ?? row.estimated_kcal) !== null) score += 6;
+  if (toPositiveFiniteNumber(row.kcalPer100 ?? row.kcal_per_100) !== null) score += 24;
+  if (toPositiveFiniteNumber(row.manualKcal ?? row.manual_kcal) !== null) score += 12;
+  if (toPositiveFiniteNumber(row.estimatedKcal ?? row.estimated_kcal) !== null) score += 6;
 
   const ingredientUnit = normalizeEstimatorUnit(ingredient.quantityUnit || '');
   const rowUnit = normalizeEstimatorUnit(row.quantityUnit ?? row.quantity_unit ?? '');
@@ -310,14 +315,14 @@ export const findRememberedIngredientEstimate = ({ ingredient = {}, rememberedRo
     .filter(({ score }) => score > 0)
     .sort((left, right) => (
       right.score - left.score
-      || (toFiniteNumber(right.row.manualKcal ?? right.row.manual_kcal) ? 1 : 0) - (toFiniteNumber(left.row.manualKcal ?? left.row.manual_kcal) ? 1 : 0)
+      || (toPositiveFiniteNumber(right.row.manualKcal ?? right.row.manual_kcal) ? 1 : 0) - (toPositiveFiniteNumber(left.row.manualKcal ?? left.row.manual_kcal) ? 1 : 0)
       || `${right.row.updatedAt || right.row.updated_at || ''}`.localeCompare(`${left.row.updatedAt || left.row.updated_at || ''}`)
     ));
 
   const best = rankedRows[0]?.row;
   if (!best) return null;
 
-  const kcalPer100 = toFiniteNumber(best.kcalPer100 ?? best.kcal_per_100);
+  const kcalPer100 = toPositiveFiniteNumber(best.kcalPer100 ?? best.kcal_per_100);
   if (kcalPer100 !== null) {
     const rememberedEstimate = estimateIngredientCalories({
       ingredient,
@@ -347,7 +352,7 @@ export const findRememberedIngredientEstimate = ({ ingredient = {}, rememberedRo
   const ingredientUnit = normalizeEstimatorUnit(ingredient.quantityUnit || '');
   const rowQuantity = toFiniteNumber(best.quantityValue ?? best.quantity_value);
   const rowUnit = normalizeEstimatorUnit(best.quantityUnit ?? best.quantity_unit ?? '');
-  const rememberedKcal = toFiniteNumber(best.manualKcal ?? best.manual_kcal) ?? toFiniteNumber(best.estimatedKcal ?? best.estimated_kcal);
+  const rememberedKcal = toPositiveFiniteNumber(best.manualKcal ?? best.manual_kcal) ?? toPositiveFiniteNumber(best.estimatedKcal ?? best.estimated_kcal);
 
   if (
     rememberedKcal !== null

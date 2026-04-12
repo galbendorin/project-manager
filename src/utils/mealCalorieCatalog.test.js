@@ -88,3 +88,27 @@ test('findRememberedIngredientEstimate can reuse an exact manual match when per-
   assert.equal(result?.resolutionMethod, 'remembered-exact');
   assert.equal(result?.estimatedKcal, 180);
 });
+
+test('findRememberedIngredientEstimate ignores zero-calorie remembered rows', () => {
+  const result = findRememberedIngredientEstimate({
+    ingredient: {
+      ingredientName: 'egg',
+      rawText: 'egg 1 pcs',
+      quantityValue: 1,
+      quantityUnit: 'pcs',
+      notes: '',
+    },
+    rememberedRows: [
+      {
+        ingredient_name: 'egg',
+        quantity_value: 1,
+        quantity_unit: 'pcs',
+        estimated_kcal: 0,
+        matched_food_label: 'egg',
+        updated_at: '2026-04-12T08:00:00Z',
+      },
+    ],
+  });
+
+  assert.equal(result, null);
+});
