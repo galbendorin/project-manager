@@ -12,6 +12,7 @@ import {
   parseRecipeImportText,
   summarizeRecipeIngredients,
 } from '../utils/mealPlanner';
+import { estimateRecipeNutritionFromStarterCatalog } from '../utils/mealCalorieCatalog';
 
 const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 const AUDIENCE_OPTIONS = ['all', 'adults', 'kids'];
@@ -191,6 +192,13 @@ const getKcalSourceBadgeLabel = (source = '') => {
   if (source === 'cached') return 'Saved lookup';
   if (source === 'usda') return 'USDA lookup';
   return '';
+};
+
+const formatMacroTotal = (value) => {
+  const next = Number(value);
+  if (!Number.isFinite(next)) return '0';
+  if (Math.abs(next - Math.round(next)) < 0.05) return String(Math.round(next));
+  return next.toFixed(1).replace(/\.0$/, '');
 };
 
 const formatWeekLabel = (weekDays = []) => {
@@ -1614,6 +1622,12 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
   const weekLabel = useMemo(() => formatWeekLabel(weekDays), [weekDays]);
   const partnerServingMultiplier = Math.max(0, (week?.adultCount ?? 1.75) - 1);
+  const recipeNutritionById = useMemo(() => (
+    recipes.reduce((accumulator, recipe) => {
+      accumulator[recipe.id] = estimateRecipeNutritionFromStarterCatalog(recipe);
+      return accumulator;
+    }, {})
+  ), [recipes]);
   const dayCaloriesByKey = useMemo(() => (
     weekDays.reduce((accumulator, day) => {
       const total = entries
@@ -1629,6 +1643,28 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       return accumulator;
     }, {})
   ), [entries, recipeMap, weekDays]);
+  const dayNutritionByKey = useMemo(() => (
+    weekDays.reduce((accumulator, day) => {
+      const totals = entries
+        .filter((entry) => entry.date === day.key)
+        .reduce((sum, entry) => {
+          if (entry.audience === 'kids') return sum;
+          const nutrition = recipeNutritionById[entry.mealId];
+          if (!nutrition) return sum;
+          return {
+            proteinG: sum.proteinG + (nutrition.proteinG || 0),
+            carbsG: sum.carbsG + (nutrition.carbsG || 0),
+            fiberG: sum.fiberG + (nutrition.fiberG || 0),
+          };
+        }, {
+          proteinG: 0,
+          carbsG: 0,
+          fiberG: 0,
+        });
+      accumulator[day.key] = totals;
+      return accumulator;
+    }, {})
+  ), [entries, recipeNutritionById, weekDays]);
 
   const handleMoveWeek = (offset) => {
     const date = new Date(selectedWeekStart);
@@ -1916,6 +1952,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Adults total {week?.adultCount ?? 1.75}x</span>
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Your calories use 1.0 serving only</span>
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Kids count as 0.5 portion</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Daily P / C / F are approximate from recipe ingredients</span>
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Breakfast, lunch, and dinner can copy forward</span>
                 </div>
                 <button
@@ -1935,11 +1972,24 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{day.shortLabel}</p>
                         <h3 className="mt-1 text-lg font-semibold text-slate-950">{day.dayLabel}</h3>
                       </div>
-                      <div className="shrink-0 rounded-[20px] border border-amber-200 bg-amber-50 px-3 py-2 text-right">
+                      <div className="shrink-0 rounded-[20px] border border-amber-200 bg-amber-50 px-3 py-2 text-right min-w-[180px]">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">Your total</p>
                         <p className="mt-1 text-sm font-semibold text-amber-800">
                           {dayCaloriesByKey[day.key] > 0 ? `${dayCaloriesByKey[day.key]} kcal` : 'No meals yet'}
                         </p>
+                        {dayCaloriesByKey[day.key] > 0 ? (
+                          <div className="mt-2 flex flex-wrap justify-end gap-1.5 text-[11px] font-semibold">
+                            <span className="rounded-full bg-white px-2 py-1 text-sky-700">
+                              P {formatMacroTotal(dayNutritionByKey[day.key]?.proteinG)}g
+                            </span>
+                            <span className="rounded-full bg-white px-2 py-1 text-indigo-700">
+                              C {formatMacroTotal(dayNutritionByKey[day.key]?.carbsG)}g
+                            </span>
+                            <span className="rounded-full bg-white px-2 py-1 text-emerald-700">
+                              F {formatMacroTotal(dayNutritionByKey[day.key]?.fiberG)}g
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 

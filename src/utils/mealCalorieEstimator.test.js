@@ -4,8 +4,14 @@ import assert from 'node:assert/strict';
 import {
   buildIngredientSearchQuery,
   estimateIngredientCalories,
+  estimateIngredientCarbs,
+  estimateIngredientFiber,
+  estimateIngredientProtein,
   estimateIngredientWeightGrams,
+  getFoodCarbsPer100,
   getFoodEnergyPer100,
+  getFoodFiberPer100,
+  getFoodProteinPer100,
   normalizeEstimatorUnit,
   pickBestFoodMatch,
   summarizeRecipeCalorieEstimate,
@@ -32,6 +38,26 @@ test('getFoodEnergyPer100 prefers kcal energy nutrients', () => {
       { nutrient: { id: 1003, name: 'Protein', unitName: 'G' }, amount: 12.6 },
     ],
   }), 143);
+});
+
+test('getFoodFiberPer100 reads dietary fiber nutrients', () => {
+  assert.equal(getFoodFiberPer100({
+    foodNutrients: [
+      { nutrient: { id: 1079, name: 'Fiber, total dietary', unitName: 'G' }, amount: 10.6 },
+    ],
+  }), 10.6);
+});
+
+test('getFoodProteinPer100 and getFoodCarbsPer100 read macro nutrients', () => {
+  const food = {
+    foodNutrients: [
+      { nutrient: { id: 1003, name: 'Protein', unitName: 'G' }, amount: 16.9 },
+      { nutrient: { id: 1005, name: 'Carbohydrate, by difference', unitName: 'G' }, amount: 66.3 },
+    ],
+  };
+
+  assert.equal(getFoodProteinPer100(food), 16.9);
+  assert.equal(getFoodCarbsPer100(food), 66.3);
 });
 
 test('estimateIngredientWeightGrams handles direct mass, volumes, and pieces', () => {
@@ -115,6 +141,99 @@ test('estimateIngredientCalories returns a resolved ingredient summary', () => {
         fdcId: 123,
         description: 'Egg, whole, raw',
         dataType: 'Foundation',
+      },
+    }
+  );
+});
+
+test('estimateIngredientFiber returns a resolved ingredient summary', () => {
+  assert.deepEqual(
+    estimateIngredientFiber({
+      ingredient: { ingredientName: 'oats', rawText: 'oats 60 g', quantityValue: 60, quantityUnit: 'g' },
+      food: {
+        fdcId: 456,
+        description: 'Oats',
+        dataType: 'Starter Catalog',
+        foodNutrients: [
+          { nutrient: { id: 1079, name: 'Fiber, total dietary', unitName: 'G' }, amount: 10.6 },
+        ],
+      },
+    }),
+    {
+      ingredientName: 'oats',
+      rawText: 'oats 60 g',
+      quantityValue: 60,
+      quantityUnit: 'g',
+      estimatedFiberG: 6.4,
+      quantityGrams: 60,
+      fiberPer100: 10.6,
+      resolutionMethod: 'direct-mass',
+      resolved: true,
+      reason: '',
+      matchedFood: {
+        fdcId: 456,
+        description: 'Oats',
+        dataType: 'Starter Catalog',
+      },
+    }
+  );
+});
+
+test('estimateIngredientProtein and estimateIngredientCarbs return resolved summaries', () => {
+  const food = {
+    fdcId: 456,
+    description: 'Oats',
+    dataType: 'Starter Catalog',
+    foodNutrients: [
+      { nutrient: { id: 1003, name: 'Protein', unitName: 'G' }, amount: 16.9 },
+      { nutrient: { id: 1005, name: 'Carbohydrate, by difference', unitName: 'G' }, amount: 66.3 },
+    ],
+  };
+
+  assert.deepEqual(
+    estimateIngredientProtein({
+      ingredient: { ingredientName: 'oats', rawText: 'oats 60 g', quantityValue: 60, quantityUnit: 'g' },
+      food,
+    }),
+    {
+      ingredientName: 'oats',
+      rawText: 'oats 60 g',
+      quantityValue: 60,
+      quantityUnit: 'g',
+      estimatedProteinG: 10.1,
+      quantityGrams: 60,
+      proteinPer100: 16.9,
+      resolutionMethod: 'direct-mass',
+      resolved: true,
+      reason: '',
+      matchedFood: {
+        fdcId: 456,
+        description: 'Oats',
+        dataType: 'Starter Catalog',
+      },
+    }
+  );
+
+  assert.deepEqual(
+    estimateIngredientCarbs({
+      ingredient: { ingredientName: 'oats', rawText: 'oats 60 g', quantityValue: 60, quantityUnit: 'g' },
+      food,
+    }),
+    {
+      ingredientName: 'oats',
+      rawText: 'oats 60 g',
+      quantityValue: 60,
+      quantityUnit: 'g',
+      estimatedCarbsG: 39.8,
+      quantityGrams: 60,
+      carbsPer100: 66.3,
+      resolutionMethod: 'direct-mass',
+      resolved: true,
+      reason: '',
+      matchedFood: {
+        fdcId: 456,
+        description: 'Oats',
+        dataType: 'Starter Catalog',
       },
     }
   );

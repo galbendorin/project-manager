@@ -1,4 +1,7 @@
 const ENERGY_NUTRIENT_IDS = new Set([1008, 2047, 2048]);
+const PROTEIN_NUTRIENT_IDS = new Set([1003]);
+const CARB_NUTRIENT_IDS = new Set([1005]);
+const FIBER_NUTRIENT_IDS = new Set([1079]);
 
 const MASS_UNIT_TO_GRAMS = {
   g: 1,
@@ -168,7 +171,12 @@ const getFoodNutrients = (food = {}) => (
       : []
 );
 
-export const getFoodEnergyPer100 = (food = {}) => {
+const getFoodNutrientPer100 = ({
+  food = {},
+  nutrientIds = new Set(),
+  isMatch = () => false,
+  labelNutrientKeys = [],
+} = {}) => {
   const nutrients = getFoodNutrients(food);
 
   let bestMatch = null;
@@ -194,15 +202,16 @@ export const getFoodEnergyPer100 = (food = {}) => {
 
     if (!Number.isFinite(amount) || amount < 0) continue;
 
-    const looksLikeEnergy = (
-      ENERGY_NUTRIENT_IDS.has(nutrientId)
-      || (unitName === 'KCAL' && nutrientName.includes('energy'))
-    );
+    const looksLikeMatch = nutrientIds.has(nutrientId) || isMatch({
+      nutrientId,
+      nutrientName,
+      unitName,
+    });
 
-    if (!looksLikeEnergy) continue;
+    if (!looksLikeMatch) continue;
 
-    const priority = ENERGY_NUTRIENT_IDS.has(nutrientId)
-      ? [1008, 2047, 2048].indexOf(nutrientId)
+    const priority = nutrientIds.has(nutrientId)
+      ? Array.from(nutrientIds).indexOf(nutrientId)
       : 9;
 
     if (!bestMatch || priority < bestMatch.priority) {
@@ -214,11 +223,13 @@ export const getFoodEnergyPer100 = (food = {}) => {
     return roundTo(bestMatch.amount, 1);
   }
 
-  const labelCalories = Number(food.labelNutrients?.calories?.value);
+  const labelValue = labelNutrientKeys
+    .map((key) => Number(food.labelNutrients?.[key]?.value))
+    .find((value) => Number.isFinite(value) && value >= 0);
   const servingSize = Number(food.servingSize);
   const servingSizeUnit = normalizeEstimatorUnit(food.servingSizeUnit);
   if (
-    Number.isFinite(labelCalories)
+    Number.isFinite(labelValue)
     && Number.isFinite(servingSize)
     && servingSize > 0
     && (servingSizeUnit === 'g' || servingSizeUnit === 'ml')
@@ -229,11 +240,55 @@ export const getFoodEnergyPer100 = (food = {}) => {
     const servingGrams = servingSizeUnit === 'ml'
       ? servingSize * density
       : servingSize;
-    return roundTo((labelCalories / servingGrams) * 100, 1);
+    return roundTo((labelValue / servingGrams) * 100, 1);
   }
 
   return null;
 };
+
+export const getFoodEnergyPer100 = (food = {}) => {
+  return getFoodNutrientPer100({
+    food,
+    nutrientIds: ENERGY_NUTRIENT_IDS,
+    isMatch: ({ nutrientName, unitName }) => (
+      unitName === 'KCAL' && nutrientName.includes('energy')
+    ),
+    labelNutrientKeys: ['calories'],
+  });
+};
+
+export const getFoodFiberPer100 = (food = {}) => (
+  getFoodNutrientPer100({
+    food,
+    nutrientIds: FIBER_NUTRIENT_IDS,
+    isMatch: ({ nutrientName, unitName }) => (
+      unitName === 'G' && (nutrientName.includes('fiber') || nutrientName.includes('fibre'))
+    ),
+    labelNutrientKeys: ['fiber', 'dietaryFiber'],
+  })
+);
+
+export const getFoodProteinPer100 = (food = {}) => (
+  getFoodNutrientPer100({
+    food,
+    nutrientIds: PROTEIN_NUTRIENT_IDS,
+    isMatch: ({ nutrientName, unitName }) => (
+      unitName === 'G' && nutrientName.includes('protein')
+    ),
+    labelNutrientKeys: ['protein'],
+  })
+);
+
+export const getFoodCarbsPer100 = (food = {}) => (
+  getFoodNutrientPer100({
+    food,
+    nutrientIds: CARB_NUTRIENT_IDS,
+    isMatch: ({ nutrientName, unitName }) => (
+      unitName === 'G' && (nutrientName.includes('carbohydrate') || nutrientName.includes('carbohydrates') || nutrientName.includes('carbs'))
+    ),
+    labelNutrientKeys: ['carbohydrates', 'carbs'],
+  })
+);
 
 const getPortionCandidates = (food = {}) => {
   const portionCollections = [
@@ -484,6 +539,160 @@ export const estimateIngredientCalories = ({ ingredient = {}, food = {} } = {}) 
     },
   };
 };
+
+export const estimateIngredientFiber = ({ ingredient = {}, food = {} } = {}) => {
+  const fiberPer100 = getFoodFiberPer100(food);
+  if (fiberPer100 === null) {
+    return {
+      ingredientName: ingredient.ingredientName || ingredient.rawText || 'Ingredient',
+      rawText: ingredient.rawText || ingredient.ingredientName || '',
+      quantityValue: ingredient.quantityValue ?? null,
+      quantityUnit: ingredient.quantityUnit || '',
+      estimatedFiberG: null,
+      quantityGrams: null,
+      fiberPer100: null,
+      resolutionMethod: 'unresolved',
+      resolved: false,
+      reason: 'No usable fiber data was returned for the matched food.',
+      matchedFood: {
+        fdcId: food.fdcId || null,
+        description: food.description || '',
+        dataType: food.dataType || '',
+      },
+    };
+  }
+
+  const weightEstimate = estimateIngredientWeightGrams({ ingredient, food });
+  if (weightEstimate.grams === null) {
+    return {
+      ingredientName: ingredient.ingredientName || ingredient.rawText || 'Ingredient',
+      rawText: ingredient.rawText || ingredient.ingredientName || '',
+      quantityValue: ingredient.quantityValue ?? null,
+      quantityUnit: ingredient.quantityUnit || '',
+      estimatedFiberG: null,
+      quantityGrams: null,
+      fiberPer100,
+      resolutionMethod: 'unresolved',
+      resolved: false,
+      reason: weightEstimate.reason,
+      matchedFood: {
+        fdcId: food.fdcId || null,
+        description: food.description || '',
+        dataType: food.dataType || '',
+      },
+    };
+  }
+
+  const estimatedFiberG = (weightEstimate.grams / 100) * fiberPer100;
+  return {
+    ingredientName: ingredient.ingredientName || ingredient.rawText || 'Ingredient',
+    rawText: ingredient.rawText || ingredient.ingredientName || '',
+    quantityValue: ingredient.quantityValue ?? null,
+    quantityUnit: ingredient.quantityUnit || '',
+    estimatedFiberG: roundTo(estimatedFiberG, 1),
+    quantityGrams: roundTo(weightEstimate.grams, 1),
+    fiberPer100,
+    resolutionMethod: weightEstimate.method,
+    resolved: true,
+    reason: '',
+    matchedFood: {
+      fdcId: food.fdcId || null,
+      description: food.description || '',
+      dataType: food.dataType || '',
+    },
+  };
+};
+
+const estimateIngredientNutrient = ({
+  ingredient = {},
+  food = {},
+  nutrientPer100 = null,
+  nutrientKey = 'estimatedNutrient',
+  nutrientPer100Key = 'nutrientPer100',
+  missingReason = 'No usable nutrient data was returned for the matched food.',
+} = {}) => {
+  if (nutrientPer100 === null) {
+    return {
+      ingredientName: ingredient.ingredientName || ingredient.rawText || 'Ingredient',
+      rawText: ingredient.rawText || ingredient.ingredientName || '',
+      quantityValue: ingredient.quantityValue ?? null,
+      quantityUnit: ingredient.quantityUnit || '',
+      [nutrientKey]: null,
+      quantityGrams: null,
+      [nutrientPer100Key]: null,
+      resolutionMethod: 'unresolved',
+      resolved: false,
+      reason: missingReason,
+      matchedFood: {
+        fdcId: food.fdcId || null,
+        description: food.description || '',
+        dataType: food.dataType || '',
+      },
+    };
+  }
+
+  const weightEstimate = estimateIngredientWeightGrams({ ingredient, food });
+  if (weightEstimate.grams === null) {
+    return {
+      ingredientName: ingredient.ingredientName || ingredient.rawText || 'Ingredient',
+      rawText: ingredient.rawText || ingredient.ingredientName || '',
+      quantityValue: ingredient.quantityValue ?? null,
+      quantityUnit: ingredient.quantityUnit || '',
+      [nutrientKey]: null,
+      quantityGrams: null,
+      [nutrientPer100Key]: nutrientPer100,
+      resolutionMethod: 'unresolved',
+      resolved: false,
+      reason: weightEstimate.reason,
+      matchedFood: {
+        fdcId: food.fdcId || null,
+        description: food.description || '',
+        dataType: food.dataType || '',
+      },
+    };
+  }
+
+  const estimatedNutrient = (weightEstimate.grams / 100) * nutrientPer100;
+  return {
+    ingredientName: ingredient.ingredientName || ingredient.rawText || 'Ingredient',
+    rawText: ingredient.rawText || ingredient.ingredientName || '',
+    quantityValue: ingredient.quantityValue ?? null,
+    quantityUnit: ingredient.quantityUnit || '',
+    [nutrientKey]: roundTo(estimatedNutrient, 1),
+    quantityGrams: roundTo(weightEstimate.grams, 1),
+    [nutrientPer100Key]: nutrientPer100,
+    resolutionMethod: weightEstimate.method,
+    resolved: true,
+    reason: '',
+    matchedFood: {
+      fdcId: food.fdcId || null,
+      description: food.description || '',
+      dataType: food.dataType || '',
+    },
+  };
+};
+
+export const estimateIngredientProtein = ({ ingredient = {}, food = {} } = {}) => (
+  estimateIngredientNutrient({
+    ingredient,
+    food,
+    nutrientPer100: getFoodProteinPer100(food),
+    nutrientKey: 'estimatedProteinG',
+    nutrientPer100Key: 'proteinPer100',
+    missingReason: 'No usable protein data was returned for the matched food.',
+  })
+);
+
+export const estimateIngredientCarbs = ({ ingredient = {}, food = {} } = {}) => (
+  estimateIngredientNutrient({
+    ingredient,
+    food,
+    nutrientPer100: getFoodCarbsPer100(food),
+    nutrientKey: 'estimatedCarbsG',
+    nutrientPer100Key: 'carbsPer100',
+    missingReason: 'No usable carbohydrate data was returned for the matched food.',
+  })
+);
 
 export const summarizeRecipeCalorieEstimate = ({
   ingredientResults = [],

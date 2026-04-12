@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  estimateRecipeNutritionFromStarterCatalog,
   findRememberedIngredientEstimate,
   findStarterCalorieFoodMatch,
   normalizeIngredientMemoryKey,
@@ -111,4 +112,20 @@ test('findRememberedIngredientEstimate ignores zero-calorie remembered rows', ()
   });
 
   assert.equal(result, null);
+});
+
+test('estimateRecipeNutritionFromStarterCatalog totals protein, carbs, and fiber', () => {
+  const result = estimateRecipeNutritionFromStarterCatalog({
+    ingredients: [
+      { ingredientName: 'oats', quantityValue: 60, quantityUnit: 'g', notes: '' },
+      { ingredientName: 'banana', quantityValue: 1, quantityUnit: 'pcs', notes: '' },
+      { ingredientName: 'Greek yogurt', quantityValue: 150, quantityUnit: 'g', notes: '' },
+    ],
+  });
+
+  assert.deepEqual(result, {
+    proteinG: 26.4,
+    carbsG: 72.1,
+    fiberG: 9.5,
+  });
 });
