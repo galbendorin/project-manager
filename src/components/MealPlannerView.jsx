@@ -1860,32 +1860,34 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   }
 
   return (
-    <div className="pm-shell-bg min-h-full px-4 py-5 sm:px-6 sm:py-6">
+    <div className="pm-shell-bg min-h-full overflow-x-hidden px-3 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto max-w-7xl space-y-5">
-        <section className="pm-home-panel rounded-[30px] p-5 sm:p-6">
+        <section className="pm-home-panel overflow-hidden rounded-[28px] p-4 sm:rounded-[30px] sm:p-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <p className="pm-kicker">Meal Planner</p>
-              <h2 className="mt-2 text-3xl font-bold tracking-[-0.05em] text-slate-950">Plan the week and build shopping automatically</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+              <h2 className="mt-2 max-w-3xl text-[1.85rem] font-bold leading-[0.98] tracking-[-0.05em] text-slate-950 sm:text-3xl sm:leading-none">
+                Plan the week and build shopping automatically
+              </h2>
+              <p className="mt-2 max-w-3xl text-[13px] leading-5 text-slate-500 sm:text-sm sm:leading-6">
                 Pick meals by day, reuse breakfasts, lunches, and dinners across the week, then review one aggregated grocery draft before it hits your shared Shopping List.
               </p>
               {!canUseStarterLibrary ? (
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                <p className="mt-2 max-w-3xl text-[13px] leading-5 text-slate-500 sm:text-sm sm:leading-6">
                   This account starts with an empty recipe library so you can add or import your own meals.
                 </p>
               ) : null}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex w-full flex-col gap-2 xl:w-auto xl:min-w-[220px] xl:items-end">
               {canUseStarterLibrary ? (
-                <button type="button" onClick={() => void seedStarterLibrary()} className="pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold">
+                <button type="button" onClick={() => void seedStarterLibrary()} className="pm-subtle-button w-full rounded-full px-4 py-2.5 text-sm font-semibold xl:w-auto">
                   Load starter menu library
                 </button>
               ) : null}
-              <button type="button" onClick={() => setShowImportModal(true)} className="pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold">
+              <button type="button" onClick={() => setShowImportModal(true)} className="pm-subtle-button w-full rounded-full px-4 py-2.5 text-sm font-semibold xl:w-auto">
                 Import rows
               </button>
-              <button type="button" onClick={() => setFormState(DEFAULT_FORM_STATE)} className="pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white">
+              <button type="button" onClick={() => setFormState(DEFAULT_FORM_STATE)} className="pm-toolbar-primary w-full rounded-full px-4 py-2.5 text-sm font-semibold text-white xl:w-auto">
                 <span className="inline-flex items-center gap-2">
                   <Plus className="h-4 w-4" />
                   New recipe
@@ -1909,11 +1911,11 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_360px]">
             <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="grid min-w-0 gap-3 xl:grid-cols-[auto_minmax(0,1fr)] xl:items-start">
-                <div className="flex min-w-0 items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                   <button type="button" onClick={() => handleMoveWeek(-1)} className="pm-subtle-button shrink-0 rounded-full p-2.5">
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <div className="min-w-0 flex-1 rounded-[20px] border border-slate-200 bg-slate-50 px-3 py-2 text-center text-sm font-semibold leading-tight text-slate-700 sm:flex-none sm:rounded-full sm:px-4">
+                  <div className="min-w-0 flex-1 rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2 text-center text-sm font-semibold leading-tight text-slate-700 sm:flex-none sm:rounded-full sm:px-4 sm:py-2.5">
                     {weekLabel}
                   </div>
                   <button type="button" onClick={() => handleMoveWeek(1)} className="pm-subtle-button shrink-0 rounded-full p-2.5">
@@ -1921,12 +1923,12 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                   </button>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-3 xl:justify-self-end">
-                  <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <div className="grid grid-cols-3 gap-2 xl:justify-self-end">
+                  <div className="min-w-0 rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2.5">
                     <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">You</span>
-                    <span className="mt-1 block text-[15px] font-semibold text-slate-900">1.0</span>
+                    <span className="mt-1 block text-sm font-semibold text-slate-900 sm:text-[15px]">1.0</span>
                   </div>
-                  <label className="rounded-[20px] border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <label className="min-w-0 rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2.5">
                     <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Partner</span>
                     <input
                       type="number"
@@ -1937,23 +1939,59 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         adultCount: 1 + Math.max(0, Number(event.target.value || 0)),
                         kidCount: week?.kidCount ?? 0,
                       })}
-                      className="mt-1 w-16 bg-transparent text-[15px] font-semibold text-slate-900 outline-none"
+                      className="mt-1 w-full min-w-0 bg-transparent text-sm font-semibold text-slate-900 outline-none sm:text-[15px]"
                     />
                   </label>
-                  <label className="rounded-[20px] border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <label className="min-w-0 rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2.5">
                     <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Kids</span>
                     <input
                       type="number"
                       min="0"
                       value={week?.kidCount ?? 0}
                       onChange={(event) => void updateWeekCounts({ adultCount: week?.adultCount ?? 1.75, kidCount: event.target.value })}
-                      className="mt-1 w-16 bg-transparent text-[15px] font-semibold text-slate-900 outline-none"
+                      className="mt-1 w-full min-w-0 bg-transparent text-sm font-semibold text-slate-900 outline-none sm:text-[15px]"
                     />
                   </label>
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="mt-4 sm:hidden">
+                <div className="grid gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Household</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-950">{defaultServingMultiplier}x total</p>
+                      <p className="mt-1 text-[11px] text-slate-500">Adults {week?.adultCount ?? 1.75}x</p>
+                    </div>
+                    <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-700">Calories</p>
+                      <p className="mt-1 text-sm font-semibold text-amber-800">{PERSONAL_DAILY_TARGETS.caloriesFor64KgKcal} kcal</p>
+                      <p className="mt-1 text-[11px] text-amber-700/80">Your daily reference</p>
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Daily targets</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                      <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Protein {PERSONAL_DAILY_TARGETS.proteinG}g</span>
+                      <span className="rounded-full bg-rose-50 px-2 py-1 text-rose-700">Fat {PERSONAL_DAILY_TARGETS.fatG}g</span>
+                      <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">Carbs {PERSONAL_DAILY_TARGETS.carbsG}g</span>
+                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">Fibre {PERSONAL_DAILY_TARGETS.fiberG}g</span>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-5 text-slate-500">
+                      Your calories use 1.0 serving only. Kids count as 0.5 portion, and breakfast, lunch, and dinner can copy forward.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowReviewModal(true)}
+                  className="pm-toolbar-primary mt-3 w-full rounded-full px-4 py-3 text-sm font-semibold text-white"
+                >
+                  Review groceries
+                </button>
+              </div>
+
+              <div className="mt-4 hidden flex-col gap-3 sm:flex xl:flex-row xl:items-center xl:justify-between">
                 <div className="space-y-2">
                   <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Household total {defaultServingMultiplier}x</span>
@@ -1982,13 +2020,13 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
               <div className="mt-5 space-y-4">
                 {weekDays.map((day) => (
-                  <div key={day.key} className="pm-scroll-optimize-day rounded-[26px] border border-slate-200 bg-slate-50/70 p-4">
+                  <div key={day.key} className="pm-scroll-optimize-day rounded-[24px] border border-slate-200 bg-slate-50/70 p-3 sm:rounded-[26px] sm:p-4">
                     <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{day.shortLabel}</p>
                         <h3 className="mt-1 text-lg font-semibold text-slate-950">{day.dayLabel}</h3>
                       </div>
-                      <div className="w-full rounded-[20px] border border-amber-200 bg-amber-50 px-3 py-2 text-left sm:w-auto sm:min-w-[180px] sm:shrink-0 sm:text-right">
+                      <div className="w-full rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-left sm:w-auto sm:min-w-[180px] sm:shrink-0 sm:rounded-[20px] sm:text-right">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">Your total</p>
                         <p className="mt-1 text-sm font-semibold text-amber-800">
                           {dayCaloriesByKey[day.key] > 0 ? `${dayCaloriesByKey[day.key]} kcal` : 'No meals yet'}
@@ -2009,7 +2047,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       </div>
                     </div>
 
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-3 grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
                       {SLOT_ORDER.map((slot) => {
                         const slotEntries = (entriesBySlotKey[`${day.key}:${slot}`] || [])
                           .map((entry) => ({
@@ -2019,7 +2057,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                           .filter(({ recipe }) => Boolean(recipe));
 
                         return (
-                          <div key={`${day.key}-${slot}`} className="pm-scroll-optimize-card rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
+                          <div key={`${day.key}-${slot}`} className="pm-scroll-optimize-card rounded-[20px] border border-slate-200 bg-white p-2.5 shadow-sm sm:rounded-[24px] sm:p-3">
                             <div className="flex items-center justify-between gap-3">
                               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{getMealSlotLabel(slot)}</p>
                               <div className="flex items-center gap-2">
@@ -2031,12 +2069,12 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                               </div>
                             </div>
 
-                            <div className="mt-3 space-y-3">
+                            <div className="mt-3 space-y-2.5">
                               {slotEntries.map(({ entry, recipe }) => {
                                 const isCopyPromptVisible = Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
                                 const entryUsage = entryUsageById?.[entry.id] || null;
                                 return (
-                                  <div key={entry.id} className="pm-scroll-optimize-card rounded-[22px] border border-slate-200 bg-slate-50/60 px-3 py-3">
+                                  <div key={entry.id} className="pm-scroll-optimize-card rounded-[18px] border border-slate-200 bg-slate-50/60 px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3">
                                     <button
                                       type="button"
                                       onClick={() => setDetailContext({
@@ -2070,8 +2108,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                           </span>
                                         ) : null}
                                       </div>
-                                      <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
-                                      <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 3)}</p>
+                                      <h4 className="mt-2.5 text-[15px] font-semibold leading-5 text-slate-950 sm:mt-3 sm:text-base">{recipe.name}</h4>
+                                      <p className="mt-1.5 text-[12px] leading-5 text-slate-500 sm:mt-2 sm:text-sm">{summarizeRecipeIngredients(recipe, 3)}</p>
                                       <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
                                         {recipe.estimatedKcal ? (
                                           <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{recipe.estimatedKcal} kcal</span>
@@ -2094,7 +2132,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                       <button
                                         type="button"
                                         onClick={() => openPicker(day.key, slot, { entryId: entry.id, audience: entry.audience || 'all' })}
-                                        className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold"
+                                        className="pm-subtle-button rounded-full px-3 py-2 text-[11px] font-semibold sm:text-xs"
                                       >
                                         Change
                                       </button>
@@ -2104,7 +2142,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                           dismissCopyUiForEntry(entry.id);
                                           await clearMealEntry({ entryId: entry.id });
                                         }}
-                                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 sm:text-xs"
                                       >
                                         Remove
                                       </button>
@@ -2133,7 +2171,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                               <button
                                 type="button"
                                 onClick={() => openPicker(day.key, slot, { audience: 'all' })}
-                                className="flex w-full items-center justify-center gap-2 rounded-[22px] border border-dashed border-slate-300 px-3 py-4 text-sm font-semibold text-slate-500 transition hover:border-[var(--pm-accent)] hover:text-[var(--pm-accent-strong)]"
+                                className="flex w-full items-center justify-center gap-2 rounded-[18px] border border-dashed border-slate-300 px-3 py-3 text-[13px] font-semibold text-slate-500 transition hover:border-[var(--pm-accent)] hover:text-[var(--pm-accent-strong)] sm:rounded-[22px] sm:py-4 sm:text-sm"
                               >
                                 <Plus className="h-4 w-4" />
                                 {slotEntries.length > 0 ? 'Add another meal' : 'Select recipe'}

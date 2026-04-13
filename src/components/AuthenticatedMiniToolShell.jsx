@@ -92,31 +92,33 @@ export default function AuthenticatedMiniToolShell({
   return (
     <div className="pm-shell-bg pm-accent-scope min-h-screen flex flex-col">
       <div className="border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-start justify-between gap-3 px-4 py-3 sm:items-center sm:px-6 sm:py-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <PmWorkspaceLogo iconOnly size="xs" />
-              <div className="min-w-0">
-                <h1 className="truncate text-base font-bold text-slate-950 sm:text-lg">{title}</h1>
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3">
+                <PmWorkspaceLogo iconOnly size="xs" />
+                <div className="min-w-0">
+                  <h1 className="truncate text-sm font-bold text-slate-950 sm:text-lg">{title}</h1>
+                </div>
               </div>
+              <p className="mt-1 truncate text-[11px] text-slate-500 sm:text-sm">{userEmail}</p>
             </div>
-            <p className="mt-1 text-xs text-slate-500 sm:text-sm">{userEmail}</p>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <AccentThemePicker value={accentTheme} onChange={onAccentThemeChange} />
-            <button
-              onClick={onGoToProjects}
-              className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 sm:px-4 sm:text-sm"
-            >
-              Projects
-            </button>
-            <button
-              onClick={onSignOut}
-              className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 sm:px-4 sm:text-sm"
-            >
-              Sign Out
-            </button>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <AccentThemePicker value={accentTheme} onChange={onAccentThemeChange} />
+              <button
+                onClick={onGoToProjects}
+                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 sm:px-4 sm:text-sm"
+              >
+                Projects
+              </button>
+              <button
+                onClick={onSignOut}
+                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 sm:px-4 sm:text-sm"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
       </div>
