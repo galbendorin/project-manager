@@ -90,9 +90,9 @@ export default function AuthenticatedMiniToolShell({
   userEmail,
 }) {
   return (
-    <div className="pm-shell-bg pm-accent-scope min-h-screen flex flex-col">
+    <div className="pm-shell-bg pm-accent-scope flex min-h-screen w-full flex-col overflow-x-hidden">
       <div className="border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 sm:py-4">
+        <div className="mx-auto w-full max-w-7xl px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-3">
@@ -101,11 +101,13 @@ export default function AuthenticatedMiniToolShell({
                   <h1 className="truncate text-sm font-bold text-slate-950 sm:text-lg">{title}</h1>
                 </div>
               </div>
-              <p className="mt-1 truncate text-[11px] text-slate-500 sm:text-sm">{userEmail}</p>
+              <p className="mt-1 hidden truncate text-[11px] text-slate-500 sm:block sm:text-sm">{userEmail}</p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              <AccentThemePicker value={accentTheme} onChange={onAccentThemeChange} />
+            <div className="flex w-full max-w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+              <div className="hidden sm:block">
+                <AccentThemePicker value={accentTheme} onChange={onAccentThemeChange} />
+              </div>
               <button
                 onClick={onGoToProjects}
                 className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 sm:px-4 sm:text-sm"
@@ -123,7 +125,7 @@ export default function AuthenticatedMiniToolShell({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 w-full overflow-x-hidden">
         <Suspense fallback={<ViewFallback label={fallbackLabel} />}>
           <MiniToolErrorBoundary boundaryKey={title} onGoToProjects={onGoToProjects} title={title}>
             {children}

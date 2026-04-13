@@ -431,6 +431,20 @@ body {
   }
 }
 
+@media (max-width: 640px) {
+  .pm-home-panel,
+  .pm-workspace-panel,
+  .pm-utility-card {
+    box-shadow: 0 16px 34px -30px rgba(15, 23, 42, 0.14);
+    backdrop-filter: blur(10px);
+  }
+
+  .pm-home-panel::before,
+  .pm-workspace-panel::before {
+    height: 56px;
+  }
+}
+
 .standalone-web-app,
 .standalone-web-app body,
 .standalone-web-app #root {
