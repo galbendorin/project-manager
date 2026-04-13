@@ -1,4 +1,4 @@
-import { createOfflineTempId, readLocalJson, readOfflineJson, writeLocalJson } from './offlineState';
+import { createOfflineTempId, readLocalJson, readOfflineJson, writeLocalJson } from './offlineState.js';
 
 const SHOPPING_OFFLINE_PREFIX = 'pmworkspace:shopping-offline:v1';
 
@@ -94,19 +94,45 @@ export const createEmptyShoppingOfflineState = () => ({
   lastSyncedAt: '',
 });
 
+export const normalizeShoppingOfflineState = (state) => {
+  const baseState = createEmptyShoppingOfflineState();
+  const rawState = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+  const rawTodosByProject = (
+    rawState.todosByProject && typeof rawState.todosByProject === 'object' && !Array.isArray(rawState.todosByProject)
+      ? rawState.todosByProject
+      : {}
+  );
+
+  const todosByProject = Object.fromEntries(
+    Object.entries(rawTodosByProject)
+      .filter(([projectId]) => String(projectId || '').trim())
+      .map(([projectId, items]) => [
+        projectId,
+        Array.isArray(items) ? items.filter((item) => item && typeof item === 'object') : [],
+      ])
+  );
+
+  return {
+    ...baseState,
+    ...rawState,
+    projects: Array.isArray(rawState.projects) ? rawState.projects.filter((item) => item && typeof item === 'object') : [],
+    selectedProjectId: typeof rawState.selectedProjectId === 'string' ? rawState.selectedProjectId : '',
+    todosByProject,
+    queue: Array.isArray(rawState.queue) ? rawState.queue.filter((item) => item && typeof item === 'object') : [],
+    lastSyncedAt: typeof rawState.lastSyncedAt === 'string' ? rawState.lastSyncedAt : '',
+  };
+};
+
 export const loadShoppingOfflineState = (userId) => (
-  readLocalJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState())
+  normalizeShoppingOfflineState(readLocalJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState()))
 );
 
 export const loadShoppingOfflineStateAsync = async (userId) => (
-  readOfflineJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState())
+  normalizeShoppingOfflineState(await readOfflineJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState()))
 );
 
 export const saveShoppingOfflineState = (userId, state) => {
-  writeLocalJson(buildShoppingOfflineKey(userId), {
-    ...createEmptyShoppingOfflineState(),
-    ...(state || {}),
-  });
+  writeLocalJson(buildShoppingOfflineKey(userId), normalizeShoppingOfflineState(state));
 };
 
 export const createOfflineShoppingTodo = ({

@@ -68,12 +68,25 @@ export function useShoppingListLiveUpdates({
 
     setPushSupported(true);
 
-    void syncExistingPushSubscription().then((result) => {
-      if (!active || !result) return;
-      setPushSupported(Boolean(result.supported));
-      setPushEnabled(Boolean(result.enabled));
-      setPushPermission(result.permission || window.Notification.permission);
-    });
+    void syncExistingPushSubscription()
+      .then((result) => {
+        if (!active || !result) return;
+        setPushSupported(Boolean(result.supported));
+        setPushEnabled(Boolean(result.enabled));
+        setPushPermission(
+          result.permission
+            || (typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'default')
+        );
+      })
+      .catch(() => {
+        if (!active) return;
+        setPushSupported(isPushNotificationsSupported());
+        setPushEnabled(false);
+        setPushPermission(
+          typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'default'
+        );
+        setPushMessage('');
+      });
 
     return () => {
       active = false;

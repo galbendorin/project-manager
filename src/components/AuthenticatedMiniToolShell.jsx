@@ -9,6 +9,76 @@ const ViewFallback = ({ label }) => (
   </div>
 );
 
+class MiniToolErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMessage: '' };
+  }
+
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      errorMessage: error?.message ? String(error.message) : '',
+    };
+  }
+
+  componentDidCatch(error, info) {
+    console.error(`Failed to render ${this.props.title || 'this view'}.`, error, info);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.boundaryKey !== this.props.boundaryKey && this.state.hasError) {
+      this.setState({ hasError: false, errorMessage: '' });
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) {
+      return this.props.children;
+    }
+
+    return (
+      <div className="flex min-h-[320px] items-center justify-center px-4 py-10">
+        <div className="w-full max-w-lg rounded-[28px] border border-rose-200 bg-white px-6 py-6 text-center shadow-sm">
+          <p className="pm-kicker text-rose-600">View recovery</p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950">
+            We hit a loading problem in {this.props.title || 'this view'}
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-slate-500">
+            Try reloading this tool. If the issue came from older cached data on the device, the refreshed view should recover cleanly.
+          </p>
+          {this.state.errorMessage ? (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {this.state.errorMessage}
+            </div>
+          ) : null}
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, errorMessage: '' });
+                if (typeof window !== 'undefined') {
+                  window.location.reload();
+                }
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              Reload view
+            </button>
+            <button
+              type="button"
+              onClick={this.props.onGoToProjects}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              Back to projects
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
 export default function AuthenticatedMiniToolShell({
   accentTheme,
   children,
@@ -53,7 +123,9 @@ export default function AuthenticatedMiniToolShell({
 
       <div className="flex-1 min-h-0">
         <Suspense fallback={<ViewFallback label={fallbackLabel} />}>
-          {children}
+          <MiniToolErrorBoundary boundaryKey={title} onGoToProjects={onGoToProjects} title={title}>
+            {children}
+          </MiniToolErrorBoundary>
         </Suspense>
       </div>
 
