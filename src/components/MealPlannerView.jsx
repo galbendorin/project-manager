@@ -1908,15 +1908,15 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
           <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_360px]">
             <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-              <div className="grid gap-3 xl:grid-cols-[auto_minmax(0,1fr)] xl:items-start">
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => handleMoveWeek(-1)} className="pm-subtle-button rounded-full p-2.5">
+              <div className="grid min-w-0 gap-3 xl:grid-cols-[auto_minmax(0,1fr)] xl:items-start">
+                <div className="flex min-w-0 items-center gap-2">
+                  <button type="button" onClick={() => handleMoveWeek(-1)} className="pm-subtle-button shrink-0 rounded-full p-2.5">
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+                  <div className="min-w-0 flex-1 rounded-[20px] border border-slate-200 bg-slate-50 px-3 py-2 text-center text-sm font-semibold leading-tight text-slate-700 sm:flex-none sm:rounded-full sm:px-4">
                     {weekLabel}
                   </div>
-                  <button type="button" onClick={() => handleMoveWeek(1)} className="pm-subtle-button rounded-full p-2.5">
+                  <button type="button" onClick={() => handleMoveWeek(1)} className="pm-subtle-button shrink-0 rounded-full p-2.5">
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
@@ -1974,7 +1974,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 <button
                   type="button"
                   onClick={() => setShowReviewModal(true)}
-                  className="pm-toolbar-primary shrink-0 rounded-full px-4 py-3 text-sm font-semibold text-white xl:self-start"
+                  className="pm-toolbar-primary w-full shrink-0 rounded-full px-4 py-3 text-sm font-semibold text-white sm:w-auto xl:self-start"
                 >
                   Review groceries
                 </button>
@@ -1983,18 +1983,18 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
               <div className="mt-5 space-y-4">
                 {weekDays.map((day) => (
                   <div key={day.key} className="pm-scroll-optimize-day rounded-[26px] border border-slate-200 bg-slate-50/70 p-4">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{day.shortLabel}</p>
                         <h3 className="mt-1 text-lg font-semibold text-slate-950">{day.dayLabel}</h3>
                       </div>
-                      <div className="shrink-0 rounded-[20px] border border-amber-200 bg-amber-50 px-3 py-2 text-right min-w-[180px]">
+                      <div className="w-full rounded-[20px] border border-amber-200 bg-amber-50 px-3 py-2 text-left sm:w-auto sm:min-w-[180px] sm:shrink-0 sm:text-right">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">Your total</p>
                         <p className="mt-1 text-sm font-semibold text-amber-800">
                           {dayCaloriesByKey[day.key] > 0 ? `${dayCaloriesByKey[day.key]} kcal` : 'No meals yet'}
                         </p>
                         {dayCaloriesByKey[day.key] > 0 ? (
-                          <div className="mt-2 flex flex-wrap justify-end gap-1.5 text-[11px] font-semibold">
+                          <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold sm:justify-end">
                             <span className="rounded-full bg-white px-2 py-1 text-sky-700">
                               P {formatMacroTotal(dayNutritionByKey[day.key]?.proteinG)}g
                             </span>
