@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMealPlannerData } from '../hooks/useMealPlannerData';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { supabase } from '../lib/supabase';
@@ -18,6 +18,9 @@ import { estimateRecipeNutritionFromStarterCatalog } from '../utils/mealCalorieC
 const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 const AUDIENCE_OPTIONS = ['all', 'adults', 'kids'];
 const INGREDIENT_UNIT_SUGGESTIONS = ['pcs', 'g', 'ml', 'tsp', 'tbsp', 'cup'];
+const MOBILE_LIBRARY_INITIAL_COUNT = 8;
+const DESKTOP_LIBRARY_INITIAL_COUNT = 16;
+const PICKER_INITIAL_COUNT = 18;
 const PERSONAL_DAILY_TARGETS = {
   proteinG: 77,
   fatG: 62,
@@ -207,6 +210,20 @@ const formatMacroTotal = (value) => {
   if (!Number.isFinite(next)) return '0';
   if (Math.abs(next - Math.round(next)) < 0.05) return String(Math.round(next));
   return next.toFixed(1).replace(/\.0$/, '');
+};
+
+const parsePlannerNumberInput = (value) => {
+  const normalized = String(value ?? '').trim().replace(',', '.');
+  if (!normalized) return null;
+  const next = Number(normalized);
+  return Number.isFinite(next) ? Math.max(0, next) : null;
+};
+
+const formatPlannerNumberInput = (value) => {
+  const next = Number(value);
+  if (!Number.isFinite(next)) return '';
+  if (Math.abs(next - Math.round(next)) < 0.001) return String(Math.round(next));
+  return String(next);
 };
 
 const formatWeekLabel = (weekDays = []) => {
@@ -972,12 +989,12 @@ function ChooseMoreDaysModal({ days, onClose, onConfirm }) {
 }
 
 function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, initialAudience = 'all', onClose, onAdd }) {
-  const [dateKey, setDateKey] = useState(initialDateKey || weekDays?.[0]?.key || '');
+  const [selectedDateKeys, setSelectedDateKeys] = useState(() => [initialDateKey || weekDays?.[0]?.key || ''].filter(Boolean));
   const [mealSlot, setMealSlot] = useState(initialSlot || recipe?.mealSlot || 'breakfast');
   const [audience, setAudience] = useState(initialAudience);
 
   useEffect(() => {
-    setDateKey(initialDateKey || weekDays?.[0]?.key || '');
+    setSelectedDateKeys([initialDateKey || weekDays?.[0]?.key || ''].filter(Boolean));
   }, [initialDateKey, weekDays]);
 
   useEffect(() => {
@@ -989,6 +1006,28 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
   }, [initialAudience]);
 
   if (!recipe) return null;
+
+  const toggleDateKey = (nextDateKey) => {
+    setSelectedDateKeys((previous) => {
+      if (previous.includes(nextDateKey)) {
+        return previous.length > 1
+          ? previous.filter((value) => value !== nextDateKey)
+          : previous;
+      }
+      return weekDays
+        .filter((day) => previous.includes(day.key) || day.key === nextDateKey)
+        .map((day) => day.key);
+    });
+  };
+
+  const selectMatchingDays = (predicate) => {
+    const nextDateKeys = weekDays.filter(predicate).map((day) => day.key);
+    setSelectedDateKeys(nextDateKeys.length > 0 ? nextDateKeys : [initialDateKey || weekDays?.[0]?.key || ''].filter(Boolean));
+  };
+
+  const actionLabel = selectedDateKeys.length === 1
+    ? 'Add to planner'
+    : `Add to ${selectedDateKeys.length} days`;
 
   return (
     <ModalShell onClose={onClose}>
@@ -1007,22 +1046,51 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
         <div className="mt-5 grid gap-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Day</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => selectMatchingDays((day) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(day.shortLabel))}
+                className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold"
+              >
+                Weekdays
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDateKeys(weekDays.map((day) => day.key))}
+                className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold"
+              >
+                All week
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDateKeys([initialDateKey || weekDays?.[0]?.key || ''].filter(Boolean))}
+                className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold"
+              >
+                Reset
+              </button>
+            </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {weekDays.map((day) => (
                 <button
                   key={day.key}
                   type="button"
-                  onClick={() => setDateKey(day.key)}
+                  onClick={() => toggleDateKey(day.key)}
                   className={`rounded-2xl border px-3 py-3 text-left text-sm font-semibold transition ${
-                    dateKey === day.key
+                    selectedDateKeys.includes(day.key)
                       ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)]'
                       : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  {day.dayLabel}
+                  <span className="block">{day.dayLabel}</span>
+                  <span className="mt-1 block text-xs font-medium opacity-80">
+                    {selectedDateKeys.includes(day.key) ? 'Selected' : 'Tap to include'}
+                  </span>
                 </button>
               ))}
             </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Choose one or more days. This is the fastest way to place the same recipe across the week.
+            </p>
           </div>
 
           <div>
@@ -1072,10 +1140,10 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
           </button>
           <button
             type="button"
-            onClick={() => onAdd({ dateKey, mealSlot, audience })}
+            onClick={() => onAdd({ dateKeys: selectedDateKeys, mealSlot, audience })}
             className="pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white"
           >
-            Add to planner
+            {actionLabel}
           </button>
         </div>
       </div>
@@ -1086,10 +1154,16 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
 function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, onClose, onPick }) {
   const [search, setSearch] = useState('');
   const [selectedMealFilters, setSelectedMealFilters] = useState([slot]);
+  const [visibleCount, setVisibleCount] = useState(PICKER_INITIAL_COUNT);
+  const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
     setSelectedMealFilters([slot]);
   }, [slot]);
+
+  useEffect(() => {
+    setVisibleCount(PICKER_INITIAL_COUNT);
+  }, [deferredSearch, selectedMealFilters, slot]);
 
   const toggleMealFilter = (nextSlot) => {
     setSelectedMealFilters((previous) => {
@@ -1108,13 +1182,16 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
           return false;
         }
         const haystack = `${recipe.name} ${recipe.sourcePdf} ${summarizeRecipeIngredients(recipe, 4)} ${getMealSlotLabel(recipe.mealSlot)}`.toLowerCase();
-        return haystack.includes(search.toLowerCase());
+        return haystack.includes(deferredSearch.toLowerCase());
       })
       .sort((left, right) => (
         Number(right.mealSlot === slot) - Number(left.mealSlot === slot)
         || left.name.localeCompare(right.name)
       ))
-  ), [recipes, search, selectedMealFilters, slot]);
+  ), [deferredSearch, recipes, selectedMealFilters, slot]);
+  const visibleRecipes = useMemo(() => (
+    filteredRecipes.slice(0, visibleCount)
+  ), [filteredRecipes, visibleCount]);
 
   return (
     <ModalShell onClose={onClose} wide>
@@ -1196,11 +1273,15 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
               placeholder={`Search ${getMealSlotLabel(slot).toLowerCase()} recipes`}
             />
           </label>
+          <p className="mt-2 text-xs text-slate-500">
+            {filteredRecipes.length} recipe{filteredRecipes.length === 1 ? '' : 's'} available
+            {deferredSearch.trim() ? ` for "${deferredSearch.trim()}"` : ''}.
+          </p>
         </div>
 
         {filteredRecipes.length > 0 ? (
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {filteredRecipes.map((recipe) => (
+            {visibleRecipes.map((recipe) => (
               <button
                 key={recipe.id}
                 type="button"
@@ -1237,6 +1318,15 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
                 </div>
               </button>
             ))}
+            {filteredRecipes.length > visibleRecipes.length ? (
+              <button
+                type="button"
+                onClick={() => setVisibleCount((previous) => previous + PICKER_INITIAL_COUNT)}
+                className="pm-subtle-button flex min-h-[220px] items-center justify-center rounded-[24px] border-dashed px-4 py-4 text-sm font-semibold"
+              >
+                Show {Math.min(PICKER_INITIAL_COUNT, filteredRecipes.length - visibleRecipes.length)} more recipes
+              </button>
+            ) : null}
           </div>
         ) : (
           <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
@@ -1480,6 +1570,9 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
   const visibleDraft = useMemo(() => (
     draft.filter((item) => !removedKeys.includes(item.key))
   ), [draft, removedKeys]);
+  const removedDraft = useMemo(() => (
+    draft.filter((item) => removedKeys.includes(item.key))
+  ), [draft, removedKeys]);
 
   return (
     <ModalShell onClose={onClose} wide>
@@ -1498,7 +1591,33 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
 
         {removedKeys.length > 0 ? (
           <div className="mt-4 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            {removedKeys.length} ingredient{removedKeys.length === 1 ? '' : 's'} excluded from this shopping draft.
+            <p>
+              {removedKeys.length} ingredient{removedKeys.length === 1 ? '' : 's'} excluded from this shopping draft.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {removedDraft.slice(0, 6).map((item) => (
+                <button
+                  key={`restore-${item.key}`}
+                  type="button"
+                  onClick={() => setRemovedKeys((previous) => previous.filter((key) => key !== item.key))}
+                  className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+                >
+                  Restore {item.title}
+                </button>
+              ))}
+              {removedDraft.length > 6 ? (
+                <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700">
+                  +{removedDraft.length - 6} more hidden
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setRemovedKeys([])}
+                className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+              >
+                Restore all
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -1528,7 +1647,7 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
                   onClick={() => setRemovedKeys((previous) => [...previous, item.key])}
                   className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
                 >
-                  Remove from this draft
+                  Exclude from this draft
                 </button>
               </div>
             </div>
@@ -1598,6 +1717,13 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const [statusMessage, setStatusMessage] = useState('');
   const [showMobilePlannerDetails, setShowMobilePlannerDetails] = useState(false);
   const [activeMobileDayKey, setActiveMobileDayKey] = useState('');
+  const [showMobileRecipeLibrary, setShowMobileRecipeLibrary] = useState(false);
+  const [showMobileShoppingGeneration, setShowMobileShoppingGeneration] = useState(false);
+  const [libraryVisibleCount, setLibraryVisibleCount] = useState(DESKTOP_LIBRARY_INITIAL_COUNT);
+  const [partnerInput, setPartnerInput] = useState('');
+  const [kidsInput, setKidsInput] = useState('');
+  const [householdSaving, setHouseholdSaving] = useState(false);
+  const deferredLibrarySearch = useDeferredValue(librarySearch);
 
   useEffect(() => {
     if (lastImportedCount > 0) {
@@ -1638,12 +1764,16 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
         return false;
       }
       const haystack = `${recipe.name} ${recipe.sourcePdf} ${summarizeRecipeIngredients(recipe, 5)}`.toLowerCase();
-      return haystack.includes(librarySearch.toLowerCase());
+      return haystack.includes(deferredLibrarySearch.toLowerCase());
     })
-  ), [librarySearch, librarySlotFilter, recipes]);
+  ), [deferredLibrarySearch, librarySlotFilter, recipes]);
 
   const weekLabel = useMemo(() => formatWeekLabel(weekDays), [weekDays]);
   const partnerServingMultiplier = Math.max(0, (week?.adultCount ?? 1.75) - 1);
+  useEffect(() => {
+    setPartnerInput(formatPlannerNumberInput(partnerServingMultiplier));
+    setKidsInput(formatPlannerNumberInput(week?.kidCount ?? 0));
+  }, [partnerServingMultiplier, week?.kidCount]);
   const recipeNutritionById = useMemo(() => (
     recipes.reduce((accumulator, recipe) => {
       accumulator[recipe.id] = estimateRecipeNutritionFromStarterCatalog(recipe);
@@ -1695,6 +1825,40 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       ? (activeMobileDay ? [activeMobileDay] : [])
       : weekDays
   ), [activeMobileDay, isMobile, weekDays]);
+  const visibleLibraryRecipes = useMemo(() => (
+    filteredLibraryRecipes.slice(0, libraryVisibleCount)
+  ), [filteredLibraryRecipes, libraryVisibleCount]);
+  const isRecipeLibraryVisible = !isMobile || showMobileRecipeLibrary;
+  const isShoppingGenerationVisible = !isMobile || showMobileShoppingGeneration;
+  const parsedPartnerInput = parsePlannerNumberInput(partnerInput);
+  const parsedKidsInput = parsePlannerNumberInput(kidsInput);
+  const householdCanSave = parsedPartnerInput !== null && parsedKidsInput !== null;
+  const householdDirty = householdCanSave && (
+    Math.abs(parsedPartnerInput - partnerServingMultiplier) > 0.001
+    || Math.abs(parsedKidsInput - (week?.kidCount ?? 0)) > 0.001
+  );
+
+  useEffect(() => {
+    setLibraryVisibleCount(isMobile ? MOBILE_LIBRARY_INITIAL_COUNT : DESKTOP_LIBRARY_INITIAL_COUNT);
+  }, [deferredLibrarySearch, isMobile, librarySlotFilter]);
+
+  const resetHouseholdInputs = () => {
+    setPartnerInput(formatPlannerNumberInput(partnerServingMultiplier));
+    setKidsInput(formatPlannerNumberInput(week?.kidCount ?? 0));
+  };
+
+  const persistHouseholdInputs = async () => {
+    if (!householdCanSave || !householdDirty) return;
+    setHouseholdSaving(true);
+    try {
+      await updateWeekCounts({
+        adultCount: 1 + parsedPartnerInput,
+        kidCount: parsedKidsInput,
+      });
+    } finally {
+      setHouseholdSaving(false);
+    }
+  };
 
   const handleMoveWeek = (offset) => {
     const date = new Date(selectedWeekStart);
@@ -1842,8 +2006,25 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     }
   };
 
-  const handleQuickPlanRecipe = async ({ recipe, dateKey, mealSlot, audience }) => {
+  const handleQuickPlanRecipe = async ({ recipe, dateKeys = [], mealSlot, audience }) => {
+    const normalizedDateKeys = dateKeys.filter(Boolean);
+    if (normalizedDateKeys.length === 0) return;
+
     try {
+      if (normalizedDateKeys.length > 1) {
+        await applyMealToDates({
+          dates: normalizedDateKeys,
+          mealSlot,
+          mealId: recipe.id,
+          servingMultiplier: null,
+          audience,
+        });
+        setQuickPlanContext(null);
+        setCopyPrompt(null);
+        return;
+      }
+
+      const [dateKey] = normalizedDateKeys;
       const savedEntry = await upsertMealEntry({
         date: dateKey,
         mealSlot,
@@ -1957,11 +2138,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       type="number"
                       min="0"
                       step="0.05"
-                      value={partnerServingMultiplier}
-                      onChange={(event) => void updateWeekCounts({
-                        adultCount: 1 + Math.max(0, Number(event.target.value || 0)),
-                        kidCount: week?.kidCount ?? 0,
-                      })}
+                      value={partnerInput}
+                      onChange={(event) => setPartnerInput(event.target.value)}
                       className="mt-1 w-full min-w-0 bg-transparent text-sm font-semibold text-slate-900 outline-none sm:text-[15px]"
                     />
                   </label>
@@ -1970,11 +2148,36 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                     <input
                       type="number"
                       min="0"
-                      value={week?.kidCount ?? 0}
-                      onChange={(event) => void updateWeekCounts({ adultCount: week?.adultCount ?? 1.75, kidCount: event.target.value })}
+                      value={kidsInput}
+                      onChange={(event) => setKidsInput(event.target.value)}
                       className="mt-1 w-full min-w-0 bg-transparent text-sm font-semibold text-slate-900 outline-none sm:text-[15px]"
                     />
                   </label>
+                  <div className="sm:col-span-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2.5">
+                      <p className="text-[11px] font-medium text-slate-500">
+                        Household portions now save together, which keeps planning smoother and avoids extra writes while typing.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={resetHouseholdInputs}
+                          disabled={!householdDirty || householdSaving}
+                          className="pm-subtle-button rounded-full px-3 py-2 text-[11px] font-semibold disabled:opacity-50"
+                        >
+                          Reset
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void persistHouseholdInputs()}
+                          disabled={!householdCanSave || !householdDirty || householdSaving}
+                          className="pm-toolbar-primary rounded-full px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-50"
+                        >
+                          {householdSaving ? 'Saving household…' : 'Save household'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2268,101 +2471,155 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                     <p className="pm-kicker">Recipe library</p>
                     <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">Pick from imported or manual meals</h3>
                   </div>
-                  <button type="button" onClick={() => setFormState(DEFAULT_FORM_STATE)} className="pm-subtle-button w-full rounded-full px-3 py-2 text-xs font-semibold sm:w-auto">
-                    Add recipe
-                  </button>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => setLibrarySlotFilter('all')} className={`rounded-full px-3 py-2 text-xs font-semibold ${librarySlotFilter === 'all' ? 'bg-[var(--pm-accent)] text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
-                    All
-                  </button>
-                  {SLOT_ORDER.map((slot) => (
-                    <button
-                      key={slot}
-                      type="button"
-                      onClick={() => setLibrarySlotFilter(slot)}
-                      className={`rounded-full px-3 py-2 text-xs font-semibold ${librarySlotFilter === slot ? 'bg-[var(--pm-accent)] text-white' : 'border border-slate-200 bg-white text-slate-600'}`}
-                    >
-                      {getMealSlotLabel(slot)}
-                    </button>
-                  ))}
-                </div>
-
-                <label className="relative mt-4 block">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    value={librarySearch}
-                    onChange={(event) => setLibrarySearch(event.target.value)}
-                    className="pm-input w-full rounded-2xl py-3 pl-11 pr-4 text-sm"
-                    placeholder="Search recipe library"
-                  />
-                </label>
-
-                <div className="mt-4 max-h-[720px] space-y-3 overflow-y-auto pr-1">
-                  {filteredLibraryRecipes.map((recipe) => (
-                    <div key={recipe.id} className="pm-scroll-optimize-card rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
-                      <button type="button" onClick={() => setDetailContext({
-                        recipe,
-                        entry: null,
-                        dateKey: '',
-                        mealSlot: recipe.mealSlot,
-                        defaultServingMultiplier,
-                        adultCount: week?.adultCount ?? 1,
-                        kidCount: week?.kidCount ?? 0,
-                      })} className="block w-full text-left">
-                        <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
-                          <span className="rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm">{getMealSlotLabel(recipe.mealSlot)}</span>
-                          {recipe.sourcePdf ? (
-                            <span className="hidden rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm sm:inline-flex">{recipe.sourcePdf}</span>
-                          ) : null}
-                        </div>
-                        <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
-                        <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 4)}</p>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                    {isMobile ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileRecipeLibrary((previous) => !previous)}
+                        className="pm-subtle-button w-full rounded-full px-3 py-2 text-xs font-semibold sm:w-auto"
+                      >
+                        {showMobileRecipeLibrary ? 'Hide recipes' : `Show recipes (${filteredLibraryRecipes.length})`}
                       </button>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {recipe.estimatedKcal ? (
-                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">{recipe.estimatedKcal} kcal</span>
-                        ) : null}
-                        {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
-                          <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
-                            Batch {recipe.batchYieldPortions} portions
-                          </span>
-                        ) : null}
-                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
-                          {recipe.recipeOrigin === 'manual' ? 'Manual' : 'Imported'}
-                        </span>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                        <button type="button" onClick={() => openQuickPlan(recipe)} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Add to week</button>
-                        <button type="button" onClick={() => setFormState(buildRecipeFormState(recipe))} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Edit</button>
-                        <button type="button" onClick={() => void duplicateRecipe(recipe)} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Duplicate</button>
-                        <button type="button" onClick={() => void deleteRecipe(recipe.id)} className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Delete</button>
-                      </div>
-                    </div>
-                  ))}
+                    ) : null}
+                    <button type="button" onClick={() => setFormState(DEFAULT_FORM_STATE)} className="pm-subtle-button w-full rounded-full px-3 py-2 text-xs font-semibold sm:w-auto">
+                      Add recipe
+                    </button>
+                  </div>
                 </div>
+
+                {isRecipeLibraryVisible ? (
+                  <>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setLibrarySlotFilter('all')} className={`rounded-full px-3 py-2 text-xs font-semibold ${librarySlotFilter === 'all' ? 'bg-[var(--pm-accent)] text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
+                        All
+                      </button>
+                      {SLOT_ORDER.map((slot) => (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() => setLibrarySlotFilter(slot)}
+                          className={`rounded-full px-3 py-2 text-xs font-semibold ${librarySlotFilter === slot ? 'bg-[var(--pm-accent)] text-white' : 'border border-slate-200 bg-white text-slate-600'}`}
+                        >
+                          {getMealSlotLabel(slot)}
+                        </button>
+                      ))}
+                    </div>
+
+                    <label className="relative mt-4 block">
+                      <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        value={librarySearch}
+                        onChange={(event) => setLibrarySearch(event.target.value)}
+                        className="pm-input w-full rounded-2xl py-3 pl-11 pr-4 text-sm"
+                        placeholder="Search recipe library"
+                      />
+                    </label>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Showing {visibleLibraryRecipes.length} of {filteredLibraryRecipes.length} recipe{filteredLibraryRecipes.length === 1 ? '' : 's'}
+                      {deferredLibrarySearch.trim() ? ` for "${deferredLibrarySearch.trim()}"` : ''}.
+                    </p>
+
+                    <div className="mt-4 max-h-[720px] space-y-3 overflow-y-auto pr-1">
+                      {visibleLibraryRecipes.map((recipe) => (
+                        <div key={recipe.id} className="pm-scroll-optimize-card rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
+                          <button type="button" onClick={() => setDetailContext({
+                            recipe,
+                            entry: null,
+                            dateKey: '',
+                            mealSlot: recipe.mealSlot,
+                            defaultServingMultiplier,
+                            adultCount: week?.adultCount ?? 1,
+                            kidCount: week?.kidCount ?? 0,
+                          })} className="block w-full text-left">
+                            <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
+                              <span className="rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm">{getMealSlotLabel(recipe.mealSlot)}</span>
+                              {recipe.sourcePdf ? (
+                                <span className="hidden rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm sm:inline-flex">{recipe.sourcePdf}</span>
+                              ) : null}
+                            </div>
+                            <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
+                            <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 4)}</p>
+                          </button>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {recipe.estimatedKcal ? (
+                              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">{recipe.estimatedKcal} kcal</span>
+                            ) : null}
+                            {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
+                              <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
+                                Batch {recipe.batchYieldPortions} portions
+                              </span>
+                            ) : null}
+                            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
+                              {recipe.recipeOrigin === 'manual' ? 'Manual' : 'Imported'}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                            <button type="button" onClick={() => openQuickPlan(recipe)} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Add to week</button>
+                            <button type="button" onClick={() => setFormState(buildRecipeFormState(recipe))} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Edit</button>
+                            <button type="button" onClick={() => void duplicateRecipe(recipe)} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Duplicate</button>
+                            <button type="button" onClick={() => void deleteRecipe(recipe.id)} className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {filteredLibraryRecipes.length > visibleLibraryRecipes.length ? (
+                      <button
+                        type="button"
+                        onClick={() => setLibraryVisibleCount((previous) => previous + (isMobile ? MOBILE_LIBRARY_INITIAL_COUNT : DESKTOP_LIBRARY_INITIAL_COUNT))}
+                        className="pm-subtle-button mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold"
+                      >
+                        Show {Math.min(isMobile ? MOBILE_LIBRARY_INITIAL_COUNT : DESKTOP_LIBRARY_INITIAL_COUNT, filteredLibraryRecipes.length - visibleLibraryRecipes.length)} more recipes
+                      </button>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="mt-4 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                    Open the recipe library when you want to search, edit, or add meals to the week.
+                  </div>
+                )}
               </div>
 
               <div className="w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <p className="pm-kicker">Shopping generation</p>
-                <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">Review before adding groceries</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  The planner aggregates ingredients across the whole week, including repeated meals like oats on multiple days.
-                </p>
-                <div className="mt-4 space-y-2 text-sm text-slate-600">
-                  <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2.5">
-                    <span>Planned slots</span>
-                    <span className="font-semibold text-slate-900">{entries.length}</span>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="pm-kicker">Shopping generation</p>
+                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">Review before adding groceries</h3>
                   </div>
-                  <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2.5">
-                    <span>Draft grocery lines</span>
-                    <span className="font-semibold text-slate-900">{groceryDraft.length}</span>
-                  </div>
+                  {isMobile ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowMobileShoppingGeneration((previous) => !previous)}
+                      className="pm-subtle-button w-full rounded-full px-3 py-2 text-xs font-semibold sm:w-auto"
+                    >
+                      {showMobileShoppingGeneration ? 'Hide grocery summary' : `Show grocery summary (${groceryDraft.length})`}
+                    </button>
+                  ) : null}
                 </div>
-                <button type="button" onClick={() => setShowReviewModal(true)} className="pm-toolbar-primary mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white">
-                  Review groceries
-                </button>
+                {isShoppingGenerationVisible ? (
+                  <>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      The planner aggregates ingredients across the whole week, including repeated meals like oats on multiple days.
+                    </p>
+                    <div className="mt-4 space-y-2 text-sm text-slate-600">
+                      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2.5">
+                        <span>Planned slots</span>
+                        <span className="font-semibold text-slate-900">{entries.length}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2.5">
+                        <span>Draft grocery lines</span>
+                        <span className="font-semibold text-slate-900">{groceryDraft.length}</span>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => setShowReviewModal(true)} className="pm-toolbar-primary mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white">
+                      Review groceries
+                    </button>
+                  </>
+                ) : (
+                  <div className="mt-4 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                    Open this summary when you want to review counts and send the week into Shopping List.
+                  </div>
+                )}
               </div>
             </div>
           </div>

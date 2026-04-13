@@ -298,6 +298,16 @@ try {
       return 'Timesheet opened and returned to project home.';
     });
 
+    await recordStep('Meal Planner opens from project home', async () => {
+      const button = findUtilityCardButton(page, 'Meal Planner');
+      await button.click();
+      await page.getByRole('heading', { name: 'Meal Planner', exact: true }).waitFor({ timeout: timeoutMs });
+      await page.getByText('Plan the week and build shopping automatically', { exact: true }).waitFor({ timeout: timeoutMs });
+      await page.getByRole('button', { name: 'Projects', exact: true }).waitFor({ timeout: timeoutMs });
+      await openProjectsFromUtilityShell(page);
+      return 'Meal Planner opened and returned to project home.';
+    });
+
     const openedProjectName = await recordStep('A project opens from project home', async () => {
       const projectLabel = await openNamedProject(page);
       return `Opened ${projectLabel}.`;
