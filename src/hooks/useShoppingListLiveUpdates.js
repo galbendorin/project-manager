@@ -8,6 +8,18 @@ import {
   syncExistingPushSubscription,
 } from '../utils/pushNotifications';
 
+const canUseRealtimeUpdates = () => {
+  if (typeof window === 'undefined') return false;
+  const isSecurePage = (
+    window.isSecureContext
+    || window.location?.protocol === 'https:'
+    || window.location?.hostname === 'localhost'
+    || window.location?.hostname === '127.0.0.1'
+  );
+
+  return isSecurePage && typeof window.WebSocket === 'function';
+};
+
 export function useShoppingListLiveUpdates({
   currentUserId,
   isOnline,
@@ -131,122 +143,128 @@ export function useShoppingListLiveUpdates({
   }, [loadTodos, selectedProject?.id]);
 
   useEffect(() => {
-    if (!selectedProject?.id || !isOnline) return undefined;
+    if (!selectedProject?.id || !isOnline || !canUseRealtimeUpdates()) return undefined;
 
-    const channel = supabase
-      .channel(`shopping-list-live:${selectedProject.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'manual_todos',
-          filter: `project_id=eq.${selectedProject.id}`,
-        },
-        (payload) => {
-          const nextRow = payload?.new;
-          if (!nextRow?.id) return;
+    try {
+      const channel = supabase
+        .channel(`shopping-list-live:${selectedProject.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'manual_todos',
+            filter: `project_id=eq.${selectedProject.id}`,
+          },
+          (payload) => {
+            const nextRow = payload?.new;
+            if (!nextRow?.id) return;
 
-          const incomingTodo = mapManualTodoRow(nextRow);
-          const actorLabel = resolveSharedActorLabel(nextRow, selectedProject, currentUserId);
-          const isFromSomeoneElse = Boolean(actorLabel);
+            const incomingTodo = mapManualTodoRow(nextRow);
+            const actorLabel = resolveSharedActorLabel(nextRow, selectedProject, currentUserId);
+            const isFromSomeoneElse = Boolean(actorLabel);
 
-          setTodos((previousItems) => {
-            if (previousItems.some((item) => item._id === incomingTodo._id)) {
-              return previousItems;
+            setTodos((previousItems) => {
+              if (previousItems.some((item) => item._id === incomingTodo._id)) {
+                return previousItems;
+              }
+
+              const nextTodos = mergeTodosById(previousItems, [incomingTodo]);
+              persistProjectTodos(selectedProject.id, nextTodos);
+              return nextTodos;
+            });
+
+            if (isFromSomeoneElse) {
+              const message = `${actorLabel} added ${incomingTodo.title}.`;
+              setLiveUpdateMessage(message);
+
+              if (
+                typeof window !== 'undefined'
+                && typeof document !== 'undefined'
+                && document.visibilityState === 'hidden'
+                && !pushEnabled
+                && 'Notification' in window
+                && window.Notification?.permission === 'granted'
+              ) {
+                void navigator.serviceWorker?.ready
+                  ?.then((registration) => registration?.showNotification?.('Shopping List updated', {
+                    body: message,
+                    icon: '/pmworkspace-icon-192.png',
+                    badge: '/pmworkspace-icon-192.png',
+                    tag: `shopping-live:${selectedProject.id}`,
+                    data: { url: '/shopping', projectId: selectedProject.id, kind: 'shopping-list' },
+                  }))
+                  .catch(() => null);
+              }
             }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'manual_todos',
+            filter: `project_id=eq.${selectedProject.id}`,
+          },
+          (payload) => {
+            const nextRow = payload?.new;
+            const previousRow = payload?.old;
+            if (!nextRow?.id) return;
 
-            const nextTodos = mergeTodosById(previousItems, [incomingTodo]);
-            persistProjectTodos(selectedProject.id, nextTodos);
-            return nextTodos;
-          });
+            const incomingTodo = mapManualTodoRow(nextRow);
+            const actorLabel = resolveSharedActorLabel(nextRow, selectedProject, currentUserId);
+            const isFromSomeoneElse = Boolean(actorLabel);
+            const becameDone = previousRow?.status !== 'Done' && nextRow?.status === 'Done';
 
-          if (isFromSomeoneElse) {
-            const message = `${actorLabel} added ${incomingTodo.title}.`;
-            setLiveUpdateMessage(message);
+            setTodos((previousItems) => {
+              const nextTodos = sortTodos(previousItems.map((item) => (
+                item._id === incomingTodo._id ? incomingTodo : item
+              )));
+              persistProjectTodos(selectedProject.id, nextTodos);
+              return nextTodos;
+            });
 
-            if (
-              typeof window !== 'undefined'
-              && typeof document !== 'undefined'
-              && document.visibilityState === 'hidden'
-              && !pushEnabled
-              && 'Notification' in window
-              && window.Notification?.permission === 'granted'
-            ) {
-              void navigator.serviceWorker?.ready
-                ?.then((registration) => registration?.showNotification?.('Shopping List updated', {
-                  body: message,
-                  icon: '/pmworkspace-icon-192.png',
-                  badge: '/pmworkspace-icon-192.png',
-                  tag: `shopping-live:${selectedProject.id}`,
-                  data: { url: '/shopping', projectId: selectedProject.id, kind: 'shopping-list' },
-                }))
-                .catch(() => null);
+            if (isFromSomeoneElse && becameDone) {
+              setLiveUpdateMessage(`${actorLabel} bought ${incomingTodo.title}.`);
             }
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'manual_todos',
-          filter: `project_id=eq.${selectedProject.id}`,
-        },
-        (payload) => {
-          const nextRow = payload?.new;
-          const previousRow = payload?.old;
-          if (!nextRow?.id) return;
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'manual_todos',
+            filter: `project_id=eq.${selectedProject.id}`,
+          },
+          (payload) => {
+            const previousRow = payload?.old;
+            if (!previousRow?.id) return;
 
-          const incomingTodo = mapManualTodoRow(nextRow);
-          const actorLabel = resolveSharedActorLabel(nextRow, selectedProject, currentUserId);
-          const isFromSomeoneElse = Boolean(actorLabel);
-          const becameDone = previousRow?.status !== 'Done' && nextRow?.status === 'Done';
+            const actorLabel = resolveSharedActorLabel(previousRow, selectedProject, currentUserId);
+            const isFromSomeoneElse = Boolean(actorLabel);
 
-          setTodos((previousItems) => {
-            const nextTodos = sortTodos(previousItems.map((item) => (
-              item._id === incomingTodo._id ? incomingTodo : item
-            )));
-            persistProjectTodos(selectedProject.id, nextTodos);
-            return nextTodos;
-          });
+            setTodos((previousItems) => {
+              const nextTodos = previousItems.filter((item) => item._id !== previousRow.id);
+              persistProjectTodos(selectedProject.id, nextTodos);
+              return nextTodos;
+            });
 
-          if (isFromSomeoneElse && becameDone) {
-            setLiveUpdateMessage(`${actorLabel} bought ${incomingTodo.title}.`);
+            if (isFromSomeoneElse) {
+              const title = String(previousRow.title || 'an item').trim() || 'an item';
+              setLiveUpdateMessage(`${actorLabel} removed ${title}.`);
+            }
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'manual_todos',
-          filter: `project_id=eq.${selectedProject.id}`,
-        },
-        (payload) => {
-          const previousRow = payload?.old;
-          if (!previousRow?.id) return;
+        )
+        .subscribe();
 
-          const actorLabel = resolveSharedActorLabel(previousRow, selectedProject, currentUserId);
-          const isFromSomeoneElse = Boolean(actorLabel);
-
-          setTodos((previousItems) => {
-            const nextTodos = previousItems.filter((item) => item._id !== previousRow.id);
-            persistProjectTodos(selectedProject.id, nextTodos);
-            return nextTodos;
-          });
-
-          if (isFromSomeoneElse) {
-            const title = String(previousRow.title || 'an item').trim() || 'an item';
-            setLiveUpdateMessage(`${actorLabel} removed ${title}.`);
-          }
-        }
-      )
-      .subscribe();
-
-    shoppingRealtimeChannelRef.current = channel;
+      shoppingRealtimeChannelRef.current = channel;
+    } catch (error) {
+      console.warn('Shopping list realtime unavailable on this device.', error);
+      shoppingRealtimeChannelRef.current = null;
+      return undefined;
+    }
 
     return () => {
       if (shoppingRealtimeChannelRef.current) {
