@@ -30,6 +30,7 @@ export default async function handler(req, res) {
       key: `checkout:${user.id}:${getClientIp(req)}`,
       max: 10,
       windowMs: 60_000,
+      strictShared: true,
     });
     if (!limitResult.ok) {
       return sendRateLimitResponse(res, limitResult, 'Too many checkout attempts. Please wait a moment and try again.');

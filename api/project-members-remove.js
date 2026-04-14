@@ -30,6 +30,7 @@ export default async function handler(req, res) {
       key: `project-remove-access:${user.id}:${getClientIp(req)}`,
       max: 20,
       windowMs: 5 * 60_000,
+      strictShared: true,
     });
     if (!limitResult.ok) {
       return sendRateLimitResponse(res, limitResult, 'Too many access-management requests. Please wait a moment and try again.');

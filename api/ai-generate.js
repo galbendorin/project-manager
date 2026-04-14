@@ -107,7 +107,8 @@ export default async function handler(req, res) {
   const limitResult = await checkRateLimit({
     key: `ai:${user.id}:${getClientIp(req)}:${usePlatformKey ? 'platform' : 'byok'}`,
     max: usePlatformKey ? 24 : 60,
-    windowMs: 60_000
+    windowMs: 60_000,
+    strictShared: true,
   })
   if (!limitResult.ok) {
     return sendRateLimitResponse(res, limitResult, 'AI requests are coming in too quickly. Please wait a moment and try again.')

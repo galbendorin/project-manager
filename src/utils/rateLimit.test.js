@@ -45,3 +45,21 @@ test('checkRateLimit local fallback blocks requests over the cap', async () => {
   assert.equal(blocked.mode, 'local-fallback');
   assert.ok(blocked.retryAfterSeconds >= 1);
 });
+
+test('checkRateLimit can require the shared limiter for sensitive production routes', async () => {
+  resetRateLimitStateForTests();
+
+  const blocked = await checkRateLimit({
+    key: 'test:shared-required',
+    max: 5,
+    windowMs: 10_000,
+    strictShared: true,
+    enforceStrictShared: true,
+  });
+
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.mode, 'shared-required-unavailable');
+  assert.equal(blocked.status, 503);
+  assert.equal(blocked.reason, 'missing-admin-client');
+  assert.ok(blocked.retryAfterSeconds >= 1);
+});

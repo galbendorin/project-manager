@@ -19,6 +19,8 @@ const adminSupabase = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey)
   : null;
 
+const SHARED_LIMIT_UNAVAILABLE_STATUS = 503;
+
 const isMissingRateLimitRpcError = (error) => {
   const code = String(error?.code || '').toLowerCase();
   const message = String(error?.message || '').toLowerCase();
@@ -99,22 +101,50 @@ const checkRateLimitLocal = ({
   };
 };
 
+const buildSharedRateLimitUnavailableResult = ({
+  max,
+  windowMs,
+  reason = 'shared-unavailable',
+}) => {
+  const ts = now();
+  return {
+    ok: false,
+    limit: max,
+    remaining: 0,
+    retryAfterSeconds: Math.max(1, Math.ceil((Number(windowMs) || 60_000) / 1000)),
+    resetAt: ts + (Number(windowMs) || 60_000),
+    mode: 'shared-required-unavailable',
+    reason,
+    status: SHARED_LIMIT_UNAVAILABLE_STATUS,
+  };
+};
+
 const checkRateLimitShared = async ({
   key,
   max,
   windowMs,
 }) => {
-  if (!adminSupabase) return null;
+  if (!adminSupabase) {
+    return {
+      available: false,
+      reason: 'missing-admin-client',
+      result: null,
+    };
+  }
 
   const safeKey = String(key || '').trim();
   if (!safeKey || !Number.isFinite(max) || !Number.isFinite(windowMs) || max <= 0 || windowMs <= 0) {
     return {
-      ok: true,
-      limit: max,
-      remaining: max,
-      retryAfterSeconds: 0,
-      resetAt: now(),
-      mode: 'shared',
+      available: true,
+      reason: '',
+      result: {
+        ok: true,
+        limit: max,
+        remaining: max,
+        retryAfterSeconds: 0,
+        resetAt: now(),
+        mode: 'shared',
+      },
     };
   }
 
@@ -129,33 +159,74 @@ const checkRateLimitShared = async ({
     if (!isMissingRateLimitRpcError(error)) {
       console.warn('Shared rate limit RPC failed, falling back to local limiter.', error);
     }
-    return null;
+    return {
+      available: false,
+      reason: isMissingRateLimitRpcError(error) ? 'missing-shared-rpc' : 'shared-rpc-failed',
+      result: null,
+    };
   }
 
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row) return null;
+  if (!row) {
+    return {
+      available: false,
+      reason: 'shared-rpc-empty',
+      result: null,
+    };
+  }
 
   return {
-    ok: Boolean(row.allowed),
-    limit: Number.isFinite(Number(row.limit_count)) ? Number(row.limit_count) : max,
-    remaining: Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : 0,
-    retryAfterSeconds: Number.isFinite(Number(row.retry_after_seconds)) ? Number(row.retry_after_seconds) : 0,
-    resetAt: row.reset_at ? new Date(row.reset_at).getTime() : now(),
-    mode: 'shared',
+    available: true,
+    reason: '',
+    result: {
+      ok: Boolean(row.allowed),
+      limit: Number.isFinite(Number(row.limit_count)) ? Number(row.limit_count) : max,
+      remaining: Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : 0,
+      retryAfterSeconds: Number.isFinite(Number(row.retry_after_seconds)) ? Number(row.retry_after_seconds) : 0,
+      resetAt: row.reset_at ? new Date(row.reset_at).getTime() : now(),
+      mode: 'shared',
+    },
   };
+};
+
+const shouldEnforceStrictSharedRateLimit = ({
+  strictShared = false,
+  enforceStrictShared = false,
+}) => {
+  if (!strictShared) return false;
+  if (enforceStrictShared) return true;
+  return process.env.NODE_ENV === 'production';
 };
 
 export const checkRateLimit = async ({
   key,
   max,
   windowMs,
+  strictShared = false,
+  enforceStrictShared = false,
 }) => {
-  const sharedResult = await checkRateLimitShared({ key, max, windowMs });
-  if (sharedResult) return sharedResult;
+  const sharedState = await checkRateLimitShared({ key, max, windowMs });
+  if (sharedState.available && sharedState.result) {
+    return sharedState.result;
+  }
+
+  if (shouldEnforceStrictSharedRateLimit({ strictShared, enforceStrictShared })) {
+    return buildSharedRateLimitUnavailableResult({
+      max,
+      windowMs,
+      reason: sharedState.reason,
+    });
+  }
+
   return checkRateLimitLocal({ key, max, windowMs });
 };
 
-export const sendRateLimitResponse = (res, result, message = 'Too many requests. Please wait a moment and try again.') => {
+export const sendRateLimitResponse = (
+  res,
+  result,
+  message = 'Too many requests. Please wait a moment and try again.',
+  unavailableMessage = 'Request throttling is temporarily unavailable. Please try again shortly.'
+) => {
   if (result?.limit) {
     res.setHeader('X-RateLimit-Limit', String(result.limit));
   }
@@ -168,7 +239,10 @@ export const sendRateLimitResponse = (res, result, message = 'Too many requests.
   if (result?.retryAfterSeconds) {
     res.setHeader('Retry-After', String(result.retryAfterSeconds));
   }
-  return res.status(429).json({ error: message });
+  const status = Number(result?.status) || 429;
+  return res.status(status).json({
+    error: status === SHARED_LIMIT_UNAVAILABLE_STATUS ? unavailableMessage : message,
+  });
 };
 
 export const resetRateLimitStateForTests = () => {

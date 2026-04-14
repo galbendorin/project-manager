@@ -39,6 +39,7 @@ export default async function handler(req, res) {
       key: `project-invite:${user.id}:${getClientIp(req)}`,
       max: 15,
       windowMs: 5 * 60_000,
+      strictShared: true,
     });
     if (!limitResult.ok) {
       return sendRateLimitResponse(res, limitResult, 'Too many sharing requests. Please wait a moment and try again.');

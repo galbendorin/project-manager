@@ -326,6 +326,7 @@ export default async function handler(req, res) {
     key: `meal-estimate:${getClientIp(req)}:${user.id}`,
     max: 18,
     windowMs: 60_000,
+    strictShared: true,
   });
   if (!limitResult.ok) {
     return sendRateLimitResponse(
