@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { getCurrentDate } from '../utils/helpers';
 import { readLocalJson, writeLocalJson } from '../utils/offlineState';
 import { useTodoViewDerivedData } from '../hooks/useTodoViewDerivedData';
+import { getTodoCompletionDescriptor } from '../hooks/projectData/todoCompletion';
 import {
   buildTodoCalendarSections,
   getTodoSectionDefaultDueDate,
 } from '../utils/todoCalendarSections';
+import { buildCrossProjectTodoUpdateData } from '../utils/crossProjectTodoCompletion';
 import TodoBoardView from './TodoBoardView';
 import TodoBucketSection from './TodoBucketSection';
 import TodoKanbanBoard from './TodoKanbanBoard';
@@ -284,7 +287,7 @@ const TodoView = ({
       setLoadingAllProjects(true);
       const { data, error } = await supabase
         .from('projects')
-        .select('id, name, tasks, registers, tracker')
+        .select('id, name, tasks, registers, tracker, version')
         .order('updated_at', { ascending: false });
 
       if (cancelled) return;
@@ -383,6 +386,81 @@ const TodoView = ({
     });
   }, []);
 
+  const completeCrossProjectTodo = useCallback(async (todo) => {
+    if (!todo?.projectId || !todo?.isDerived) {
+      if (onCompleteTodo) {
+        await onCompleteTodo(todo);
+      }
+      return;
+    }
+
+    const targetProject = allProjectsData.find((project) => project.id === todo.projectId);
+    if (!targetProject) {
+      if (onCompleteTodo) {
+        await onCompleteTodo(todo);
+      }
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const completion = getTodoCompletionDescriptor(todo, getCurrentDate(), nowIso);
+    const prepared = buildCrossProjectTodoUpdateData(targetProject, completion, nowIso);
+
+    if (!prepared) {
+      if (onCompleteTodo) {
+        await onCompleteTodo(todo);
+      }
+      return;
+    }
+
+    let updateQuery = supabase
+      .from('projects')
+      .update(prepared.updateData)
+      .eq('id', todo.projectId);
+
+    if (Number.isInteger(targetProject.version)) {
+      updateQuery = updateQuery.eq('version', targetProject.version);
+    }
+
+    const { data, error } = await updateQuery
+      .select('version')
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    if (Number.isInteger(targetProject.version) && !data) {
+      throw new Error('The other project changed before this task could be completed. Please reload the task list and try again.');
+    }
+
+    setAllProjectsData((prev) => prev.map((project) => (
+      project.id === todo.projectId
+        ? {
+            ...prepared.nextProject,
+            version: Number.isInteger(data?.version) ? data.version : project.version,
+          }
+        : project
+    )));
+  }, [allProjectsData, onCompleteTodo]);
+
+  const persistCompletedTodo = useCallback(async (todo) => {
+    const isCrossProjectTodo = (
+      scope === 'all'
+      && todo?.projectId
+      && todo.projectId !== currentProject?.id
+    );
+
+    if (isCrossProjectTodo) {
+      await completeCrossProjectTodo(todo);
+      return;
+    }
+
+    if (onCompleteTodo) {
+      await onCompleteTodo(todo);
+    }
+  }, [completeCrossProjectTodo, currentProject?.id, onCompleteTodo, scope]);
+
   const schedulePendingCompletion = useCallback((todo, delayMs) => {
     const existingTimeoutId = completionTimeoutsRef.current.get(todo._id);
     if (existingTimeoutId) {
@@ -390,7 +468,7 @@ const TodoView = ({
     }
 
     const timeoutId = window.setTimeout(() => {
-      Promise.resolve(onCompleteTodo(todo))
+      Promise.resolve(persistCompletedTodo(todo))
         .catch((error) => {
           console.error('Failed to complete task from Tasks view:', error);
         })
@@ -400,7 +478,7 @@ const TodoView = ({
     }, delayMs);
 
     completionTimeoutsRef.current.set(todo._id, timeoutId);
-  }, [clearPendingCompletion, onCompleteTodo]);
+  }, [clearPendingCompletion, persistCompletedTodo]);
 
   const handleCompleteTodo = useCallback((todo, bucketKey, displayIndex) => {
     if (!todo || isExternalView || !onCompleteTodo) return;
