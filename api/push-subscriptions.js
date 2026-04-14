@@ -13,6 +13,35 @@ const isMissingPushTableError = (error) => {
   return code === '42p01' || message.includes('push_subscriptions');
 };
 
+const isUniqueViolationError = (error) => String(error?.code || '') === '23505';
+
+export const resolvePushSubscriptionWriteAction = ({ existingUserId, currentUserId }) => {
+  const current = String(currentUserId || '').trim();
+  const existing = String(existingUserId || '').trim();
+
+  if (!current) {
+    return { action: 'reject', reason: 'missing-current-user' };
+  }
+
+  if (!existing) {
+    return { action: 'insert', reason: 'unclaimed-endpoint' };
+  }
+
+  if (existing === current) {
+    return { action: 'update', reason: 'same-user' };
+  }
+
+  return { action: 'reject', reason: 'claimed-by-other-user' };
+};
+
+const loadExistingPushSubscription = async (endpoint = '') => {
+  return supabase
+    .from('push_subscriptions')
+    .select('id, user_id')
+    .eq('endpoint', endpoint)
+    .maybeSingle();
+};
+
 export default async function handler(req, res) {
   applyApiCors(req, res);
 
@@ -84,9 +113,79 @@ export default async function handler(req, res) {
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase
-      .from('push_subscriptions')
-      .upsert(payload, { onConflict: 'endpoint' });
+    const saveForCurrentUser = async () => {
+      const { data: existingRow, error: existingError } = await loadExistingPushSubscription(endpoint);
+
+      if (existingError) {
+        return { error: existingError };
+      }
+
+      const writeAction = resolvePushSubscriptionWriteAction({
+        existingUserId: existingRow?.user_id,
+        currentUserId: user.id,
+      });
+
+      if (writeAction.action === 'reject') {
+        return {
+          conflict: true,
+          message: 'This device is already linked to another account. Turn off phone alerts there first, then try again.',
+        };
+      }
+
+      if (writeAction.action === 'update') {
+        const { error: updateError } = await supabase
+          .from('push_subscriptions')
+          .update(payload)
+          .eq('endpoint', endpoint)
+          .eq('user_id', user.id);
+
+        return { error: updateError };
+      }
+
+      const { error: insertError } = await supabase
+        .from('push_subscriptions')
+        .insert(payload);
+
+      if (!insertError) {
+        return { error: null };
+      }
+
+      if (!isUniqueViolationError(insertError)) {
+        return { error: insertError };
+      }
+
+      const { data: latestRow, error: latestError } = await loadExistingPushSubscription(endpoint);
+
+      if (latestError) {
+        return { error: latestError };
+      }
+
+      const latestWriteAction = resolvePushSubscriptionWriteAction({
+        existingUserId: latestRow?.user_id,
+        currentUserId: user.id,
+      });
+
+      if (latestWriteAction.action === 'update') {
+        const { error: updateAfterRaceError } = await supabase
+          .from('push_subscriptions')
+          .update(payload)
+          .eq('endpoint', endpoint)
+          .eq('user_id', user.id);
+
+        return { error: updateAfterRaceError };
+      }
+
+      if (latestWriteAction.action === 'reject') {
+        return {
+          conflict: true,
+          message: 'This device is already linked to another account. Turn off phone alerts there first, then try again.',
+        };
+      }
+
+      return { error: insertError };
+    };
+
+    const { error, conflict, message } = await saveForCurrentUser();
 
     if (error) {
       if (isMissingPushTableError(error)) {
@@ -94,6 +193,10 @@ export default async function handler(req, res) {
       }
       console.error('Failed to save push subscription:', error);
       return res.status(500).json({ error: 'Unable to enable phone alerts right now.' });
+    }
+
+    if (conflict) {
+      return res.status(409).json({ error: message });
     }
 
     return res.status(200).json({ ok: true, message: 'Phone alerts are on for this device.' });
