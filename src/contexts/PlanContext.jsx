@@ -7,96 +7,17 @@ import {
   clearBillingSyncPending,
   hasBillingSyncPending,
 } from '../utils/billingSync';
+import { TRIAL_LENGTH_DAYS } from '../utils/trialOffer';
 import {
-  TRIAL_LENGTH_DAYS,
-  getTrialEndDate,
-} from '../utils/trialOffer';
+  ACTIVE_SUBSCRIPTION_STATUSES,
+  ALL_TABS,
+  PLAN_LIMITS,
+  isAdminEmail,
+} from '../utils/planAccess';
 
 const PlanContext = createContext({});
 
 export const usePlan = () => useContext(PlanContext);
-
-// ── Admin / owner accounts — always get team-level access ────────────
-const ADMIN_EMAILS = [
-  'galben.dorin@yahoo.com'
-];
-
-const isAdminEmail = (email) => Boolean(
-  email && ADMIN_EMAILS.includes(String(email).toLowerCase())
-);
-
-// ── Plan limits ──────────────────────────────────────────────
-const PLAN_LIMITS = {
-  starter: {
-    label: 'Starter',
-    maxProjects: 3,
-    maxTasksPerProject: 30,
-    taskGrace: 5,                 // Soft limit: 5 extra tasks with warning
-    aiReportsPerMonth: 0,
-    canExport: true,
-    canImport: true,
-    canBaseline: false,
-    canUseAi: false,
-    canUseAiAssistant: false,
-    canExportAiReport: false,
-    // Starter gets: schedule, issues, actions, tracker, timesheets
-    // Everything else is visible but blurred
-    fullAccessTabs: ['schedule', 'issues', 'actions', 'tracker', 'timesheets'],
-  },
-  trial: {
-    label: 'Pro Trial',
-    maxProjects: 999,
-    maxTasksPerProject: 999,
-    taskGrace: 0,
-    aiReportsPerMonth: 100,
-    canExport: true,
-    canImport: true,
-    canBaseline: true,
-    canUseAi: true,
-    canUseAiAssistant: true,
-    canExportAiReport: true,
-    fullAccessTabs: null,         // null = all tabs unlocked
-  },
-  pro: {
-    label: 'Pro',
-    maxProjects: 999,
-    maxTasksPerProject: 500,
-    taskGrace: 0,
-    aiReportsPerMonth: 100,
-    canExport: true,
-    canImport: true,
-    canBaseline: true,
-    canUseAi: true,
-    canUseAiAssistant: true,
-    canExportAiReport: true,
-    fullAccessTabs: null,
-  },
-  team: {
-    label: 'Team',
-    maxProjects: 999,
-    maxTasksPerProject: 999,
-    taskGrace: 0,
-    aiReportsPerMonth: 999,
-    canExport: true,
-    canImport: true,
-    canBaseline: true,
-    canUseAi: true,
-    canUseAiAssistant: true,
-    canExportAiReport: true,
-    fullAccessTabs: null,
-  },
-};
-
-// All tabs in the app — used for blurred-tab logic
-const ALL_TABS = [
-  'timesheets', 'schedule', 'tracker', 'statusreport', 'todo',
-  'risks', 'issues', 'actions', 'changes',
-  'minutes', 'costs', 'stakeholdersmgmt', 'financials',
-  'assumptions', 'decisions', 'lessons', 'raci'
-];
-
-// Stripe subscription statuses that count as "active paid"
-const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due'];
 
 // ── Plan simulator options (admin only) ──────────────────────
 const SIMULATOR_OPTIONS = [
@@ -131,55 +52,13 @@ export const PlanProvider = ({ children }) => {
 
     try {
       const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', user.id)
+        .rpc('get_or_create_current_user_profile')
         .single();
 
       if (error) {
-        // Profile might not exist yet (race condition with trigger)
-        if (error.code === 'PGRST116') {
-          const now = new Date();
-          const trialEnd = getTrialEndDate(now);
-          const { data: newProfile } = await supabase
-            .from('user_profiles')
-            .insert({
-              id: user.id,
-              plan: 'trial',
-              subscription_status: 'trialing',
-              trial_start: now.toISOString(),
-              trial_ends: trialEnd.toISOString(),
-              ai_reports_used: 0,
-              ai_reports_reset_at: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
-            })
-            .select()
-            .single();
-          setProfile(newProfile);
-        } else {
-          console.error('Failed to load profile:', error);
-        }
+        console.error('Failed to load profile:', error);
       } else {
-        // Check if AI counter needs monthly reset
-        const resetAt = data.ai_reports_reset_at ? new Date(data.ai_reports_reset_at) : new Date(0);
-        const now = new Date();
-        const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const hasValidResetAt = !Number.isNaN(resetAt.getTime());
-
-        if (!hasValidResetAt || resetAt < currentMonthStart) {
-          const { data: updated } = await supabase
-            .from('user_profiles')
-            .update({
-              ai_reports_used: 0,
-              ai_reports_reset_at: currentMonthStart.toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', user.id)
-            .select()
-            .single();
-          setProfile(updated || data);
-        } else {
-          setProfile(data);
-        }
+        setProfile(data);
       }
     } catch (err) {
       console.error('Profile load error:', err);
@@ -406,18 +285,12 @@ export const PlanProvider = ({ children }) => {
   const incrementAiReports = useCallback(async () => {
     if (!user || !profile) return false;
 
-    const newCount = (profile.ai_reports_used || 0) + 1;
+    const { data, error } = await supabase
+      .rpc('increment_current_user_ai_reports')
+      .single();
 
-    const { error } = await supabase
-      .from('user_profiles')
-      .update({
-        ai_reports_used: newCount,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id);
-
-    if (!error) {
-      setProfile(prev => ({ ...prev, ai_reports_used: newCount }));
+    if (!error && data) {
+      setProfile(data);
       return true;
     }
     return false;

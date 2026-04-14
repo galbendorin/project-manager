@@ -97,3 +97,49 @@ test('generateAiContent forwards bearer auth when using platform AI', async () =
   assert.equal(result.ok, true)
   assert.equal(capturedHeaders.Authorization, 'Bearer access-token-123')
 })
+
+test('generateAiContent forwards bearer auth for BYOK requests too', async () => {
+  const originalFetch = global.fetch
+  const originalWindow = global.window
+  const storage = new Map([
+    ['sb-test-auth-token', JSON.stringify({ access_token: 'access-token-456' })],
+  ])
+
+  global.window = {
+    localStorage: {
+      get length() {
+        return storage.size
+      },
+      key(index) {
+        return Array.from(storage.keys())[index] || null
+      },
+      getItem(key) {
+        return storage.get(key) || null
+      },
+    },
+  }
+
+  let capturedHeaders = null
+  global.fetch = async (_url, options) => {
+    capturedHeaders = options.headers
+    return {
+      ok: true,
+      json: async () => ({ text: 'OK' })
+    }
+  }
+
+  const result = await generateAiContent({
+    provider: 'openai',
+    apiKey: 'sk-test',
+    model: 'gpt-4o-mini',
+    systemPrompt: 'sys',
+    userMessage: 'hello',
+  })
+
+  global.fetch = originalFetch
+  global.window = originalWindow
+
+  assert.equal(result.ok, true)
+  assert.equal(capturedHeaders.Authorization, 'Bearer access-token-456')
+  assert.equal(capturedHeaders['X-Api-Key'], 'sk-test')
+})

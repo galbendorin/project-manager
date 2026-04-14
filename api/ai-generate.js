@@ -7,14 +7,59 @@
  * The key is only in-transit; it is never logged or stored.
  */
 
-import { applyApiCors, requireAuthenticatedUser } from './_auth.js'
+import { applyApiCors, getAdminSupabase, requireAuthenticatedUser } from './_auth.js'
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js'
+import { buildDefaultUserProfile, getPlanLimits, resolveRealPlan } from '../src/utils/planAccess.js'
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 const OPENAI_API = 'https://api.openai.com/v1/chat/completions'
+const adminSupabase = getAdminSupabase()
 
 // Max request body size (200KB — generous for prompts)
 const MAX_BODY_SIZE = 200_000
+
+const loadOrProvisionUserProfile = async (user) => {
+  if (!adminSupabase || !user?.id) {
+    throw new Error('Server billing configuration is incomplete.')
+  }
+
+  const { data, error } = await adminSupabase
+    .from('user_profiles')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (data) return data
+
+  const profileRow = buildDefaultUserProfile(user.id, new Date())
+  const { data: inserted, error: insertError } = await adminSupabase
+    .from('user_profiles')
+    .insert(profileRow)
+    .select('*')
+    .single()
+
+  if (insertError && insertError.code !== '23505') {
+    throw insertError
+  }
+
+  if (inserted) return inserted
+
+  const { data: reloaded, error: reloadError } = await adminSupabase
+    .from('user_profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single()
+
+  if (reloadError) {
+    throw reloadError
+  }
+
+  return reloaded
+}
 
 export default async function handler(req, res) {
   applyApiCors(req, res)
@@ -33,22 +78,39 @@ export default async function handler(req, res) {
     return res.status(413).json({ error: 'Request body too large' })
   }
 
+  const user = await requireAuthenticatedUser(req, res)
+  if (!user) return
+
   // Accept API key from header only.
   const userApiKey = req.headers['x-api-key']
   const { provider, model, systemPrompt, userMessage, maxTokens = 4096, stream = false, usePlatformKey = false } = req.body || {}
 
+  let profile
+  try {
+    profile = await loadOrProvisionUserProfile(user)
+  } catch (error) {
+    console.error('Failed to load AI entitlement profile:', error?.message || error)
+    return res.status(500).json({ error: 'Unable to verify AI access for this account.' })
+  }
+
+  const effectivePlan = resolveRealPlan({
+    profile,
+    email: user.email,
+    now: new Date(),
+  })
+  const limits = getPlanLimits(effectivePlan)
+
+  if (!limits.canUseAi) {
+    return res.status(403).json({ error: 'Your current plan does not include AI access.' })
+  }
+
   const limitResult = await checkRateLimit({
-    key: `ai:${getClientIp(req)}:${usePlatformKey ? 'platform' : 'byok'}`,
+    key: `ai:${user.id}:${getClientIp(req)}:${usePlatformKey ? 'platform' : 'byok'}`,
     max: usePlatformKey ? 24 : 60,
     windowMs: 60_000
   })
   if (!limitResult.ok) {
     return sendRateLimitResponse(res, limitResult, 'AI requests are coming in too quickly. Please wait a moment and try again.')
-  }
-
-  if (usePlatformKey) {
-    const user = await requireAuthenticatedUser(req, res)
-    if (!user) return
   }
 
   // Platform key mode: trial users use the server-side Anthropic key

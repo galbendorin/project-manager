@@ -31,6 +31,11 @@ const readStoredAccessToken = () => {
   return ''
 }
 
+const buildAuthorizationHeader = () => {
+  const accessToken = readStoredAccessToken()
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+}
+
 const truncatePrompt = (value, limit = MAX_USER_MESSAGE_CHARS) => {
   if (!value) return ''
   if (value.length <= limit) return value
@@ -107,12 +112,7 @@ export const generateAiContent = async ({
     if (apiKey && !usePlatformKey) {
       headers['X-Api-Key'] = apiKey
     }
-    if (usePlatformKey) {
-      const accessToken = readStoredAccessToken()
-      if (accessToken) {
-        headers.Authorization = `Bearer ${accessToken}`
-      }
-    }
+    Object.assign(headers, buildAuthorizationHeader())
 
     const response = await fetch(API_ENDPOINT, {
       method: 'POST',

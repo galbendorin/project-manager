@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   applyApiCors,
   getAdminSupabase,
@@ -31,14 +33,14 @@ const createHttpError = ({ message, status = 500, payload = null }) => {
 };
 
 const buildIngredientCacheKey = (ingredient = {}) => (
-  [
+  createHash('sha256').update([
     normalizeSpace(ingredient.ingredientName || ingredient.rawText || '').toLowerCase(),
     ingredient.quantityValue === null || ingredient.quantityValue === undefined || ingredient.quantityValue === ''
       ? ''
       : Number(ingredient.quantityValue),
     normalizeSpace(ingredient.quantityUnit || '').toLowerCase(),
     normalizeSpace(ingredient.notes || '').toLowerCase(),
-  ].join('::')
+  ].join('::')).digest('hex')
 );
 
 const isMissingCacheRelationError = (error) => {
@@ -56,6 +58,45 @@ const hasPositiveCalorieEstimate = (result = {}) => {
   const kcalPer100 = toFiniteNumber(result.kcalPer100);
   return (estimatedKcal !== null && estimatedKcal > 0) || (kcalPer100 !== null && kcalPer100 > 0);
 };
+
+const buildCachedIngredientPayload = (ingredientResult = {}) => ({
+  resolved: Boolean(ingredientResult.resolved),
+  estimatedKcal: ingredientResult.estimatedKcal ?? null,
+  quantityGrams: ingredientResult.quantityGrams ?? null,
+  kcalPer100: ingredientResult.kcalPer100 ?? null,
+  resolutionMethod: ingredientResult.resolutionMethod || '',
+  reason: ingredientResult.reason || '',
+  matchedFood: ingredientResult.matchedFood
+    ? {
+        fdcId: ingredientResult.matchedFood.fdcId ?? null,
+        description: ingredientResult.matchedFood.description || '',
+        dataType: ingredientResult.matchedFood.dataType || '',
+      }
+    : null,
+  originalLookupSource: ingredientResult.lookupSource || ingredientResult.originalLookupSource || '',
+});
+
+const buildCachedIngredientResult = ({
+  ingredient = {},
+  payload = {},
+  searchQuery = '',
+}) => ({
+  ingredientName: ingredient.ingredientName || ingredient.rawText || 'Ingredient',
+  rawText: ingredient.rawText || ingredient.ingredientName || '',
+  quantityValue: ingredient.quantityValue ?? null,
+  quantityUnit: ingredient.quantityUnit || '',
+  estimatedKcal: payload.estimatedKcal ?? null,
+  quantityGrams: payload.quantityGrams ?? null,
+  kcalPer100: payload.kcalPer100 ?? null,
+  resolutionMethod: payload.resolutionMethod || 'unresolved',
+  resolved: Boolean(payload.resolved),
+  reason: payload.reason || '',
+  matchedFood: payload.matchedFood || null,
+  searchQuery,
+  cacheHit: true,
+  originalLookupSource: payload.originalLookupSource || '',
+  lookupSource: 'cached',
+});
 
 const normalizeIngredientInput = (ingredient = {}) => ({
   rawText: String(ingredient.rawText || ingredient.ingredientName || '').trim(),
@@ -107,7 +148,7 @@ const normalizeUsdaApiError = (error, { usingDemoKey = false } = {}) => {
   return message || 'Unable to estimate calories right now.';
 };
 
-const readCachedIngredientEstimate = async (ingredient = {}) => {
+const readCachedIngredientEstimate = async (ingredient = {}, searchQuery = '') => {
   if (!cacheSupabase) return null;
   const cacheKey = buildIngredientCacheKey(ingredient);
   if (!cacheKey) return null;
@@ -127,12 +168,11 @@ const readCachedIngredientEstimate = async (ingredient = {}) => {
 
   if (!data?.payload) return null;
   if (!hasPositiveCalorieEstimate(data.payload)) return null;
-  return {
-    ...data.payload,
-    cacheHit: true,
-    originalLookupSource: data.payload.lookupSource || '',
-    lookupSource: 'cached',
-  };
+  return buildCachedIngredientResult({
+    ingredient,
+    payload: data.payload,
+    searchQuery,
+  });
 };
 
 const loadRememberedIngredientRows = async ({ userId, userSupabase }) => {
@@ -201,21 +241,29 @@ const loadRememberedIngredientRows = async ({ userId, userSupabase }) => {
   }
 };
 
-const writeCachedIngredientEstimate = async (ingredient = {}, ingredientResult = {}, searchQuery = '') => {
+const writeCachedIngredientEstimate = async (ingredient = {}, ingredientResult = {}) => {
   if (!cacheSupabase) return;
   const cacheKey = buildIngredientCacheKey(ingredient);
   if (!cacheKey) return;
+
+  const cachedPayload = buildCachedIngredientPayload(ingredientResult);
+  const safeIngredientLabel = normalizeSpace(
+    ingredientResult?.matchedFood?.description
+    || ingredient.ingredientName
+    || ingredient.rawText
+    || ''
+  );
 
   const { error } = await cacheSupabase
     .from('meal_ingredient_calorie_cache')
     .upsert({
       cache_key: cacheKey,
-      search_query: searchQuery || '',
-      ingredient_name: ingredient.ingredientName || ingredient.rawText || '',
-      raw_text: ingredient.rawText || ingredient.ingredientName || '',
+      search_query: '',
+      ingredient_name: safeIngredientLabel,
+      raw_text: '',
       quantity_value: ingredient.quantityValue ?? null,
       quantity_unit: ingredient.quantityUnit || '',
-      notes: ingredient.notes || '',
+      notes: '',
       resolved: Boolean(ingredientResult.resolved),
       estimated_kcal: ingredientResult.estimatedKcal ?? null,
       quantity_grams: ingredientResult.quantityGrams ?? null,
@@ -225,11 +273,7 @@ const writeCachedIngredientEstimate = async (ingredient = {}, ingredientResult =
       fdc_id: ingredientResult.matchedFood?.fdcId ?? null,
       matched_food_label: ingredientResult.matchedFood?.description || '',
       matched_food_data_type: ingredientResult.matchedFood?.dataType || '',
-      payload: {
-        ...ingredientResult,
-        cacheHit: false,
-        originalLookupSource: ingredientResult.lookupSource || '',
-      },
+      payload: cachedPayload,
     }, {
       onConflict: 'cache_key',
     });
@@ -316,7 +360,7 @@ export default async function handler(req, res) {
 
     for (const ingredient of ingredientLines) {
       const searchQuery = buildIngredientSearchQuery(ingredient);
-      const cachedIngredientResult = await readCachedIngredientEstimate(ingredient);
+      const cachedIngredientResult = await readCachedIngredientEstimate(ingredient, searchQuery);
       if (cachedIngredientResult) {
         ingredientResults.push(cachedIngredientResult);
         continue;
@@ -334,7 +378,7 @@ export default async function handler(req, res) {
           lookupSource: 'starter',
         };
         ingredientResults.push(starterResult);
-        await writeCachedIngredientEstimate(ingredient, starterResult, searchQuery);
+        await writeCachedIngredientEstimate(ingredient, starterResult);
         continue;
       }
 
@@ -350,7 +394,7 @@ export default async function handler(req, res) {
           lookupSource: 'remembered',
         };
         ingredientResults.push(rememberedResult);
-        await writeCachedIngredientEstimate(ingredient, rememberedResult, searchQuery);
+        await writeCachedIngredientEstimate(ingredient, rememberedResult);
         continue;
       }
 
@@ -375,7 +419,7 @@ export default async function handler(req, res) {
           lookupSource: '',
         };
         ingredientResults.push(unresolvedResult);
-        await writeCachedIngredientEstimate(ingredient, unresolvedResult, searchQuery);
+        await writeCachedIngredientEstimate(ingredient, unresolvedResult);
         continue;
       }
 
@@ -399,7 +443,7 @@ export default async function handler(req, res) {
         lookupSource: 'usda',
       };
       ingredientResults.push(ingredientResult);
-      await writeCachedIngredientEstimate(ingredient, ingredientResult, searchQuery);
+      await writeCachedIngredientEstimate(ingredient, ingredientResult);
     }
 
     const summary = summarizeRecipeCalorieEstimate({
