@@ -84,6 +84,31 @@ export const describeShoppingProject = (project, index) => {
   return `Shared List ${index + 1}`;
 };
 
+const getProjectShareScore = (project = {}, currentUserId = null) => {
+  const members = Array.isArray(project?.project_members) ? project.project_members : [];
+  const isOwned = Boolean(project?.user_id && currentUserId && project.user_id === currentUserId);
+  const isShared = members.length > 0;
+
+  if (isOwned && isShared) return 4;
+  if (!isOwned && isShared) return 3;
+  if (isOwned) return 2;
+  return 1;
+};
+
+export const pickPreferredShoppingProject = (projects = [], currentUserId = null) => {
+  const candidates = Array.isArray(projects) ? projects.filter(Boolean) : [];
+  if (candidates.length === 0) return null;
+
+  return [...candidates].sort((left, right) => {
+    const scoreDifference = getProjectShareScore(right, currentUserId) - getProjectShareScore(left, currentUserId);
+    if (scoreDifference !== 0) return scoreDifference;
+
+    const leftTime = new Date(left.created_at || left.createdAt || 0).getTime();
+    const rightTime = new Date(right.created_at || right.createdAt || 0).getTime();
+    return leftTime - rightTime;
+  })[0] || null;
+};
+
 export const buildShoppingOfflineKey = (userId = 'anon') => `${SHOPPING_OFFLINE_PREFIX}:${userId}`;
 
 export const createEmptyShoppingOfflineState = () => ({

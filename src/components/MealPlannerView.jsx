@@ -1722,6 +1722,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     lastApprovedCount,
     lastImportedCount,
     loading,
+    plannerProject,
     recipes,
     saving,
     seedStarterLibrary,
@@ -1816,6 +1817,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   ), [deferredLibrarySearch, librarySlotFilter, recipes]);
 
   const weekLabel = useMemo(() => formatWeekLabel(weekDays), [weekDays]);
+  const plannerIsShared = useMemo(() => (
+    Array.isArray(plannerProject?.project_members) && plannerProject.project_members.length > 0
+  ), [plannerProject?.project_members]);
   const partnerServingMultiplier = Math.max(0, (week?.adultCount ?? 1.75) - 1);
   useEffect(() => {
     setPartnerInput(formatPlannerNumberInput(partnerServingMultiplier));
@@ -2150,6 +2154,11 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
               <p className="mt-2 max-w-3xl text-[13px] leading-5 text-slate-500 sm:text-sm sm:leading-6">
                 Pick meals by day, reuse breakfasts, lunches, and dinners across the week, then review one aggregated grocery draft before it hits your shared Shopping List.
               </p>
+              {plannerIsShared ? (
+                <p className="mt-2 max-w-3xl text-[13px] font-medium leading-5 text-sky-700 sm:text-sm sm:leading-6">
+                  This Meal Planner and recipe library follow the same shared Shopping List.
+                </p>
+              ) : null}
               {!canUseStarterLibrary ? (
                 <p className="mt-2 max-w-3xl text-[13px] leading-5 text-slate-500 sm:text-sm sm:leading-6">
                   This account starts with an empty recipe library so you can add or import your own meals.

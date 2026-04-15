@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { createEmptyProjectSnapshot } from './projectData/defaults';
-import { generateProjectId } from '../utils/shoppingListViewState';
+import { generateProjectId, isProjectRelationMissingError, pickPreferredShoppingProject } from '../utils/shoppingListViewState';
 import {
   applyGroceryDraftExclusions,
   buildMealPlanPreview,
@@ -25,10 +25,14 @@ import { STARTER_MEAL_IMPORT_TEXT_BY_SLOT } from '../utils/mealPlannerSeedData';
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const MEAL_PLAN_WEEK_SELECT_BASE = 'id, week_start_date, adult_count, kid_count';
 const MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS = `${MEAL_PLAN_WEEK_SELECT_BASE}, adult_portion_total`;
+const MEAL_PLAN_WEEK_SELECT_SHARED_BASE = `${MEAL_PLAN_WEEK_SELECT_BASE}, shopping_project_id`;
+const MEAL_PLAN_WEEK_SELECT_SHARED_WITH_PORTIONS = `${MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS}, shopping_project_id`;
 const MEAL_PLAN_GROCERY_BATCH_SELECT_BASE = 'id, shopping_project_id, status';
 const MEAL_PLAN_GROCERY_BATCH_SELECT_WITH_EXCLUSIONS = `${MEAL_PLAN_GROCERY_BATCH_SELECT_BASE}, excluded_draft_signatures`;
 const MEAL_LIBRARY_SELECT_BASE = 'id, external_id, source_pdf, suggested_day, meal_slot, name, ingredients_raw, how_to_make, estimated_kcal, image_ref, recipe_origin, created_at, updated_at';
 const MEAL_LIBRARY_SELECT_WITH_BATCH = `${MEAL_LIBRARY_SELECT_BASE}, yield_mode, batch_yield_portions`;
+const MEAL_LIBRARY_SELECT_SHARED_BASE = `${MEAL_LIBRARY_SELECT_BASE}, shopping_project_id`;
+const MEAL_LIBRARY_SELECT_SHARED_WITH_BATCH = `${MEAL_LIBRARY_SELECT_WITH_BATCH}, shopping_project_id`;
 const STARTER_LIBRARY_ALLOWED_EMAILS = new Set([
   'dorin.galben@yahoo.com',
   'galben.dorin@yahoo.com',
@@ -107,6 +111,7 @@ const mapIngredientRow = (row = {}) => ({
 const mapWeekRow = (row = {}) => ({
   id: row.id,
   weekStartDate: row.week_start_date || formatDateKey(new Date()),
+  shoppingProjectId: row.shopping_project_id || '',
   adultCount: getAdultServingTotal({
     adultPortionTotal: row.adult_portion_total,
     adultCount: (() => {
@@ -155,17 +160,27 @@ const sortRecipes = (recipes = []) => (
 );
 
 async function ensureShoppingProject(currentUserId) {
+  let includeMembers = true;
   let { data, error } = await supabase
     .from('projects')
-    .select('id, user_id, name, created_at')
+    .select('id, user_id, name, created_at, project_members(id, user_id, member_email, role, invited_by_user_id, created_at)')
     .eq('name', SHOPPING_PROJECT_NAME)
     .order('created_at', { ascending: true });
+
+  if (error && includeMembers && isProjectRelationMissingError(error, 'project_members')) {
+    includeMembers = false;
+    ({ data, error } = await supabase
+      .from('projects')
+      .select('id, user_id, name, created_at')
+      .eq('name', SHOPPING_PROJECT_NAME)
+      .order('created_at', { ascending: true }));
+  }
 
   if (error) {
     throw error;
   }
 
-  const existing = (data || []).find((project) => project.user_id === currentUserId) || data?.[0] || null;
+  const existing = pickPreferredShoppingProject(data || [], currentUserId);
   if (existing?.id) {
     return existing;
   }
@@ -195,10 +210,12 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [recipes, setRecipes] = useState([]);
+  const [plannerProject, setPlannerProject] = useState(null);
   const [week, setWeek] = useState(null);
   const [entries, setEntries] = useState([]);
   const [groceryBatch, setGroceryBatch] = useState(null);
   const [excludedDraftSourceSignatures, setExcludedDraftSourceSignatures] = useState([]);
+  const [supportsSharedMealPlanner, setSupportsSharedMealPlanner] = useState(true);
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => formatDateKey(getWeekStartMonday(new Date())));
   const [lastImportedCount, setLastImportedCount] = useState(0);
   const [lastApprovedCount, setLastApprovedCount] = useState(0);
@@ -236,19 +253,45 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   );
   const entryUsageById = mealPlanPreview.entryUsageById;
 
-  const loadRecipes = useCallback(async () => {
-    let mealResult = await supabase
+  const loadRecipes = useCallback(async (shoppingProjectId = '') => {
+    let mealQuery = supabase
       .from('meal_library_meals')
-      .select(MEAL_LIBRARY_SELECT_WITH_BATCH)
+      .select(supportsSharedMealPlanner ? MEAL_LIBRARY_SELECT_SHARED_WITH_BATCH : MEAL_LIBRARY_SELECT_WITH_BATCH);
+    if (supportsSharedMealPlanner) {
+      mealQuery = mealQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
+    }
+    let mealResult = await mealQuery
       .order('meal_slot', { ascending: true })
       .order('name', { ascending: true });
 
-    if (mealResult.error && isMissingMealPlannerFieldError(mealResult.error, ['yield_mode', 'batch_yield_portions'])) {
+    if (supportsSharedMealPlanner && mealResult.error && isMissingMealPlannerFieldError(mealResult.error, ['shopping_project_id'])) {
+      setSupportsSharedMealPlanner(false);
       mealResult = await supabase
         .from('meal_library_meals')
-        .select(MEAL_LIBRARY_SELECT_BASE)
+        .select(MEAL_LIBRARY_SELECT_WITH_BATCH)
         .order('meal_slot', { ascending: true })
         .order('name', { ascending: true });
+    }
+
+    if (mealResult.error && isMissingMealPlannerFieldError(mealResult.error, ['yield_mode', 'batch_yield_portions'])) {
+      let fallbackMealQuery = supabase
+        .from('meal_library_meals')
+        .select(supportsSharedMealPlanner ? MEAL_LIBRARY_SELECT_SHARED_BASE : MEAL_LIBRARY_SELECT_BASE);
+      if (supportsSharedMealPlanner) {
+        fallbackMealQuery = fallbackMealQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
+      }
+      mealResult = await fallbackMealQuery
+        .order('meal_slot', { ascending: true })
+        .order('name', { ascending: true });
+
+      if (supportsSharedMealPlanner && mealResult.error && isMissingMealPlannerFieldError(mealResult.error, ['shopping_project_id'])) {
+        setSupportsSharedMealPlanner(false);
+        mealResult = await supabase
+          .from('meal_library_meals')
+          .select(MEAL_LIBRARY_SELECT_BASE)
+          .order('meal_slot', { ascending: true })
+          .order('name', { ascending: true });
+      }
     }
 
     if (mealResult.error) {
@@ -293,7 +336,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
     setRecipes(sortRecipes((mealRows || []).map((row) => mapRecipeRow(row, ingredientMap[row.id] || splitIngredientList(row.ingredients_raw)))));
     return mealRows || [];
-  }, []);
+  }, [supportsSharedMealPlanner]);
 
   const replaceRecipeIngredients = useCallback(async (mealId, ingredientLines = []) => {
     const { error: deleteError } = await supabase
@@ -339,24 +382,39 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     const normalizedRows = rows.filter((row) => row?.name && row?.mealSlot);
     if (!normalizedRows.length) return 0;
 
+    const shoppingProject = await ensureShoppingProject(currentUserId);
+    let useSharedProjectField = supportsSharedMealPlanner;
+    setPlannerProject(shoppingProject);
     const externalIds = normalizedRows
       .map((row) => row.externalId)
       .filter(Boolean);
 
     let existingMap = new Map();
     if (externalIds.length > 0) {
-      const { data: existingRows, error: existingError } = await supabase
+      let existingResult = await supabase
         .from('meal_library_meals')
         .select('id, external_id')
+        .eq('shopping_project_id', shoppingProject.id)
         .in('external_id', externalIds);
 
-      if (existingError) throw existingError;
-      existingMap = new Map((existingRows || []).map((row) => [row.external_id, row.id]));
+      if (existingResult.error && isMissingMealPlannerFieldError(existingResult.error, ['shopping_project_id'])) {
+        useSharedProjectField = false;
+        setSupportsSharedMealPlanner(false);
+        existingResult = await supabase
+          .from('meal_library_meals')
+          .select('id, external_id')
+          .in('external_id', externalIds);
+      } else if (existingResult.error) {
+        throw existingResult.error;
+      }
+      if (existingResult.error) throw existingResult.error;
+      existingMap = new Map((existingResult.data || []).map((row) => [row.external_id, row.id]));
     }
 
     const inserts = buildMealLibraryRecords(normalizedRows, origin)
       .map((row) => ({
         user_id: currentUserId,
+        shopping_project_id: shoppingProject.id,
         ...row,
       }))
       .filter((row) => !row.external_id || !existingMap.has(row.external_id));
@@ -366,20 +424,49 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         .from('meal_library_meals')
         .insert(inserts);
 
+      if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['shopping_project_id'])) {
+        useSharedProjectField = false;
+        setSupportsSharedMealPlanner(false);
+        insertResult = await supabase
+          .from('meal_library_meals')
+          .insert(inserts.map(({
+            shopping_project_id,
+            ...rest
+          }) => rest));
+      }
+
       if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['yield_mode', 'batch_yield_portions'])) {
         insertResult = await supabase
           .from('meal_library_meals')
-          .insert(inserts.map(stripMealBatchFields));
+          .insert(inserts.map((payload) => {
+            const nextPayload = stripMealBatchFields(payload);
+            if (!useSharedProjectField) {
+              const { shopping_project_id, ...legacyPayload } = nextPayload;
+              return legacyPayload;
+            }
+            return nextPayload;
+          }));
       }
 
       if (insertResult.error) throw insertResult.error;
     }
 
-    const refreshedMeals = await supabase
+    let refreshedMeals = await supabase
       .from('meal_library_meals')
       .select('id, external_id')
+      .eq('shopping_project_id', shoppingProject.id)
       .in('external_id', externalIds);
 
+    if (refreshedMeals.error && isMissingMealPlannerFieldError(refreshedMeals.error, ['shopping_project_id'])) {
+      useSharedProjectField = false;
+      setSupportsSharedMealPlanner(false);
+      refreshedMeals = await supabase
+        .from('meal_library_meals')
+        .select('id, external_id')
+        .in('external_id', externalIds);
+    } else if (refreshedMeals.error) {
+      throw refreshedMeals.error;
+    }
     if (refreshedMeals.error) throw refreshedMeals.error;
 
     const insertedMap = new Map((refreshedMeals.data || []).map((row) => [row.external_id, row.id]));
@@ -413,10 +500,10 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       if (insertIngredientsError) throw insertIngredientsError;
     }
 
-    await loadRecipes();
+    await loadRecipes(shoppingProject.id);
     setLastImportedCount(normalizedRows.length);
     return normalizedRows.length;
-  }, [currentUserId, loadRecipes]);
+  }, [currentUserId, loadRecipes, supportsSharedMealPlanner]);
 
   const seedStarterLibrary = useCallback(async () => {
     if (!canUseStarterLibrary) return 0;
@@ -424,20 +511,47 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     return importRowsIntoLibrary(starterRows, { origin: 'imported' });
   }, [canUseStarterLibrary, importRowsIntoLibrary]);
 
-  const ensureWeek = useCallback(async (weekStartDate) => {
+  const ensureWeek = useCallback(async (weekStartDate, shoppingProjectId = '') => {
     const normalizedWeekStart = formatDateKey(weekStartDate);
-    let existingWeekResult = await supabase
+    let useSharedProjectField = supportsSharedMealPlanner;
+    let existingWeekQuery = supabase
       .from('meal_plan_weeks')
-      .select(MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS)
-      .eq('week_start_date', normalizedWeekStart)
-      .maybeSingle();
+      .select(supportsSharedMealPlanner ? MEAL_PLAN_WEEK_SELECT_SHARED_WITH_PORTIONS : MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS)
+      .eq('week_start_date', normalizedWeekStart);
+    if (supportsSharedMealPlanner) {
+      existingWeekQuery = existingWeekQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
+    }
+    let existingWeekResult = await existingWeekQuery.maybeSingle();
 
-    if (existingWeekResult.error && isMissingMealPlannerFieldError(existingWeekResult.error, ['adult_portion_total'])) {
+    if (supportsSharedMealPlanner && existingWeekResult.error && isMissingMealPlannerFieldError(existingWeekResult.error, ['shopping_project_id'])) {
+      useSharedProjectField = false;
+      setSupportsSharedMealPlanner(false);
       existingWeekResult = await supabase
         .from('meal_plan_weeks')
-        .select(MEAL_PLAN_WEEK_SELECT_BASE)
+        .select(MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS)
         .eq('week_start_date', normalizedWeekStart)
         .maybeSingle();
+    }
+
+    if (existingWeekResult.error && isMissingMealPlannerFieldError(existingWeekResult.error, ['adult_portion_total'])) {
+      let fallbackWeekQuery = supabase
+        .from('meal_plan_weeks')
+        .select(supportsSharedMealPlanner ? MEAL_PLAN_WEEK_SELECT_SHARED_BASE : MEAL_PLAN_WEEK_SELECT_BASE)
+        .eq('week_start_date', normalizedWeekStart);
+      if (supportsSharedMealPlanner) {
+        fallbackWeekQuery = fallbackWeekQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
+      }
+      existingWeekResult = await fallbackWeekQuery.maybeSingle();
+
+      if (supportsSharedMealPlanner && existingWeekResult.error && isMissingMealPlannerFieldError(existingWeekResult.error, ['shopping_project_id'])) {
+        useSharedProjectField = false;
+        setSupportsSharedMealPlanner(false);
+        existingWeekResult = await supabase
+          .from('meal_plan_weeks')
+          .select(MEAL_PLAN_WEEK_SELECT_BASE)
+          .eq('week_start_date', normalizedWeekStart)
+          .maybeSingle();
+      }
     }
 
     const { data: existingWeek, error: existingError } = existingWeekResult;
@@ -453,25 +567,58 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       .from('meal_plan_weeks')
       .insert({
         user_id: currentUserId,
+        ...(useSharedProjectField ? { shopping_project_id: shoppingProjectId || null } : {}),
         week_start_date: normalizedWeekStart,
         adult_count: 1,
         adult_portion_total: 1.75,
         kid_count: 0,
       })
-      .select(MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS)
+      .select(supportsSharedMealPlanner ? MEAL_PLAN_WEEK_SELECT_SHARED_WITH_PORTIONS : MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS)
       .single();
 
-    if (createdWeekResult.error && isMissingMealPlannerFieldError(createdWeekResult.error, ['adult_portion_total'])) {
+    if (createdWeekResult.error && isMissingMealPlannerFieldError(createdWeekResult.error, ['shopping_project_id'])) {
+      useSharedProjectField = false;
+      setSupportsSharedMealPlanner(false);
       createdWeekResult = await supabase
         .from('meal_plan_weeks')
         .insert({
           user_id: currentUserId,
           week_start_date: normalizedWeekStart,
           adult_count: 1,
+          adult_portion_total: 1.75,
           kid_count: 0,
         })
-        .select(MEAL_PLAN_WEEK_SELECT_BASE)
+        .select(MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS)
         .single();
+    }
+
+    if (createdWeekResult.error && isMissingMealPlannerFieldError(createdWeekResult.error, ['adult_portion_total'])) {
+      createdWeekResult = await supabase
+        .from('meal_plan_weeks')
+        .insert({
+          user_id: currentUserId,
+          ...(useSharedProjectField && shoppingProjectId ? { shopping_project_id: shoppingProjectId } : {}),
+          week_start_date: normalizedWeekStart,
+          adult_count: 1,
+          kid_count: 0,
+        })
+        .select(supportsSharedMealPlanner ? MEAL_PLAN_WEEK_SELECT_SHARED_BASE : MEAL_PLAN_WEEK_SELECT_BASE)
+        .single();
+
+      if (supportsSharedMealPlanner && createdWeekResult.error && isMissingMealPlannerFieldError(createdWeekResult.error, ['shopping_project_id'])) {
+        useSharedProjectField = false;
+        setSupportsSharedMealPlanner(false);
+        createdWeekResult = await supabase
+          .from('meal_plan_weeks')
+          .insert({
+            user_id: currentUserId,
+            week_start_date: normalizedWeekStart,
+            adult_count: 1,
+            kid_count: 0,
+          })
+          .select(MEAL_PLAN_WEEK_SELECT_BASE)
+          .single();
+      }
     }
 
     const { data: createdWeek, error: createError } = createdWeekResult;
@@ -481,7 +628,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
     setWeek(mapWeekRow(createdWeek));
     return createdWeek.id;
-  }, [currentUserId]);
+  }, [currentUserId, supportsSharedMealPlanner]);
 
   const loadEntries = useCallback(async (weekId) => {
     let entriesResult = await supabase
@@ -536,13 +683,15 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setError('');
 
     try {
-      const mealRows = await loadRecipes();
+      const shoppingProject = await ensureShoppingProject(currentUserId);
+      setPlannerProject(shoppingProject);
+      const mealRows = await loadRecipes(shoppingProject.id);
       if (mealRows.length === 0 && canUseStarterLibrary && !starterSeedAttemptedRef.current) {
         starterSeedAttemptedRef.current = true;
         await seedStarterLibrary();
       }
 
-      const weekId = await ensureWeek(selectedWeekStart);
+      const weekId = await ensureWeek(selectedWeekStart, shoppingProject.id);
       await loadEntries(weekId);
       await loadGroceryBatch(weekId);
     } catch (nextError) {
@@ -550,7 +699,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         isMissingRelationError(nextError, 'meal_library_meals')
         || isMissingRelationError(nextError, 'meal_plan_weeks')
         || isMissingRelationError(nextError, 'meal_plan_entries')
-        || isMissingMealPlannerFieldError(nextError, ['audience', 'entry_position', 'adult_portion_total', 'entry_kind', 'carryover_source_entry_id'])
+        || isMissingMealPlannerFieldError(nextError, ['audience', 'entry_position', 'adult_portion_total', 'entry_kind', 'carryover_source_entry_id', 'shopping_project_id'])
       ) {
         setError('Meal Planner needs the latest SQL migration before it can load.');
       } else {
@@ -865,6 +1014,9 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setSaving(true);
     setError('');
     try {
+      const shoppingProject = await ensureShoppingProject(currentUserId);
+      let useSharedProjectField = supportsSharedMealPlanner;
+      setPlannerProject(shoppingProject);
       const ingredientLines = recipeInput.ingredientLines || splitIngredientList(recipeInput.ingredientsRaw || '');
       const isBatchRecipeInput = String(recipeInput.yieldMode || 'flexible') === 'batch';
       const mealPayload = buildMealLibraryRecords([{
@@ -886,10 +1038,24 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         .from('meal_library_meals')
         .insert({
           user_id: currentUserId,
+          ...(useSharedProjectField ? { shopping_project_id: shoppingProject.id } : {}),
           ...mealPayload,
         })
         .select('id')
         .single();
+
+      if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['shopping_project_id'])) {
+        useSharedProjectField = false;
+        setSupportsSharedMealPlanner(false);
+        insertResult = await supabase
+          .from('meal_library_meals')
+          .insert({
+            user_id: currentUserId,
+            ...mealPayload,
+          })
+          .select('id')
+          .single();
+      }
 
       if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['yield_mode', 'batch_yield_portions'])) {
         if (isBatchRecipeInput) {
@@ -908,14 +1074,14 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       const { data, error: insertError } = insertResult;
       if (insertError || !data) throw insertError || new Error('Unable to create recipe.');
       await replaceRecipeIngredients(data.id, ingredientLines);
-      await loadRecipes();
+      await loadRecipes(shoppingProject.id);
     } catch (nextError) {
       setError(nextError?.message || 'Unable to create recipe.');
       throw nextError;
     } finally {
       setSaving(false);
     }
-  }, [currentUserId, loadRecipes, replaceRecipeIngredients]);
+  }, [currentUserId, loadRecipes, replaceRecipeIngredients, supportsSharedMealPlanner]);
 
   const updateRecipe = useCallback(async (recipeId, recipeInput) => {
     setSaving(true);
@@ -955,14 +1121,14 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
       if (updateResult.error) throw updateResult.error;
       await replaceRecipeIngredients(recipeId, ingredientLines);
-      await loadRecipes();
+      await loadRecipes(plannerProject?.id || '');
     } catch (nextError) {
       setError(nextError?.message || 'Unable to update recipe.');
       throw nextError;
     } finally {
       setSaving(false);
     }
-  }, [loadRecipes, replaceRecipeIngredients]);
+  }, [loadRecipes, plannerProject?.id, replaceRecipeIngredients]);
 
   const duplicateRecipe = useCallback(async (recipe) => {
     await createRecipe({
@@ -994,14 +1160,14 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         .eq('id', recipeId);
 
       if (deleteError) throw deleteError;
-      await loadRecipes();
+      await loadRecipes(plannerProject?.id || '');
     } catch (nextError) {
       setError(nextError?.message || 'Unable to delete recipe.');
       throw nextError;
     } finally {
       setSaving(false);
     }
-  }, [loadRecipes]);
+  }, [loadRecipes, plannerProject?.id]);
 
   const persistExcludedDraftSourceSignatures = useCallback(async (nextSignatures = []) => {
     if (!week?.id) return null;
@@ -1245,6 +1411,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     lastApprovedCount,
     lastImportedCount,
     loading,
+    plannerProject,
     recipes,
     recipesBySlot,
     reload,
