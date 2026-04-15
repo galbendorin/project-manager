@@ -1581,20 +1581,17 @@ function RecipeDetailModal({
   );
 }
 
-function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
-  const [removedKeys, setRemovedKeys] = useState([]);
-
-  useEffect(() => {
-    setRemovedKeys([]);
-  }, [draft]);
-
-  const visibleDraft = useMemo(() => (
-    draft.filter((item) => !removedKeys.includes(item.key))
-  ), [draft, removedKeys]);
-  const removedDraft = useMemo(() => (
-    draft.filter((item) => removedKeys.includes(item.key))
-  ), [draft, removedKeys]);
-
+function GroceryReviewModal({
+  draft,
+  hiddenDraft,
+  onApprove,
+  onClose,
+  onExclude,
+  onRestore,
+  onRestoreAll,
+  saving,
+  weekLabel,
+}) {
   return (
     <ModalShell onClose={onClose} wide>
       <div className="p-5 sm:p-6">
@@ -1610,30 +1607,36 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
           </button>
         </div>
 
-        {removedKeys.length > 0 ? (
+        {hiddenDraft.length > 0 ? (
           <div className="mt-4 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <p>
-              {removedKeys.length} ingredient{removedKeys.length === 1 ? '' : 's'} excluded from this shopping draft.
+              {hiddenDraft.length} ingredient{hiddenDraft.length === 1 ? '' : 's'} excluded from this week&apos;s grocery draft.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {removedDraft.slice(0, 6).map((item) => (
+              {hiddenDraft.slice(0, 6).map((item) => (
                 <button
                   key={`restore-${item.key}`}
                   type="button"
-                  onClick={() => setRemovedKeys((previous) => previous.filter((key) => key !== item.key))}
+                  onClick={() => {
+                    void onRestore(item).catch(() => {});
+                  }}
+                  disabled={saving}
                   className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
                 >
                   Restore {item.title}
                 </button>
               ))}
-              {removedDraft.length > 6 ? (
+              {hiddenDraft.length > 6 ? (
                 <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700">
-                  +{removedDraft.length - 6} more hidden
+                  +{hiddenDraft.length - 6} more hidden
                 </span>
               ) : null}
               <button
                 type="button"
-                onClick={() => setRemovedKeys([])}
+                onClick={() => {
+                  void onRestoreAll().catch(() => {});
+                }}
+                disabled={saving}
                 className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
               >
                 Restore all
@@ -1643,7 +1646,7 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
         ) : null}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {visibleDraft.map((item) => (
+          {draft.map((item) => (
             <div key={item.key} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -1665,19 +1668,22 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
               <div className="mt-4 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setRemovedKeys((previous) => [...previous, item.key])}
+                  onClick={() => {
+                    void onExclude(item).catch(() => {});
+                  }}
+                  disabled={saving}
                   className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
                 >
-                  Exclude from this draft
+                  Exclude from this week
                 </button>
               </div>
             </div>
           ))}
         </div>
 
-        {visibleDraft.length === 0 ? (
+        {draft.length === 0 ? (
           <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-            There are no grocery lines left in this draft. Keep at least one ingredient if you want to send groceries to Shopping List.
+            There are no grocery lines left in this draft. Restore one ingredient if you want to send groceries to Shopping List.
           </div>
         ) : null}
 
@@ -1685,7 +1691,7 @@ function GroceryReviewModal({ draft, onApprove, onClose, saving, weekLabel }) {
           <button type="button" onClick={onClose} className="pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold">
             Close
           </button>
-          <button type="button" onClick={() => onApprove(visibleDraft)} disabled={saving || visibleDraft.length === 0} className="pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+          <button type="button" onClick={() => onApprove(draft)} disabled={saving || draft.length === 0} className="pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
             {saving ? 'Adding groceries…' : 'Add to Shopping List'}
           </button>
         </div>
@@ -1709,7 +1715,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     entryUsageById,
     entries,
     error,
+    excludeGroceryDraftItem,
     groceryDraft,
+    hiddenGroceryDraft,
     importRowsIntoLibrary,
     lastApprovedCount,
     lastImportedCount,
@@ -1721,6 +1729,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     setSelectedWeekStart,
     moveCarryoverToNextDay,
     removeCarryover,
+    restoreAllExcludedGroceryDraftItems,
+    restoreExcludedGroceryDraftItem,
     updateRecipe,
     updateWeekCounts,
     upsertMealEntry,
@@ -2958,8 +2968,12 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       {showReviewModal ? (
         <GroceryReviewModal
           draft={groceryDraft}
+          hiddenDraft={hiddenGroceryDraft}
           onApprove={(draftOverride) => void handleApproveGroceries(draftOverride)}
           onClose={() => setShowReviewModal(false)}
+          onExclude={(item) => excludeGroceryDraftItem(item)}
+          onRestore={(item) => restoreExcludedGroceryDraftItem(item)}
+          onRestoreAll={() => restoreAllExcludedGroceryDraftItems()}
           saving={saving}
           weekLabel={weekLabel}
         />

@@ -2,13 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  applyGroceryDraftExclusions,
   buildMealIngredientRecords,
   getAdultServingTotal,
   buildNextDayCopyPrompt,
+  buildGroceryDraftSourceSignature,
   buildMealPlanPreview,
   buildGroceryDraft,
   getAudienceServingMultiplier,
   getDefaultServingMultiplier,
+  getGroceryDraftItemSourceSignatures,
+  getHiddenGroceryDraftItems,
   getWeekDayEntries,
   normalizeMealAudience,
   parseIngredientText,
@@ -129,6 +133,74 @@ test('buildGroceryDraft supports household portion totals plus kids', () => {
   });
 
   assert.equal(draft.find((item) => item.title === 'eggs')?.quantityValue, 4.5);
+});
+
+test('grocery draft exclusions remove only the matching meal source and keep new sources visible', () => {
+  const draft = buildGroceryDraft({
+    recipes: [
+      {
+        id: 'meal_tuesday',
+        name: 'Tuesday eggs',
+        ingredients: splitIngredientList('eggs 2, bread 50g'),
+      },
+      {
+        id: 'meal_friday',
+        name: 'Friday eggs',
+        ingredients: splitIngredientList('eggs 2'),
+      },
+    ],
+    entries: [
+      { id: 'entry_tuesday', mealId: 'meal_tuesday', mealSlot: 'breakfast', date: '2026-04-14', servingMultiplier: 1, audience: 'all', entryPosition: 0 },
+      { id: 'entry_friday', mealId: 'meal_friday', mealSlot: 'breakfast', date: '2026-04-17', servingMultiplier: 1, audience: 'all', entryPosition: 0 },
+    ],
+    adultCount: 1,
+    kidCount: 0,
+  });
+
+  const eggs = draft.find((item) => item.title === 'eggs');
+  const bread = draft.find((item) => item.title === 'bread');
+
+  assert.ok(eggs);
+  assert.ok(bread);
+
+  const tuesdayEggSignature = buildGroceryDraftSourceSignature(
+    eggs.key,
+    eggs.sourceMeals.find((meal) => meal.date === '2026-04-14')
+  );
+
+  const filtered = applyGroceryDraftExclusions(draft, [tuesdayEggSignature]);
+  const hidden = getHiddenGroceryDraftItems(draft, [tuesdayEggSignature]);
+  const filteredEggs = filtered.find((item) => item.title === 'eggs');
+  const hiddenEggs = hidden.find((item) => item.title === 'eggs');
+
+  assert.equal(filteredEggs?.quantityValue, 2);
+  assert.equal(filteredEggs?.occurrenceCount, 1);
+  assert.equal(filteredEggs?.sourceMeals[0]?.date, '2026-04-17');
+  assert.equal(hiddenEggs?.quantityValue, 2);
+  assert.equal(hiddenEggs?.occurrenceCount, 1);
+  assert.equal(hiddenEggs?.sourceMeals[0]?.date, '2026-04-14');
+  assert.equal(filtered.find((item) => item.title === 'bread')?.quantityValue, 50);
+});
+
+test('getGroceryDraftItemSourceSignatures builds stable review signatures from meal sources', () => {
+  const [eggs] = buildGroceryDraft({
+    recipes: [
+      {
+        id: 'meal_eggs',
+        name: 'Eggs',
+        ingredients: splitIngredientList('eggs 2'),
+      },
+    ],
+    entries: [
+      { id: 'entry_eggs', mealId: 'meal_eggs', mealSlot: 'breakfast', date: '2026-04-14', servingMultiplier: 1, audience: 'kids', entryPosition: 0 },
+    ],
+    adultCount: 1,
+    kidCount: 0,
+  });
+
+  const signatures = getGroceryDraftItemSourceSignatures(eggs);
+  assert.equal(signatures.length, 1);
+  assert.match(signatures[0], /^eggs::pcs::2026-04-14\|breakfast\|meal_eggs\|kids$/);
 });
 
 test('buildGroceryDraft uses the household default multiplier when serving multiplier is unset', () => {

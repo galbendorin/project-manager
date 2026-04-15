@@ -3,11 +3,14 @@ import { supabase } from '../lib/supabase';
 import { createEmptyProjectSnapshot } from './projectData/defaults';
 import { generateProjectId } from '../utils/shoppingListViewState';
 import {
+  applyGroceryDraftExclusions,
   buildMealPlanPreview,
   buildImportedMealRows,
   buildMealIngredientRecords,
   buildMealLibraryRecords,
   formatDateKey,
+  getGroceryDraftItemSourceSignatures,
+  getHiddenGroceryDraftItems,
   getAdultServingTotal,
   getDefaultServingMultiplier,
   getWeekDayEntries,
@@ -22,6 +25,8 @@ import { STARTER_MEAL_IMPORT_TEXT_BY_SLOT } from '../utils/mealPlannerSeedData';
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const MEAL_PLAN_WEEK_SELECT_BASE = 'id, week_start_date, adult_count, kid_count';
 const MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS = `${MEAL_PLAN_WEEK_SELECT_BASE}, adult_portion_total`;
+const MEAL_PLAN_GROCERY_BATCH_SELECT_BASE = 'id, shopping_project_id, status';
+const MEAL_PLAN_GROCERY_BATCH_SELECT_WITH_EXCLUSIONS = `${MEAL_PLAN_GROCERY_BATCH_SELECT_BASE}, excluded_draft_signatures`;
 const MEAL_LIBRARY_SELECT_BASE = 'id, external_id, source_pdf, suggested_day, meal_slot, name, ingredients_raw, how_to_make, estimated_kcal, image_ref, recipe_origin, created_at, updated_at';
 const MEAL_LIBRARY_SELECT_WITH_BATCH = `${MEAL_LIBRARY_SELECT_BASE}, yield_mode, batch_yield_portions`;
 const STARTER_LIBRARY_ALLOWED_EMAILS = new Set([
@@ -114,6 +119,15 @@ const mapWeekRow = (row = {}) => ({
   kidCount: toNullableFiniteNumber(row.kid_count) ?? 0,
 });
 
+const mapGroceryBatchRow = (row = {}) => ({
+  id: row.id,
+  shoppingProjectId: row.shopping_project_id || '',
+  status: row.status || 'draft',
+  excludedDraftSignatures: Array.isArray(row.excluded_draft_signatures)
+    ? row.excluded_draft_signatures.filter(Boolean)
+    : [],
+});
+
 const mapEntryRow = (row = {}) => ({
   id: row.id,
   date: row.date,
@@ -183,6 +197,8 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   const [recipes, setRecipes] = useState([]);
   const [week, setWeek] = useState(null);
   const [entries, setEntries] = useState([]);
+  const [groceryBatch, setGroceryBatch] = useState(null);
+  const [excludedDraftSourceSignatures, setExcludedDraftSourceSignatures] = useState([]);
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => formatDateKey(getWeekStartMonday(new Date())));
   const [lastImportedCount, setLastImportedCount] = useState(0);
   const [lastApprovedCount, setLastApprovedCount] = useState(0);
@@ -209,7 +225,15 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     kidCount: week?.kidCount ?? 0,
   }), [entries, recipes, week?.adultCount, week?.kidCount]);
 
-  const groceryDraft = mealPlanPreview.groceryDraft;
+  const rawGroceryDraft = mealPlanPreview.groceryDraft;
+  const groceryDraft = useMemo(
+    () => applyGroceryDraftExclusions(rawGroceryDraft, excludedDraftSourceSignatures),
+    [excludedDraftSourceSignatures, rawGroceryDraft]
+  );
+  const hiddenGroceryDraft = useMemo(
+    () => getHiddenGroceryDraftItems(rawGroceryDraft, excludedDraftSourceSignatures),
+    [excludedDraftSourceSignatures, rawGroceryDraft]
+  );
   const entryUsageById = mealPlanPreview.entryUsageById;
 
   const loadRecipes = useCallback(async () => {
@@ -484,6 +508,28 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setEntries(sortEntries((entriesResult.data || []).map(mapEntryRow)));
   }, []);
 
+  const loadGroceryBatch = useCallback(async (weekId) => {
+    let batchResult = await supabase
+      .from('meal_plan_grocery_batches')
+      .select(MEAL_PLAN_GROCERY_BATCH_SELECT_WITH_EXCLUSIONS)
+      .eq('week_id', weekId)
+      .maybeSingle();
+
+    if (batchResult.error && isMissingMealPlannerFieldError(batchResult.error, ['excluded_draft_signatures'])) {
+      batchResult = await supabase
+        .from('meal_plan_grocery_batches')
+        .select(MEAL_PLAN_GROCERY_BATCH_SELECT_BASE)
+        .eq('week_id', weekId)
+        .maybeSingle();
+    }
+
+    if (batchResult.error) throw batchResult.error;
+
+    const nextBatch = batchResult.data ? mapGroceryBatchRow(batchResult.data) : null;
+    setGroceryBatch(nextBatch);
+    setExcludedDraftSourceSignatures(nextBatch?.excludedDraftSignatures || []);
+  }, []);
+
   const reload = useCallback(async () => {
     if (!currentUserId) return;
     setLoading(true);
@@ -498,6 +544,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
       const weekId = await ensureWeek(selectedWeekStart);
       await loadEntries(weekId);
+      await loadGroceryBatch(weekId);
     } catch (nextError) {
       if (
         isMissingRelationError(nextError, 'meal_library_meals')
@@ -512,7 +559,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setLoading(false);
     }
-  }, [canUseStarterLibrary, currentUserId, ensureWeek, loadEntries, loadRecipes, seedStarterLibrary, selectedWeekStart]);
+  }, [canUseStarterLibrary, currentUserId, ensureWeek, loadEntries, loadGroceryBatch, loadRecipes, seedStarterLibrary, selectedWeekStart]);
 
   useEffect(() => {
     void reload();
@@ -956,6 +1003,135 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     }
   }, [loadRecipes]);
 
+  const persistExcludedDraftSourceSignatures = useCallback(async (nextSignatures = []) => {
+    if (!week?.id) return null;
+
+    try {
+      const shoppingProject = await ensureShoppingProject(currentUserId);
+      const sanitizedSignatures = Array.from(new Set((nextSignatures || []).filter(Boolean)));
+      const existingStatus = groceryBatch?.status || 'draft';
+
+      if (groceryBatch?.id) {
+        let updateResult = await supabase
+          .from('meal_plan_grocery_batches')
+          .update({
+            shopping_project_id: shoppingProject.id,
+            status: existingStatus,
+            excluded_draft_signatures: sanitizedSignatures,
+          })
+          .eq('id', groceryBatch.id)
+          .select(MEAL_PLAN_GROCERY_BATCH_SELECT_WITH_EXCLUSIONS)
+          .single();
+
+        if (updateResult.error && isMissingMealPlannerFieldError(updateResult.error, ['excluded_draft_signatures'])) {
+          updateResult = await supabase
+            .from('meal_plan_grocery_batches')
+            .update({
+              shopping_project_id: shoppingProject.id,
+              status: existingStatus,
+            })
+            .eq('id', groceryBatch.id)
+            .select(MEAL_PLAN_GROCERY_BATCH_SELECT_BASE)
+            .single();
+        }
+
+        if (updateResult.error || !updateResult.data) {
+          throw updateResult.error || new Error('Unable to save grocery exclusions.');
+        }
+
+        const nextBatch = mapGroceryBatchRow(updateResult.data);
+        setGroceryBatch(nextBatch);
+        return nextBatch;
+      }
+
+      let insertResult = await supabase
+        .from('meal_plan_grocery_batches')
+        .insert({
+          user_id: currentUserId,
+          week_id: week.id,
+          shopping_project_id: shoppingProject.id,
+          status: 'draft',
+          excluded_draft_signatures: sanitizedSignatures,
+        })
+        .select(MEAL_PLAN_GROCERY_BATCH_SELECT_WITH_EXCLUSIONS)
+        .single();
+
+      if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['excluded_draft_signatures'])) {
+        insertResult = await supabase
+          .from('meal_plan_grocery_batches')
+          .insert({
+            user_id: currentUserId,
+            week_id: week.id,
+            shopping_project_id: shoppingProject.id,
+            status: 'draft',
+          })
+          .select(MEAL_PLAN_GROCERY_BATCH_SELECT_BASE)
+          .single();
+      }
+
+      if (insertResult.error || !insertResult.data) {
+        throw insertResult.error || new Error('Unable to save grocery exclusions.');
+      }
+
+      const nextBatch = mapGroceryBatchRow(insertResult.data);
+      setGroceryBatch(nextBatch);
+      return nextBatch;
+    } catch (nextError) {
+      if (isMissingMealPlannerFieldError(nextError, ['excluded_draft_signatures'])) {
+        setError('Meal Planner needs the latest SQL migration before grocery exclusions can be remembered.');
+      } else {
+        setError(nextError?.message || 'Unable to save grocery exclusions.');
+      }
+      throw nextError;
+    }
+  }, [currentUserId, groceryBatch?.id, groceryBatch?.status, week?.id]);
+
+  const excludeGroceryDraftItem = useCallback(async (draftItem) => {
+    const signaturesToAdd = getGroceryDraftItemSourceSignatures(draftItem);
+    if (signaturesToAdd.length === 0) return;
+
+    const previousSignatures = excludedDraftSourceSignatures;
+    const nextSignatures = Array.from(new Set([...previousSignatures, ...signaturesToAdd]));
+    setExcludedDraftSourceSignatures(nextSignatures);
+
+    try {
+      await persistExcludedDraftSourceSignatures(nextSignatures);
+    } catch (nextError) {
+      setExcludedDraftSourceSignatures(previousSignatures);
+      throw nextError;
+    }
+  }, [excludedDraftSourceSignatures, persistExcludedDraftSourceSignatures]);
+
+  const restoreExcludedGroceryDraftItem = useCallback(async (draftItem) => {
+    const signaturesToRemove = new Set(getGroceryDraftItemSourceSignatures(draftItem));
+    if (signaturesToRemove.size === 0) return;
+
+    const previousSignatures = excludedDraftSourceSignatures;
+    const nextSignatures = previousSignatures.filter((signature) => !signaturesToRemove.has(signature));
+    setExcludedDraftSourceSignatures(nextSignatures);
+
+    try {
+      await persistExcludedDraftSourceSignatures(nextSignatures);
+    } catch (nextError) {
+      setExcludedDraftSourceSignatures(previousSignatures);
+      throw nextError;
+    }
+  }, [excludedDraftSourceSignatures, persistExcludedDraftSourceSignatures]);
+
+  const restoreAllExcludedGroceryDraftItems = useCallback(async () => {
+    if (excludedDraftSourceSignatures.length === 0) return;
+
+    const previousSignatures = excludedDraftSourceSignatures;
+    setExcludedDraftSourceSignatures([]);
+
+    try {
+      await persistExcludedDraftSourceSignatures([]);
+    } catch (nextError) {
+      setExcludedDraftSourceSignatures(previousSignatures);
+      throw nextError;
+    }
+  }, [excludedDraftSourceSignatures, persistExcludedDraftSourceSignatures]);
+
   const confirmGroceryDraft = useCallback(async (draftOverride = null) => {
     if (!week?.id) return null;
     const draftRows = Array.isArray(draftOverride) ? draftOverride : groceryDraft;
@@ -969,41 +1145,43 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
     try {
       const shoppingProject = await ensureShoppingProject(currentUserId);
-
-      const { data: existingBatch, error: batchLookupError } = await supabase
+      const batchPayload = {
+        user_id: currentUserId,
+        week_id: week.id,
+        shopping_project_id: shoppingProject.id,
+        status: 'approved',
+        excluded_draft_signatures: excludedDraftSourceSignatures,
+        ...(groceryBatch?.id ? { id: groceryBatch.id } : {}),
+      };
+      let batchResult = await supabase
         .from('meal_plan_grocery_batches')
-        .select('id, shopping_project_id')
-        .eq('week_id', week.id)
-        .maybeSingle();
+        .upsert(batchPayload, {
+          onConflict: 'week_id',
+        })
+        .select(MEAL_PLAN_GROCERY_BATCH_SELECT_WITH_EXCLUSIONS)
+        .single();
 
-      if (batchLookupError) throw batchLookupError;
-
-      let batchId = existingBatch?.id || '';
-      if (!batchId) {
-        const { data: createdBatch, error: createBatchError } = await supabase
+      if (batchResult.error && isMissingMealPlannerFieldError(batchResult.error, ['excluded_draft_signatures'])) {
+        const {
+          excluded_draft_signatures,
+          ...batchPayloadWithoutExclusions
+        } = batchPayload;
+        batchResult = await supabase
           .from('meal_plan_grocery_batches')
-          .insert({
-            user_id: currentUserId,
-            week_id: week.id,
-            shopping_project_id: shoppingProject.id,
-            status: 'approved',
+          .upsert(batchPayloadWithoutExclusions, {
+            onConflict: 'week_id',
           })
-          .select('id')
+          .select(MEAL_PLAN_GROCERY_BATCH_SELECT_BASE)
           .single();
-
-        if (createBatchError || !createdBatch) throw createBatchError || new Error('Unable to create grocery batch.');
-        batchId = createdBatch.id;
-      } else {
-        const { error: updateBatchError } = await supabase
-          .from('meal_plan_grocery_batches')
-          .update({
-            shopping_project_id: shoppingProject.id,
-            status: 'approved',
-          })
-          .eq('id', batchId);
-
-        if (updateBatchError) throw updateBatchError;
       }
+
+      if (batchResult.error || !batchResult.data?.id) {
+        throw batchResult.error || new Error('Unable to create grocery batch.');
+      }
+
+      const nextBatch = mapGroceryBatchRow(batchResult.data);
+      setGroceryBatch(nextBatch);
+      const batchId = nextBatch.id;
 
       const { error: deleteExistingError } = await supabase
         .from('manual_todos')
@@ -1047,7 +1225,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setSaving(false);
     }
-  }, [currentUserId, groceryDraft, week?.id, week?.weekStartDate]);
+  }, [currentUserId, excludedDraftSourceSignatures, groceryBatch?.id, groceryDraft, week?.id, week?.weekStartDate]);
 
   return {
     applyMealToDates,
@@ -1059,8 +1237,10 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     deleteRecipe,
     entries,
     error,
+    excludeGroceryDraftItem,
     entryUsageById,
     groceryDraft,
+    hiddenGroceryDraft,
     importRowsIntoLibrary,
     lastApprovedCount,
     lastImportedCount,
@@ -1074,6 +1254,8 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setSelectedWeekStart,
     moveCarryoverToNextDay,
     removeCarryover,
+    restoreAllExcludedGroceryDraftItems,
+    restoreExcludedGroceryDraftItem,
     updateRecipe,
     updateWeekCounts,
     upsertMealEntry,

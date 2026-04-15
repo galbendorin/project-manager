@@ -439,10 +439,21 @@ const addIngredientToDraft = ({
 }) => {
   const ingredientName = normalizeSpace(ingredient.ingredientName || ingredient.rawText || '');
   const quantityUnit = normalizeSpace(ingredient.quantityUnit || '');
-  const hasParsedQuantity = toNullableFiniteNumber(ingredient.quantityValue) !== null;
+  const parsedQuantity = toNullableFiniteNumber(ingredient.quantityValue);
+  const hasParsedQuantity = parsedQuantity !== null;
+  const contributedQuantity = parsedQuantity !== null
+    ? roundQuantity(parsedQuantity * scalingFactor)
+    : null;
   const key = hasParsedQuantity && ingredientName
     ? `${normalizeIngredientKey(ingredientName)}::${normalizeUnitKey(quantityUnit)}`
     : `raw::${normalizeIngredientKey(ingredient.rawText || ingredientName)}`;
+  const normalizedAudience = normalizeMealAudience(entry.audience);
+  const sourceKey = [
+    normalizeSpace(entry.date || ''),
+    normalizeMealSlot(entry.mealSlot || ''),
+    normalizeSpace(recipe.id || ''),
+    normalizedAudience,
+  ].join('|');
 
   const current = draftMap.get(key) || {
     key,
@@ -462,12 +473,14 @@ const addIngredientToDraft = ({
     recipeName: recipe.name,
     date: entry.date,
     mealSlot: entry.mealSlot,
+    audience: normalizedAudience,
+    sourceKey,
+    contributedQuantity,
     ...sourceMeta,
   });
 
-  const parsedQuantity = toNullableFiniteNumber(ingredient.quantityValue);
   if (parsedQuantity !== null) {
-    const nextQuantity = Number(current.quantityValue || 0) + (parsedQuantity * scalingFactor);
+    const nextQuantity = Number(current.quantityValue || 0) + (contributedQuantity || 0);
     current.quantityValue = roundQuantity(nextQuantity);
     current.quantityUnit = quantityUnit;
   }
@@ -718,6 +731,99 @@ export const buildGroceryDraft = ({
     partnerServingMultiplier,
     kidCount,
   }).groceryDraft
+);
+
+export const buildGroceryDraftSourceSignature = (itemKey = '', sourceMeal = {}) => {
+  const normalizedItemKey = normalizeSpace(itemKey);
+  if (!normalizedItemKey) return '';
+
+  const sourceKey = normalizeSpace(sourceMeal.sourceKey || '');
+  if (sourceKey) {
+    return `${normalizedItemKey}::${sourceKey}`;
+  }
+
+  return [
+    normalizedItemKey,
+    normalizeSpace(sourceMeal.date || ''),
+    normalizeMealSlot(sourceMeal.mealSlot || ''),
+    normalizeSpace(sourceMeal.recipeId || sourceMeal.recipeName || ''),
+    normalizeMealAudience(sourceMeal.audience || 'all'),
+  ].join('::');
+};
+
+export const getGroceryDraftItemSourceSignatures = (item = {}) => (
+  (item.sourceMeals || [])
+    .map((sourceMeal) => buildGroceryDraftSourceSignature(item.key, sourceMeal))
+    .filter(Boolean)
+);
+
+const splitGroceryDraftByExcludedSources = (draft = [], excludedDraftSourceSignatures = []) => {
+  const excludedSet = new Set(
+    (excludedDraftSourceSignatures || [])
+      .map((value) => normalizeSpace(value))
+      .filter(Boolean)
+  );
+
+  const visible = [];
+  const hidden = [];
+
+  for (const item of draft) {
+    const visibleSources = [];
+    const hiddenSources = [];
+    let visibleQuantityValue = 0;
+    let hiddenQuantityValue = 0;
+    let hasVisibleParsedQuantity = false;
+    let hasHiddenParsedQuantity = false;
+
+    for (const sourceMeal of item.sourceMeals || []) {
+      const signature = buildGroceryDraftSourceSignature(item.key, sourceMeal);
+      const targetCollection = excludedSet.has(signature) ? hiddenSources : visibleSources;
+      targetCollection.push(sourceMeal);
+
+      const contributedQuantity = toNullableFiniteNumber(sourceMeal.contributedQuantity);
+      if (contributedQuantity === null) continue;
+
+      if (targetCollection === hiddenSources) {
+        hasHiddenParsedQuantity = true;
+        hiddenQuantityValue += contributedQuantity;
+      } else {
+        hasVisibleParsedQuantity = true;
+        visibleQuantityValue += contributedQuantity;
+      }
+    }
+
+    if (visibleSources.length > 0) {
+      visible.push({
+        ...item,
+        occurrenceCount: visibleSources.length,
+        quantityValue: hasVisibleParsedQuantity ? roundQuantity(visibleQuantityValue) : null,
+        sourceMeals: visibleSources,
+      });
+    }
+
+    if (hiddenSources.length > 0) {
+      hidden.push({
+        ...item,
+        occurrenceCount: hiddenSources.length,
+        quantityValue: hasHiddenParsedQuantity ? roundQuantity(hiddenQuantityValue) : null,
+        sourceMeals: hiddenSources,
+      });
+    }
+  }
+
+  const sortByTitle = (left, right) => left.title.localeCompare(right.title);
+  return {
+    visible: visible.sort(sortByTitle),
+    hidden: hidden.sort(sortByTitle),
+  };
+};
+
+export const applyGroceryDraftExclusions = (draft = [], excludedDraftSourceSignatures = []) => (
+  splitGroceryDraftByExcludedSources(draft, excludedDraftSourceSignatures).visible
+);
+
+export const getHiddenGroceryDraftItems = (draft = [], excludedDraftSourceSignatures = []) => (
+  splitGroceryDraftByExcludedSources(draft, excludedDraftSourceSignatures).hidden
 );
 
 export const formatIngredientQuantity = (value) => {
