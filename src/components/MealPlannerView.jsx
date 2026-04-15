@@ -2436,11 +2436,18 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                   && hasNextDayInWeek;
                                 const cardBody = (
                                   <>
-                                    <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                                    <div className={`flex flex-wrap gap-1.5 font-semibold ${isCarryoverEntry ? 'text-[10px]' : 'text-[11px]'}`}>
                                       {isCarryoverEntry ? (
-                                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">
-                                          Carryover
-                                        </span>
+                                        <>
+                                          <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-700">
+                                            Carryover
+                                          </span>
+                                          {entry.audience ? (
+                                            <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(entry.audience)}`}>
+                                              {getMealAudienceLabel(entry.audience)}
+                                            </span>
+                                          ) : null}
+                                        </>
                                       ) : (
                                         <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(entry.audience)}`}>
                                           {getMealAudienceLabel(entry.audience)}
@@ -2451,39 +2458,34 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                           {entry.servingMultiplier}x
                                         </span>
                                       ) : null}
-                                      {recipe.sourcePdf ? (
+                                      {recipe.sourcePdf && !isCarryoverEntry ? (
                                         <span className="hidden rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm sm:inline-flex">
                                           {recipe.sourcePdf}
                                         </span>
                                       ) : null}
-                                      {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
+                                      {recipe.yieldMode === 'batch' && recipe.batchYieldPortions && !isCarryoverEntry ? (
                                         <span className="hidden rounded-full bg-sky-50 px-2.5 py-1 text-sky-700 sm:inline-flex">
                                           Batch {recipe.batchYieldPortions}
                                         </span>
                                       ) : null}
-                                      {isCarryoverEntry && entry.audience ? (
-                                        <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(entry.audience)}`}>
-                                          {getMealAudienceLabel(entry.audience)}
-                                        </span>
-                                      ) : null}
                                     </div>
-                                    <h4 className="mt-2.5 text-[15px] font-semibold leading-5 text-slate-950 sm:mt-3 sm:text-base">{recipe.name}</h4>
-                                    <p className="mt-1.5 text-[12px] leading-5 text-slate-500 sm:mt-2 sm:text-sm">{summarizeRecipeIngredients(recipe, 3)}</p>
-                                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+                                    <h4 className={`font-semibold leading-5 text-slate-950 ${isCarryoverEntry ? 'mt-2 text-[14px] sm:text-[15px]' : 'mt-2.5 text-[15px] sm:mt-3 sm:text-base'}`}>{recipe.name}</h4>
+                                    <p className={`text-slate-500 ${isCarryoverEntry ? 'mt-1 text-[11px] leading-4' : 'mt-1.5 text-[12px] leading-5 sm:mt-2 sm:text-sm'}`}>{summarizeRecipeIngredients(recipe, 3)}</p>
+                                    <div className={`flex flex-wrap font-semibold ${isCarryoverEntry ? 'mt-2 gap-1.5 text-[10px]' : 'mt-3 gap-2 text-[11px]'}`}>
                                       {isCarryoverEntry ? (
                                         <>
                                           {carryoverKcal > 0 ? (
-                                            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{carryoverKcal} kcal</span>
+                                            <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700">{carryoverKcal} kcal</span>
                                           ) : null}
                                           {carryoverNutrition && carryoverNutritionMultiplier > 0 ? (
                                             <>
-                                              <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">
+                                              <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">
                                                 P {formatMacroTotal((carryoverNutrition.proteinG || 0) * carryoverNutritionMultiplier)}g
                                               </span>
-                                              <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-indigo-700">
+                                              <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">
                                                 C {formatMacroTotal((carryoverNutrition.carbsG || 0) * carryoverNutritionMultiplier)}g
                                               </span>
-                                              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                                              <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">
                                                 Fib {formatMacroTotal((carryoverNutrition.fiberG || 0) * carryoverNutritionMultiplier)}g
                                               </span>
                                             </>
@@ -2495,12 +2497,13 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                     </div>
                                     {isCarryoverEntry ? (
                                       entryUsage?.carryoverStatus === 'active' ? (
-                                        <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700">
+                                        <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700">
                                           {formatIngredientQuantity(entryUsage.carryoverPortions)} portions
                                           {entryUsage.carryoverSourceDate ? ` from ${formatCarryoverTargetDayLabel(entryUsage.carryoverSourceDate)}` : ''}
-                                        </div>
+                                          {entryUsage.batchYieldPortions ? ` · batch ${entryUsage.batchYieldPortions}` : ''}
+                                        </p>
                                       ) : (
-                                        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700">
+                                        <div className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-700">
                                           {entryUsage?.warningMessage || 'Carryover is no longer available from the source meal.'}
                                         </div>
                                       )
@@ -2522,7 +2525,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                   </>
                                 );
                                 return (
-                                  <div key={entry.id} className="pm-scroll-optimize-card rounded-[16px] border border-slate-200 bg-slate-50/60 px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3">
+                                  <div key={entry.id} className={`pm-scroll-optimize-card rounded-[16px] border px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3 ${isCarryoverEntry ? 'border-sky-100 bg-white shadow-sm' : 'border-slate-200 bg-slate-50/60'}`}>
                                     {isCarryoverEntry ? (
                                       <div className="block w-full text-left">
                                         {cardBody}
@@ -2545,24 +2548,24 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                       </button>
                                     )}
 
-                                    <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                                    <div className={`grid ${isCarryoverEntry ? 'mt-2 grid-cols-2 gap-1.5' : 'mt-3 grid-cols-2 gap-2 sm:flex sm:flex-wrap'}`}>
                                       {isCarryoverEntry ? (
                                         <>
                                           {canMoveCarryover ? (
                                             <button
                                               type="button"
                                               onClick={() => void handleMoveCarryover(entry.id)}
-                                              className="pm-subtle-button rounded-full px-3 py-2 text-[11px] font-semibold sm:text-xs"
+                                              className="pm-subtle-button rounded-full px-2.5 py-2 text-[10px] font-semibold"
                                             >
-                                              Move to next day
+                                              Move forward
                                             </button>
                                           ) : null}
                                           <button
                                             type="button"
                                             onClick={() => void handleRemoveCarryover(entry.id)}
-                                            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 sm:text-xs"
+                                            className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-2 text-[10px] font-semibold text-rose-700 transition hover:bg-rose-100"
                                           >
-                                            Remove carryover
+                                            Remove
                                           </button>
                                         </>
                                       ) : (
