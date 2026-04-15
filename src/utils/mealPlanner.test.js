@@ -254,6 +254,92 @@ test('buildGroceryDraft keeps one batch when later kid servings are fully covere
   assert.equal(draft.find((item) => item.title === 'oats')?.quantityValue, 120);
 });
 
+test('buildMealPlanPreview reserves explicit carryover for its child entry instead of auto-consuming it earlier', () => {
+  const preview = buildMealPlanPreview({
+    recipes: [
+      {
+        id: 'meal_cake',
+        name: 'Cake',
+        yieldMode: 'batch',
+        batchYieldPortions: 4,
+        ingredients: splitIngredientList('eggs 4, flour 200g'),
+      },
+    ],
+    entries: [
+      { id: 'entry_monday', mealId: 'meal_cake', mealSlot: 'snack', date: '2026-04-13', servingMultiplier: null, audience: 'all', entryPosition: 0, entryKind: 'planned' },
+      { id: 'entry_tuesday', mealId: 'meal_cake', mealSlot: 'snack', date: '2026-04-14', servingMultiplier: null, audience: 'kids', entryPosition: 0, entryKind: 'planned' },
+      { id: 'entry_wednesday_carryover', mealId: 'meal_cake', mealSlot: 'snack', date: '2026-04-15', servingMultiplier: null, audience: 'all', entryPosition: 0, entryKind: 'carryover', carryoverSourceEntryId: 'entry_monday' },
+    ],
+    adultCount: 2,
+    kidCount: 1,
+  });
+
+  assert.equal(preview.entryUsageById.entry_monday.reservedCarryoverPortions, 1.5);
+  assert.equal(preview.entryUsageById.entry_monday.createdCarryoverPortions, 0);
+  assert.equal(preview.entryUsageById.entry_monday.carryoverChildDate, '2026-04-15');
+  assert.equal(preview.entryUsageById.entry_tuesday.usedCarryoverPortions, 0);
+  assert.equal(preview.entryUsageById.entry_tuesday.cookedBatchCount, 1);
+  assert.equal(preview.entryUsageById.entry_wednesday_carryover.carryoverStatus, 'active');
+  assert.equal(preview.entryUsageById.entry_wednesday_carryover.carryoverPortions, 1.5);
+
+  assert.equal(preview.groceryDraft.find((item) => item.title === 'eggs')?.quantityValue, 8);
+  assert.equal(preview.groceryDraft.find((item) => item.title === 'flour')?.quantityValue, 400);
+});
+
+test('buildMealPlanPreview keeps explicit carryover nutrition-only when the source still has leftover', () => {
+  const preview = buildMealPlanPreview({
+    recipes: [
+      {
+        id: 'meal_cake',
+        name: 'Cake',
+        yieldMode: 'batch',
+        batchYieldPortions: 4,
+        ingredients: splitIngredientList('eggs 4, flour 200g'),
+      },
+    ],
+    entries: [
+      { id: 'entry_monday', mealId: 'meal_cake', mealSlot: 'snack', date: '2026-04-13', servingMultiplier: null, audience: 'all', entryPosition: 0, entryKind: 'planned' },
+      { id: 'entry_tuesday_carryover', mealId: 'meal_cake', mealSlot: 'snack', date: '2026-04-14', servingMultiplier: null, audience: 'all', entryPosition: 0, entryKind: 'carryover', carryoverSourceEntryId: 'entry_monday' },
+    ],
+    adultCount: 2,
+    kidCount: 1,
+  });
+
+  assert.equal(preview.entryUsageById.entry_monday.cookedBatchCount, 1);
+  assert.equal(preview.entryUsageById.entry_monday.reservedCarryoverPortions, 1.5);
+  assert.equal(preview.entryUsageById.entry_tuesday_carryover.carryoverStatus, 'active');
+  assert.equal(preview.entryUsageById.entry_tuesday_carryover.contributesToNutrition, true);
+  assert.equal(preview.entryUsageById.entry_tuesday_carryover.contributesToGroceries, false);
+  assert.equal(preview.entryUsageById.entry_tuesday_carryover.carryoverPortions, 1.5);
+  assert.equal(preview.groceryDraft.find((item) => item.title === 'eggs')?.quantityValue, 4);
+});
+
+test('buildMealPlanPreview keeps carryover cards in warning state when the source no longer has leftover', () => {
+  const preview = buildMealPlanPreview({
+    recipes: [
+      {
+        id: 'meal_cake',
+        name: 'Cake',
+        yieldMode: 'batch',
+        batchYieldPortions: 4,
+        ingredients: splitIngredientList('eggs 4, flour 200g'),
+      },
+    ],
+    entries: [
+      { id: 'entry_monday', mealId: 'meal_cake', mealSlot: 'snack', date: '2026-04-13', servingMultiplier: 4, audience: 'all', entryPosition: 0, entryKind: 'planned' },
+      { id: 'entry_tuesday_carryover', mealId: 'meal_cake', mealSlot: 'snack', date: '2026-04-14', servingMultiplier: null, audience: 'all', entryPosition: 0, entryKind: 'carryover', carryoverSourceEntryId: 'entry_monday' },
+    ],
+    adultCount: 2,
+    kidCount: 1,
+  });
+
+  assert.equal(preview.entryUsageById.entry_monday.leftoverAfterPortions, 0);
+  assert.equal(preview.entryUsageById.entry_tuesday_carryover.carryoverStatus, 'warning');
+  assert.equal(preview.entryUsageById.entry_tuesday_carryover.contributesToNutrition, false);
+  assert.match(preview.entryUsageById.entry_tuesday_carryover.warningMessage, /No leftover/i);
+  assert.equal(preview.groceryDraft.find((item) => item.title === 'eggs')?.quantityValue, 4);
+});
+
 test('getDefaultServingMultiplier treats kids as half portions', () => {
   assert.equal(getDefaultServingMultiplier({ adultCount: 1, kidCount: 1 }), 1.5);
   assert.equal(getDefaultServingMultiplier({ adultCount: 2, kidCount: 0 }), 2);

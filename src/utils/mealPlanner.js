@@ -62,6 +62,11 @@ export const normalizeMealAudience = (value = '') => {
 
 export const getMealAudienceLabel = (audience) => AUDIENCE_LABELS[normalizeMealAudience(audience)] || 'All';
 
+export const normalizeMealEntryKind = (value = '') => {
+  const key = normalizeSpace(value).toLowerCase();
+  return key === 'carryover' ? 'carryover' : 'planned';
+};
+
 export const normalizeRecipeYieldMode = (value = '') => {
   const key = normalizeSpace(value).toLowerCase();
   return key === 'batch' ? 'batch' : 'flexible';
@@ -513,13 +518,72 @@ export const buildMealPlanPreview = ({
   kidCount = 0,
 }) => {
   const recipeMap = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+  const entryMap = new Map(entries.map((entry) => [entry.id, entry]));
   const draftMap = new Map();
   const carryoverLedger = new Map();
   const entryUsageById = {};
+  const carryoverEntryBySourceId = new Map();
+
+  for (const entry of entries) {
+    if (normalizeMealEntryKind(entry.entryKind) !== 'carryover' || !entry.carryoverSourceEntryId) continue;
+    if (!carryoverEntryBySourceId.has(entry.carryoverSourceEntryId)) {
+      carryoverEntryBySourceId.set(entry.carryoverSourceEntryId, entry);
+    }
+  }
 
   for (const entry of sortMealEntriesForPreview(entries)) {
-    const recipe = recipeMap.get(entry.mealId);
+    const entryKind = normalizeMealEntryKind(entry.entryKind);
+    const sourceEntry = entryKind === 'carryover' && entry.carryoverSourceEntryId
+      ? (entryMap.get(entry.carryoverSourceEntryId) || null)
+      : null;
+    const recipe = entryKind === 'carryover'
+      ? (sourceEntry ? recipeMap.get(sourceEntry.mealId) : recipeMap.get(entry.mealId))
+      : recipeMap.get(entry.mealId);
     if (!recipe) continue;
+
+    if (entryKind === 'carryover') {
+      const sourceUsage = sourceEntry ? entryUsageById[sourceEntry.id] : null;
+      const carryoverPortions = roundQuantity(sourceUsage?.reservedCarryoverPortions) ?? 0;
+      const isValidCarryover = Boolean(
+        sourceEntry
+        && sourceUsage
+        && sourceUsage.yieldMode === 'batch'
+        && carryoverPortions > 0
+      );
+
+      entryUsageById[entry.id] = {
+        entryId: entry.id,
+        recipeId: recipe.id,
+        recipeName: recipe.name,
+        requiredPortions: carryoverPortions,
+        usedCarryoverPortions: 0,
+        carryoverSourceDate: sourceEntry?.date || '',
+        carryoverSourceEntryId: sourceEntry?.id || '',
+        cookedBatchCount: 0,
+        batchYieldPortions: sourceUsage?.batchYieldPortions ?? getRecipeBatchYieldPortions(recipe),
+        createdCarryoverPortions: 0,
+        reservedCarryoverPortions: carryoverPortions,
+        leftoverAfterPortions: 0,
+        effectiveIngredientMultiplier: 0,
+        yieldMode: normalizeRecipeYieldMode(recipe.yieldMode),
+        entryKind,
+        hasCarryoverChild: false,
+        carryoverChildDate: '',
+        carryoverChildEntryId: '',
+        carryoverStatus: isValidCarryover ? 'active' : 'warning',
+        carryoverPortions,
+        contributesToNutrition: isValidCarryover,
+        contributesToGroceries: false,
+        warningMessage: isValidCarryover
+          ? ''
+          : !sourceEntry
+            ? 'Source meal was removed.'
+            : sourceUsage?.yieldMode !== 'batch'
+              ? 'Source meal is no longer a batch recipe.'
+              : 'No leftover is available from the source meal.',
+      };
+      continue;
+    }
 
     const requiredPortions = getEntryServingMultiplier(entry, {
       adultCount,
@@ -540,13 +604,24 @@ export const buildMealPlanPreview = ({
       cookedBatchCount: 0,
       batchYieldPortions: null,
       createdCarryoverPortions: 0,
+      reservedCarryoverPortions: 0,
       leftoverAfterPortions: 0,
       effectiveIngredientMultiplier: roundedRequiredPortions,
       yieldMode: normalizeRecipeYieldMode(recipe.yieldMode),
+      entryKind,
+      hasCarryoverChild: false,
+      carryoverChildDate: '',
+      carryoverChildEntryId: '',
+      carryoverStatus: 'none',
+      carryoverPortions: 0,
+      contributesToNutrition: entry.audience !== 'kids',
+      contributesToGroceries: true,
+      warningMessage: '',
     };
 
     if (isBatchRecipe(recipe)) {
       const batchYieldPortions = getRecipeBatchYieldPortions(recipe);
+      const carryoverEntry = carryoverEntryBySourceId.get(entry.id) || null;
       const ledger = carryoverLedger.get(recipe.id) || {
         remainingPortions: 0,
         sourceDate: '',
@@ -567,12 +642,20 @@ export const buildMealPlanPreview = ({
       usage.carryoverSourceDate = usedCarryoverPortions > 0 ? ledger.sourceDate : '';
       usage.cookedBatchCount = cookedBatchCount;
       usage.batchYieldPortions = batchYieldPortions;
-      usage.createdCarryoverPortions = roundQuantity(leftoverAfterPortions) ?? 0;
       usage.leftoverAfterPortions = roundQuantity(leftoverAfterPortions) ?? 0;
+      usage.hasCarryoverChild = Boolean(carryoverEntry);
+      usage.carryoverChildDate = carryoverEntry?.date || '';
+      usage.carryoverChildEntryId = carryoverEntry?.id || '';
+      usage.reservedCarryoverPortions = carryoverEntry
+        ? (roundQuantity(leftoverAfterPortions) ?? 0)
+        : 0;
+      usage.createdCarryoverPortions = carryoverEntry
+        ? 0
+        : (roundQuantity(leftoverAfterPortions) ?? 0);
       usage.effectiveIngredientMultiplier = cookedBatchCount;
 
       carryoverLedger.set(recipe.id, {
-        remainingPortions: leftoverAfterPortions,
+        remainingPortions: carryoverEntry ? 0 : leftoverAfterPortions,
         sourceDate: cookedBatchCount > 0 ? entry.date : ledger.sourceDate,
       });
 

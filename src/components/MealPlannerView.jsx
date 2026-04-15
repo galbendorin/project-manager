@@ -240,6 +240,27 @@ const formatCarryoverDayLabel = (dateKey = '') => {
   return new Date(year, month - 1, day).toLocaleDateString('en-GB', { weekday: 'short' });
 };
 
+const formatCarryoverTargetDayLabel = (dateKey = '') => {
+  if (!dateKey) return '';
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  if (!year || !month || !day) return '';
+  return new Date(year, month - 1, day).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+};
+
+const getDisplayedNutritionMultiplier = (entry, entryUsage) => {
+  if (!entry || entry.audience === 'kids') return 0;
+  if (entry.entryKind === 'carryover') {
+    return entryUsage?.carryoverStatus === 'active'
+      ? Number(entryUsage?.carryoverPortions || 0)
+      : 0;
+  }
+  return 1;
+};
+
 const buildRecipeFormState = (recipe) => {
   if (!recipe) return DEFAULT_FORM_STATE;
   return {
@@ -1680,6 +1701,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     canUseStarterLibrary,
     clearMealEntry,
     confirmGroceryDraft,
+    createCarryoverForNextDay,
     createRecipe,
     defaultServingMultiplier,
     deleteRecipe,
@@ -1697,6 +1719,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     seedStarterLibrary,
     selectedWeekStart,
     setSelectedWeekStart,
+    moveCarryoverToNextDay,
+    removeCarryover,
     updateRecipe,
     updateWeekCounts,
     upsertMealEntry,
@@ -1749,6 +1773,19 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   }, [weekDays]);
 
   const recipeMap = useMemo(() => new Map(recipes.map((recipe) => [recipe.id, recipe])), [recipes]);
+  const entryMap = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
+  const resolvedRecipeByEntryId = useMemo(() => (
+    entries.reduce((accumulator, entry) => {
+      let resolvedRecipe = recipeMap.get(entry.mealId) || null;
+      if (entry.entryKind === 'carryover' && entry.carryoverSourceEntryId) {
+        const sourceEntry = entryMap.get(entry.carryoverSourceEntryId);
+        const sourceRecipe = sourceEntry ? recipeMap.get(sourceEntry.mealId) : null;
+        resolvedRecipe = sourceRecipe || resolvedRecipe;
+      }
+      accumulator[entry.id] = resolvedRecipe;
+      return accumulator;
+    }, {})
+  ), [entries, entryMap, recipeMap]);
   const entriesBySlotKey = useMemo(() => (
     entries.reduce((accumulator, entry) => {
       const key = `${entry.date}:${entry.mealSlot}`;
@@ -1785,28 +1822,31 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       const total = entries
         .filter((entry) => entry.date === day.key)
         .reduce((sum, entry) => {
-          const recipe = recipeMap.get(entry.mealId);
-          if (!recipe?.estimatedKcal) return sum;
-          return entry.audience === 'kids'
-            ? sum
-            : sum + recipe.estimatedKcal;
+          const recipe = resolvedRecipeByEntryId[entry.id];
+          const entryUsage = entryUsageById?.[entry.id] || null;
+          const multiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
+          if (!recipe?.estimatedKcal || multiplier <= 0) return sum;
+          return sum + (recipe.estimatedKcal * multiplier);
         }, 0);
-      accumulator[day.key] = total;
+      accumulator[day.key] = Math.round(total);
       return accumulator;
     }, {})
-  ), [entries, recipeMap, weekDays]);
+  ), [entries, entryUsageById, resolvedRecipeByEntryId, weekDays]);
   const dayNutritionByKey = useMemo(() => (
     weekDays.reduce((accumulator, day) => {
       const totals = entries
         .filter((entry) => entry.date === day.key)
         .reduce((sum, entry) => {
-          if (entry.audience === 'kids') return sum;
-          const nutrition = recipeNutritionById[entry.mealId];
+          const entryUsage = entryUsageById?.[entry.id] || null;
+          const multiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
+          if (multiplier <= 0) return sum;
+          const recipe = resolvedRecipeByEntryId[entry.id];
+          const nutrition = recipe ? recipeNutritionById[recipe.id] : null;
           if (!nutrition) return sum;
           return {
-            proteinG: sum.proteinG + (nutrition.proteinG || 0),
-            carbsG: sum.carbsG + (nutrition.carbsG || 0),
-            fiberG: sum.fiberG + (nutrition.fiberG || 0),
+            proteinG: sum.proteinG + ((nutrition.proteinG || 0) * multiplier),
+            carbsG: sum.carbsG + ((nutrition.carbsG || 0) * multiplier),
+            fiberG: sum.fiberG + ((nutrition.fiberG || 0) * multiplier),
           };
         }, {
           proteinG: 0,
@@ -1816,7 +1856,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       accumulator[day.key] = totals;
       return accumulator;
     }, {})
-  ), [entries, recipeNutritionById, weekDays]);
+  ), [entries, entryUsageById, recipeNutritionById, resolvedRecipeByEntryId, weekDays]);
   const activeMobileDay = useMemo(() => (
     weekDays.find((day) => day.key === activeMobileDayKey) || weekDays[0] || null
   ), [activeMobileDayKey, weekDays]);
@@ -2047,6 +2087,30 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       if (nextCopyPrompt) {
         setCopyPrompt(nextCopyPrompt);
       }
+    } catch {
+      // Error banner already set in the data hook.
+    }
+  };
+
+  const handleCreateCarryover = async (sourceEntryId) => {
+    try {
+      await createCarryoverForNextDay(sourceEntryId);
+    } catch {
+      // Error banner already set in the data hook.
+    }
+  };
+
+  const handleMoveCarryover = async (carryoverEntryId) => {
+    try {
+      await moveCarryoverToNextDay(carryoverEntryId);
+    } catch {
+      // Error banner already set in the data hook.
+    }
+  };
+
+  const handleRemoveCarryover = async (carryoverEntryId) => {
+    try {
+      await removeCarryover(carryoverEntryId);
     } catch {
       // Error banner already set in the data hook.
     }
@@ -2297,7 +2361,11 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
               ) : null}
 
               <div className={`mt-5 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
-                {visibleWeekDays.map((day) => (
+                {visibleWeekDays.map((day) => {
+                  const currentDayIndex = weekDays.findIndex((candidate) => candidate.key === day.key);
+                  const hasNextDayInWeek = currentDayIndex >= 0 && currentDayIndex < weekDays.length - 1;
+
+                  return (
                   <div key={day.key} className="pm-scroll-optimize-day rounded-[22px] border border-slate-200 bg-slate-50/70 p-3 sm:rounded-[26px] sm:p-4">
                     <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -2330,7 +2398,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         const slotEntries = (entriesBySlotKey[`${day.key}:${slot}`] || [])
                           .map((entry) => ({
                             entry,
-                            recipe: recipeMap.get(entry.mealId),
+                            recipe: resolvedRecipeByEntryId[entry.id] || null,
                           }))
                           .filter(({ recipe }) => Boolean(recipe));
 
@@ -2349,84 +2417,192 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
                             <div className="mt-3 space-y-2.5">
                               {slotEntries.map(({ entry, recipe }) => {
+                                const isCarryoverEntry = entry.entryKind === 'carryover';
                                 const isCopyPromptVisible = Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
                                 const entryUsage = entryUsageById?.[entry.id] || null;
-                                return (
-                                  <div key={entry.id} className="pm-scroll-optimize-card rounded-[16px] border border-slate-200 bg-slate-50/60 px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3">
-                                    <button
-                                      type="button"
-                                      onClick={() => setDetailContext({
-                                        recipe,
-                                        entry,
-                                        dateKey: day.key,
-                                        mealSlot: slot,
-                                        defaultServingMultiplier,
-                                        adultCount: week?.adultCount ?? 1,
-                                        kidCount: week?.kidCount ?? 0,
-                                      })}
-                                      className="block w-full text-left transition hover:text-[var(--pm-accent-strong)]"
-                                    >
-                                      <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                                const carryoverNutritionMultiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
+                                const carryoverNutrition = recipe ? recipeNutritionById[recipe.id] : null;
+                                const carryoverKcal = recipe?.estimatedKcal && carryoverNutritionMultiplier > 0
+                                  ? Math.round(recipe.estimatedKcal * carryoverNutritionMultiplier)
+                                  : 0;
+                                const canCreateCarryover = !isCarryoverEntry
+                                  && Boolean(recipe)
+                                  && entryUsage?.yieldMode === 'batch'
+                                  && (entryUsage?.createdCarryoverPortions || 0) > 0
+                                  && !entryUsage?.hasCarryoverChild
+                                  && hasNextDayInWeek;
+                                const canMoveCarryover = isCarryoverEntry
+                                  && entryUsage?.carryoverStatus === 'active'
+                                  && hasNextDayInWeek;
+                                const cardBody = (
+                                  <>
+                                    <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                                      {isCarryoverEntry ? (
+                                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">
+                                          Carryover
+                                        </span>
+                                      ) : (
                                         <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(entry.audience)}`}>
                                           {getMealAudienceLabel(entry.audience)}
                                         </span>
-                                        {entry.servingMultiplier ? (
-                                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
-                                            {entry.servingMultiplier}x
-                                          </span>
-                                        ) : null}
-                                        {recipe.sourcePdf ? (
-                                          <span className="hidden rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm sm:inline-flex">
-                                            {recipe.sourcePdf}
-                                          </span>
-                                        ) : null}
-                                        {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
-                                          <span className="hidden rounded-full bg-sky-50 px-2.5 py-1 text-sky-700 sm:inline-flex">
-                                            Batch {recipe.batchYieldPortions}
-                                          </span>
-                                        ) : null}
-                                      </div>
-                                      <h4 className="mt-2.5 text-[15px] font-semibold leading-5 text-slate-950 sm:mt-3 sm:text-base">{recipe.name}</h4>
-                                      <p className="mt-1.5 text-[12px] leading-5 text-slate-500 sm:mt-2 sm:text-sm">{summarizeRecipeIngredients(recipe, 3)}</p>
-                                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
-                                        {recipe.estimatedKcal ? (
-                                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{recipe.estimatedKcal} kcal</span>
-                                        ) : null}
-                                      </div>
-                                      {entryUsage?.usedCarryoverPortions > 0 ? (
+                                      )}
+                                      {!isCarryoverEntry && entry.servingMultiplier ? (
+                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
+                                          {entry.servingMultiplier}x
+                                        </span>
+                                      ) : null}
+                                      {recipe.sourcePdf ? (
+                                        <span className="hidden rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm sm:inline-flex">
+                                          {recipe.sourcePdf}
+                                        </span>
+                                      ) : null}
+                                      {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
+                                        <span className="hidden rounded-full bg-sky-50 px-2.5 py-1 text-sky-700 sm:inline-flex">
+                                          Batch {recipe.batchYieldPortions}
+                                        </span>
+                                      ) : null}
+                                      {isCarryoverEntry && entry.audience ? (
+                                        <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(entry.audience)}`}>
+                                          {getMealAudienceLabel(entry.audience)}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <h4 className="mt-2.5 text-[15px] font-semibold leading-5 text-slate-950 sm:mt-3 sm:text-base">{recipe.name}</h4>
+                                    <p className="mt-1.5 text-[12px] leading-5 text-slate-500 sm:mt-2 sm:text-sm">{summarizeRecipeIngredients(recipe, 3)}</p>
+                                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+                                      {isCarryoverEntry ? (
+                                        <>
+                                          {carryoverKcal > 0 ? (
+                                            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{carryoverKcal} kcal</span>
+                                          ) : null}
+                                          {carryoverNutrition && carryoverNutritionMultiplier > 0 ? (
+                                            <>
+                                              <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">
+                                                P {formatMacroTotal((carryoverNutrition.proteinG || 0) * carryoverNutritionMultiplier)}g
+                                              </span>
+                                              <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-indigo-700">
+                                                C {formatMacroTotal((carryoverNutrition.carbsG || 0) * carryoverNutritionMultiplier)}g
+                                              </span>
+                                              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                                                Fib {formatMacroTotal((carryoverNutrition.fiberG || 0) * carryoverNutritionMultiplier)}g
+                                              </span>
+                                            </>
+                                          ) : null}
+                                        </>
+                                      ) : recipe.estimatedKcal ? (
+                                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{recipe.estimatedKcal} kcal</span>
+                                      ) : null}
+                                    </div>
+                                    {isCarryoverEntry ? (
+                                      entryUsage?.carryoverStatus === 'active' ? (
                                         <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700">
-                                          Carryover {formatIngredientQuantity(entryUsage.usedCarryoverPortions)} portions
-                                          {entryUsage.carryoverSourceDate ? ` from ${formatCarryoverDayLabel(entryUsage.carryoverSourceDate)}` : ''}
+                                          {formatIngredientQuantity(entryUsage.carryoverPortions)} portions
+                                          {entryUsage.carryoverSourceDate ? ` from ${formatCarryoverTargetDayLabel(entryUsage.carryoverSourceDate)}` : ''}
                                         </div>
-                                      ) : null}
-                                      {entryUsage?.usedCarryoverPortions === 0 && entryUsage?.createdCarryoverPortions > 0 ? (
-                                        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700">
-                                          Carryover ready: {formatIngredientQuantity(entryUsage.createdCarryoverPortions)} portions
+                                      ) : (
+                                        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700">
+                                          {entryUsage?.warningMessage || 'Carryover is no longer available from the source meal.'}
                                         </div>
-                                      ) : null}
-                                    </button>
+                                      )
+                                    ) : (
+                                      <>
+                                        {entryUsage?.usedCarryoverPortions > 0 ? (
+                                          <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700">
+                                            Carryover {formatIngredientQuantity(entryUsage.usedCarryoverPortions)} portions
+                                            {entryUsage.carryoverSourceDate ? ` from ${formatCarryoverDayLabel(entryUsage.carryoverSourceDate)}` : ''}
+                                          </div>
+                                        ) : null}
+                                        {entryUsage?.usedCarryoverPortions === 0 && entryUsage?.createdCarryoverPortions > 0 ? (
+                                          <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700">
+                                            Carryover ready: {formatIngredientQuantity(entryUsage.createdCarryoverPortions)} portions
+                                          </div>
+                                        ) : null}
+                                      </>
+                                    )}
+                                  </>
+                                );
+                                return (
+                                  <div key={entry.id} className="pm-scroll-optimize-card rounded-[16px] border border-slate-200 bg-slate-50/60 px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3">
+                                    {isCarryoverEntry ? (
+                                      <div className="block w-full text-left">
+                                        {cardBody}
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setDetailContext({
+                                          recipe,
+                                          entry,
+                                          dateKey: day.key,
+                                          mealSlot: slot,
+                                          defaultServingMultiplier,
+                                          adultCount: week?.adultCount ?? 1,
+                                          kidCount: week?.kidCount ?? 0,
+                                        })}
+                                        className="block w-full text-left transition hover:text-[var(--pm-accent-strong)]"
+                                      >
+                                        {cardBody}
+                                      </button>
+                                    )}
 
                                     <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                                      <button
-                                        type="button"
-                                        onClick={() => openPicker(day.key, slot, { entryId: entry.id, audience: entry.audience || 'all' })}
-                                        className="pm-subtle-button rounded-full px-3 py-2 text-[11px] font-semibold sm:text-xs"
-                                      >
-                                        Change
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          dismissCopyUiForEntry(entry.id);
-                                          await clearMealEntry({ entryId: entry.id });
-                                        }}
-                                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 sm:text-xs"
-                                      >
-                                        Remove
-                                      </button>
+                                      {isCarryoverEntry ? (
+                                        <>
+                                          {canMoveCarryover ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => void handleMoveCarryover(entry.id)}
+                                              className="pm-subtle-button rounded-full px-3 py-2 text-[11px] font-semibold sm:text-xs"
+                                            >
+                                              Move to next day
+                                            </button>
+                                          ) : null}
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleRemoveCarryover(entry.id)}
+                                            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 sm:text-xs"
+                                          >
+                                            Remove carryover
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => openPicker(day.key, slot, { entryId: entry.id, audience: entry.audience || 'all' })}
+                                            className="pm-subtle-button rounded-full px-3 py-2 text-[11px] font-semibold sm:text-xs"
+                                          >
+                                            Change
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              dismissCopyUiForEntry(entry.id);
+                                              await clearMealEntry({ entryId: entry.id });
+                                            }}
+                                            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 sm:text-xs"
+                                          >
+                                            Remove
+                                          </button>
+                                          {canCreateCarryover ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => void handleCreateCarryover(entry.id)}
+                                              className="rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700 transition hover:bg-sky-100 sm:text-xs"
+                                            >
+                                              Carry over to next day
+                                            </button>
+                                          ) : null}
+                                          {entryUsage?.hasCarryoverChild && entryUsage?.carryoverChildDate ? (
+                                            <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700 sm:text-xs">
+                                              Carried to {formatCarryoverTargetDayLabel(entryUsage.carryoverChildDate)}
+                                            </span>
+                                          ) : null}
+                                        </>
+                                      )}
                                     </div>
 
-                                    {isCopyPromptVisible ? (
+                                    {isCopyPromptVisible && !isCarryoverEntry ? (
                                       <div className="mt-3 rounded-[20px] border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-3 py-3">
                                         <p className="text-sm font-semibold text-[var(--pm-accent-strong)]">Use the same for tomorrow?</p>
                                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2460,7 +2636,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       })}
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             </div>
 
