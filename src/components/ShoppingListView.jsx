@@ -24,6 +24,7 @@ import {
   describeShoppingProject,
   formatSyncTimeLabel,
   generateProjectId,
+  groupCompletedShoppingTodos,
   isProjectRelationMissingError,
   isRowLevelSecurityError,
   loadShoppingOfflineState,
@@ -222,6 +223,10 @@ export default function ShoppingListView({ currentUserId }) {
   });
   const openTodos = useMemo(() => todos.filter((todo) => todo.status !== 'Done'), [todos]);
   const completedTodos = useMemo(() => todos.filter((todo) => todo.status === 'Done'), [todos]);
+  const completedTodoGroups = useMemo(
+    () => groupCompletedShoppingTodos(completedTodos),
+    [completedTodos]
+  );
   const canShareProject = Boolean(selectedProject?.isOwned && supportsProjectMembersRef.current);
   useEffect(() => {
     if (!shouldCollapseBought) {
@@ -528,6 +533,7 @@ export default function ShoppingListView({ currentUserId }) {
                     LoaderIcon={Loader2}
                     ShoppingBasketIcon={ShoppingBasket}
                     TrashIcon={Trash2}
+                    completedTodoGroups={completedTodoGroups}
                     completedTodos={completedTodos}
                     deleteTodo={deleteTodo}
                     desktopCompact={desktopCompact}

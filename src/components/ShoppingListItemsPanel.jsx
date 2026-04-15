@@ -39,6 +39,7 @@ export default function ShoppingListItemsPanel({
   LoaderIcon,
   ShoppingBasketIcon,
   TrashIcon,
+  completedTodoGroups,
   completedTodos,
   deleteTodo,
   desktopCompact,
@@ -72,6 +73,8 @@ export default function ShoppingListItemsPanel({
   syncingQueue,
   todos,
 }) {
+  const duplicateBoughtCount = Math.max(0, completedTodos.length - completedTodoGroups.length);
+
   return (
     <div className="pm-list-shell rounded-[28px] p-3 sm:p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
@@ -93,7 +96,7 @@ export default function ShoppingListItemsPanel({
           ) : null}
           <div>
             <span className="text-xs text-slate-400">
-              {loadingTodos ? 'Loading...' : `${openTodos.length} open · ${completedTodos.length} bought`}
+              {loadingTodos ? 'Loading...' : `${openTodos.length} open · ${completedTodoGroups.length} bought`}
             </span>
             {offlineQueue.length > 0 ? (
               <div className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
@@ -399,25 +402,31 @@ export default function ShoppingListItemsPanel({
               ) : null}
               {completedTodos.length > 0 ? (
                 <div className="mb-3 flex items-center justify-between">
+                  {duplicateBoughtCount > 0 ? (
+                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">
+                      {duplicateBoughtCount} duplicate{duplicateBoughtCount === 1 ? '' : 's'} grouped
+                    </div>
+                  ) : <span />}
                   {shouldCollapseBought ? (
                     <button
                       type="button"
                       onClick={() => setShowBought((value) => !value)}
                       className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
                     >
-                      {showBought ? 'Hide bought' : `Show bought (${completedTodos.length})`}
+                      {showBought ? 'Hide bought' : `Show bought (${completedTodoGroups.length})`}
                       <ChevronDownIcon className={`h-3.5 w-3.5 transition ${showBought ? 'rotate-180' : ''}`} />
                     </button>
                   ) : null}
                 </div>
               ) : null}
-              {completedTodos.length > 0 && (!shouldCollapseBought || showBought) ? completedTodos.map((todo) => {
+              {completedTodoGroups.length > 0 && (!shouldCollapseBought || showBought) ? completedTodoGroups.map((group) => {
+                const todo = group.primaryTodo;
                 const syncState = queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
                   ? (syncingQueue && isOnline ? 'syncing' : 'offline')
                   : '';
 
                 return (
-                  <div key={todo._id} className={`border border-slate-200 bg-white/90 shadow-sm ${
+                  <div key={group.key} className={`border border-slate-200 bg-white/90 shadow-sm ${
                     isCompactDesktop ? 'rounded-[18px] px-3.5 py-3' : 'rounded-[22px] px-4 py-4'
                   }`}>
                     <div className={`flex gap-3 ${isCompactDesktop ? 'items-center' : 'items-start sm:items-center'}`}>
@@ -470,18 +479,30 @@ export default function ShoppingListItemsPanel({
                               <>
                                 <p className={`font-semibold text-slate-400 line-through ${isCompactDesktop ? 'text-sm leading-5' : 'text-base leading-6 sm:text-sm'}`}>{todo.title}</p>
                                 <ShoppingItemMeta todo={todo} />
+                                {group.count > 1 ? (
+                                  <p className="mt-2 text-[11px] font-semibold text-slate-500">
+                                    {group.count} bought entries grouped here so the memory list stays clean.
+                                  </p>
+                                ) : null}
                               </>
                             )}
                           </div>
-                          {syncState ? (
-                            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
-                              syncState === 'syncing'
-                                ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                                : 'border-amber-200 bg-amber-50 text-amber-700'
-                            }`}>
-                              {syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
-                            </span>
-                          ) : null}
+                          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                            {group.count > 1 ? (
+                              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                {group.count}x
+                              </span>
+                            ) : null}
+                            {syncState ? (
+                              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                syncState === 'syncing'
+                                  ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                                  : 'border-amber-200 bg-amber-50 text-amber-700'
+                              }`}>
+                                {syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                         {(isMobile || savingTodoId === todo._id || failedTodoId === todo._id || !isCompactDesktop) ? (
                           <p className={`mt-1 text-xs ${savingTodoId === todo._id ? 'text-emerald-700' : 'text-slate-400'}`}>
@@ -489,7 +510,11 @@ export default function ShoppingListItemsPanel({
                               ? (savingTodoAction === 'reopen' ? `Saving ${todo.title}...` : savingTodoAction === 'edit' ? `Saving ${todo.title}...` : 'Saving...')
                               : editingTodoId === todo._id
                                 ? 'Update the grocery name, then save it.'
-                                : (isMobile ? 'Use Undo if this needs to go back on the live list.' : 'Tap the check if you need to reopen it.')}
+                                : (isMobile
+                                  ? 'Use Undo if this needs to go back on the live list.'
+                                  : (group.count > 1
+                                    ? 'Tap the check to reuse the latest copy while older bought duplicates stay grouped here.'
+                                    : 'Tap the check if you need to reopen it.'))}
                           </p>
                         ) : null}
                         {failedTodoId === todo._id ? (
@@ -608,7 +633,7 @@ export default function ShoppingListItemsPanel({
               }) : null}
               {completedTodos.length > 0 && shouldCollapseBought && !showBought ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-4 text-sm text-slate-500">
-                  {completedTodos.length} bought item{completedTodos.length === 1 ? '' : 's'} hidden while you shop.
+                  {completedTodoGroups.length} bought item{completedTodoGroups.length === 1 ? '' : 's'} hidden while you shop.
                 </div>
               ) : null}
             </div>

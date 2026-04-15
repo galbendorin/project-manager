@@ -31,6 +31,57 @@ export const sortTodos = (items = []) => (
   })
 );
 
+export const normalizeBoughtTodoTitle = (value = '') => (
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+);
+
+const getTodoActivityTime = (todo = {}) => (
+  new Date(todo.completedAt || todo.updatedAt || todo.createdAt || 0).getTime()
+);
+
+export const groupCompletedShoppingTodos = (items = []) => {
+  const groups = new Map();
+
+  for (const todo of Array.isArray(items) ? items : []) {
+    if (!todo?._id) continue;
+
+    const titleKey = normalizeBoughtTodoTitle(todo.title);
+    if (!titleKey) continue;
+
+    const existing = groups.get(titleKey);
+    if (!existing) {
+      groups.set(titleKey, {
+        key: titleKey,
+        title: todo.title,
+        primaryTodo: todo,
+        todos: [todo],
+        count: 1,
+      });
+      continue;
+    }
+
+    const nextTodos = [...existing.todos, todo];
+    const nextPrimary = getTodoActivityTime(todo) > getTodoActivityTime(existing.primaryTodo)
+      ? todo
+      : existing.primaryTodo;
+
+    groups.set(titleKey, {
+      ...existing,
+      title: nextPrimary.title,
+      primaryTodo: nextPrimary,
+      todos: nextTodos,
+      count: nextTodos.length,
+    });
+  }
+
+  return [...groups.values()].sort((left, right) => (
+    getTodoActivityTime(right.primaryTodo) - getTodoActivityTime(left.primaryTodo)
+  ));
+};
+
 export const mergeTodosById = (existingItems = [], incomingItems = []) => {
   const merged = new Map();
 

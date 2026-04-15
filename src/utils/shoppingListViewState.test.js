@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   createEmptyShoppingOfflineState,
+  groupCompletedShoppingTodos,
   normalizeShoppingOfflineState,
+  normalizeBoughtTodoTitle,
   pickPreferredShoppingProject,
 } from './shoppingListViewState.js';
 
@@ -54,4 +56,45 @@ test('pickPreferredShoppingProject prefers a shared incoming list before a priva
   ], 'user-1');
 
   assert.equal(project?.id, 'shared-with-me');
+});
+
+test('normalizeBoughtTodoTitle keeps duplicate grocery names on one memory key', () => {
+  assert.equal(normalizeBoughtTodoTitle('  Eggs  '), 'eggs');
+  assert.equal(normalizeBoughtTodoTitle('eggS'), 'eggs');
+  assert.equal(normalizeBoughtTodoTitle('Whole   milk'), 'whole milk');
+});
+
+test('groupCompletedShoppingTodos collapses repeated bought groceries into one reusable memory row', () => {
+  const groups = groupCompletedShoppingTodos([
+    {
+      _id: 'todo-eggs-older',
+      title: 'Eggs',
+      status: 'Done',
+      createdAt: '2026-04-15T08:00:00.000Z',
+      updatedAt: '2026-04-15T08:00:00.000Z',
+      completedAt: '2026-04-15T08:00:00.000Z',
+    },
+    {
+      _id: 'todo-milk',
+      title: 'Milk',
+      status: 'Done',
+      createdAt: '2026-04-15T09:00:00.000Z',
+      updatedAt: '2026-04-15T09:00:00.000Z',
+      completedAt: '2026-04-15T09:00:00.000Z',
+    },
+    {
+      _id: 'todo-eggs-latest',
+      title: ' eggs ',
+      status: 'Done',
+      createdAt: '2026-04-15T10:00:00.000Z',
+      updatedAt: '2026-04-15T10:00:00.000Z',
+      completedAt: '2026-04-15T10:00:00.000Z',
+    },
+  ]);
+
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].primaryTodo._id, 'todo-eggs-latest');
+  assert.equal(groups[0].count, 2);
+  assert.equal(groups[1].primaryTodo._id, 'todo-milk');
+  assert.equal(groups[1].count, 1);
 });
