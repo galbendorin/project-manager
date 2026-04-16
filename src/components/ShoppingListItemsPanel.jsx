@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { isOfflineTempId } from '../utils/offlineState';
 
 const formatQuantity = (value) => {
@@ -75,8 +75,8 @@ export default function ShoppingListItemsPanel({
   todos,
 }) {
   const duplicateBoughtCount = Math.max(0, completedTodos.length - completedTodoGroups.length);
-  const [expandedOpenTodoId, setExpandedOpenTodoId] = React.useState('');
-  const [expandedBoughtGroupId, setExpandedBoughtGroupId] = React.useState('');
+  const [expandedOpenTodoId, setExpandedOpenTodoId] = useState('');
+  const [expandedBoughtGroupId, setExpandedBoughtGroupId] = useState('');
 
   return (
     <div className="pm-list-shell rounded-[28px] p-3 sm:p-4">
