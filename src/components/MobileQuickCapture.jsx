@@ -24,23 +24,23 @@ export default function MobileQuickCapture({
 }) {
   return (
     <>
-      <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4 md:hidden">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_14px_30px_rgba(15,23,42,0.14)] backdrop-blur">
+      <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+72px)] right-4 z-30 flex md:hidden">
+        <div className="pointer-events-auto">
           <button
             type="button"
             onClick={onOpen}
-            className="rounded-full bg-[var(--pm-accent)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95"
+            className="inline-flex items-center gap-2 rounded-full bg-[var(--pm-accent)] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(79,70,229,0.32)] transition hover:brightness-95"
           >
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-lg leading-none">
+              +
+            </span>
             Capture
           </button>
-          <div className="min-w-0">
-            <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Quick capture
+          {statusMessage ? (
+            <div className="mt-2 max-w-[220px] rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 text-[11px] leading-5 text-slate-600 shadow-[0_14px_30px_rgba(15,23,42,0.14)] backdrop-blur">
+              {statusMessage}
             </div>
-            <div className="truncate text-xs text-slate-600">
-              {statusMessage || `Add a ${routeLabel} to ${projectName}.`}
-            </div>
-          </div>
+          ) : null}
         </div>
       </div>
 

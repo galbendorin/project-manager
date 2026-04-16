@@ -346,10 +346,18 @@ const fetchRecipeCalorieEstimate = async ({
 };
 
 function ModalShell({ children, onClose, wide = false }) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/40 px-4 py-6">
+    <div className={`fixed inset-0 z-[90] flex justify-center bg-slate-950/40 ${isMobile ? 'items-end px-0 py-0' : 'items-center px-4 py-6'}`}>
       <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Close modal" />
-      <div className={`relative max-h-[90vh] w-full overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)] ${wide ? 'max-w-5xl' : 'max-w-2xl'}`}>
+      <div
+        className={`relative w-full overflow-y-auto border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)] ${
+          isMobile
+            ? 'max-h-[94dvh] rounded-t-[28px] rounded-b-none'
+            : `max-h-[90vh] rounded-[28px] ${wide ? 'max-w-5xl' : 'max-w-2xl'}`
+        }`}
+      >
         {children}
       </div>
     </div>
@@ -1592,6 +1600,7 @@ function GroceryReviewModal({
   saving,
   weekLabel,
 }) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
   const [showHiddenDraft, setShowHiddenDraft] = useState(false);
 
   return (
@@ -1639,7 +1648,7 @@ function GroceryReviewModal({
               </button>
             </div>
             {showHiddenDraft ? (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className={`mt-4 grid gap-3 ${isMobile ? 'grid-cols-1' : 'sm:grid-cols-2 xl:grid-cols-3'}`}>
                 {hiddenDraft.map((item) => (
                   <div key={`restore-${item.key}`} className="rounded-[20px] border border-amber-200 bg-white p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
@@ -1678,7 +1687,7 @@ function GroceryReviewModal({
           </div>
         ) : null}
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className={`mt-5 grid gap-3 ${isMobile ? 'grid-cols-1' : 'sm:grid-cols-2 xl:grid-cols-3'}`}>
           {draft.map((item) => (
             <div key={item.key} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
@@ -1720,11 +1729,11 @@ function GroceryReviewModal({
           </div>
         ) : null}
 
-        <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={onClose} className="pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold">
+        <div className={`mt-6 flex gap-3 ${isMobile ? 'flex-col-reverse' : 'justify-end'}`}>
+          <button type="button" onClick={onClose} className={`pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold ${isMobile ? 'w-full' : ''}`}>
             Close
           </button>
-          <button type="button" onClick={() => onApprove(draft)} disabled={saving || draft.length === 0} className="pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+          <button type="button" onClick={() => onApprove(draft)} disabled={saving || draft.length === 0} className={`pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 ${isMobile ? 'w-full' : ''}`}>
             {saving ? 'Adding groceries…' : 'Add to Shopping List'}
           </button>
         </div>
@@ -1785,8 +1794,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const [statusMessage, setStatusMessage] = useState('');
   const [showMobilePlannerDetails, setShowMobilePlannerDetails] = useState(false);
   const [activeMobileDayKey, setActiveMobileDayKey] = useState('');
-  const [showMobileRecipeLibrary, setShowMobileRecipeLibrary] = useState(false);
-  const [showMobileShoppingGeneration, setShowMobileShoppingGeneration] = useState(false);
+  const [mobileActivePanel, setMobileActivePanel] = useState('planner');
   const [libraryVisibleCount, setLibraryVisibleCount] = useState(DESKTOP_LIBRARY_INITIAL_COUNT);
   const [partnerInput, setPartnerInput] = useState('');
   const [kidsInput, setKidsInput] = useState('');
@@ -1915,8 +1923,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const visibleLibraryRecipes = useMemo(() => (
     filteredLibraryRecipes.slice(0, libraryVisibleCount)
   ), [filteredLibraryRecipes, libraryVisibleCount]);
-  const isRecipeLibraryVisible = !isMobile || showMobileRecipeLibrary;
-  const isShoppingGenerationVisible = !isMobile || showMobileShoppingGeneration;
+  const isPlannerVisible = !isMobile || mobileActivePanel === 'planner';
+  const isRecipeLibraryVisible = !isMobile || mobileActivePanel === 'recipes';
+  const isShoppingGenerationVisible = !isMobile || mobileActivePanel === 'groceries';
   const parsedPartnerInput = parsePlannerNumberInput(partnerInput);
   const parsedKidsInput = parsePlannerNumberInput(kidsInput);
   const householdCanSave = parsedPartnerInput !== null && parsedKidsInput !== null;
@@ -2034,6 +2043,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       } else if (selectionContext.mealSlot !== 'snack') {
         setCopyPrompt(null);
       }
+      if (isMobile) {
+        setMobileActivePanel('planner');
+      }
     } catch {
       // Error banner already set in the data hook.
     }
@@ -2108,6 +2120,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
         });
         setQuickPlanContext(null);
         setCopyPrompt(null);
+        if (isMobile) {
+          setMobileActivePanel('planner');
+        }
         return;
       }
 
@@ -2133,6 +2148,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
       if (nextCopyPrompt) {
         setCopyPrompt(nextCopyPrompt);
+      }
+      if (isMobile) {
+        setMobileActivePanel('planner');
       }
     } catch {
       // Error banner already set in the data hook.
@@ -2225,6 +2243,37 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           {statusMessage ? (
             <div className="mt-5 rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
               {statusMessage}
+            </div>
+          ) : null}
+
+          {isMobile ? (
+            <div className="mt-4 rounded-[20px] border border-slate-200 bg-white/90 p-2 shadow-sm">
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'planner', label: 'Plan', meta: activeMobileDay?.shortLabel || 'Week' },
+                  { id: 'recipes', label: 'Recipes', meta: `${filteredLibraryRecipes.length}` },
+                  { id: 'groceries', label: 'Groceries', meta: `${groceryDraft.length}` },
+                ].map((panel) => {
+                  const isActive = mobileActivePanel === panel.id;
+                  return (
+                    <button
+                      key={panel.id}
+                      type="button"
+                      onClick={() => setMobileActivePanel(panel.id)}
+                      className={`rounded-[16px] border px-3 py-2.5 text-left transition ${
+                        isActive
+                          ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)] shadow-sm'
+                          : 'border-slate-200 bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <span className="block text-[11px] font-semibold">{panel.label}</span>
+                      <span className="mt-1 block text-[10px] font-medium uppercase tracking-[0.16em] text-current/70">
+                        {panel.meta}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
 
@@ -2338,10 +2387,10 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowReviewModal(true)}
+                  onClick={() => setMobileActivePanel('groceries')}
                   className="pm-toolbar-primary mt-3 w-full rounded-full px-4 py-3 text-sm font-semibold text-white"
                 >
-                  Review groceries
+                  Open grocery summary
                 </button>
               </div>
 
@@ -2372,12 +2421,12 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 </button>
               </div>
 
-              {isMobile ? (
+              {isMobile && isPlannerVisible ? (
                 <div className="mt-5 rounded-[20px] border border-slate-200 bg-slate-50/70 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Plan the week</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-900">Choose one day at a time on phone</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">Focus on one day at a time</p>
                     </div>
                     {activeMobileDay ? (
                       <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
@@ -2385,7 +2434,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       </span>
                     ) : null}
                   </div>
-                  <div className="mt-3 grid grid-cols-4 gap-2">
+                  <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1 no-scrollbar">
                     {weekDays.map((day) => {
                       const isActive = day.key === activeMobileDayKey;
                       return (
@@ -2393,7 +2442,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                           key={`mobile-day-${day.key}`}
                           type="button"
                           onClick={() => setActiveMobileDayKey(day.key)}
-                          className={`rounded-[16px] border px-2.5 py-2.5 text-left transition ${
+                          className={`min-w-[84px] shrink-0 rounded-[16px] border px-3 py-2.5 text-left transition ${
                             isActive
                               ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)] shadow-sm'
                               : 'border-slate-200 bg-white text-slate-600'
@@ -2412,6 +2461,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 </div>
               ) : null}
 
+              {isPlannerVisible ? (
               <div className={`mt-5 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
                 {visibleWeekDays.map((day) => {
                   const currentDayIndex = weekDays.findIndex((candidate) => candidate.key === day.key);
@@ -2693,25 +2743,17 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                   </div>
                 )})}
               </div>
+              ) : null}
             </div>
 
-            <div className="w-full min-w-0 space-y-4">
-              <div className="w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className={`w-full min-w-0 space-y-4 ${isMobile && mobileActivePanel === 'planner' ? 'hidden' : ''}`}>
+              <div className={`w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${!isRecipeLibraryVisible ? 'hidden' : ''}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p className="pm-kicker">Recipe library</p>
                     <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">Pick from imported or manual meals</h3>
                   </div>
                   <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-                    {isMobile ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowMobileRecipeLibrary((previous) => !previous)}
-                        className="pm-subtle-button w-full rounded-full px-3 py-2 text-xs font-semibold sm:w-auto"
-                      >
-                        {showMobileRecipeLibrary ? 'Hide recipes' : `Show recipes (${filteredLibraryRecipes.length})`}
-                      </button>
-                    ) : null}
                     <button type="button" onClick={() => setFormState(DEFAULT_FORM_STATE)} className="pm-subtle-button w-full rounded-full px-3 py-2 text-xs font-semibold sm:w-auto">
                       Add recipe
                     </button>
@@ -2811,21 +2853,12 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 )}
               </div>
 
-              <div className="w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className={`w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${!isShoppingGenerationVisible ? 'hidden' : ''}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="pm-kicker">Shopping generation</p>
                     <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">Review before adding groceries</h3>
                   </div>
-                  {isMobile ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowMobileShoppingGeneration((previous) => !previous)}
-                      className="pm-subtle-button w-full rounded-full px-3 py-2 text-xs font-semibold sm:w-auto"
-                    >
-                      {showMobileShoppingGeneration ? 'Hide grocery summary' : `Show grocery summary (${groceryDraft.length})`}
-                    </button>
-                  ) : null}
                 </div>
                 {isShoppingGenerationVisible ? (
                   <>

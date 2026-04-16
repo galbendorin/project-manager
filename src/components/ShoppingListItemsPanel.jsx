@@ -75,6 +75,8 @@ export default function ShoppingListItemsPanel({
   todos,
 }) {
   const duplicateBoughtCount = Math.max(0, completedTodos.length - completedTodoGroups.length);
+  const [expandedOpenTodoId, setExpandedOpenTodoId] = React.useState('');
+  const [expandedBoughtGroupId, setExpandedBoughtGroupId] = React.useState('');
 
   return (
     <div className="pm-list-shell rounded-[28px] p-3 sm:p-4">
@@ -138,6 +140,12 @@ export default function ShoppingListItemsPanel({
                   Nothing open right now.
                 </div>
               ) : openTodos.map((todo) => {
+                const isExpanded = expandedOpenTodoId === todo._id;
+                const showHelperText = pendingCompleteId === todo._id
+                  || savingTodoId === todo._id
+                  || failedTodoId === todo._id
+                  || editingTodoId === todo._id
+                  || (!isMobile && !isCompactDesktop);
                 const syncState = queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
                   ? (syncingQueue && isOnline ? 'syncing' : 'offline')
                   : '';
@@ -252,7 +260,7 @@ export default function ShoppingListItemsPanel({
                             ) : null}
                           </div>
                         </div>
-                        {(isMobile || pendingCompleteId === todo._id || savingTodoId === todo._id || failedTodoId === todo._id || !isCompactDesktop) ? (
+                        {showHelperText ? (
                           <p className={`mt-1 text-xs ${
                             pendingCompleteId === todo._id
                               ? 'text-[var(--pm-accent-strong)]'
@@ -319,21 +327,33 @@ export default function ShoppingListItemsPanel({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleStartEditingTodo(todo)}
+                                  onClick={() => setExpandedOpenTodoId((previous) => (previous === todo._id ? '' : todo._id))}
                                   disabled={savingTodoId === todo._id}
                                   className="inline-flex min-h-10 items-center rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
                                 >
-                                  Edit
+                                  {isExpanded ? 'Less' : 'More'}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => deleteTodo(todo._id)}
-                                  disabled={savingTodoId === todo._id}
-                                  className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
-                                >
-                                  <TrashIcon className="h-4 w-4" />
-                                  Delete
-                                </button>
+                                {isExpanded ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditingTodo(todo)}
+                                      disabled={savingTodoId === todo._id}
+                                      className="inline-flex min-h-10 items-center rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteTodo(todo._id)}
+                                      disabled={savingTodoId === todo._id}
+                                      className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                                    >
+                                      <TrashIcon className="h-4 w-4" />
+                                      Delete
+                                    </button>
+                                  </>
+                                ) : null}
                               </>
                             )}
                           </div>
@@ -422,6 +442,11 @@ export default function ShoppingListItemsPanel({
               ) : null}
               {completedTodoGroups.length > 0 && (!shouldCollapseBought || showBought) ? completedTodoGroups.map((group) => {
                 const todo = group.primaryTodo;
+                const isExpanded = expandedBoughtGroupId === group.key;
+                const showHelperText = savingTodoId === todo._id
+                  || failedTodoId === todo._id
+                  || editingTodoId === todo._id
+                  || (!isMobile && !isCompactDesktop);
                 const syncState = queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
                   ? (syncingQueue && isOnline ? 'syncing' : 'offline')
                   : '';
@@ -505,7 +530,7 @@ export default function ShoppingListItemsPanel({
                             ) : null}
                           </div>
                         </div>
-                        {(isMobile || savingTodoId === todo._id || failedTodoId === todo._id || !isCompactDesktop) ? (
+                        {showHelperText ? (
                           <p className={`mt-1 text-xs ${savingTodoId === todo._id ? 'text-emerald-700' : 'text-slate-400'}`}>
                             {savingTodoId === todo._id
                               ? (savingTodoAction === 'reopen' ? `Saving ${todo.title}...` : savingTodoAction === 'edit' ? `Saving ${todo.title}...` : 'Saving...')
@@ -563,30 +588,42 @@ export default function ShoppingListItemsPanel({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleToggleTodo(todo)}
+                                  onClick={() => setExpandedBoughtGroupId((previous) => (previous === group.key ? '' : group.key))}
                                   disabled={savingTodoId === todo._id}
                                   className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
                                 >
-                                  <CheckIcon className="h-4 w-4" />
-                                  Undo
+                                  {isExpanded ? 'Less' : 'More'}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleStartEditingTodo(todo)}
-                                  disabled={savingTodoId === todo._id}
-                                  className="inline-flex min-h-10 items-center rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => deleteTodo(todo._id)}
-                                  disabled={savingTodoId === todo._id}
-                                  className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
-                                >
-                                  <TrashIcon className="h-4 w-4" />
-                                  Delete
-                                </button>
+                                {isExpanded ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleTodo(todo)}
+                                      disabled={savingTodoId === todo._id}
+                                      className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                    >
+                                      <CheckIcon className="h-4 w-4" />
+                                      Undo
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditingTodo(todo)}
+                                      disabled={savingTodoId === todo._id}
+                                      className="inline-flex min-h-10 items-center rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteTodo(todo._id)}
+                                      disabled={savingTodoId === todo._id}
+                                      className="inline-flex min-h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                                    >
+                                      <TrashIcon className="h-4 w-4" />
+                                      Delete
+                                    </button>
+                                  </>
+                                ) : null}
                               </>
                             )}
                           </div>

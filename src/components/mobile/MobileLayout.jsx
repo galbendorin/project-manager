@@ -107,7 +107,7 @@ const MobileLayout = ({
     if (moreSubView === 'tracker') return 'tracker';
     if (moreSubView === 'statusreport') return 'statusreport';
     if (activeTab === 'plan') return 'schedule';
-    if (activeTab === 'todos') return 'todo';
+    if (activeTab === 'todo') return 'todo';
     return null;
   }, [activeTab, moreSubView]);
 

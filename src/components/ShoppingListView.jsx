@@ -38,6 +38,7 @@ import {
 } from '../utils/shoppingListViewState';
 import MobileSyncCenter from './MobileSyncCenter';
 import ShoppingListItemsPanel from './ShoppingListItemsPanel';
+import ShoppingListMobileControls from './ShoppingListMobileControls';
 import ShoppingListPageHeader from './ShoppingListPageHeader';
 import ProjectShareModal from './ProjectShareModal';
 import ShoppingListQuickAdd from './ShoppingListQuickAdd';
@@ -473,32 +474,34 @@ export default function ShoppingListView({ currentUserId }) {
 
   return (
     <>
-      <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <div className="px-3 py-4 sm:px-6 lg:px-8 lg:py-8">
         <div className="mx-auto max-w-7xl">
-          <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
-            <ShoppingListSidebar
-              canShareProject={canShareProject}
-              describeShoppingProject={describeShoppingProject}
-              handleDisablePushAlerts={handleDisablePushAlerts}
-              handleEnablePushAlerts={handleEnablePushAlerts}
-              onOpenShare={() => setShareOpen(true)}
-              projectError={projectError}
-              projects={projects}
-              pushBusy={pushBusy}
-              pushEnabled={pushEnabled}
-              pushMessage={pushMessage}
-              pushPermission={pushPermission}
-              pushSupported={pushSupported}
-              selectedProject={selectedProject}
-              selectedProjectId={selectedProjectId}
-              setSelectedProjectId={setSelectedProjectId}
-              shoppingProjectName={SHOPPING_PROJECT_NAME}
-              ShareIcon={Share2}
-              ShoppingBasketIcon={ShoppingBasket}
-            />
+          <div className={isMobile ? 'space-y-4' : 'grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]'}>
+            {!isMobile ? (
+              <ShoppingListSidebar
+                canShareProject={canShareProject}
+                describeShoppingProject={describeShoppingProject}
+                handleDisablePushAlerts={handleDisablePushAlerts}
+                handleEnablePushAlerts={handleEnablePushAlerts}
+                onOpenShare={() => setShareOpen(true)}
+                projectError={projectError}
+                projects={projects}
+                pushBusy={pushBusy}
+                pushEnabled={pushEnabled}
+                pushMessage={pushMessage}
+                pushPermission={pushPermission}
+                pushSupported={pushSupported}
+                selectedProject={selectedProject}
+                selectedProjectId={selectedProjectId}
+                setSelectedProjectId={setSelectedProjectId}
+                shoppingProjectName={SHOPPING_PROJECT_NAME}
+                ShareIcon={Share2}
+                ShoppingBasketIcon={ShoppingBasket}
+              />
+            ) : null}
 
-            <main className="order-1 min-w-0 lg:order-2">
-              <div className="pm-home-panel rounded-[30px] p-5 sm:p-6">
+            <main className={isMobile ? 'min-w-0' : 'order-1 min-w-0 lg:order-2'}>
+              <div className="pm-home-panel rounded-[24px] p-4 sm:rounded-[30px] sm:p-6">
                 <ShoppingListPageHeader
                   canShareProject={canShareProject}
                   onOpenShare={() => setShareOpen(true)}
@@ -506,6 +509,27 @@ export default function ShoppingListView({ currentUserId }) {
                   shoppingProjectName={SHOPPING_PROJECT_NAME}
                   sparklesIcon={Sparkles}
                 />
+
+                {isMobile ? (
+                  <ShoppingListMobileControls
+                    canShareProject={canShareProject}
+                    describeShoppingProject={describeShoppingProject}
+                    handleDisablePushAlerts={handleDisablePushAlerts}
+                    handleEnablePushAlerts={handleEnablePushAlerts}
+                    onOpenShare={() => setShareOpen(true)}
+                    projectError={projectError}
+                    projects={projects}
+                    pushBusy={pushBusy}
+                    pushEnabled={pushEnabled}
+                    pushMessage={pushMessage}
+                    pushPermission={pushPermission}
+                    pushSupported={pushSupported}
+                    selectedProject={selectedProject}
+                    selectedProjectId={selectedProjectId}
+                    setSelectedProjectId={setSelectedProjectId}
+                    shoppingProjectName={SHOPPING_PROJECT_NAME}
+                  />
+                ) : null}
 
                 <ShoppingListQuickAdd
                   AddIcon={Plus}
