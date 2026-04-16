@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { MANUAL_TODO_SELECT, mapManualTodoRow } from './projectData/manualTodoUtils';
+import { SHOPPING_MANUAL_TODO_SELECT, mapManualTodoRow } from './projectData/manualTodoUtils';
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
 import { replaceQueuedTargetId } from '../utils/offlineQueue';
 
@@ -53,8 +53,13 @@ export function useShoppingListOfflineSync({
             status: op.record.status,
             recurrence: null,
             completed_at: op.record.completedAt || null,
+            quantity_value: op.record.quantityValue ?? null,
+            quantity_unit: op.record.quantityUnit || '',
+            source_type: op.record.sourceType || '',
+            source_batch_id: op.record.sourceBatchId || null,
+            meta: op.record.meta || {},
           })
-          .select(MANUAL_TODO_SELECT)
+          .select(SHOPPING_MANUAL_TODO_SELECT)
           .single();
 
         if (error || !data) break;
@@ -74,8 +79,11 @@ export function useShoppingListOfflineSync({
         const { error } = await supabase
           .from('manual_todos')
           .update({
-            status: op.patch.status,
-            completed_at: op.patch.completedAt || null,
+            ...(Object.prototype.hasOwnProperty.call(op.patch, 'title') ? { title: op.patch.title } : {}),
+            ...(Object.prototype.hasOwnProperty.call(op.patch, 'status') ? { status: op.patch.status } : {}),
+            ...(Object.prototype.hasOwnProperty.call(op.patch, 'completedAt') ? { completed_at: op.patch.completedAt || null } : {}),
+            ...(Object.prototype.hasOwnProperty.call(op.patch, 'quantityValue') ? { quantity_value: op.patch.quantityValue } : {}),
+            ...(Object.prototype.hasOwnProperty.call(op.patch, 'quantityUnit') ? { quantity_unit: op.patch.quantityUnit || '' } : {}),
             updated_at: op.patch.updatedAt || new Date().toISOString(),
           })
           .eq('id', op.targetId);

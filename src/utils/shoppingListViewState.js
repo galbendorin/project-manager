@@ -31,16 +31,173 @@ export const sortTodos = (items = []) => (
   })
 );
 
-export const normalizeBoughtTodoTitle = (value = '') => (
+const toShoppingQuantity = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const next = Number(value);
+  return Number.isFinite(next) ? next : null;
+};
+
+const roundShoppingQuantity = (value) => {
+  const next = toShoppingQuantity(value);
+  if (next === null) return null;
+  return Math.round(next * 100) / 100;
+};
+
+const normalizeShoppingUnit = (value = '') => (
+  String(value || '')
+    .trim()
+    .toLowerCase()
+);
+
+export const normalizeShoppingTodoTitle = (value = '') => (
   String(value || '')
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ')
 );
 
+export const normalizeBoughtTodoTitle = normalizeShoppingTodoTitle;
+
 const getTodoActivityTime = (todo = {}) => (
   new Date(todo.completedAt || todo.updatedAt || todo.createdAt || 0).getTime()
 );
+
+export const mergeShoppingItemQuantity = (existingItem = {}, incomingItem = {}) => {
+  const existingQuantity = toShoppingQuantity(existingItem.quantityValue);
+  const incomingQuantity = toShoppingQuantity(incomingItem.quantityValue);
+  const existingUnit = String(existingItem.quantityUnit || '').trim();
+  const incomingUnit = String(incomingItem.quantityUnit || '').trim();
+  const normalizedExistingUnit = normalizeShoppingUnit(existingUnit);
+  const normalizedIncomingUnit = normalizeShoppingUnit(incomingUnit);
+
+  if (incomingQuantity === null) {
+    return {
+      quantityValue: existingQuantity,
+      quantityUnit: existingUnit || incomingUnit || '',
+    };
+  }
+
+  if (existingQuantity === null) {
+    return {
+      quantityValue: incomingQuantity,
+      quantityUnit: incomingUnit || existingUnit || '',
+    };
+  }
+
+  if (normalizedExistingUnit && normalizedIncomingUnit && normalizedExistingUnit === normalizedIncomingUnit) {
+    return {
+      quantityValue: roundShoppingQuantity(existingQuantity + incomingQuantity),
+      quantityUnit: incomingUnit || existingUnit || '',
+    };
+  }
+
+  if (!normalizedExistingUnit && normalizedIncomingUnit) {
+    return {
+      quantityValue: incomingQuantity,
+      quantityUnit: incomingUnit,
+    };
+  }
+
+  return {
+    quantityValue: existingQuantity,
+    quantityUnit: existingUnit || incomingUnit || '',
+  };
+};
+
+export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] }) => {
+  const openTodosByTitle = new Map();
+
+  for (const todo of Array.isArray(existingTodos) ? existingTodos : []) {
+    if (!todo?._id || todo.status === 'Done') continue;
+    const key = normalizeShoppingTodoTitle(todo.title);
+    if (!key) continue;
+
+    const current = openTodosByTitle.get(key);
+    if (!current || getTodoActivityTime(todo) > getTodoActivityTime(current)) {
+      openTodosByTitle.set(key, todo);
+    }
+  }
+
+  const consolidatedIncoming = new Map();
+
+  for (const item of Array.isArray(incomingItems) ? incomingItems : []) {
+    const title = String(item?.title || '').trim();
+    const key = normalizeShoppingTodoTitle(title);
+    if (!key) continue;
+
+    const normalizedItem = {
+      ...item,
+      title,
+      quantityValue: toShoppingQuantity(item?.quantityValue),
+      quantityUnit: String(item?.quantityUnit || '').trim(),
+      sourceType: String(item?.sourceType || '').trim(),
+      sourceBatchId: item?.sourceBatchId || null,
+      meta: item?.meta && typeof item.meta === 'object' ? item.meta : {},
+    };
+
+    const current = consolidatedIncoming.get(key);
+    if (!current) {
+      consolidatedIncoming.set(key, normalizedItem);
+      continue;
+    }
+
+    const mergedQuantity = mergeShoppingItemQuantity(current, normalizedItem);
+    consolidatedIncoming.set(key, {
+      ...current,
+      ...normalizedItem,
+      quantityValue: mergedQuantity.quantityValue,
+      quantityUnit: mergedQuantity.quantityUnit,
+      sourceType: current.sourceType || normalizedItem.sourceType,
+      sourceBatchId: current.sourceBatchId || normalizedItem.sourceBatchId,
+      meta: Object.keys(current.meta || {}).length > 0 ? current.meta : normalizedItem.meta,
+    });
+  }
+
+  const inserts = [];
+  const updates = [];
+
+  for (const item of consolidatedIncoming.values()) {
+    const key = normalizeShoppingTodoTitle(item.title);
+    const existingTodo = openTodosByTitle.get(key);
+
+    if (!existingTodo) {
+      inserts.push(item);
+      continue;
+    }
+
+    const mergedQuantity = mergeShoppingItemQuantity(existingTodo, item);
+    updates.push({
+      todoId: existingTodo._id,
+      title: existingTodo.title || item.title,
+      quantityValue: mergedQuantity.quantityValue,
+      quantityUnit: mergedQuantity.quantityUnit,
+    });
+  }
+
+  return {
+    inserts,
+    updates,
+    addedCount: inserts.length,
+    mergedCount: updates.length,
+  };
+};
+
+export const formatShoppingAddSummary = ({ addedCount = 0, mergedCount = 0 } = {}) => {
+  if (addedCount > 0 && mergedCount > 0) {
+    return `Added ${addedCount} ${addedCount === 1 ? 'grocery' : 'groceries'} and updated ${mergedCount} already on the list.`;
+  }
+  if (addedCount > 0) {
+    return addedCount === 1
+      ? 'Added 1 grocery.'
+      : `Added ${addedCount} groceries.`;
+  }
+  if (mergedCount > 0) {
+    return mergedCount === 1
+      ? 'Updated 1 grocery already on the list.'
+      : `Updated ${mergedCount} groceries already on the list.`;
+  }
+  return 'No groceries were added.';
+};
 
 export const groupCompletedShoppingTodos = (items = []) => {
   const groups = new Map();

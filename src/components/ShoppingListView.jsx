@@ -23,6 +23,7 @@ import {
   createOfflineShoppingTodo,
   describeShoppingProject,
   formatSyncTimeLabel,
+  formatShoppingAddSummary,
   generateProjectId,
   groupCompletedShoppingTodos,
   isProjectRelationMissingError,
@@ -331,10 +332,22 @@ export default function ShoppingListView({ currentUserId }) {
     event.preventDefault();
     const items = splitTypedGroceries(draftTitle);
     if (items.length === 0) return;
-    await addItems(items);
+    const summary = await addItems(items);
     setDraftTitle('');
-    setVoiceMessage(items.length === 1 ? `Added ${items[0]}.` : `Added ${items.length} groceries.`);
+    setVoiceMessage(formatShoppingAddSummary(summary));
   }, [addItems, draftTitle, setVoiceMessage]);
+
+  const handleAddAgainTodo = useCallback(async (todo) => {
+    const summary = await addItems([{
+      title: todo?.title || '',
+      quantityValue: todo?.quantityValue ?? null,
+      quantityUnit: todo?.quantityUnit || '',
+      sourceType: '',
+      sourceBatchId: null,
+      meta: {},
+    }]);
+    setVoiceMessage(formatShoppingAddSummary(summary));
+  }, [addItems, setVoiceMessage]);
 
   const handleStartEditingTodo = useCallback((todo) => {
     clearPendingCompletion();
@@ -552,6 +565,7 @@ export default function ShoppingListView({ currentUserId }) {
                     loadingTodos={loadingTodos}
                     offlineQueue={offlineQueue}
                     openTodos={openTodos}
+                    onAddAgain={handleAddAgainTodo}
                     pendingCompleteId={pendingCompleteId}
                     pendingCompleteSeconds={pendingCompleteSeconds}
                     queuedTodoIds={queuedTodoIds}

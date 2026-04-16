@@ -58,6 +58,7 @@ export default function ShoppingListItemsPanel({
   loadingTodos,
   offlineQueue,
   openTodos,
+  onAddAgain,
   pendingCompleteId,
   pendingCompleteSeconds,
   queuedTodoIds,
@@ -554,6 +555,14 @@ export default function ShoppingListItemsPanel({
                               <>
                                 <button
                                   type="button"
+                                  onClick={() => void onAddAgain(todo)}
+                                  disabled={savingTodoId === todo._id}
+                                  className="inline-flex min-h-10 items-center rounded-full border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-3.5 text-sm font-semibold text-[var(--pm-accent-strong)] transition hover:bg-white"
+                                >
+                                  Add again
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => handleToggleTodo(todo)}
                                   disabled={savingTodoId === todo._id}
                                   className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
@@ -605,14 +614,24 @@ export default function ShoppingListItemsPanel({
                               </button>
                             </>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditingTodo(todo)}
-                              disabled={savingTodoId === todo._id}
-                              className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-                            >
-                              Edit
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void onAddAgain(todo)}
+                                disabled={savingTodoId === todo._id}
+                                className="inline-flex items-center rounded-full border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)] transition hover:bg-white"
+                              >
+                                Add again
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditingTodo(todo)}
+                                disabled={savingTodoId === todo._id}
+                                className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                              >
+                                Edit
+                              </button>
+                            </>
                           )}
                           <button
                             type="button"

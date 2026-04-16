@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { formatShoppingAddSummary } from '../utils/shoppingListViewState';
 
 const VOICE_GRACE_PERIOD_MS = 2000;
 const VOICE_RESTART_DELAY_MS = 150;
@@ -179,8 +180,8 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
       return;
     }
 
-    await addItems(items);
-    setVoiceMessage(items.length === 1 ? `Added ${items[0]}.` : `Added ${items.length} groceries.`);
+    const summary = await addItems(items);
+    setVoiceMessage(formatShoppingAddSummary(summary));
   }, [addItems, setDraftTitle]);
 
   const finalizeVoiceCapture = useCallback(async () => {

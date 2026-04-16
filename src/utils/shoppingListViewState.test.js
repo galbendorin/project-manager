@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 
 import {
   createEmptyShoppingOfflineState,
+  formatShoppingAddSummary,
   groupCompletedShoppingTodos,
+  mergeShoppingItemQuantity,
   normalizeShoppingOfflineState,
   normalizeBoughtTodoTitle,
+  planShoppingListAdds,
   pickPreferredShoppingProject,
 } from './shoppingListViewState.js';
 
@@ -97,4 +100,65 @@ test('groupCompletedShoppingTodos collapses repeated bought groceries into one r
   assert.equal(groups[0].count, 2);
   assert.equal(groups[1].primaryTodo._id, 'todo-milk');
   assert.equal(groups[1].count, 1);
+});
+
+test('mergeShoppingItemQuantity sums matching quantity units and keeps one row', () => {
+  const merged = mergeShoppingItemQuantity(
+    { quantityValue: 2, quantityUnit: 'pcs' },
+    { quantityValue: 3, quantityUnit: 'pcs' },
+  );
+
+  assert.equal(merged.quantityValue, 5);
+  assert.equal(merged.quantityUnit, 'pcs');
+});
+
+test('planShoppingListAdds merges duplicate incoming groceries into existing open rows', () => {
+  const plan = planShoppingListAdds({
+    existingTodos: [
+      {
+        _id: 'todo-eggs-open',
+        title: 'Eggs',
+        status: 'Open',
+        quantityValue: 2,
+        quantityUnit: 'pcs',
+        updatedAt: '2026-04-16T08:00:00.000Z',
+      },
+    ],
+    incomingItems: [
+      { title: ' eggs ', quantityValue: 3, quantityUnit: 'pcs' },
+      { title: 'Milk', quantityValue: null, quantityUnit: '' },
+    ],
+  });
+
+  assert.equal(plan.addedCount, 1);
+  assert.equal(plan.mergedCount, 1);
+  assert.equal(plan.updates[0].todoId, 'todo-eggs-open');
+  assert.equal(plan.updates[0].quantityValue, 5);
+  assert.equal(plan.inserts[0].title, 'Milk');
+});
+
+test('planShoppingListAdds collapses duplicate incoming groceries before insert', () => {
+  const plan = planShoppingListAdds({
+    existingTodos: [],
+    incomingItems: [
+      { title: 'Tomatoes', quantityValue: 2, quantityUnit: 'pcs' },
+      { title: ' tomatoes ', quantityValue: 3, quantityUnit: 'pcs' },
+    ],
+  });
+
+  assert.equal(plan.addedCount, 1);
+  assert.equal(plan.mergedCount, 0);
+  assert.equal(plan.inserts[0].title, 'tomatoes');
+  assert.equal(plan.inserts[0].quantityValue, 5);
+});
+
+test('formatShoppingAddSummary reports mixed add and merge outcomes clearly', () => {
+  assert.equal(
+    formatShoppingAddSummary({ addedCount: 1, mergedCount: 2 }),
+    'Added 1 grocery and updated 2 already on the list.'
+  );
+  assert.equal(
+    formatShoppingAddSummary({ addedCount: 0, mergedCount: 1 }),
+    'Updated 1 grocery already on the list.'
+  );
 });
