@@ -1620,9 +1620,12 @@ function GroceryReviewModal({
                 onClick={() => setShowHiddenDraft((value) => !value)}
                 className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
               >
-                {showHiddenDraft ? 'Hide hidden groceries' : `Show hidden groceries (${hiddenDraft.length})`}
+                {showHiddenDraft ? 'Hide excluded groceries' : `Show excluded groceries (${hiddenDraft.length})`}
               </button>
             </div>
+            <p className="mt-2 text-xs text-amber-800/80">
+              These items stay out of this week&apos;s draft until you restore them.
+            </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -1632,7 +1635,7 @@ function GroceryReviewModal({
                 disabled={saving}
                 className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
               >
-                Restore all
+                Restore all groceries
               </button>
             </div>
             {showHiddenDraft ? (
@@ -1665,7 +1668,7 @@ function GroceryReviewModal({
                         disabled={saving}
                         className="rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
                       >
-                        Restore this grocery
+                        Restore to draft
                       </button>
                     </div>
                   </div>
@@ -1704,7 +1707,7 @@ function GroceryReviewModal({
                   disabled={saving}
                   className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
                 >
-                  Exclude from this week
+                  Hide for this week
                 </button>
               </div>
             </div>

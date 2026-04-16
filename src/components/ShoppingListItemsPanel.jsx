@@ -482,7 +482,7 @@ export default function ShoppingListItemsPanel({
                                 <ShoppingItemMeta todo={todo} />
                                 {group.count > 1 ? (
                                   <p className="mt-2 text-[11px] font-semibold text-slate-500">
-                                    {group.count} bought entries grouped here so the memory list stays clean.
+                                    {group.count} bought entries grouped here so this stays easy to reuse.
                                   </p>
                                 ) : null}
                               </>
@@ -512,10 +512,10 @@ export default function ShoppingListItemsPanel({
                               : editingTodoId === todo._id
                                 ? 'Update the grocery name, then save it.'
                                 : (isMobile
-                                  ? 'Use Undo if this needs to go back on the live list.'
+                                  ? 'Use Add again to bring this back, or Undo if it was marked bought by mistake.'
                                   : (group.count > 1
-                                    ? 'Tap the check to reuse the latest copy while older bought duplicates stay grouped here.'
-                                    : 'Tap the check if you need to reopen it.'))}
+                                    ? 'Use Add again to bring this back while older duplicates stay grouped here.'
+                                    : 'Use Add again to bring this back, or Undo if it was marked bought by mistake.'))}
                           </p>
                         ) : null}
                         {failedTodoId === todo._id ? (
@@ -559,7 +559,7 @@ export default function ShoppingListItemsPanel({
                                   disabled={savingTodoId === todo._id}
                                   className="inline-flex min-h-10 items-center rounded-full border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-3.5 text-sm font-semibold text-[var(--pm-accent-strong)] transition hover:bg-white"
                                 >
-                                  Add again
+                                  Add back
                                 </button>
                                 <button
                                   type="button"
@@ -621,7 +621,7 @@ export default function ShoppingListItemsPanel({
                                 disabled={savingTodoId === todo._id}
                                 className="inline-flex items-center rounded-full border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-3 py-2 text-xs font-semibold text-[var(--pm-accent-strong)] transition hover:bg-white"
                               >
-                                Add again
+                                Add back
                               </button>
                               <button
                                 type="button"

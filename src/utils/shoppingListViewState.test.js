@@ -155,10 +155,10 @@ test('planShoppingListAdds collapses duplicate incoming groceries before insert'
 test('formatShoppingAddSummary reports mixed add and merge outcomes clearly', () => {
   assert.equal(
     formatShoppingAddSummary({ addedCount: 1, mergedCount: 2 }),
-    'Added 1 grocery and updated 2 already on the list.'
+    'Added 1 new grocery and merged 2 into the open list.'
   );
   assert.equal(
     formatShoppingAddSummary({ addedCount: 0, mergedCount: 1 }),
-    'Updated 1 grocery already on the list.'
+    'Merged 1 grocery into the open list.'
   );
 });

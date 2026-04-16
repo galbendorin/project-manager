@@ -184,17 +184,17 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
 
 export const formatShoppingAddSummary = ({ addedCount = 0, mergedCount = 0 } = {}) => {
   if (addedCount > 0 && mergedCount > 0) {
-    return `Added ${addedCount} ${addedCount === 1 ? 'grocery' : 'groceries'} and updated ${mergedCount} already on the list.`;
+    return `Added ${addedCount} new ${addedCount === 1 ? 'grocery' : 'groceries'} and merged ${mergedCount} into the open list.`;
   }
   if (addedCount > 0) {
     return addedCount === 1
-      ? 'Added 1 grocery.'
-      : `Added ${addedCount} groceries.`;
+      ? 'Added 1 new grocery.'
+      : `Added ${addedCount} new groceries.`;
   }
   if (mergedCount > 0) {
     return mergedCount === 1
-      ? 'Updated 1 grocery already on the list.'
-      : `Updated ${mergedCount} groceries already on the list.`;
+      ? 'Merged 1 grocery into the open list.'
+      : `Merged ${mergedCount} groceries into the open list.`;
   }
   return 'No groceries were added.';
 };
