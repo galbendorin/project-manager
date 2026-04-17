@@ -17,7 +17,7 @@ Those can stay as archive or scratch space, but not as the place we edit and shi
 ### Branch rules
 
 - `main` = stable branch only
-- `codex/redesign-v1` = current redesign and cleanup branch
+- `codex/stability` = current working branch for cleanup, fixes, and safe app improvements
 - future work branches should follow `codex/<topic>`
 
 ### Local workflow
@@ -26,7 +26,7 @@ Those can stay as archive or scratch space, but not as the place we edit and shi
 cd /Users/doringalben/Documents/project-manager
 git checkout main
 git pull
-git checkout codex/redesign-v1
+git checkout codex/stability
 npm install
 npm run dev
 ```
