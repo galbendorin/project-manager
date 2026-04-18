@@ -9,48 +9,14 @@ import ProjectShareModal from './ProjectShareModal';
 import PmWorkspaceLogo from './PmWorkspaceLogo';
 import AccentThemePicker from './AccentThemePicker';
 import {
-  countOwnedProjects,
   normalizeProjectRecord,
-  shouldSeedDemoProject,
   summarizeProjectAccess,
 } from '../utils/projectSharing';
-
-const DEMO_SEED_FLAG = 'default_demo_seed_v1';
-
-const getLocalDemoSeedKey = (userId) => `pm_demo_seeded_${userId || 'anonymous'}`;
-
-const readLocalDemoSeedFlag = (userId) => {
-  if (!userId || typeof window === 'undefined') return false;
-  try {
-    return localStorage.getItem(getLocalDemoSeedKey(userId)) === '1';
-  } catch {
-    return false;
-  }
-};
-
-const writeLocalDemoSeedFlag = (userId) => {
-  if (!userId || typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(getLocalDemoSeedKey(userId), '1');
-  } catch {
-    // Ignore localStorage write failures.
-  }
-};
+import { createProjectWithLimits, getProjectCreationErrorMessage } from '../utils/projectCreation';
 
 const isMissingColumnError = (error, columnName) => {
   const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
   return msg.includes(columnName.toLowerCase()) && msg.includes('column');
-};
-
-const extractMissingColumnName = (error) => {
-  const msg = `${error?.message || ''} ${error?.details || ''}`;
-  const schemaCacheMatch = msg.match(/could not find the '([^']+)' column/i);
-  if (schemaCacheMatch?.[1]) return schemaCacheMatch[1];
-
-  const relationMatch = msg.match(/column ["']?([a-zA-Z0-9_]+)["']?[^.]*does not exist/i);
-  if (relationMatch?.[1]) return relationMatch[1];
-
-  return null;
 };
 
 const isMissingRelationError = (error, relationName) => {
@@ -64,152 +30,59 @@ const isRowLevelSecurityError = (error, tableName = '') => {
     && (!tableName || msg.includes(tableName.toLowerCase()));
 };
 
-const generateProjectId = () => {
-  if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID();
-  }
-  return '';
-};
-
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const getFriendlyProjectCreateErrorMessage = (error) => {
-  const message = error?.message || 'Unable to create project. Please try again.';
-
   if (isRowLevelSecurityError(error, 'projects')) {
     return 'We could not create the project right away. Refresh once and try again.';
   }
-
-  if (message.toLowerCase().includes('duplicate')) {
-    return 'A duplicate project record was detected. Please retry once.';
-  }
-
-  return message;
+  return getProjectCreationErrorMessage(error);
 };
 
 const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShopping, accentTheme, onAccentThemeChange }) => {
   const { user, signOut } = useAuth();
-  const { canCreateProject, limits, isReadOnly, refreshProjectCount } = usePlan();
+  const { canCreateProject, limits, householdToolsEnabled, isReadOnly, refreshProjectCount } = usePlan();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Loading projects...');
   const [newProjectName, setNewProjectName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [creatingSample, setCreatingSample] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [sampleProjectError, setSampleProjectError] = useState('');
   const [shareProjectId, setShareProjectId] = useState(null);
   const supportsIsDemoRef = useRef(true);
   const supportsProjectMembersRef = useRef(true);
-  const isSeedingDemoRef = useRef(false);
-  const demoSeededRef = useRef(
-    Boolean(user?.user_metadata?.[DEMO_SEED_FLAG]) || readLocalDemoSeedFlag(user?.id)
-  );
   const inputRef = useRef(null);
-
-  useEffect(() => {
-    demoSeededRef.current = Boolean(user?.user_metadata?.[DEMO_SEED_FLAG]) || readLocalDemoSeedFlag(user?.id);
-  }, [user?.id, user?.user_metadata]);
 
   const normalizeProject = useCallback((project) => normalizeProjectRecord(project, user?.id), [user?.id]);
 
   const accessSummary = useMemo(() => summarizeProjectAccess(projects, user?.id), [projects, user?.id]);
+  const ownedSampleProject = useMemo(
+    () => projects.find((project) => project.isOwned && project.is_demo) || null,
+    [projects]
+  );
+  const showInternalLaunchCards = householdToolsEnabled;
   const shareProject = useMemo(
     () => projects.find((project) => project.id === shareProjectId) || null,
     [projects, shareProjectId]
   );
 
   const createProjectRecord = useCallback(async (payload, includeIsDemo = supportsIsDemoRef.current) => {
-    const selectCols = includeIsDemo
-      ? 'id, user_id, name, is_demo, created_at, updated_at'
-      : 'id, user_id, name, created_at, updated_at';
-
-    const baseInsertPayload = includeIsDemo
-      ? payload
-      : Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'is_demo'));
-    const generatedProjectId = baseInsertPayload.id || generateProjectId();
-    const insertPayload = generatedProjectId
-      ? {
-          id: generatedProjectId,
-          ...baseInsertPayload
-        }
-      : baseInsertPayload;
-
-    const insertProjectWithFetchFallback = async (projectPayload, projectSelectCols, expectsIsDemo) => {
-      let { data, error } = await supabase
-        .from('projects')
-        .insert(projectPayload)
-        .select(projectSelectCols)
-        .single();
-
-      if (!error || !projectPayload.id || !isRowLevelSecurityError(error, 'projects')) {
-        return { data, error };
-      }
-
-      const { error: insertError } = await supabase
-        .from('projects')
-        .insert(projectPayload);
-
-      const insertSucceededOrAlreadyExists = !insertError || insertError.code === '23505';
-      if (!insertSucceededOrAlreadyExists) {
-        return { data: null, error: insertError };
-      }
-
-      const fetchResult = await supabase
-        .from('projects')
-        .select(projectSelectCols)
-        .eq('id', projectPayload.id)
-        .single();
-
-      if (!fetchResult.error && fetchResult.data) {
-        return fetchResult;
-      }
-
-      if (fetchResult.error && insertError?.code === '23505') {
-        return { data: null, error: fetchResult.error };
-      }
-
-      const optimisticTimestamp = new Date().toISOString();
-      return {
-        data: {
-          id: projectPayload.id,
-          user_id: projectPayload.user_id,
-          name: projectPayload.name || '',
-          is_demo: expectsIsDemo ? Boolean(projectPayload.is_demo) : false,
-          created_at: optimisticTimestamp,
-          updated_at: optimisticTimestamp
-        },
-        error: null
-      };
+    const snapshot = {
+      tasks: payload?.tasks || [],
+      registers: payload?.registers || {},
+      tracker: payload?.tracker || [],
+      status_report: payload?.status_report || {},
+      baseline: payload?.baseline ?? null,
     };
 
-    let { data, error } = await insertProjectWithFetchFallback(insertPayload, selectCols, includeIsDemo);
-
-    if (error && includeIsDemo && isMissingColumnError(error, 'is_demo')) {
-      supportsIsDemoRef.current = false;
-      const retry = await insertProjectWithFetchFallback(
-        Object.fromEntries(Object.entries(insertPayload).filter(([key]) => key !== 'is_demo')),
-        'id, user_id, name, created_at, updated_at',
-        false
-      );
-      data = retry.data;
-      error = retry.error;
-    }
-
-    if (error) {
-      const missingColumn = extractMissingColumnName(error);
-      const canRetryWithoutColumn =
-        missingColumn &&
-        missingColumn !== 'is_demo' &&
-        Object.prototype.hasOwnProperty.call(insertPayload, missingColumn);
-
-      if (canRetryWithoutColumn) {
-        const retryPayload = Object.fromEntries(
-          Object.entries(insertPayload).filter(([key]) => key !== missingColumn)
-        );
-        const retry = await insertProjectWithFetchFallback(retryPayload, selectCols, includeIsDemo);
-        data = retry.data;
-        error = retry.error;
-      }
-    }
+    const { data, error } = await createProjectWithLimits({
+      projectId: payload?.id || null,
+      name: payload?.name || '',
+      snapshot,
+      isDemo: includeIsDemo ? Boolean(payload?.is_demo) : false,
+    });
 
     if (error || !data) {
       return { data: null, error: error || new Error('Project create failed') };
@@ -217,37 +90,24 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
     return { data: normalizeProject(data), error: null };
   }, [normalizeProject]);
 
-  const markDemoSeeded = useCallback(async () => {
-    if (!user?.id || demoSeededRef.current) return;
+  const createSampleProject = useCallback(async () => {
+    if (!user?.id || ownedSampleProject || creatingSample) return;
 
-    demoSeededRef.current = true;
-    writeLocalDemoSeedFlag(user.id);
-
-    const userMetadata = (user?.user_metadata && typeof user.user_metadata === 'object')
-      ? user.user_metadata
-      : {};
-    if (userMetadata[DEMO_SEED_FLAG]) return;
-
-    const { error } = await supabase.auth.updateUser({
-      data: {
-        ...userMetadata,
-        [DEMO_SEED_FLAG]: true
-      }
-    });
-
-    if (error) {
-      console.warn('Failed to persist demo-seeded flag in auth metadata:', error);
+    if (!canCreateProject) {
+      setSampleProjectError(`Your ${limits.label} plan allows ${limits.maxProjects} project${limits.maxProjects !== 1 ? 's' : ''}. Upgrade to Pro for more.`);
+      return;
     }
-  }, [user?.id, user?.user_metadata]);
 
-  const seedDemoProject = useCallback(async (retriesLeft = 2) => {
+    setSampleProjectError('');
+    setCreatingSample(true);
+
     const demoPayload = buildDemoProjectPayload({
       anchorDate: user?.created_at,
       startOffsetDays: 0
     });
     const { data, error } = await createProjectRecord({
       user_id: user.id,
-      name: 'Network Transformation Demo',
+      name: 'Network Transformation Sample',
       tasks: demoPayload.tasks,
       registers: demoPayload.registers,
       tracker: demoPayload.tracker,
@@ -256,18 +116,27 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
       is_demo: true
     });
 
-    if (error) {
-      console.error('Failed to auto-seed demo project:', error);
-      if (retriesLeft > 0) {
-        setLoadingMessage('Setting up your workspace...');
-        await sleep(3000);
-        return seedDemoProject(retriesLeft - 1);
-      }
-      return null;
+    if (!error && data) {
+      refreshProjectCount();
+      onSelectProject(data);
+      setCreatingSample(false);
+      return;
     }
-    await markDemoSeeded();
-    return data;
-  }, [createProjectRecord, markDemoSeeded, user.id, user?.created_at]);
+
+    setSampleProjectError(getFriendlyProjectCreateErrorMessage(error));
+    setCreatingSample(false);
+  }, [
+    canCreateProject,
+    createProjectRecord,
+    creatingSample,
+    limits.label,
+    limits.maxProjects,
+    onSelectProject,
+    ownedSampleProject,
+    refreshProjectCount,
+    user?.created_at,
+    user?.id,
+  ]);
 
   const runProjectQuery = useCallback(async (includeIsDemo, includeMembers) => {
     const selectParts = [
@@ -354,33 +223,9 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
 
     let nextProjects = (data || []).map(normalizeProject);
 
-    const ownedProjectCount = countOwnedProjects(nextProjects, user.id);
-    const hasOwnedProjects = ownedProjectCount > 0;
-
-    if (hasOwnedProjects && !demoSeededRef.current) {
-      markDemoSeeded();
-    }
-
-    if (
-      shouldSeedDemoProject({
-        projects: nextProjects,
-        currentUserId: user.id,
-        demoSeeded: demoSeededRef.current,
-      })
-      && !isSeedingDemoRef.current
-    ) {
-      isSeedingDemoRef.current = true;
-      setLoadingMessage('Setting up your workspace...');
-      const seeded = await seedDemoProject();
-      isSeedingDemoRef.current = false;
-      if (seeded) {
-        nextProjects = [seeded, ...nextProjects];
-      }
-    }
-
     setProjects(nextProjects);
     setLoading(false);
-  }, [markDemoSeeded, normalizeProject, queryProjects, seedDemoProject, user?.id]);
+  }, [normalizeProject, queryProjects, user?.id]);
 
   useEffect(() => {
     if (user?.id) {
@@ -426,7 +271,6 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
 
     if (!error && data) {
       setNewProjectName('');
-      markDemoSeeded();
       refreshProjectCount();
       onSelectProject(data);
     } else {
@@ -437,7 +281,7 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
       }
     }
     setCreating(false);
-  }, [newProjectName, creating, createProjectRecord, markDemoSeeded, user?.id, onSelectProject, canCreateProject, limits, refreshProjectCount]);
+  }, [newProjectName, creating, createProjectRecord, user?.id, onSelectProject, canCreateProject, limits, refreshProjectCount]);
 
   const deleteProject = async (projectId, e) => {
     e.stopPropagation();
@@ -510,67 +354,71 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
                   </div>
                 )}
 
-                <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="pm-kicker">Meal Planner</p>
-                      <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Plan meals</h2>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">
-                        Build a Monday-to-Sunday meal plan, reuse recipes, and turn the week into one grocery draft.
-                      </p>
+                {showInternalLaunchCards && (
+                  <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="pm-kicker">Meal Planner</p>
+                        <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Plan meals</h2>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                          Build a Monday-to-Sunday meal plan, reuse recipes, and turn the week into one grocery draft.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onOpenMeals}
+                        className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
+                      >
+                        Open
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={onOpenMeals}
-                      className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
-                    >
-                      Open
-                    </button>
-                  </div>
 
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                      Weekly planner
-                    </span>
-                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                      Recipe library
-                    </span>
-                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                      Shopping draft
-                    </span>
-                  </div>
-                </div>
-
-                <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="pm-kicker">Shopping List</p>
-                      <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Share groceries</h2>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">
-                        Keep one simple grocery list you can share with your household and update by voice.
-                      </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                        Weekly planner
+                      </span>
+                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                        Recipe library
+                      </span>
+                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                        Shopping draft
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={onOpenShopping}
-                      className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
-                    >
-                      Open
-                    </button>
                   </div>
+                )}
 
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                      Shared list
-                    </span>
-                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                      Voice add
-                    </span>
-                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                      Groceries
-                    </span>
+                {showInternalLaunchCards && (
+                  <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="pm-kicker">Shopping List</p>
+                        <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Share groceries</h2>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                          Keep one simple grocery list you can share with your household and update by voice.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onOpenShopping}
+                        className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
+                      >
+                        Open
+                      </button>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                        Shared list
+                      </span>
+                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                        Voice add
+                      </span>
+                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                        Groceries
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
                   <div className="flex items-start justify-between gap-3">
@@ -660,37 +508,41 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
                   </div>
                 )}
 
-                <div className="pm-utility-card rounded-[22px] px-3.5 py-3 lg:hidden">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="pm-kicker mb-1">Meal Planner</p>
-                      <h2 className="truncate text-base font-semibold text-slate-900">Plan meals</h2>
+                {showInternalLaunchCards && (
+                  <div className="pm-utility-card rounded-[22px] px-3.5 py-3 lg:hidden">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="pm-kicker mb-1">Meal Planner</p>
+                        <h2 className="truncate text-base font-semibold text-slate-900">Plan meals</h2>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onOpenMeals}
+                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
+                      >
+                        Open
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={onOpenMeals}
-                      className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                    >
-                      Open
-                    </button>
                   </div>
-                </div>
+                )}
 
-                <div className="pm-utility-card mt-3 rounded-[22px] px-3.5 py-3 lg:hidden">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="pm-kicker mb-1">Shopping List</p>
-                      <h2 className="truncate text-base font-semibold text-slate-900">Share groceries</h2>
+                {showInternalLaunchCards && (
+                  <div className="pm-utility-card mt-3 rounded-[22px] px-3.5 py-3 lg:hidden">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="pm-kicker mb-1">Shopping List</p>
+                        <h2 className="truncate text-base font-semibold text-slate-900">Share groceries</h2>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onOpenShopping}
+                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
+                      >
+                        Open
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={onOpenShopping}
-                      className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                    >
-                      Open
-                    </button>
                   </div>
-                </div>
+                )}
 
                 <div className="pm-utility-card mt-3 rounded-[22px] px-3.5 py-3 lg:hidden">
                   <div className="flex items-center justify-between gap-3">
@@ -748,6 +600,29 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
                   )}
                 </form>
 
+                <div className="pm-surface-soft mt-4 rounded-[28px] p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0">
+                      <p className="pm-kicker">Optional sample</p>
+                      <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">Explore a sample project</h3>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Load a ready-made workspace with schedule, RAID, tracker, and reporting data. It counts as one project and you can delete it any time.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void createSampleProject()}
+                      disabled={creatingSample || ownedSampleProject || !canCreateProject}
+                      className="pm-subtle-button shrink-0 rounded-2xl px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {ownedSampleProject ? 'Sample added' : creatingSample ? 'Adding sample...' : '+ Add sample project'}
+                    </button>
+                  </div>
+                  {sampleProjectError && (
+                    <p className="mt-3 text-xs text-rose-600">{sampleProjectError}</p>
+                  )}
+                </div>
+
                 <div className="mt-6">
                   <div className="mb-3 flex items-center justify-between">
                     <h3 className="pm-kicker text-sm">Projects</h3>
@@ -764,7 +639,7 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
                       <div className="pm-surface-card text-center py-12 rounded-[24px] shadow-sm">
                         <div className="text-4xl mb-3">📋</div>
                         <p className="text-slate-700 font-medium mb-1">Your workspace is ready for its first project</p>
-                        <p className="text-slate-400 text-sm">Create a project above or wait a moment if your demo workspace is still being prepared.</p>
+                        <p className="text-slate-400 text-sm">Create a project above or add the sample project to explore the workspace.</p>
                       </div>
                     ) : (
                       projects.map((project) => (
@@ -789,7 +664,7 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
                                 </h4>
                                 {project.is_demo && (
                                   <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-indigo-200 text-indigo-600 bg-indigo-50 font-semibold">
-                                    Demo
+                                    Sample
                                   </span>
                                 )}
                                 {project.isSharedWithMe && (

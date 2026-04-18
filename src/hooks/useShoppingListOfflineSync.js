@@ -4,6 +4,14 @@ import { SHOPPING_MANUAL_TODO_SELECT, mapManualTodoRow } from './projectData/man
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
 import { replaceQueuedTargetId } from '../utils/offlineQueue';
 
+const isMissingShoppingUpsertRpcError = (error) => {
+  const code = String(error?.code || '').toLowerCase();
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return code === '42883'
+    || message.includes('upsert_shopping_list_item')
+    || message.includes('manual_todos');
+};
+
 export function useShoppingListOfflineSync({
   currentUserId,
   isOnline,
@@ -37,38 +45,73 @@ export function useShoppingListOfflineSync({
     let todosByProject = { ...(cachedState.todosByProject || {}) };
     const createdTitlesByProject = new Map();
 
+    const refreshProjectTodos = async (projectId) => {
+      if (!projectId) return [];
+      const { data, error } = await supabase
+        .from('manual_todos')
+        .select(SHOPPING_MANUAL_TODO_SELECT)
+        .eq('project_id', projectId)
+        .order('status', { ascending: true })
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      const nextTodos = sortTodos((data || []).map(mapManualTodoRow));
+      todosByProject[projectId] = nextTodos;
+      if (selectedProjectId === projectId) {
+        setTodos(nextTodos);
+      }
+      return nextTodos;
+    };
+
+    const resolveProjectIdForTarget = (targetId) => {
+      if (!targetId) return selectedProjectId || '';
+
+      for (const [projectId, projectTodos] of Object.entries(todosByProject)) {
+        if ((projectTodos || []).some((todo) => todo?._id === targetId)) {
+          return projectId;
+        }
+      }
+
+      return selectedProjectId || '';
+    };
+
     while (queue.length > 0) {
       const op = queue[0];
 
       if (op.kind === 'create') {
-        const { data, error } = await supabase
-          .from('manual_todos')
-          .insert({
-            user_id: op.record.userId,
-            project_id: op.record.projectId,
-            title: op.record.title,
-            due_date: null,
-            owner_text: '',
-            assignee_user_id: op.record.userId,
-            status: op.record.status,
-            recurrence: null,
-            completed_at: op.record.completedAt || null,
-            quantity_value: op.record.quantityValue ?? null,
-            quantity_unit: op.record.quantityUnit || '',
-            source_type: op.record.sourceType || '',
-            source_batch_id: op.record.sourceBatchId || null,
-            meta: op.record.meta || {},
-          })
-          .select(SHOPPING_MANUAL_TODO_SELECT)
-          .single();
+        await refreshProjectTodos(op.record.projectId).catch(() => {});
 
-        if (error || !data) break;
+        const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
+          target_project_id: op.record.projectId,
+          target_title: op.record.title,
+          target_quantity_value: op.record.quantityValue ?? null,
+          target_quantity_unit: op.record.quantityUnit || '',
+          target_source_type: op.record.sourceType || '',
+          target_source_batch_id: op.record.sourceBatchId || null,
+          target_meta: op.record.meta || {},
+        });
 
-        const savedTodo = mapManualTodoRow(data);
+        const savedRow = Array.isArray(data) ? data[0] : data;
+        if (error || !savedRow) {
+          setFailedTodoId(op.targetId);
+          setFailedTodoMessage(
+            isMissingShoppingUpsertRpcError(error)
+              ? 'Shopping List needs the latest SQL migration before offline groceries can sync safely.'
+              : (error?.message || 'Unable to sync this grocery right now.')
+          );
+          await refreshProjectTodos(op.record.projectId).catch(() => {});
+          break;
+        }
+
+        const savedTodo = mapManualTodoRow(savedRow);
         const projectTodos = todosByProject[op.record.projectId] || [];
-        todosByProject[op.record.projectId] = sortTodos(projectTodos.map((item) => (
-          item._id === op.targetId ? savedTodo : item
-        )));
+        todosByProject[op.record.projectId] = sortTodos(
+          projectTodos
+            .filter((item) => item._id !== op.targetId && item._id !== savedTodo._id)
+            .concat(savedTodo)
+        );
+
         const existingTitles = createdTitlesByProject.get(op.record.projectId) || [];
         createdTitlesByProject.set(op.record.projectId, [...existingTitles, savedTodo.title]);
         queue = replaceQueuedTargetId(queue.slice(1), op.targetId, savedTodo._id);
@@ -88,7 +131,12 @@ export function useShoppingListOfflineSync({
           })
           .eq('id', op.targetId);
 
-        if (error) break;
+        if (error) {
+          setFailedTodoId(op.targetId);
+          setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
+          await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
+          break;
+        }
         queue = queue.slice(1);
         continue;
       }
@@ -99,7 +147,12 @@ export function useShoppingListOfflineSync({
           .delete()
           .eq('id', op.targetId);
 
-        if (error) break;
+        if (error) {
+          setFailedTodoId(op.targetId);
+          setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
+          await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
+          break;
+        }
         queue = queue.slice(1);
       }
     }

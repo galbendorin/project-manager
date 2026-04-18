@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { createEmptyProjectSnapshot } from './projectData/defaults';
 import { generateProjectId, isProjectRelationMissingError, pickPreferredShoppingProject } from '../utils/shoppingListViewState';
+import { createProjectWithLimits, getProjectCreationErrorMessage } from '../utils/projectCreation';
 import {
   applyGroceryDraftExclusions,
   buildMealPlanPreview,
@@ -33,11 +34,6 @@ const MEAL_LIBRARY_SELECT_BASE = 'id, external_id, source_pdf, suggested_day, me
 const MEAL_LIBRARY_SELECT_WITH_BATCH = `${MEAL_LIBRARY_SELECT_BASE}, yield_mode, batch_yield_portions`;
 const MEAL_LIBRARY_SELECT_SHARED_BASE = `${MEAL_LIBRARY_SELECT_BASE}, shopping_project_id`;
 const MEAL_LIBRARY_SELECT_SHARED_WITH_BATCH = `${MEAL_LIBRARY_SELECT_WITH_BATCH}, shopping_project_id`;
-const STARTER_LIBRARY_ALLOWED_EMAILS = new Set([
-  'dorin.galben@yahoo.com',
-  'galben.dorin@yahoo.com',
-  'irina.urmanschi@gmail.com',
-]);
 
 const isMissingRelationError = (error, relationName) => {
   const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
@@ -56,6 +52,14 @@ const isOutdatedMealPlannerSlotConstraintError = (error) => {
     || (msg.includes('duplicate key') && msg.includes('meal_plan_entries'))
     || (msg.includes('unique constraint') && msg.includes('meal_slot'))
   );
+};
+
+const isMissingMealPlanBatchReplacementRpcError = (error) => {
+  const code = String(error?.code || '').toLowerCase();
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return code === '42883'
+    || message.includes('replace_meal_plan_grocery_batch')
+    || message.includes('meal_plan_grocery_batches');
 };
 
 const toNullableFiniteNumber = (value) => {
@@ -192,20 +196,21 @@ async function ensureShoppingProject(currentUserId) {
     ...createEmptyProjectSnapshot(),
   };
 
-  const { data: created, error: createError } = await supabase
-    .from('projects')
-    .insert(projectPayload)
-    .select('id, user_id, name, created_at')
-    .single();
+  const { data: created, error: createError } = await createProjectWithLimits({
+    projectId: projectPayload.id || generateProjectId(),
+    name: SHOPPING_PROJECT_NAME,
+    snapshot: createEmptyProjectSnapshot(),
+    isDemo: false,
+  });
 
   if (createError || !created) {
-    throw createError || new Error('Unable to prepare Shopping List.');
+    throw new Error(getProjectCreationErrorMessage(createError));
   }
 
   return created;
 }
 
-export function useMealPlannerData({ currentUserEmail, currentUserId }) {
+export function useMealPlannerData({ currentUserId, canUseStarterLibrary = false }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -222,10 +227,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   const starterSeedAttemptedRef = useRef(false);
 
   const weekDays = useMemo(() => getWeekDayEntries(selectedWeekStart), [selectedWeekStart]);
-  const canUseStarterLibrary = useMemo(
-    () => STARTER_LIBRARY_ALLOWED_EMAILS.has(String(currentUserEmail || '').trim().toLowerCase()),
-    [currentUserEmail]
-  );
+  const starterLibraryEnabled = Boolean(canUseStarterLibrary);
   const recipesBySlot = useMemo(() => (
     recipes.reduce((accumulator, recipe) => {
       const slot = recipe.mealSlot || 'other';
@@ -234,6 +236,51 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       return accumulator;
     }, {})
   ), [recipes]);
+
+  const loadShoppingProjectById = useCallback(async (projectId = '') => {
+    const normalizedProjectId = String(projectId || '').trim();
+    if (!normalizedProjectId) return null;
+
+    let includeMembers = true;
+    let { data, error } = await supabase
+      .from('projects')
+      .select('id, user_id, name, created_at, project_members(id, user_id, member_email, role, invited_by_user_id, created_at)')
+      .eq('id', normalizedProjectId)
+      .maybeSingle();
+
+    if (error && includeMembers && isProjectRelationMissingError(error, 'project_members')) {
+      includeMembers = false;
+      ({ data, error } = await supabase
+        .from('projects')
+        .select('id, user_id, name, created_at')
+        .eq('id', normalizedProjectId)
+        .maybeSingle());
+    }
+
+    if (error) throw error;
+    return data || null;
+  }, []);
+
+  const resolveShoppingProject = useCallback(async () => {
+    const boundProjectId = String(
+      groceryBatch?.shoppingProjectId
+      || week?.shoppingProjectId
+      || plannerProject?.id
+      || ''
+    ).trim();
+
+    if (boundProjectId) {
+      const boundProject = await loadShoppingProjectById(boundProjectId);
+      if (boundProject?.id) {
+        setPlannerProject(boundProject);
+        return boundProject;
+      }
+    }
+
+    const fallbackProject = await ensureShoppingProject(currentUserId);
+    setPlannerProject(fallbackProject);
+    return fallbackProject;
+  }, [currentUserId, groceryBatch?.shoppingProjectId, loadShoppingProjectById, plannerProject?.id, week?.shoppingProjectId]);
 
   const mealPlanPreview = useMemo(() => buildMealPlanPreview({
     recipes,
@@ -382,7 +429,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     const normalizedRows = rows.filter((row) => row?.name && row?.mealSlot);
     if (!normalizedRows.length) return 0;
 
-    const shoppingProject = await ensureShoppingProject(currentUserId);
+    const shoppingProject = await resolveShoppingProject();
     let useSharedProjectField = supportsSharedMealPlanner;
     setPlannerProject(shoppingProject);
     const externalIds = normalizedRows
@@ -503,13 +550,13 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     await loadRecipes(shoppingProject.id);
     setLastImportedCount(normalizedRows.length);
     return normalizedRows.length;
-  }, [currentUserId, loadRecipes, supportsSharedMealPlanner]);
+  }, [currentUserId, loadRecipes, resolveShoppingProject, supportsSharedMealPlanner]);
 
   const seedStarterLibrary = useCallback(async () => {
-    if (!canUseStarterLibrary) return 0;
+    if (!starterLibraryEnabled) return 0;
     const starterRows = buildImportedMealRows(STARTER_MEAL_IMPORT_TEXT_BY_SLOT);
     return importRowsIntoLibrary(starterRows, { origin: 'imported' });
-  }, [canUseStarterLibrary, importRowsIntoLibrary]);
+  }, [importRowsIntoLibrary, starterLibraryEnabled]);
 
   const ensureWeek = useCallback(async (weekStartDate, shoppingProjectId = '') => {
     const normalizedWeekStart = formatDateKey(weekStartDate);
@@ -683,10 +730,10 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setError('');
 
     try {
-      const shoppingProject = await ensureShoppingProject(currentUserId);
+      const shoppingProject = await resolveShoppingProject();
       setPlannerProject(shoppingProject);
       const mealRows = await loadRecipes(shoppingProject.id);
-      if (mealRows.length === 0 && canUseStarterLibrary && !starterSeedAttemptedRef.current) {
+      if (mealRows.length === 0 && starterLibraryEnabled && !starterSeedAttemptedRef.current) {
         starterSeedAttemptedRef.current = true;
         await seedStarterLibrary();
       }
@@ -708,17 +755,43 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setLoading(false);
     }
-  }, [canUseStarterLibrary, currentUserId, ensureWeek, loadEntries, loadGroceryBatch, loadRecipes, seedStarterLibrary, selectedWeekStart]);
+  }, [currentUserId, ensureWeek, loadEntries, loadGroceryBatch, loadRecipes, resolveShoppingProject, seedStarterLibrary, selectedWeekStart, starterLibraryEnabled]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (!currentUserId || typeof window === 'undefined') return undefined;
+
+    const handleForegroundRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        void reload();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      void reload();
+    };
+
+    document.addEventListener('visibilitychange', handleForegroundRefresh);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pageshow', handleWindowFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleForegroundRefresh);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pageshow', handleWindowFocus);
+    };
+  }, [currentUserId, reload]);
 
   const updateWeekCounts = useCallback(async ({ adultCount, kidCount }) => {
     if (!week?.id) return;
 
     const nextAdultCount = Math.max(0, Number(adultCount || 0));
     const nextKidCount = Math.max(0, Number(kidCount || 0));
+    const previousWeek = week ? { ...week } : null;
+    const previousEntries = [...entries];
     const previousDefaultMultiplier = getDefaultServingMultiplier({
       adultPortionTotal: week?.adultCount ?? 1.75,
       kidCount: week?.kidCount ?? 0,
@@ -750,7 +823,10 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         .in('id', entryIdsFollowingDefault);
 
       if (normalizeEntriesError) {
+        setWeek(previousWeek);
+        setEntries(previousEntries);
         setError(normalizeEntriesError.message || 'Unable to refresh serving multipliers right now.');
+        return;
       }
     }
 
@@ -764,14 +840,18 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       .eq('id', week.id);
 
     if (updateError && isMissingMealPlannerFieldError(updateError, ['adult_portion_total'])) {
+      setWeek(previousWeek);
+      setEntries(previousEntries);
       setError('Meal Planner needs the latest SQL migration before partner portion settings can be saved.');
       return;
     }
 
     if (updateError) {
+      setWeek(previousWeek);
+      setEntries(previousEntries);
       setError(updateError.message || 'Unable to update household counts right now.');
     }
-  }, [entries, week?.adultCount, week?.id, week?.kidCount]);
+  }, [entries, week]);
 
   const upsertMealEntry = useCallback(async ({
     entryId = '',
@@ -1014,7 +1094,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setSaving(true);
     setError('');
     try {
-      const shoppingProject = await ensureShoppingProject(currentUserId);
+      const shoppingProject = await resolveShoppingProject();
       let useSharedProjectField = supportsSharedMealPlanner;
       setPlannerProject(shoppingProject);
       const ingredientLines = recipeInput.ingredientLines || splitIngredientList(recipeInput.ingredientsRaw || '');
@@ -1081,7 +1161,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setSaving(false);
     }
-  }, [currentUserId, loadRecipes, replaceRecipeIngredients, supportsSharedMealPlanner]);
+  }, [currentUserId, loadRecipes, replaceRecipeIngredients, resolveShoppingProject, supportsSharedMealPlanner]);
 
   const updateRecipe = useCallback(async (recipeId, recipeInput) => {
     setSaving(true);
@@ -1173,7 +1253,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     if (!week?.id) return null;
 
     try {
-      const shoppingProject = await ensureShoppingProject(currentUserId);
+      const shoppingProject = await resolveShoppingProject();
       const sanitizedSignatures = Array.from(new Set((nextSignatures || []).filter(Boolean)));
       const existingStatus = groceryBatch?.status || 'draft';
 
@@ -1250,7 +1330,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       }
       throw nextError;
     }
-  }, [currentUserId, groceryBatch?.id, groceryBatch?.status, week?.id]);
+  }, [currentUserId, groceryBatch?.id, groceryBatch?.status, resolveShoppingProject, week?.id]);
 
   const excludeGroceryDraftItem = useCallback(async (draftItem) => {
     const signaturesToAdd = getGroceryDraftItemSourceSignatures(draftItem);
@@ -1310,94 +1390,53 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setError('');
 
     try {
-      const shoppingProject = await ensureShoppingProject(currentUserId);
-      const batchPayload = {
-        user_id: currentUserId,
-        week_id: week.id,
-        shopping_project_id: shoppingProject.id,
-        status: 'approved',
-        excluded_draft_signatures: excludedDraftSourceSignatures,
-        ...(groceryBatch?.id ? { id: groceryBatch.id } : {}),
-      };
-      let batchResult = await supabase
-        .from('meal_plan_grocery_batches')
-        .upsert(batchPayload, {
-          onConflict: 'week_id',
-        })
-        .select(MEAL_PLAN_GROCERY_BATCH_SELECT_WITH_EXCLUSIONS)
-        .single();
-
-      if (batchResult.error && isMissingMealPlannerFieldError(batchResult.error, ['excluded_draft_signatures'])) {
-        const {
-          excluded_draft_signatures,
-          ...batchPayloadWithoutExclusions
-        } = batchPayload;
-        batchResult = await supabase
-          .from('meal_plan_grocery_batches')
-          .upsert(batchPayloadWithoutExclusions, {
-            onConflict: 'week_id',
-          })
-          .select(MEAL_PLAN_GROCERY_BATCH_SELECT_BASE)
-          .single();
-      }
-
-      if (batchResult.error || !batchResult.data?.id) {
-        throw batchResult.error || new Error('Unable to create grocery batch.');
-      }
-
-      const nextBatch = mapGroceryBatchRow(batchResult.data);
-      setGroceryBatch(nextBatch);
-      const batchId = nextBatch.id;
-
-      const { error: deleteExistingError } = await supabase
-        .from('manual_todos')
-        .delete()
-        .eq('source_batch_id', batchId);
-
-      if (deleteExistingError) throw deleteExistingError;
-
-      const rows = draftRows.map((item) => ({
-        user_id: currentUserId,
-        project_id: shoppingProject.id,
+      const shoppingProject = await resolveShoppingProject();
+      const serializedDraftRows = draftRows.map((item) => ({
         title: item.title,
-        due_date: null,
-        owner_text: '',
-        assignee_user_id: currentUserId,
-        status: 'Open',
-        recurrence: null,
-        completed_at: null,
-        quantity_value: item.quantityValue,
-        quantity_unit: item.quantityUnit || '',
-        source_type: 'meal_plan',
-        source_batch_id: batchId,
-        meta: {
-          rawText: item.rawText,
-          occurrenceCount: item.occurrenceCount,
-          sourceMeals: item.sourceMeals,
-          weekStartDate: week.weekStartDate,
-        },
+        quantityValue: item.quantityValue,
+        quantityUnit: item.quantityUnit || '',
+        rawText: item.rawText || '',
+        occurrenceCount: item.occurrenceCount ?? 0,
+        sourceMeals: item.sourceMeals || [],
+        weekStartDate: week.weekStartDate,
       }));
 
-      const { error: insertItemsError } = await supabase
-        .from('manual_todos')
-        .insert(rows);
+      const { data: replacementResult, error: replacementError } = await supabase.rpc('replace_meal_plan_grocery_batch', {
+        target_week_id: week.id,
+        target_shopping_project_id: shoppingProject.id,
+        target_batch_id: groceryBatch?.id || null,
+        target_excluded_draft_signatures: excludedDraftSourceSignatures,
+        target_items: serializedDraftRows,
+      });
 
-      if (insertItemsError) throw insertItemsError;
-      setLastApprovedCount(rows.length);
-      return { batchId, count: rows.length };
+      if (replacementError) {
+        if (isMissingMealPlanBatchReplacementRpcError(replacementError)) {
+          throw new Error('Meal Planner needs the latest SQL migration before groceries can be approved safely.');
+        }
+        throw replacementError;
+      }
+
+      if (!replacementResult?.ok) {
+        throw new Error('Unable to approve groceries right now.');
+      }
+
+      await loadGroceryBatch(week.id);
+      const count = Number(replacementResult?.count) || serializedDraftRows.length;
+      setLastApprovedCount(count);
+      return { batchId: replacementResult?.batch_id || groceryBatch?.id || '', count };
     } catch (nextError) {
       setError(nextError?.message || 'Unable to approve groceries right now.');
       throw nextError;
     } finally {
       setSaving(false);
     }
-  }, [currentUserId, excludedDraftSourceSignatures, groceryBatch?.id, groceryDraft, week?.id, week?.weekStartDate]);
+  }, [excludedDraftSourceSignatures, groceryBatch?.id, groceryDraft, loadGroceryBatch, resolveShoppingProject, week?.id, week?.weekStartDate]);
 
   return {
     applyMealToDates,
     clearMealEntry,
     confirmGroceryDraft,
-    canUseStarterLibrary,
+    canUseStarterLibrary: starterLibraryEnabled,
     createCarryoverForNextDay,
     createRecipe,
     deleteRecipe,

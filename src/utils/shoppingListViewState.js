@@ -177,6 +177,7 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
   return {
     inserts,
     updates,
+    preparedItems: Array.from(consolidatedIncoming.values()),
     addedCount: inserts.length,
     mergedCount: updates.length,
   };

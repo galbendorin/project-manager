@@ -14,10 +14,10 @@ export function useWorkspaceAiActions({
   aiSettings,
   canUseAiReport,
   effectivePlan,
-  incrementAiReports,
   limits,
   project,
   projectData,
+  refreshProfile,
   registers,
   setImportStatus,
   statusReport,
@@ -103,9 +103,7 @@ export function useWorkspaceAiActions({
         usePlatformKey,
       });
 
-      if (result?.ok) {
-        await incrementAiReports();
-      }
+      await refreshProfile?.();
 
       return result;
     } catch (err) {
@@ -116,10 +114,10 @@ export function useWorkspaceAiActions({
     aiSettings,
     canUseAiReport,
     effectivePlan,
-    incrementAiReports,
     limits,
     project,
     projectData,
+    refreshProfile,
     registers,
     statusReport,
     todos,
@@ -163,9 +161,7 @@ export function useWorkspaceAiActions({
         usePlatformKey,
       });
 
-      if (result?.ok) {
-        await incrementAiReports();
-      }
+      await refreshProfile?.();
 
       return result;
     } catch (err) {
@@ -176,10 +172,10 @@ export function useWorkspaceAiActions({
     aiSettings,
     canUseAiReport,
     effectivePlan,
-    incrementAiReports,
     limits,
     project,
     projectData,
+    refreshProfile,
     registers,
     statusReport,
     todos,

@@ -120,6 +120,21 @@ async function handleCheckoutCompleted(session) {
     throw error;
   }
 
+  if (session.id) {
+    const { error: checkoutSessionError } = await supabase
+      .from('billing_checkout_sessions')
+      .update({
+        status: 'completed',
+        stripe_customer_id: session.customer ? String(session.customer) : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('stripe_session_id', session.id);
+
+    if (checkoutSessionError) {
+      console.warn('Failed to mark billing checkout session as completed:', checkoutSessionError.message || checkoutSessionError);
+    }
+  }
+
   console.log('Checkout completion synced to billing profile.');
 }
 

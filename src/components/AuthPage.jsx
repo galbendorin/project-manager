@@ -5,7 +5,7 @@ import {
   TRIAL_FULL_ACCESS_LABEL,
   TRIAL_OFFER_LABEL,
 } from '../utils/trialOffer';
-import { FEEDBACK_EMAIL, openFeedbackEmail } from '../utils/feedback';
+import { SUPPORT_EMAIL, openFeedbackEmail } from '../utils/feedback';
 
 const HERO_BULLETS = [
   'Single workspace for planning and controls',
@@ -938,7 +938,7 @@ export default function AuthPage() {
                   onClick={handleOpenFeedback}
                   className={`font-semibold text-indigo-700 underline decoration-indigo-300 underline-offset-2 transition hover:text-indigo-800 ${LANDING_FOCUS_CLASS}`}
                 >
-                  Email {FEEDBACK_EMAIL}
+                  Email {SUPPORT_EMAIL}
                 </button>
               </div>
             </div>

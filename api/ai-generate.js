@@ -9,7 +9,6 @@
 
 import { applyApiCors, getAdminSupabase, requireAuthenticatedUser } from './_auth.js'
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js'
-import { buildDefaultUserProfile, getPlanLimits, resolveRealPlan } from '../src/utils/planAccess.js'
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 const OPENAI_API = 'https://api.openai.com/v1/chat/completions'
@@ -18,47 +17,48 @@ const adminSupabase = getAdminSupabase()
 // Max request body size (200KB — generous for prompts)
 const MAX_BODY_SIZE = 200_000
 
-const loadOrProvisionUserProfile = async (user) => {
-  if (!adminSupabase || !user?.id) {
-    throw new Error('Server billing configuration is incomplete.')
+const isMissingAiAllowanceRpcError = (error) => {
+  const code = String(error?.code || '').toLowerCase()
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase()
+  return code === '42883'
+    || message.includes('claim_ai_generation_allowance')
+    || message.includes('finalize_ai_generation_allowance')
+    || message.includes('release_ai_generation_allowance')
+    || message.includes('ai_generation_reservations')
+}
+
+export const resolveAiAllowanceFailure = (result = {}) => {
+  switch (String(result?.code || '')) {
+    case 'ai_not_included':
+      return { status: 403, error: 'Your current plan does not include AI access.' }
+    case 'platform_ai_disabled':
+      return { status: 403, error: 'Platform AI is not enabled for this account. Please configure your own API key in AI Settings.' }
+    case 'ai_quota_exceeded':
+      return { status: 403, error: "You've reached your AI report limit for this month. Upgrade for more reports." }
+    case 'missing_user':
+      return { status: 401, error: 'Authentication required.' }
+    default:
+      return { status: 500, error: 'Unable to verify AI access for this account.' }
   }
+}
 
-  const { data, error } = await adminSupabase
-    .from('user_profiles')
-    .select('*')
-    .eq('id', user.id)
-    .maybeSingle()
+const claimAiAllowance = async ({ userId, usageSource }) => {
+  return adminSupabase.rpc('claim_ai_generation_allowance', {
+    target_user_id: userId,
+    usage_source: usageSource,
+  })
+}
 
-  if (error) {
-    throw error
-  }
+const finalizeAiAllowance = async (reservationId) => {
+  return adminSupabase.rpc('finalize_ai_generation_allowance', {
+    target_reservation_id: reservationId,
+  })
+}
 
-  if (data) return data
-
-  const profileRow = buildDefaultUserProfile(user.id, new Date())
-  const { data: inserted, error: insertError } = await adminSupabase
-    .from('user_profiles')
-    .insert(profileRow)
-    .select('*')
-    .single()
-
-  if (insertError && insertError.code !== '23505') {
-    throw insertError
-  }
-
-  if (inserted) return inserted
-
-  const { data: reloaded, error: reloadError } = await adminSupabase
-    .from('user_profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
-
-  if (reloadError) {
-    throw reloadError
-  }
-
-  return reloaded
+const releaseAiAllowance = async (reservationId) => {
+  return adminSupabase.rpc('release_ai_generation_allowance', {
+    target_reservation_id: reservationId,
+  })
 }
 
 export default async function handler(req, res) {
@@ -70,6 +70,10 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  if (!adminSupabase) {
+    return res.status(500).json({ error: 'Server billing configuration is incomplete.' })
   }
 
   // Reject oversized payloads
@@ -84,29 +88,11 @@ export default async function handler(req, res) {
   // Accept API key from header only.
   const userApiKey = req.headers['x-api-key']
   const { provider, model, systemPrompt, userMessage, maxTokens = 4096, stream = false, usePlatformKey = false } = req.body || {}
-
-  let profile
-  try {
-    profile = await loadOrProvisionUserProfile(user)
-  } catch (error) {
-    console.error('Failed to load AI entitlement profile:', error?.message || error)
-    return res.status(500).json({ error: 'Unable to verify AI access for this account.' })
-  }
-
-  const effectivePlan = resolveRealPlan({
-    profile,
-    email: user.email,
-    now: new Date(),
-  })
-  const limits = getPlanLimits(effectivePlan)
-
-  if (!limits.canUseAi) {
-    return res.status(403).json({ error: 'Your current plan does not include AI access.' })
-  }
+  const requestedPlatformKey = Boolean(usePlatformKey && !userApiKey)
 
   const limitResult = await checkRateLimit({
-    key: `ai:${user.id}:${getClientIp(req)}:${usePlatformKey ? 'platform' : 'byok'}`,
-    max: usePlatformKey ? 24 : 60,
+    key: `ai:${user.id}:${getClientIp(req)}:${requestedPlatformKey ? 'platform' : 'byok'}`,
+    max: requestedPlatformKey ? 24 : 60,
     windowMs: 60_000,
     strictShared: true,
   })
@@ -133,26 +119,81 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing required fields: provider, apiKey, userMessage' })
   }
 
+  if (!['anthropic', 'openai', 'gemini'].includes(String(resolvedProvider || '').toLowerCase())) {
+    return res.status(400).json({ error: `Unsupported provider: ${resolvedProvider}` })
+  }
+
   // Clamp maxTokens to prevent abuse
   const safeMaxTokens = Math.min(Math.max(parseInt(maxTokens) || 4096, 256), 16384)
+  const usageSource = requestedPlatformKey ? 'platform' : 'byok'
+  let reservationId = ''
+  let allowanceFinalized = false
 
   try {
-    if (resolvedProvider === 'anthropic') {
-      return await handleAnthropic({ apiKey, model: resolvedModel, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
-    } else if (resolvedProvider === 'openai') {
-      return await handleOpenAI({ apiKey, model: resolvedModel, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
-    } else if (resolvedProvider === 'gemini') {
-      return await handleGemini({ apiKey, model: resolvedModel, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res)
-    } else {
-      return res.status(400).json({ error: `Unsupported provider: ${resolvedProvider}` })
+    const { data: allowanceClaim, error: allowanceClaimError } = await claimAiAllowance({
+      userId: user.id,
+      usageSource,
+    })
+
+    if (allowanceClaimError) {
+      if (isMissingAiAllowanceRpcError(allowanceClaimError)) {
+        return res.status(503).json({ error: 'AI entitlements are not configured yet. Apply the latest billing migration first.' })
+      }
+      console.error('Failed to claim AI allowance:', allowanceClaimError)
+      return res.status(500).json({ error: 'Unable to verify AI access for this account.' })
     }
+
+    if (!allowanceClaim?.ok) {
+      const failure = resolveAiAllowanceFailure(allowanceClaim)
+      return res.status(failure.status).json({ error: failure.error })
+    }
+
+    reservationId = String(allowanceClaim.reservation_id || '')
+    if (!reservationId) {
+      return res.status(500).json({ error: 'Unable to verify AI access for this account.' })
+    }
+
+    const markAllowanceConsumed = async () => {
+      if (allowanceFinalized || !reservationId) return
+
+      const { error } = await finalizeAiAllowance(reservationId)
+      if (error) {
+        throw error
+      }
+
+      allowanceFinalized = true
+    }
+
+    let providerResult
+    if (resolvedProvider === 'anthropic') {
+      providerResult = await handleAnthropic({ apiKey, model: resolvedModel, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res, markAllowanceConsumed)
+    } else if (resolvedProvider === 'openai') {
+      providerResult = await handleOpenAI({ apiKey, model: resolvedModel, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res, markAllowanceConsumed)
+    } else {
+      providerResult = await handleGemini({ apiKey, model: resolvedModel, systemPrompt, userMessage, maxTokens: safeMaxTokens, stream }, res, markAllowanceConsumed)
+    }
+
+    if (!providerResult?.ok && reservationId && !allowanceFinalized) {
+      const { error } = await releaseAiAllowance(reservationId)
+      if (error) {
+        console.error('Failed to release AI allowance after upstream rejection:', error)
+      }
+    }
+
+    return
   } catch (err) {
+    if (reservationId && !allowanceFinalized) {
+      const { error } = await releaseAiAllowance(reservationId)
+      if (error) {
+        console.error('Failed to release AI allowance after proxy error:', error)
+      }
+    }
     console.error('AI proxy error:', err.message)
     return res.status(500).json({ error: 'Internal proxy error' })
   }
 }
 
-async function handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res) {
+async function handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res, onAccepted) {
   const body = {
     model: model || 'claude-sonnet-4-20250514',
     max_tokens: maxTokens,
@@ -184,8 +225,11 @@ async function handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTo
     } catch {
       errMsg = errText
     }
-    return res.status(response.status).json({ error: `Anthropic: ${errMsg}` })
+    res.status(response.status).json({ error: `Anthropic: ${errMsg}` })
+    return { ok: false }
   }
+
+  await onAccepted?.()
 
   if (stream) {
     res.setHeader('Content-Type', 'text/event-stream')
@@ -223,7 +267,7 @@ async function handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTo
     } finally {
       res.end()
     }
-    return
+    return { ok: true }
   }
 
   // Non-streaming
@@ -233,10 +277,11 @@ async function handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTo
     .map(block => block.text)
     .join('')
 
-  return res.status(200).json({ text })
+  res.status(200).json({ text })
+  return { ok: true }
 }
 
-async function handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res) {
+async function handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res, onAccepted) {
   const messages = []
   if (systemPrompt) {
     messages.push({ role: 'system', content: systemPrompt })
@@ -270,8 +315,11 @@ async function handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxToken
     } catch {
       errMsg = errText
     }
-    return res.status(response.status).json({ error: `OpenAI: ${errMsg}` })
+    res.status(response.status).json({ error: `OpenAI: ${errMsg}` })
+    return { ok: false }
   }
+
+  await onAccepted?.()
 
   if (stream) {
     res.setHeader('Content-Type', 'text/event-stream')
@@ -310,16 +358,17 @@ async function handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxToken
     } finally {
       res.end()
     }
-    return
+    return { ok: true }
   }
 
   // Non-streaming
   const data = await response.json()
   const text = data.choices?.[0]?.message?.content || ''
-  return res.status(200).json({ text })
+  res.status(200).json({ text })
+  return { ok: true }
 }
 
-async function handleGemini({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res) {
+async function handleGemini({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res, onAccepted) {
   const geminiModel = model || 'gemini-2.5-flash'
   const endpoint = stream ? 'streamGenerateContent' : 'generateContent'
   const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:${endpoint}`
@@ -358,8 +407,11 @@ async function handleGemini({ apiKey, model, systemPrompt, userMessage, maxToken
     } catch {
       errMsg = errText
     }
-    return res.status(response.status).json({ error: `Gemini: ${errMsg}` })
+    res.status(response.status).json({ error: `Gemini: ${errMsg}` })
+    return { ok: false }
   }
+
+  await onAccepted?.()
 
   if (stream) {
     res.setHeader('Content-Type', 'text/event-stream')
@@ -394,11 +446,12 @@ async function handleGemini({ apiKey, model, systemPrompt, userMessage, maxToken
     } finally {
       res.end()
     }
-    return
+    return { ok: true }
   }
 
   // Non-streaming
   const data = await response.json()
   const text = data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || ''
-  return res.status(200).json({ text })
+  res.status(200).json({ text })
+  return { ok: true }
 }

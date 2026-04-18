@@ -9,10 +9,11 @@ import {
 } from '../utils/billingSync';
 import { TRIAL_LENGTH_DAYS } from '../utils/trialOffer';
 import {
-  ACTIVE_SUBSCRIPTION_STATUSES,
   ALL_TABS,
   PLAN_LIMITS,
-  isAdminEmail,
+  canAccessHouseholdTools as canAccessHouseholdToolsFromProfile,
+  canUsePlatformAi as canUsePlatformAiFromProfile,
+  resolveRealPlan,
 } from '../utils/planAccess';
 
 const PlanContext = createContext({});
@@ -141,34 +142,16 @@ export const PlanProvider = ({ children }) => {
   }, [user, refreshProfileFromExternalChange]);
 
   // ── Derived state ───────────────────────────────────────────
-  const isAdmin = useMemo(() => isAdminEmail(user?.email), [user]);
+  const isAdmin = useMemo(() => Boolean(profile?.is_admin || profile?.is_platform_admin), [profile?.is_admin, profile?.is_platform_admin]);
+  const householdToolsEnabled = useMemo(
+    () => canAccessHouseholdToolsFromProfile(profile),
+    [profile]
+  );
 
   // ── Resolve REAL plan (before simulator override) ───────────
   const realPlan = useMemo(() => {
-    if (isAdmin) return 'team';
-    if (!profile) return 'starter';
-
-    // Check Stripe subscription first
-    const subStatus = profile.subscription_status;
-    if (ACTIVE_SUBSCRIPTION_STATUSES.includes(subStatus) && profile.plan === 'pro') {
-      return 'pro';
-    }
-
-    // Check trial
-    if (profile.plan === 'trial') {
-      const trialEnd = new Date(profile.trial_ends);
-      if (trialEnd > new Date()) {
-        return 'trial';
-      }
-      // Trial expired → starter
-      return 'starter';
-    }
-
-    if (profile.plan === 'team') return 'team';
-    if (profile.plan === 'pro') return 'pro';
-
-    return 'starter';
-  }, [profile, isAdmin]);
+    return resolveRealPlan({ profile, now: new Date() });
+  }, [profile]);
 
   // ── Effective plan (with simulator override for admin) ──────
   const effectivePlan = useMemo(() => {
@@ -274,6 +257,10 @@ export const PlanProvider = ({ children }) => {
   const canUseAi = limits.canUseAi;
   const canUseAiAssistant = limits.canUseAiAssistant;
   const canExportAiReport = limits.canExportAiReport;
+  const canUsePlatformAi = useMemo(
+    () => canUsePlatformAiFromProfile(profile) && limits.canUseAi,
+    [limits.canUseAi, profile]
+  );
 
   // ── Read-only mode (downgraded Pro with too many projects) ──
   const isReadOnly = useMemo(() => {
@@ -344,10 +331,12 @@ export const PlanProvider = ({ children }) => {
     canUseAi,
     canUseAiAssistant,
     canExportAiReport,
+    canUsePlatformAi,
     aiReportsRemaining,
     getTaskLimit,
     getTaskHardLimit,
     isInTaskGrace,
+    householdToolsEnabled,
 
     // Actions
     incrementAiReports,
@@ -365,8 +354,8 @@ export const PlanProvider = ({ children }) => {
     subscriptionEndsAt, willCancel, isPastDue,
     hasTabAccess,
     canCreateProject, canUseAiReport, canExport, canImport,
-    canBaseline, canUseAi, canUseAiAssistant, canExportAiReport,
-    aiReportsRemaining, getTaskLimit, getTaskHardLimit, isInTaskGrace,
+    canBaseline, canUseAi, canUseAiAssistant, canExportAiReport, canUsePlatformAi,
+    aiReportsRemaining, getTaskLimit, getTaskHardLimit, isInTaskGrace, householdToolsEnabled,
     incrementAiReports, refreshProjectCount, refreshProfile,
     simulatedPlan,
   ]);

@@ -88,6 +88,8 @@ export function AuthenticatedMealPlannerShell({
   accentTheme,
   onAccentThemeChange,
 }) {
+  const { householdToolsEnabled } = usePlan();
+
   return (
     <AuthenticatedMiniToolShell
       accentTheme={accentTheme}
@@ -98,7 +100,7 @@ export function AuthenticatedMealPlannerShell({
       title="Meal Planner"
       userEmail={userEmail}
     >
-      <MealPlannerView currentUserEmail={userEmail} currentUserId={currentUserId} />
+      <MealPlannerView currentUserId={currentUserId} starterLibraryEnabled={householdToolsEnabled} />
     </AuthenticatedMiniToolShell>
   );
 }
@@ -106,9 +108,9 @@ export function AuthenticatedMealPlannerShell({
 export function MainApp({ project, currentUserId, currentUserName, accentTheme, onAccentThemeChange, onBackToProjects, isOnline, launchShortcut }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const {
-    canUseAiReport, aiReportsRemaining, incrementAiReports,
+    canUseAiReport, aiReportsRemaining, canUsePlatformAi,
     limits, effectivePlan, isAdmin, isInTaskGrace, getTaskHardLimit,
-    simulatedPlan, setSimulatedPlan, simulatorOptions,
+    refreshProfile, simulatedPlan, setSimulatedPlan, simulatorOptions,
   } = usePlan();
 
   const [activeTab, setActiveTab] = useState('schedule');
@@ -127,7 +129,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
   const [undoAction, setUndoAction] = useState(null);
 
   const hasByok = isAiConfigured(aiSettings);
-  const usePlatformKey = effectivePlan && limits.canUseAi && !hasByok;
+  const usePlatformKey = effectivePlan && canUsePlatformAi && !hasByok;
   const aiReady = limits.canUseAi && (hasByok || usePlatformKey);
 
   const {
@@ -364,10 +366,10 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     aiSettings,
     canUseAiReport,
     effectivePlan,
-    incrementAiReports,
     limits,
     project,
     projectData,
+    refreshProfile,
     registers,
     setImportStatus,
     statusReport,

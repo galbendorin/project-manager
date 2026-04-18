@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { pickPreferredShoppingProject } from '../utils/shoppingListViewState';
+import { createProjectWithLimits, getProjectCreationErrorMessage } from '../utils/projectCreation';
 
 export function useShoppingListData({
   canCreateProject,
@@ -10,7 +12,6 @@ export function useShoppingListData({
   isMissingTodoRelationError,
   isOnline,
   isProjectRelationMissingError,
-  isRowLevelSecurityError,
   legacyManualTodoSelect,
   limits,
   loadShoppingOfflineState,
@@ -66,39 +67,15 @@ export function useShoppingListData({
   }, [currentUserId, loadShoppingOfflineState, loadShoppingOfflineStateAsync]);
 
   const createShoppingProject = useCallback(async () => {
-    const projectPayload = {
-      id: generateProjectId(),
-      user_id: currentUserId,
+    const { data, error } = await createProjectWithLimits({
+      projectId: generateProjectId(),
       name: shoppingProjectName,
-      ...createEmptyProjectSnapshot(),
-    };
-
-    let { data, error } = await supabase
-      .from('projects')
-      .insert(projectPayload)
-      .select('id, user_id, name, created_at, updated_at')
-      .single();
-
-    if (error && projectPayload.id && isRowLevelSecurityError(error, 'projects')) {
-      const { error: insertError } = await supabase
-        .from('projects')
-        .insert(projectPayload);
-
-      if (!insertError) {
-        ({ data, error } = await supabase
-          .from('projects')
-          .select(supportsProjectMembersRef.current
-            ? 'id, user_id, name, created_at, updated_at, project_members(id, user_id, member_email, role, invited_by_user_id, created_at)'
-            : 'id, user_id, name, created_at, updated_at')
-          .eq('id', projectPayload.id)
-          .single());
-      } else {
-        error = insertError;
-      }
-    }
+      snapshot: createEmptyProjectSnapshot(),
+      isDemo: false,
+    });
 
     if (error || !data) {
-      throw error || new Error('Unable to create Shopping List.');
+      throw new Error(getProjectCreationErrorMessage(error));
     }
 
     refreshProjectCount();
@@ -107,11 +84,9 @@ export function useShoppingListData({
     createEmptyProjectSnapshot,
     currentUserId,
     generateProjectId,
-    isRowLevelSecurityError,
     normalizeProjectRecord,
     refreshProjectCount,
     shoppingProjectName,
-    supportsProjectMembersRef,
   ]);
 
   const loadProjects = useCallback(async () => {
@@ -180,7 +155,7 @@ export function useShoppingListData({
       );
     }
 
-    const defaultProject = nextProjects.find((project) => project.isOwned) || nextProjects[0] || null;
+    const defaultProject = pickPreferredShoppingProject(nextProjects, currentUserId) || nextProjects[0] || null;
 
     setProjects(nextProjects);
     setSelectedProjectId((currentValue) => (

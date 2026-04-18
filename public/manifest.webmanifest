@@ -12,12 +12,6 @@
   "categories": ["productivity", "business"],
   "shortcuts": [
     {
-      "name": "Shopping List",
-      "short_name": "Shopping",
-      "description": "Open your shared grocery list",
-      "url": "/shopping"
-    },
-    {
       "name": "Capture",
       "short_name": "Capture",
       "description": "Quickly save a task, action, risk, or decision",

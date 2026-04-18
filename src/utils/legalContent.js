@@ -1,9 +1,8 @@
 import {
   COMPANY_NAME,
-  FEEDBACK_EMAIL,
-  INTERNAL_PRODUCT_NAME,
   PRIVACY_EMAIL,
   PRODUCT_NAME,
+  SUPPORT_CONFIG,
   SUPPORT_EMAIL,
 } from './feedback';
 
@@ -20,11 +19,11 @@ export const LEGAL_NAV_ITEMS = [
 const contactSidebar = {
   title: 'Contacts',
   items: [
-    { label: 'Operator', value: COMPANY_NAME },
-    { label: 'Product', value: `${PRODUCT_NAME} (${INTERNAL_PRODUCT_NAME} internally)` },
+    { label: 'Service', value: COMPANY_NAME },
+    { label: 'Product', value: PRODUCT_NAME },
     { label: 'Support', value: SUPPORT_EMAIL, href: `mailto:${SUPPORT_EMAIL}` },
     { label: 'Privacy', value: PRIVACY_EMAIL, href: `mailto:${PRIVACY_EMAIL}` },
-    { label: 'Website', value: 'pmworkspace.com', href: 'https://pmworkspace.com' },
+    { label: 'Website', value: 'pmworkspace.com', href: SUPPORT_CONFIG.website },
     { label: 'Updated', value: LAST_UPDATED },
   ],
 };
@@ -34,7 +33,7 @@ export const LEGAL_CONTENT = {
     eyebrow: 'Privacy Notice',
     title: `${PRODUCT_NAME} Privacy Notice`,
     intro:
-      `${COMPANY_NAME} uses this notice to explain how ${PRODUCT_NAME} collects, uses, shares, retains, and protects personal data across the public website, account creation, billing, support, and in-app features.`,
+      `This notice explains how ${PRODUCT_NAME} collects, uses, shares, retains, and protects personal data across the public website, account creation, billing, support, and in-app features.`,
     summary:
       'This notice is written for UK users and is also intended to support broader GDPR transparency for users in the EEA and Switzerland where applicable.',
     sidebar: contactSidebar,
@@ -42,7 +41,7 @@ export const LEGAL_CONTENT = {
       {
         heading: 'Who we are and how we act',
         paragraphs: [
-          `${PRODUCT_NAME} is operated by ${COMPANY_NAME}. For account administration, billing, security, website operations, support, and product improvement, we normally act as a data controller.`,
+          `When users create accounts, manage billing, request support, or use the website, ${PRODUCT_NAME} normally acts as a data controller for that personal data.`,
           `For customer workspace content uploaded or managed inside the service, we generally act as a processor or service provider on behalf of the relevant customer organisation, which remains responsible for deciding how that content is used.`,
         ],
       },
@@ -122,9 +121,9 @@ export const LEGAL_CONTENT = {
     eyebrow: 'Terms of Service',
     title: `${PRODUCT_NAME} Terms of Service`,
     intro:
-      `${COMPANY_NAME} provides ${PRODUCT_NAME} as a software service for professional project, reporting, planning, and collaboration work. These Terms govern access to the website, application, and related services.`,
+      `${PRODUCT_NAME} is provided as a software service for professional project, reporting, planning, and collaboration work. These Terms govern access to the website, application, and related services.`,
     summary:
-      'These launch-stage terms are written to support professional and business use, while preserving mandatory consumer protections where they apply.',
+      'These terms are written to support professional and business use, while preserving mandatory consumer protections where they apply.',
     sidebar: contactSidebar,
     sections: [
       {
@@ -183,7 +182,7 @@ export const LEGAL_CONTENT = {
         paragraphs: [
           'These Terms are governed by the laws of England and Wales unless mandatory local consumer law requires otherwise.',
           'We may change the service and these Terms from time to time. If we make a material change, we will take reasonable steps to notify users by email, in-product notice, or updated website text.',
-          `Questions about these Terms, billing, privacy, or a legal notice can be sent to ${FEEDBACK_EMAIL}.`,
+          `Questions about these Terms, billing, privacy, or a legal notice can be sent to ${SUPPORT_EMAIL}.`,
         ],
       },
     ],
@@ -192,7 +191,7 @@ export const LEGAL_CONTENT = {
     eyebrow: 'Cookie & Storage Notice',
     title: `${PRODUCT_NAME} Cookie & Storage Notice`,
     intro:
-      `${COMPANY_NAME} currently uses only essential cookies, local storage, session storage, and similar technologies needed to run the service securely, maintain sessions, and preserve required product state.`,
+      `${PRODUCT_NAME} currently uses only essential cookies, local storage, session storage, and similar technologies needed to run the service securely, maintain sessions, and preserve required product state.`,
     summary:
       'Because the current setup is essential-only, consent is not usually required under UK rules. Clear transparency is still required, and this page explains the current baseline.',
     sidebar: {
@@ -225,14 +224,6 @@ export const LEGAL_CONTENT = {
               'Supabase',
               'Authentication session continuity for signed-in users',
               'Managed by Supabase session lifecycle',
-              'Yes',
-            ],
-            [
-              'pm_demo_seeded_<user-id>',
-              'localStorage',
-              'First party',
-              'Remembers whether the app has already auto-seeded a user demo project',
-              'Persistent until cleared by the browser or the user',
               'Yes',
             ],
             [
@@ -275,7 +266,7 @@ export const LEGAL_CONTENT = {
     intro:
       `Use this page to request access, correction, deletion, restriction, portability, or to raise a privacy concern with ${PRODUCT_NAME}.`,
     summary:
-      'This is the current manual request route. We may ask for reasonable proof of identity before acting on a request.',
+      'Requests are handled by email. We may ask for reasonable proof of identity before acting on a request.',
     sidebar: {
       title: 'Request route',
       items: [
@@ -336,9 +327,9 @@ export const LEGAL_CONTENT = {
     eyebrow: 'Subprocessors',
     title: 'Subprocessors and International Transfers',
     intro:
-      `${COMPANY_NAME} uses carefully selected service providers to host, secure, support, and operate ${PRODUCT_NAME}. Where those providers handle customer workspace data on our behalf, they act as processors or subprocessors under written terms and appropriate safeguards.`,
+      `${PRODUCT_NAME} uses carefully selected service providers to host, secure, support, and operate the service. Where those providers handle customer workspace data on our behalf, they act as processors or subprocessors under written terms and appropriate safeguards.`,
     summary:
-      'This page should be kept aligned with the privacy notice, customer DPA, and the actual live deployment configuration.',
+      'The list below reflects the main providers currently used to operate the service.',
     sidebar: {
       title: 'Business customer info',
       items: [

@@ -1,12 +1,14 @@
 import { TRIAL_LENGTH_DAYS } from './trialOffer.js';
 
-export const ADMIN_EMAILS = [
-  'galben.dorin@yahoo.com',
-];
-
-export const isAdminEmail = (email) => Boolean(
-  email && ADMIN_EMAILS.includes(String(email).toLowerCase())
+export const isAdminProfile = (profile = null) => Boolean(
+  profile?.is_admin || profile?.is_platform_admin
 );
+
+export const canAccessHouseholdTools = (profile = null) => Boolean(
+  profile?.household_tools_enabled || profile?.is_admin || profile?.is_platform_admin
+);
+
+export const canUsePlatformAi = (profile = null) => Boolean(profile?.platform_ai_enabled);
 
 export const PLAN_LIMITS = {
   starter: {
@@ -76,8 +78,8 @@ export const ALL_TABS = [
 
 export const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due'];
 
-export const resolveRealPlan = ({ profile, email, now = new Date() }) => {
-  if (isAdminEmail(email)) return 'team';
+export const resolveRealPlan = ({ profile, now = new Date() }) => {
+  if (isAdminProfile(profile)) return 'team';
   if (!profile) return 'starter';
 
   const subscriptionStatus = String(profile.subscription_status || '').toLowerCase();
@@ -113,6 +115,10 @@ export const buildDefaultUserProfile = (userId, now = new Date()) => {
     trial_ends: trialEnd.toISOString(),
     ai_reports_used: 0,
     ai_reports_reset_at: currentMonthStart.toISOString(),
+    is_admin: false,
+    household_tools_enabled: false,
+    platform_ai_enabled: true,
+    is_platform_admin: false,
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
   };

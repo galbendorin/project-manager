@@ -1,6 +1,6 @@
 import React from 'react';
 import { LEGAL_NAV_ITEMS, getLegalPage, LAST_UPDATED } from '../utils/legalContent';
-import { COMPANY_NAME, PRODUCT_NAME } from '../utils/feedback';
+import { PRIVACY_EMAIL, PRODUCT_NAME, SUPPORT_EMAIL } from '../utils/feedback';
 
 function SectionContent({ section }) {
   return (
@@ -153,7 +153,15 @@ export default function LegalPage({ page = 'privacy' }) {
               </div>
 
               <div className="mt-8 rounded-[24px] border border-slate-200 bg-slate-50/90 p-4 text-sm leading-7 text-slate-600">
-                These launch materials are meant to match the live product more closely than the previous first-pass pages, but they still need a final legal review against the live deployment, billing setup, retention periods, and mailbox configuration before formal publication.
+                Questions about these notices, billing terms, or support can be sent to{' '}
+                <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4">
+                  {SUPPORT_EMAIL}
+                </a>
+                . Privacy and data-rights requests should be sent to{' '}
+                <a href={`mailto:${PRIVACY_EMAIL}`} className="font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4">
+                  {PRIVACY_EMAIL}
+                </a>
+                .
               </div>
             </div>
 
@@ -179,12 +187,15 @@ export default function LegalPage({ page = 'privacy' }) {
               </div>
 
               <div className="rounded-[30px] border border-slate-200/85 bg-slate-950 p-5 text-white shadow-[0_24px_70px_-48px_rgba(15,23,42,0.55)]">
-                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-300">Practical note</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-teal-300">Need help?</div>
                 <p className="mt-3 text-sm leading-7 text-slate-200">
-                  Replace any remaining operational placeholders with live mailbox and company details before relying on these pages as a final public legal position.
+                  Use the support mailbox for general questions, billing, or legal notices. Use the privacy mailbox for data requests or privacy concerns.
                 </p>
                 <p className="mt-4 text-xs leading-6 text-slate-400">
-                  Public company placeholder intentionally shown as <strong>{COMPANY_NAME}</strong>.
+                  Support: <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-white underline decoration-teal-200/50 underline-offset-4">{SUPPORT_EMAIL}</a>
+                </p>
+                <p className="mt-2 text-xs leading-6 text-slate-400">
+                  Privacy: <a href={`mailto:${PRIVACY_EMAIL}`} className="font-semibold text-white underline decoration-teal-200/50 underline-offset-4">{PRIVACY_EMAIL}</a>
                 </p>
               </div>
             </aside>

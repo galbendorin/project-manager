@@ -1,9 +1,18 @@
-export const COMPANY_NAME = 'Company Name';
-export const PRODUCT_NAME = 'PM Workspace';
-export const INTERNAL_PRODUCT_NAME = 'PM OS';
-export const SUPPORT_EMAIL = 'support@pmworkspace.com';
-export const PRIVACY_EMAIL = 'privacy@pmworkspace.com';
-export const FEEDBACK_EMAIL = 'galben.dorin@yahoo.com';
+const env = import.meta.env || {};
+
+export const PRODUCT_NAME = String(env.VITE_PUBLIC_PRODUCT_NAME || 'PM Workspace').trim() || 'PM Workspace';
+export const COMPANY_NAME = String(env.VITE_PUBLIC_OPERATOR_NAME || PRODUCT_NAME).trim() || PRODUCT_NAME;
+export const SUPPORT_EMAIL = String(env.VITE_PUBLIC_SUPPORT_EMAIL || 'support@pmworkspace.com').trim() || 'support@pmworkspace.com';
+export const PRIVACY_EMAIL = String(env.VITE_PUBLIC_PRIVACY_EMAIL || SUPPORT_EMAIL).trim() || SUPPORT_EMAIL;
+export const FEEDBACK_EMAIL = SUPPORT_EMAIL;
+export const SUPPORT_CONFIG = Object.freeze({
+  companyName: COMPANY_NAME,
+  productName: PRODUCT_NAME,
+  supportEmail: SUPPORT_EMAIL,
+  privacyEmail: PRIVACY_EMAIL,
+  feedbackEmail: FEEDBACK_EMAIL,
+  website: String(env.VITE_PUBLIC_SITE_URL || 'https://pmworkspace.com').trim() || 'https://pmworkspace.com',
+});
 
 const TAB_LABELS = {
   schedule: 'Project Plan',
@@ -66,6 +75,6 @@ function buildBody({ projectName, tab, subView }) {
 export function openFeedbackEmail(context = {}) {
   if (typeof window === 'undefined') return;
 
-  const mailtoHref = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(buildSubject(context))}&body=${encodeURIComponent(buildBody(context))}`;
+  const mailtoHref = `mailto:${SUPPORT_CONFIG.feedbackEmail}?subject=${encodeURIComponent(buildSubject(context))}&body=${encodeURIComponent(buildBody(context))}`;
   window.location.href = mailtoHref;
 }

@@ -25,6 +25,15 @@ const cacheSupabase = getAdminSupabase();
 
 const normalizeSpace = (value = '') => String(value || '').replace(/\s+/g, ' ').trim();
 
+const isLocalRequest = (req) => {
+  const host = String(req?.headers?.host || '').toLowerCase();
+  const origin = String(req?.headers?.origin || '').toLowerCase();
+  return host.includes('localhost')
+    || host.includes('127.0.0.1')
+    || origin.includes('localhost')
+    || origin.includes('127.0.0.1');
+};
+
 const createHttpError = ({ message, status = 500, payload = null }) => {
   const error = new Error(message);
   error.status = status;
@@ -128,24 +137,32 @@ const fetchJson = async (url, options = {}) => {
   return response.json();
 };
 
-const normalizeUsdaApiError = (error, { usingDemoKey = false } = {}) => {
+const normalizeUsdaApiError = (error, { usingDemoKey = false, localRequest = false } = {}) => {
   const status = Number(error?.status);
   const code = String(error?.payload?.error?.code || '').toUpperCase();
   const message = String(error?.payload?.error?.message || error?.message || '');
+  const genericMessage = 'Calorie estimation is temporarily unavailable. Please try again later or enter calories manually.';
 
   if (code === 'OVER_RATE_LIMIT' || status === 429 || message.toLowerCase().includes('rate limit')) {
-    return usingDemoKey
-      ? 'The USDA demo key is over its shared rate limit right now. Add `USDA_FDC_API_KEY` to your local `.env`, restart `vercel dev`, and try again.'
-      : 'Your USDA FoodData Central key is over its rate limit right now. Try again shortly, or use a different API key.'
+    if (usingDemoKey && localRequest) {
+      return 'The shared USDA demo key is over its local rate limit right now. Add your own `USDA_FDC_API_KEY` locally and try again.';
+    }
+    if (localRequest && !usingDemoKey) {
+      return 'Your local USDA FoodData Central key is over its rate limit right now. Try again shortly or use a different key.';
+    }
+    return genericMessage;
   }
 
   if (code === 'API_KEY_MISSING' || message.toLowerCase().includes('api key')) {
-    return usingDemoKey
-      ? 'USDA did not accept the shared demo key. Add your own `USDA_FDC_API_KEY` to local `.env`, restart `vercel dev`, and try again.'
-      : 'Your `USDA_FDC_API_KEY` appears to be missing or invalid.'
+    if (localRequest) {
+      return usingDemoKey
+        ? 'USDA did not accept the shared local demo key. Add your own `USDA_FDC_API_KEY` locally and try again.'
+        : 'Your local `USDA_FDC_API_KEY` appears to be missing or invalid.';
+    }
+    return genericMessage;
   }
 
-  return message || 'Unable to estimate calories right now.';
+  return localRequest ? (message || genericMessage) : genericMessage;
 };
 
 const readCachedIngredientEstimate = async (ingredient = {}, searchQuery = '') => {
@@ -351,6 +368,7 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.USDA_FDC_API_KEY || 'DEMO_KEY';
+  const localRequest = isLocalRequest(req);
 
   try {
     const rememberedIngredientRows = await loadRememberedIngredientRows({
@@ -456,11 +474,12 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ...summary,
       source: 'PM Workspace calorie estimator',
-      usesDemoKey: apiKey === 'DEMO_KEY',
+      usesDemoKey: localRequest ? apiKey === 'DEMO_KEY' : false,
     });
   } catch (error) {
     const normalizedMessage = normalizeUsdaApiError(error, {
       usingDemoKey: apiKey === 'DEMO_KEY',
+      localRequest,
     });
     return res.status(Number(error?.status) === 429 ? 429 : 502).json({
       error: normalizedMessage,

@@ -118,7 +118,7 @@ export default function PublicPricingPage() {
             </div>
 
             <div className="mt-8 rounded-[24px] border border-slate-200 bg-slate-50/90 p-4 text-sm leading-7 text-slate-600">
-              PM Workspace is operated by {COMPANY_NAME}. See the public legal pages before creating an account: <a href="/privacy" className="font-semibold underline decoration-slate-300 underline-offset-4">Privacy Notice</a>, <a href="/terms" className="font-semibold underline decoration-slate-300 underline-offset-4">Terms of Service</a>, <a href="/cookie-storage-notice" className="font-semibold underline decoration-slate-300 underline-offset-4">Cookie &amp; Storage Notice</a>, and <a href="/privacy-requests" className="font-semibold underline decoration-slate-300 underline-offset-4">Privacy Requests</a>.
+              {COMPANY_NAME} provides the PM Workspace service. See the public legal pages before creating an account: <a href="/privacy" className="font-semibold underline decoration-slate-300 underline-offset-4">Privacy Notice</a>, <a href="/terms" className="font-semibold underline decoration-slate-300 underline-offset-4">Terms of Service</a>, <a href="/cookie-storage-notice" className="font-semibold underline decoration-slate-300 underline-offset-4">Cookie &amp; Storage Notice</a>, and <a href="/privacy-requests" className="font-semibold underline decoration-slate-300 underline-offset-4">Privacy Requests</a>.
             </div>
           </main>
         </div>

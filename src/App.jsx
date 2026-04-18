@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { useAuth } from './contexts/AuthContext';
+import { usePlan } from './contexts/PlanContext';
 import { useCheckoutStatus, CheckoutToast } from './hooks/useCheckoutStatus.jsx';
 import OfflineBanner from './components/OfflineBanner';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
@@ -62,6 +63,7 @@ const getUserDisplayName = (user) => {
 
 function App() {
   const { user, loading: authLoading, signOut, isPasswordRecovery } = useAuth();
+  const { householdToolsEnabled, loading: planLoading } = usePlan();
   const checkoutStatus = useCheckoutStatus();
   const isOnline = useOnlineStatus();
   const [currentProject, setCurrentProject] = useState(null);
@@ -185,6 +187,16 @@ function App() {
     );
   }
 
+  if (planLoading && (currentPath === '/shopping' || currentPath === '/meals')) {
+    return (
+      <>
+        <OfflineBanner isOnline={isOnline} />
+        <PageFallback label="Loading workspace..." />
+        <CheckoutToast status={checkoutStatus} />
+      </>
+    );
+  }
+
   if (!currentProject) {
     return (
       <>
@@ -201,7 +213,7 @@ function App() {
               />,
               'Loading Timesheet...'
             )
-          : currentPath === '/shopping'
+          : currentPath === '/shopping' && householdToolsEnabled
             ? renderLazyPage(
                 <AuthenticatedShoppingShell
                   currentUserId={user.id}
@@ -213,7 +225,7 @@ function App() {
                 />,
                 'Loading Shopping List...'
               )
-            : currentPath === '/meals'
+            : currentPath === '/meals' && householdToolsEnabled
               ? renderLazyPage(
                   <AuthenticatedMealPlannerShell
                     currentUserId={user.id}
@@ -233,8 +245,8 @@ function App() {
                     navigateToPath('/');
                   }}
                   onOpenTrack={() => navigateToPath('/track')}
-                  onOpenShopping={() => navigateToPath('/shopping')}
-                  onOpenMeals={() => navigateToPath('/meals')}
+                  onOpenShopping={() => householdToolsEnabled && navigateToPath('/shopping')}
+                  onOpenMeals={() => householdToolsEnabled && navigateToPath('/meals')}
                   accentTheme={accentTheme}
                   onAccentThemeChange={setAccentTheme}
                 />,

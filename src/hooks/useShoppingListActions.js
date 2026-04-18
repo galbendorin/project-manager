@@ -9,6 +9,14 @@ const isOfflineBrowser = () => (
   typeof navigator !== 'undefined' && navigator.onLine === false
 );
 
+const isMissingShoppingUpsertRpcError = (error) => {
+  const code = String(error?.code || '').toLowerCase();
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return code === '42883'
+    || message.includes('upsert_shopping_list_item')
+    || message.includes('manual_todos');
+};
+
 export function useShoppingListActions({
   currentUserId,
   isOnline,
@@ -52,6 +60,35 @@ export function useShoppingListActions({
   const getSelectClause = useCallback(() => (
     supportsShoppingFieldsRef.current ? manualTodoSelect : legacyManualTodoSelect
   ), [legacyManualTodoSelect, manualTodoSelect]);
+
+  const loadLatestOpenTodos = useCallback(async (projectId) => {
+    if (!projectId) return [];
+
+    let selectClause = getSelectClause();
+    let result = await supabase
+      .from('manual_todos')
+      .select(selectClause)
+      .eq('project_id', projectId)
+      .neq('status', 'Done')
+      .order('created_at', { ascending: true });
+
+    if (result.error && supportsShoppingFieldsRef.current && isMissingSchemaFieldError(result.error, shoppingExtraFields)) {
+      supportsShoppingFieldsRef.current = false;
+      selectClause = legacyManualTodoSelect;
+      result = await supabase
+        .from('manual_todos')
+        .select(selectClause)
+        .eq('project_id', projectId)
+        .neq('status', 'Done')
+        .order('created_at', { ascending: true });
+    }
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    return (result.data || []).map(mapManualTodoRow);
+  }, [getSelectClause, isMissingSchemaFieldError, legacyManualTodoSelect, mapManualTodoRow, shoppingExtraFields]);
 
   const clearPendingCompletion = useCallback(() => {
     if (completionTimeoutRef.current) {
@@ -97,13 +134,13 @@ export function useShoppingListActions({
 
     if (!selectedProject?.id || normalizedItems.length === 0) return;
 
-    const addPlan = planShoppingListAdds({
+    const initialPlan = planShoppingListAdds({
       existingTodos: todos,
       incomingItems: normalizedItems,
     });
 
-    if (addPlan.addedCount === 0 && addPlan.mergedCount === 0) {
-      return addPlan;
+    if (initialPlan.addedCount === 0 && initialPlan.mergedCount === 0) {
+      return initialPlan;
     }
 
     setSavingItems(true);
@@ -114,7 +151,7 @@ export function useShoppingListActions({
       let nextTodos = [...todos];
       let nextQueue = loadShoppingOfflineState(currentUserId).queue || [];
 
-      for (const update of addPlan.updates) {
+      for (const update of initialPlan.updates) {
         nextTodos = nextTodos.map((todo) => (
           todo._id === update.todoId
             ? {
@@ -132,7 +169,7 @@ export function useShoppingListActions({
         });
       }
 
-      const offlineItems = addPlan.inserts.map((item) => createOfflineShoppingTodo({
+      const offlineItems = initialPlan.inserts.map((item) => createOfflineShoppingTodo({
         title: item.title,
         projectId: selectedProject.id,
         userId: currentUserId,
@@ -173,104 +210,83 @@ export function useShoppingListActions({
         queue: nextQueue,
       });
       setSavingItems(false);
+      return initialPlan;
+    }
+
+    let latestOpenTodos = [];
+    try {
+      latestOpenTodos = await loadLatestOpenTodos(selectedProject.id);
+    } catch (nextError) {
+      setTodoError(nextError?.message || 'Unable to confirm the latest groceries right now.');
+      setSavingItems(false);
+      return initialPlan;
+    }
+
+    const effectiveExistingTodos = latestOpenTodos.length > 0
+      ? mergeTodosById(todos, latestOpenTodos)
+      : todos;
+    const addPlan = planShoppingListAdds({
+      existingTodos: effectiveExistingTodos,
+      incomingItems: normalizedItems,
+    });
+
+    if (addPlan.addedCount === 0 && addPlan.mergedCount === 0) {
+      setSavingItems(false);
       return addPlan;
     }
 
-    const rows = addPlan.inserts.map((item) => ({
-      user_id: currentUserId,
-      project_id: selectedProject.id,
-      title: item.title,
-      due_date: null,
-      owner_text: '',
-      assignee_user_id: currentUserId,
-      status: 'Open',
-      recurrence: null,
-      completed_at: null,
-      ...(supportsShoppingFieldsRef.current ? {
-        quantity_value: item.quantityValue,
-        quantity_unit: item.quantityUnit || '',
-        source_type: item.sourceType || '',
-        source_batch_id: item.sourceBatchId || null,
-        meta: item.meta || {},
-      } : {}),
-    }));
+    const savedRows = [];
+    for (const item of addPlan.preparedItems || []) {
+      const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
+        target_project_id: selectedProject.id,
+        target_title: item.title,
+        target_quantity_value: item.quantityValue,
+        target_quantity_unit: item.quantityUnit || '',
+        target_source_type: item.sourceType || '',
+        target_source_batch_id: item.sourceBatchId || null,
+        target_meta: item.meta || {},
+      });
 
-    const timestamp = new Date().toISOString();
-    const savedUpdatedRows = [];
+      const savedRow = Array.isArray(data) ? data[0] : data;
+      if (error || !savedRow) {
+        let serverTodos = [];
+        try {
+          serverTodos = await loadLatestOpenTodos(selectedProject.id);
+        } catch {
+          serverTodos = [];
+        }
 
-    for (const update of addPlan.updates) {
-      let selectClause = getSelectClause();
-      let updateResult = await supabase
-        .from('manual_todos')
-        .update({
-          quantity_value: update.quantityValue,
-          quantity_unit: update.quantityUnit || '',
-          updated_at: timestamp,
-        })
-        .eq('id', update.todoId)
-        .select(selectClause)
-        .single();
+        if (serverTodos.length > 0) {
+          setTodos((previous) => {
+            const nextTodos = mergeTodosById(previous, serverTodos);
+            const cachedState = loadShoppingOfflineState(currentUserId);
+            persistOfflineState({
+              ...cachedState,
+              selectedProjectId: selectedProject.id,
+              todosByProject: {
+                ...(cachedState.todosByProject || {}),
+                [selectedProject.id]: nextTodos,
+              },
+              lastSyncedAt: new Date().toISOString(),
+            });
+            return nextTodos;
+          });
+        }
 
-      if (updateResult.error && supportsShoppingFieldsRef.current && isMissingSchemaFieldError(updateResult.error, shoppingExtraFields)) {
-        supportsShoppingFieldsRef.current = false;
-        selectClause = legacyManualTodoSelect;
-        updateResult = await supabase
-          .from('manual_todos')
-          .update({
-            updated_at: timestamp,
-          })
-          .eq('id', update.todoId)
-          .select(selectClause)
-          .single();
-      }
-
-      if (updateResult.error || !updateResult.data) {
-        setTodoError(updateResult.error?.message || 'Unable to update this grocery right now.');
+        setTodoError(
+          isMissingShoppingUpsertRpcError(error)
+            ? 'Shopping List needs the latest SQL migration before groceries can be merged safely.'
+            : (error?.message || 'Unable to add groceries right now.')
+        );
         setSavingItems(false);
         return addPlan;
       }
 
-      savedUpdatedRows.push(mapManualTodoRow(updateResult.data));
-    }
-
-    let savedItems = [];
-    if (rows.length > 0) {
-      let selectClause = getSelectClause();
-      let { data, error } = await supabase
-        .from('manual_todos')
-        .insert(rows)
-        .select(selectClause);
-
-      if (error && supportsShoppingFieldsRef.current && isMissingSchemaFieldError(error, shoppingExtraFields)) {
-        supportsShoppingFieldsRef.current = false;
-        selectClause = legacyManualTodoSelect;
-        ({ data, error } = await supabase
-          .from('manual_todos')
-          .insert(addPlan.inserts.map((item) => ({
-            user_id: currentUserId,
-            project_id: selectedProject.id,
-            title: item.title,
-            due_date: null,
-            owner_text: '',
-            assignee_user_id: currentUserId,
-            status: 'Open',
-            recurrence: null,
-            completed_at: null,
-          })))
-          .select(selectClause));
-      }
-
-      if (error) {
-        setTodoError(error.message || 'Unable to add groceries right now.');
-        setSavingItems(false);
-        return addPlan;
-      }
-
-      savedItems = sortTodos((data || []).map(mapManualTodoRow));
+      savedRows.push(mapManualTodoRow(savedRow));
     }
 
     setTodos((previous) => {
-      const nextTodos = mergeTodosById(previous, [...savedUpdatedRows, ...savedItems]);
+      const nextTodos = mergeTodosById(previous, savedRows);
       const cachedState = loadShoppingOfflineState(currentUserId);
       persistOfflineState({
         ...cachedState,
@@ -285,17 +301,15 @@ export function useShoppingListActions({
     });
     await notifyShoppingListSubscribers({
       projectId: selectedProject.id,
-      itemTitles: [...savedItems, ...savedUpdatedRows].map((item) => item.title),
+      itemTitles: savedRows.map((item) => item.title),
     });
     setSavingItems(false);
     return addPlan;
   }, [
     currentUserId,
     createOfflineShoppingTodo,
-    getSelectClause,
-    isMissingSchemaFieldError,
     isOnline,
-    legacyManualTodoSelect,
+    loadLatestOpenTodos,
     loadShoppingOfflineState,
     mapManualTodoRow,
     mergeTodosById,
@@ -303,7 +317,6 @@ export function useShoppingListActions({
     selectedProject,
     setTodoError,
     setTodos,
-    shoppingExtraFields,
     sortTodos,
     todos,
   ]);
