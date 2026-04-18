@@ -212,6 +212,12 @@ const formatMacroTotal = (value) => {
   return next.toFixed(1).replace(/\.0$/, '');
 };
 
+const createEmptyNutritionTotals = () => ({
+  proteinG: 0,
+  carbsG: 0,
+  fiberG: 0,
+});
+
 const parsePlannerNumberInput = (value) => {
   const normalized = String(value ?? '').trim().replace(',', '.');
   if (!normalized) return null;
@@ -1847,6 +1853,17 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
       return accumulator;
     }, {})
   ), [entries]);
+  const slotEntriesByKey = useMemo(() => (
+    Object.entries(entriesBySlotKey).reduce((accumulator, [slotKey, slotEntries]) => {
+      accumulator[slotKey] = slotEntries
+        .map((entry) => ({
+          entry,
+          recipe: resolvedRecipeByEntryId[entry.id] || null,
+        }))
+        .filter(({ recipe }) => Boolean(recipe));
+      return accumulator;
+    }, {})
+  ), [entriesBySlotKey, resolvedRecipeByEntryId]);
 
   const filteredLibraryRecipes = useMemo(() => (
     recipes.filter((recipe) => {
@@ -1873,46 +1890,44 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
       return accumulator;
     }, {})
   ), [recipes]);
-  const dayCaloriesByKey = useMemo(() => (
-    weekDays.reduce((accumulator, day) => {
-      const total = entries
-        .filter((entry) => entry.date === day.key)
-        .reduce((sum, entry) => {
-          const recipe = resolvedRecipeByEntryId[entry.id];
-          const entryUsage = entryUsageById?.[entry.id] || null;
-          const multiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
-          if (!recipe?.estimatedKcal || multiplier <= 0) return sum;
-          return sum + (recipe.estimatedKcal * multiplier);
-        }, 0);
-      accumulator[day.key] = Math.round(total);
+  const daySummaryByKey = useMemo(() => {
+    const summary = weekDays.reduce((accumulator, day) => {
+      accumulator[day.key] = {
+        calories: 0,
+        nutrition: createEmptyNutritionTotals(),
+      };
       return accumulator;
-    }, {})
-  ), [entries, entryUsageById, resolvedRecipeByEntryId, weekDays]);
-  const dayNutritionByKey = useMemo(() => (
-    weekDays.reduce((accumulator, day) => {
-      const totals = entries
-        .filter((entry) => entry.date === day.key)
-        .reduce((sum, entry) => {
-          const entryUsage = entryUsageById?.[entry.id] || null;
-          const multiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
-          if (multiplier <= 0) return sum;
-          const recipe = resolvedRecipeByEntryId[entry.id];
-          const nutrition = recipe ? recipeNutritionById[recipe.id] : null;
-          if (!nutrition) return sum;
-          return {
-            proteinG: sum.proteinG + ((nutrition.proteinG || 0) * multiplier),
-            carbsG: sum.carbsG + ((nutrition.carbsG || 0) * multiplier),
-            fiberG: sum.fiberG + ((nutrition.fiberG || 0) * multiplier),
-          };
-        }, {
-          proteinG: 0,
-          carbsG: 0,
-          fiberG: 0,
-        });
-      accumulator[day.key] = totals;
-      return accumulator;
-    }, {})
-  ), [entries, entryUsageById, recipeNutritionById, resolvedRecipeByEntryId, weekDays]);
+    }, {});
+
+    entries.forEach((entry) => {
+      const daySummary = summary[entry.date];
+      if (!daySummary) return;
+
+      const recipe = resolvedRecipeByEntryId[entry.id];
+      if (!recipe) return;
+
+      const entryUsage = entryUsageById?.[entry.id] || null;
+      const multiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
+      if (multiplier <= 0) return;
+
+      if (recipe.estimatedKcal) {
+        daySummary.calories += recipe.estimatedKcal * multiplier;
+      }
+
+      const nutrition = recipeNutritionById[recipe.id];
+      if (!nutrition) return;
+
+      daySummary.nutrition.proteinG += (nutrition.proteinG || 0) * multiplier;
+      daySummary.nutrition.carbsG += (nutrition.carbsG || 0) * multiplier;
+      daySummary.nutrition.fiberG += (nutrition.fiberG || 0) * multiplier;
+    });
+
+    Object.values(summary).forEach((daySummary) => {
+      daySummary.calories = Math.round(daySummary.calories);
+    });
+
+    return summary;
+  }, [entries, entryUsageById, recipeNutritionById, resolvedRecipeByEntryId, weekDays]);
   const activeMobileDay = useMemo(() => (
     weekDays.find((day) => day.key === activeMobileDayKey) || weekDays[0] || null
   ), [activeMobileDayKey, weekDays]);
@@ -2196,7 +2211,7 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
   return (
     <div className="pm-shell-bg min-h-full w-full overflow-x-hidden px-3 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto w-full max-w-7xl space-y-5">
-        <section className="pm-home-panel w-full min-w-0 overflow-hidden rounded-[24px] p-3.5 sm:rounded-[30px] sm:p-6">
+        <section className="pm-home-panel pm-meal-planner-shell w-full min-w-0 overflow-hidden rounded-[24px] p-3.5 sm:rounded-[30px] sm:p-6">
           <div className="flex w-full min-w-0 flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <p className="pm-kicker">Meal Planner</p>
@@ -2279,7 +2294,7 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
           ) : null}
 
           <div className="mt-5 grid w-full min-w-0 gap-4 xl:grid-cols-[minmax(0,1.65fr)_360px]">
-            <div className="w-full min-w-0 rounded-[24px] border border-slate-200 bg-white p-3.5 shadow-sm sm:rounded-[28px] sm:p-5">
+            <div className="pm-scroll-optimize-section pm-meal-planner-panel w-full min-w-0 rounded-[24px] border border-slate-200 bg-white p-3.5 shadow-sm sm:rounded-[28px] sm:p-5">
               <div className="grid min-w-0 gap-3 xl:grid-cols-[auto_minmax(0,1fr)] xl:items-start">
                 <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                   <button type="button" onClick={() => handleMoveWeek(-1)} className="pm-subtle-button shrink-0 rounded-full p-2.5">
@@ -2469,7 +2484,7 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
                   const hasNextDayInWeek = currentDayIndex >= 0 && currentDayIndex < weekDays.length - 1;
 
                   return (
-                  <div key={day.key} className="pm-scroll-optimize-day rounded-[22px] border border-slate-200 bg-slate-50/70 p-3 sm:rounded-[26px] sm:p-4">
+                  <div key={day.key} className="pm-scroll-optimize-day pm-meal-planner-repeated-card rounded-[22px] border border-slate-200 bg-slate-50/70 p-3 sm:rounded-[26px] sm:p-4">
                     <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{day.shortLabel}</p>
@@ -2478,18 +2493,18 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
                       <div className="w-full rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-left sm:w-auto sm:min-w-[180px] sm:shrink-0 sm:rounded-[20px] sm:text-right">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">Your total</p>
                         <p className="mt-1 text-sm font-semibold text-amber-800">
-                          {dayCaloriesByKey[day.key] > 0 ? `${dayCaloriesByKey[day.key]} kcal` : 'No meals yet'}
+                          {daySummaryByKey[day.key]?.calories > 0 ? `${daySummaryByKey[day.key].calories} kcal` : 'No meals yet'}
                         </p>
-                        {dayCaloriesByKey[day.key] > 0 ? (
+                        {daySummaryByKey[day.key]?.calories > 0 ? (
                           <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold sm:justify-end">
                             <span className="rounded-full bg-white px-2 py-1 text-sky-700">
-                              P {formatMacroTotal(dayNutritionByKey[day.key]?.proteinG)}g
+                              P {formatMacroTotal(daySummaryByKey[day.key]?.nutrition?.proteinG)}g
                             </span>
                             <span className="rounded-full bg-white px-2 py-1 text-indigo-700">
-                              C {formatMacroTotal(dayNutritionByKey[day.key]?.carbsG)}g
+                              C {formatMacroTotal(daySummaryByKey[day.key]?.nutrition?.carbsG)}g
                             </span>
                             <span className="rounded-full bg-white px-2 py-1 text-emerald-700">
-                              Fib {formatMacroTotal(dayNutritionByKey[day.key]?.fiberG)}g
+                              Fib {formatMacroTotal(daySummaryByKey[day.key]?.nutrition?.fiberG)}g
                             </span>
                           </div>
                         ) : null}
@@ -2498,15 +2513,10 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
 
                     <div className="mt-3 grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
                       {SLOT_ORDER.map((slot) => {
-                        const slotEntries = (entriesBySlotKey[`${day.key}:${slot}`] || [])
-                          .map((entry) => ({
-                            entry,
-                            recipe: resolvedRecipeByEntryId[entry.id] || null,
-                          }))
-                          .filter(({ recipe }) => Boolean(recipe));
+                        const slotEntries = slotEntriesByKey[`${day.key}:${slot}`] || [];
 
                         return (
-                          <div key={`${day.key}-${slot}`} className="pm-scroll-optimize-card rounded-[18px] border border-slate-200 bg-white p-2.5 shadow-sm sm:rounded-[24px] sm:p-3">
+                          <div key={`${day.key}-${slot}`} className="pm-scroll-optimize-card pm-meal-planner-repeated-card rounded-[18px] border border-slate-200 bg-white p-2.5 sm:rounded-[24px] sm:p-3">
                             <div className="flex items-center justify-between gap-3">
                               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{getMealSlotLabel(slot)}</p>
                               <div className="flex items-center gap-2">
@@ -2628,7 +2638,7 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
                                   </>
                                 );
                                 return (
-                                  <div key={entry.id} className={`pm-scroll-optimize-card rounded-[16px] border px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3 ${isCarryoverEntry ? 'border-sky-100 bg-white shadow-sm' : 'border-slate-200 bg-slate-50/60'}`}>
+                                  <div key={entry.id} className={`pm-scroll-optimize-card pm-meal-planner-repeated-card rounded-[16px] border px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3 ${isCarryoverEntry ? 'border-sky-100 bg-white' : 'border-slate-200 bg-slate-50/60'}`}>
                                     {isCarryoverEntry ? (
                                       <div className="block w-full text-left">
                                         {cardBody}
@@ -2748,7 +2758,7 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
             </div>
 
             <div className={`w-full min-w-0 space-y-4 ${isMobile && mobileActivePanel === 'planner' ? 'hidden' : ''}`}>
-              <div className={`w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${!isRecipeLibraryVisible ? 'hidden' : ''}`}>
+              <div className={`pm-scroll-optimize-section pm-meal-planner-panel w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${!isRecipeLibraryVisible ? 'hidden' : ''}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p className="pm-kicker">Recipe library</p>
@@ -2795,7 +2805,7 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
 
                     <div className="mt-4 max-h-[720px] space-y-3 overflow-y-auto pr-1">
                       {visibleLibraryRecipes.map((recipe) => (
-                        <div key={recipe.id} className="pm-scroll-optimize-card rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
+                        <div key={recipe.id} className="pm-scroll-optimize-card pm-meal-planner-repeated-card rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
                           <button type="button" onClick={() => setDetailContext({
                             recipe,
                             entry: null,
@@ -2854,7 +2864,7 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
                 )}
               </div>
 
-              <div className={`w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${!isShoppingGenerationVisible ? 'hidden' : ''}`}>
+              <div className={`pm-scroll-optimize-section pm-meal-planner-panel w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${!isShoppingGenerationVisible ? 'hidden' : ''}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="pm-kicker">Shopping generation</p>
