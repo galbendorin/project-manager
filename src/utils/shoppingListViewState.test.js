@@ -61,6 +61,15 @@ test('pickPreferredShoppingProject prefers a shared incoming list before a priva
   assert.equal(project?.id, 'shared-with-me');
 });
 
+test('pickPreferredShoppingProject keeps the explicitly selected shopping list when it is still available', () => {
+  const project = pickPreferredShoppingProject([
+    { id: 'private-owned', user_id: 'user-1', created_at: '2026-04-15T10:00:00.000Z', project_members: [] },
+    { id: 'shared-owned', user_id: 'user-1', created_at: '2026-04-15T11:00:00.000Z', project_members: [{ user_id: 'user-2' }] },
+  ], 'user-1', 'private-owned');
+
+  assert.equal(project?.id, 'private-owned');
+});
+
 test('normalizeBoughtTodoTitle keeps duplicate grocery names on one memory key', () => {
   assert.equal(normalizeBoughtTodoTitle('  Eggs  '), 'eggs');
   assert.equal(normalizeBoughtTodoTitle('eggS'), 'eggs');

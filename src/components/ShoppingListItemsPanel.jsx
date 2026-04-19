@@ -8,13 +8,26 @@ const formatQuantity = (value) => {
   return rounded.toFixed(2).replace(/\.?0+$/, '');
 };
 
+const formatMealPlanWeekLabel = (value = '') => {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return '';
+
+  const parsed = new Date(`${rawValue}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return '';
+
+  return `Week of ${parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+};
+
 const ShoppingItemMeta = ({ todo }) => {
   const quantityLabel = todo.quantityValue !== null
     ? `${formatQuantity(todo.quantityValue)} ${todo.quantityUnit || ''}`.trim()
     : '';
   const mealPlanLabel = todo.sourceType === 'meal_plan' ? 'Meal plan' : '';
+  const mealPlanWeekLabel = todo.sourceType === 'meal_plan'
+    ? formatMealPlanWeekLabel(todo.meta?.weekStartDate || todo.dueDate || '')
+    : '';
 
-  if (!quantityLabel && !mealPlanLabel) return null;
+  if (!quantityLabel && !mealPlanLabel && !mealPlanWeekLabel) return null;
 
   return (
     <div className="mt-2 flex flex-wrap gap-2">
@@ -26,6 +39,11 @@ const ShoppingItemMeta = ({ todo }) => {
       {mealPlanLabel ? (
         <span className="rounded-full border border-[var(--pm-accent)]/25 bg-[var(--pm-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--pm-accent-strong)]">
           {mealPlanLabel}
+        </span>
+      ) : null}
+      {mealPlanWeekLabel ? (
+        <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
+          {mealPlanWeekLabel}
         </span>
       ) : null}
     </div>

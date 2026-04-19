@@ -177,7 +177,6 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
   return {
     inserts,
     updates,
-    preparedItems: Array.from(consolidatedIncoming.values()),
     addedCount: inserts.length,
     mergedCount: updates.length,
   };
@@ -304,9 +303,17 @@ const getProjectShareScore = (project = {}, currentUserId = null) => {
   return 1;
 };
 
-export const pickPreferredShoppingProject = (projects = [], currentUserId = null) => {
+export const pickPreferredShoppingProject = (projects = [], currentUserId = null, preferredProjectId = '') => {
   const candidates = Array.isArray(projects) ? projects.filter(Boolean) : [];
   if (candidates.length === 0) return null;
+
+  const normalizedPreferredProjectId = String(preferredProjectId || '').trim();
+  if (normalizedPreferredProjectId) {
+    const preferredProject = candidates.find((project) => project?.id === normalizedPreferredProjectId);
+    if (preferredProject) {
+      return preferredProject;
+    }
+  }
 
   return [...candidates].sort((left, right) => {
     const scoreDifference = getProjectShareScore(right, currentUserId) - getProjectShareScore(left, currentUserId);

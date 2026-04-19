@@ -335,7 +335,7 @@ const fetchRecipeCalorieEstimate = async ({
     throw new Error(
       isLocal
         ? 'Local API is not running. Start `vercel dev --listen 3001` in a second terminal, then try again.'
-        : 'Unable to estimate calories right now. You can still enter them manually.'
+        : 'Unable to estimate calories right now.'
     );
   }
 
@@ -344,7 +344,7 @@ const fetchRecipeCalorieEstimate = async ({
     const isLocal = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
     const fallbackMessage = isLocal
       ? 'Local calorie API did not respond. Check that `vercel dev --listen 3001` is running, then try again.'
-      : 'Unable to estimate calories right now. You can still enter them manually.';
+      : 'Unable to estimate calories right now.';
     throw new Error(payload.error || fallbackMessage);
   }
 
@@ -371,7 +371,6 @@ function ModalShell({ children, onClose, wide = false }) {
 }
 
 function RecipeFormModal({ initialState, onClose, onSave, saving }) {
-  const isLocalHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const [form, setForm] = useState(initialState);
   const [estimateState, setEstimateState] = useState({
     loading: false,
@@ -659,7 +658,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
                 ) : null}
                 <p className="mt-2 text-slate-500">
                   Source: {estimateState.result.source}
-                  {isLocalHost && estimateState.result.usesDemoKey ? ' using the shared local demo key.' : '.'}
+                  {estimateState.result.usesDemoKey ? ' using the shared demo key.' : '.'}
                 </p>
               </div>
             ) : null}
@@ -1749,7 +1748,7 @@ function GroceryReviewModal({
   );
 }
 
-export default function MealPlannerView({ currentUserId, starterLibraryEnabled = false }) {
+export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const {
     applyMealToDates,
@@ -1786,7 +1785,7 @@ export default function MealPlannerView({ currentUserId, starterLibraryEnabled =
     upsertMealEntry,
     week,
     weekDays,
-  } = useMealPlannerData({ currentUserId, canUseStarterLibrary: starterLibraryEnabled });
+  } = useMealPlannerData({ currentUserEmail, currentUserId });
 
   const [librarySlotFilter, setLibrarySlotFilter] = useState('all');
   const [librarySearch, setLibrarySearch] = useState('');
