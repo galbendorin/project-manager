@@ -34,7 +34,9 @@ const isLocalRequest = (req) => {
     || origin.includes('127.0.0.1');
 };
 
-export const shouldUseStrictSharedMealEstimateRateLimit = (req) => !isLocalRequest(req);
+// Calorie estimation is a helper endpoint, so it should keep working even if the
+// shared rate-limit RPC has not been provisioned in the live database yet.
+export const shouldUseStrictSharedMealEstimateRateLimit = (_req) => false;
 
 const createHttpError = ({ message, status = 500, payload = null }) => {
   const error = new Error(message);

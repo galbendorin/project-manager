@@ -74,11 +74,11 @@ test('meal calorie estimates use local fallback when the request comes from loca
   }), false);
 });
 
-test('meal calorie estimates require the shared limiter for non-local requests', () => {
+test('meal calorie estimates still allow fallback for non-local requests', () => {
   assert.equal(shouldUseStrictSharedMealEstimateRateLimit({
     headers: {
       host: 'pmworkspace.com',
       origin: 'https://pmworkspace.com',
     },
-  }), true);
+  }), false);
 });
