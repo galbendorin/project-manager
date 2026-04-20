@@ -124,6 +124,7 @@ const mapIngredientRow = (row = {}) => ({
 
 const mapWeekRow = (row = {}) => ({
   id: row.id,
+  userId: row.user_id || '',
   weekStartDate: row.week_start_date || formatDateKey(new Date()),
   shoppingProjectId: row.shopping_project_id || '',
   adultCount: getAdultServingTotal({
@@ -171,8 +172,10 @@ const buildExcludedDraftSignaturesPayload = (signatures = [], format = 'jsonb') 
   return { signatures: normalizedSignatures };
 };
 
-const mapEntryRow = (row = {}) => ({
+const mapEntryRow = (row = {}, fallback = {}) => ({
   id: row.id,
+  weekId: row.week_id || fallback.weekId || '',
+  weekOwnerUserId: row.week_owner_user_id || fallback.weekOwnerUserId || '',
   date: row.date,
   mealSlot: row.meal_slot,
   mealId: row.meal_id,
@@ -195,6 +198,13 @@ const sortRecipes = (recipes = []) => (
   [...recipes].sort((left, right) => (
     `${left.mealSlot}-${left.name}`.localeCompare(`${right.mealSlot}-${right.name}`)
   ))
+);
+
+const mergeVisibleEntriesWithOwnEntries = (visibleEntries = [], ownEntries = [], currentUserId = '') => (
+  sortEntries([
+    ...(Array.isArray(visibleEntries) ? visibleEntries : []).filter((entry) => entry?.weekOwnerUserId !== currentUserId),
+    ...(Array.isArray(ownEntries) ? ownEntries : []),
+  ])
 );
 
 async function ensureShoppingProject(currentUserId, preferredProjectId = '') {
@@ -256,8 +266,11 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   const [plannerProject, setPlannerProject] = useState(null);
   const [week, setWeek] = useState(null);
   const [entries, setEntries] = useState([]);
+  const [visibleWeeks, setVisibleWeeks] = useState([]);
+  const [visibleEntries, setVisibleEntries] = useState([]);
   const [groceryBatch, setGroceryBatch] = useState(null);
   const [excludedDraftSourceSignatures, setExcludedDraftSourceSignatures] = useState([]);
+  // Older databases may not have the shared project field yet, so the planner falls back to private visibility.
   const [supportsSharedMealPlanner, setSupportsSharedMealPlanner] = useState(true);
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => formatDateKey(getWeekStartMonday(new Date())));
   const [lastImportedCount, setLastImportedCount] = useState(0);
@@ -302,12 +315,32 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   );
   const entryUsageById = mealPlanPreview.entryUsageById;
 
+  const householdMealPlanPreview = useMemo(() => buildMealPlanPreview({
+    recipes,
+    entries: visibleEntries,
+    adultPortionTotal: week?.adultCount ?? 1.75,
+    kidCount: week?.kidCount ?? 0,
+  }), [recipes, visibleEntries, week?.adultCount, week?.kidCount]);
+
+  const rawHouseholdGroceryDraft = householdMealPlanPreview.groceryDraft;
+  const householdGroceryDraft = useMemo(
+    () => applyGroceryDraftExclusions(rawHouseholdGroceryDraft, excludedDraftSourceSignatures),
+    [excludedDraftSourceSignatures, rawHouseholdGroceryDraft]
+  );
+  const hiddenHouseholdGroceryDraft = useMemo(
+    () => getHiddenGroceryDraftItems(rawHouseholdGroceryDraft, excludedDraftSourceSignatures),
+    [excludedDraftSourceSignatures, rawHouseholdGroceryDraft]
+  );
+  const householdEntryUsageById = householdMealPlanPreview.entryUsageById;
+
   const loadRecipes = useCallback(async (shoppingProjectId = '') => {
     let mealQuery = supabase
       .from('meal_library_meals')
       .select(supportsSharedMealPlanner ? MEAL_LIBRARY_SELECT_SHARED_WITH_BATCH : MEAL_LIBRARY_SELECT_WITH_BATCH);
     if (supportsSharedMealPlanner) {
       mealQuery = mealQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
+    } else {
+      mealQuery = mealQuery.eq('user_id', currentUserId);
     }
     let mealResult = await mealQuery
       .order('meal_slot', { ascending: true })
@@ -328,6 +361,8 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         .select(supportsSharedMealPlanner ? MEAL_LIBRARY_SELECT_SHARED_BASE : MEAL_LIBRARY_SELECT_BASE);
       if (supportsSharedMealPlanner) {
         fallbackMealQuery = fallbackMealQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
+      } else {
+        fallbackMealQuery = fallbackMealQuery.eq('user_id', currentUserId);
       }
       mealResult = await fallbackMealQuery
         .order('meal_slot', { ascending: true })
@@ -385,7 +420,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
     setRecipes(sortRecipes((mealRows || []).map((row) => mapRecipeRow(row, ingredientMap[row.id] || splitIngredientList(row.ingredients_raw)))));
     return mealRows || [];
-  }, [supportsSharedMealPlanner]);
+  }, [currentUserId, supportsSharedMealPlanner]);
 
   const replaceRecipeIngredients = useCallback(async (mealId, ingredientLines = []) => {
     const { error: deleteError } = await supabase
@@ -451,6 +486,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         existingResult = await supabase
           .from('meal_library_meals')
           .select('id, external_id')
+          .eq('user_id', currentUserId)
           .in('external_id', externalIds);
       } else if (existingResult.error) {
         throw existingResult.error;
@@ -511,6 +547,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       refreshedMeals = await supabase
         .from('meal_library_meals')
         .select('id, external_id')
+        .eq('user_id', currentUserId)
         .in('external_id', externalIds);
     } else if (refreshedMeals.error) {
       throw refreshedMeals.error;
@@ -565,10 +602,8 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     let existingWeekQuery = supabase
       .from('meal_plan_weeks')
       .select(supportsSharedMealPlanner ? MEAL_PLAN_WEEK_SELECT_SHARED_WITH_PORTIONS : MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS)
+      .eq('user_id', currentUserId)
       .eq('week_start_date', normalizedWeekStart);
-    if (supportsSharedMealPlanner) {
-      existingWeekQuery = existingWeekQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
-    }
     let existingWeekResult = await existingWeekQuery.maybeSingle();
 
     if (supportsSharedMealPlanner && existingWeekResult.error && isMissingMealPlannerFieldError(existingWeekResult.error, ['shopping_project_id'])) {
@@ -585,10 +620,8 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       let fallbackWeekQuery = supabase
         .from('meal_plan_weeks')
         .select(supportsSharedMealPlanner ? MEAL_PLAN_WEEK_SELECT_SHARED_BASE : MEAL_PLAN_WEEK_SELECT_BASE)
+        .eq('user_id', currentUserId)
         .eq('week_start_date', normalizedWeekStart);
-      if (supportsSharedMealPlanner) {
-        fallbackWeekQuery = fallbackWeekQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
-      }
       existingWeekResult = await fallbackWeekQuery.maybeSingle();
 
       if (supportsSharedMealPlanner && existingWeekResult.error && isMissingMealPlannerFieldError(existingWeekResult.error, ['shopping_project_id'])) {
@@ -607,8 +640,12 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     if (existingError) throw existingError;
 
     if (existingWeek) {
-      setWeek(mapWeekRow(existingWeek));
-      return existingWeek.id;
+      const nextWeek = {
+        ...mapWeekRow(existingWeek),
+        userId: existingWeek.user_id || currentUserId,
+      };
+      setWeek(nextWeek);
+      return nextWeek;
     }
 
     let createdWeekResult = await supabase
@@ -674,15 +711,77 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       throw createError || new Error('Unable to create meal planning week.');
     }
 
-    setWeek(mapWeekRow(createdWeek));
-    return createdWeek.id;
+    const nextWeek = {
+      ...mapWeekRow(createdWeek),
+      userId: createdWeek.user_id || currentUserId,
+    };
+    setWeek(nextWeek);
+    return nextWeek;
   }, [currentUserId, supportsSharedMealPlanner]);
 
-  const loadEntries = useCallback(async (weekId) => {
+  const loadEntries = useCallback(async ({
+    ownWeek,
+    weekStartDate,
+    shoppingProjectId = '',
+  }) => {
+    let nextVisibleWeeks = ownWeek?.id ? [ownWeek] : [];
+    const normalizedWeekStart = formatDateKey(weekStartDate);
+
+    if (supportsSharedMealPlanner && shoppingProjectId) {
+      let visibleWeeksResult = await supabase
+        .from('meal_plan_weeks')
+        .select('id, user_id, week_start_date, adult_count, kid_count, adult_portion_total, shopping_project_id')
+        .eq('week_start_date', normalizedWeekStart)
+        .eq('shopping_project_id', shoppingProjectId)
+        .order('created_at', { ascending: true });
+
+      if (visibleWeeksResult.error && isMissingMealPlannerFieldError(visibleWeeksResult.error, ['adult_portion_total'])) {
+        visibleWeeksResult = await supabase
+          .from('meal_plan_weeks')
+          .select('id, user_id, week_start_date, adult_count, kid_count, shopping_project_id')
+          .eq('week_start_date', normalizedWeekStart)
+          .eq('shopping_project_id', shoppingProjectId)
+          .order('created_at', { ascending: true });
+      }
+
+      if (visibleWeeksResult.error && isMissingMealPlannerFieldError(visibleWeeksResult.error, ['shopping_project_id'])) {
+        setSupportsSharedMealPlanner(false);
+      } else if (visibleWeeksResult.error) {
+        throw visibleWeeksResult.error;
+      } else {
+        nextVisibleWeeks = (visibleWeeksResult.data || []).map((row) => ({
+          ...mapWeekRow(row),
+          userId: row.user_id || '',
+        }));
+      }
+    }
+
+    if (ownWeek?.id && !nextVisibleWeeks.some((candidate) => candidate.id === ownWeek.id)) {
+      nextVisibleWeeks = [...nextVisibleWeeks, ownWeek];
+    }
+
+    nextVisibleWeeks = [...nextVisibleWeeks].sort((left, right) => {
+      const leftOwn = left?.userId === currentUserId ? 1 : 0;
+      const rightOwn = right?.userId === currentUserId ? 1 : 0;
+      return rightOwn - leftOwn || `${left?.userId || ''}-${left?.id || ''}`.localeCompare(`${right?.userId || ''}-${right?.id || ''}`);
+    });
+
+    const weekIds = nextVisibleWeeks.map((candidate) => candidate.id).filter(Boolean);
+    if (weekIds.length === 0) {
+      setVisibleWeeks([]);
+      setVisibleEntries([]);
+      setEntries([]);
+      return {
+        visibleWeeks: [],
+        visibleEntries: [],
+        ownEntries: [],
+      };
+    }
+
     let entriesResult = await supabase
       .from('meal_plan_entries')
-      .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position, entry_kind, carryover_source_entry_id')
-      .eq('week_id', weekId)
+      .select('id, week_id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position, entry_kind, carryover_source_entry_id')
+      .in('week_id', weekIds)
       .order('date', { ascending: true })
       .order('meal_slot', { ascending: true })
       .order('entry_position', { ascending: true })
@@ -691,8 +790,8 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     if (entriesResult.error && isMissingMealPlannerFieldError(entriesResult.error, ['entry_kind', 'carryover_source_entry_id'])) {
       entriesResult = await supabase
         .from('meal_plan_entries')
-        .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position')
-        .eq('week_id', weekId)
+        .select('id, week_id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position')
+        .in('week_id', weekIds)
         .order('date', { ascending: true })
         .order('meal_slot', { ascending: true })
         .order('entry_position', { ascending: true })
@@ -700,8 +799,29 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     }
 
     if (entriesResult.error) throw entriesResult.error;
-    setEntries(sortEntries((entriesResult.data || []).map(mapEntryRow)));
-  }, []);
+
+    const weekOwnerById = new Map(nextVisibleWeeks.map((candidate) => [candidate.id, candidate.userId || '']));
+    const nextVisibleEntries = sortEntries((entriesResult.data || []).map((row) => mapEntryRow(row, {
+      weekId: row.week_id,
+      weekOwnerUserId: weekOwnerById.get(row.week_id) || '',
+    })));
+    const ownWeekIds = new Set(
+      nextVisibleWeeks
+        .filter((candidate) => candidate.userId === currentUserId || candidate.id === ownWeek?.id)
+        .map((candidate) => candidate.id)
+    );
+    const nextOwnEntries = nextVisibleEntries.filter((entry) => ownWeekIds.has(entry.weekId));
+
+    setVisibleWeeks(nextVisibleWeeks);
+    setVisibleEntries(nextVisibleEntries);
+    setEntries(nextOwnEntries);
+
+    return {
+      visibleWeeks: nextVisibleWeeks,
+      visibleEntries: nextVisibleEntries,
+      ownEntries: nextOwnEntries,
+    };
+  }, [currentUserId, supportsSharedMealPlanner]);
 
   const loadGroceryBatch = useCallback(async (weekId) => {
     let batchResult = await supabase
@@ -738,9 +858,13 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         await seedStarterLibrary();
       }
 
-      const weekId = await ensureWeek(selectedWeekStart, shoppingProject.id);
-      await loadEntries(weekId);
-      await loadGroceryBatch(weekId);
+      const ownWeek = await ensureWeek(selectedWeekStart, shoppingProject.id);
+      await loadEntries({
+        ownWeek,
+        weekStartDate: selectedWeekStart,
+        shoppingProjectId: shoppingProject.id,
+      });
+      await loadGroceryBatch(ownWeek.id);
     } catch (nextError) {
       if (
         isMissingRelationError(nextError, 'meal_library_meals')
@@ -782,11 +906,14 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       adultCount: nextAdultCount,
       kidCount: nextKidCount,
     } : previous);
-    setEntries((previous) => previous.map((entry) => (
+    const nextOwnEntries = entries.map((entry) => (
       entryIdsFollowingDefault.includes(entry.id)
         ? { ...entry, servingMultiplier: null }
         : entry
-    )));
+    ));
+
+    setEntries(nextOwnEntries);
+    setVisibleEntries((previous) => mergeVisibleEntriesWithOwnEntries(previous, nextOwnEntries, currentUserId));
 
     if (entryIdsFollowingDefault.length > 0) {
       const { error: normalizeEntriesError } = await supabase
@@ -818,7 +945,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     if (updateError) {
       setError(updateError.message || 'Unable to update household counts right now.');
     }
-  }, [entries, week?.adultCount, week?.id, week?.kidCount]);
+  }, [currentUserId, entries, week?.adultCount, week?.id, week?.kidCount]);
 
   const upsertMealEntry = useCallback(async ({
     entryId = '',
@@ -890,7 +1017,10 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         const { data, error: updateError } = updateResult;
         if (updateError || !data) throw updateError || new Error('Unable to update planned meal.');
 
-        const nextEntry = mapEntryRow(data);
+        const nextEntry = mapEntryRow(data, {
+          weekId: week.id,
+          weekOwnerUserId: currentUserId,
+        });
         let nextEntries = entries.map((entry) => entry.id === existingEntry.id ? nextEntry : entry);
 
         if (normalizedEntryKind === 'planned') {
@@ -922,13 +1052,18 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
             }
 
             if (childUpdateResult.error) throw childUpdateResult.error;
-            const updatedChildren = (childUpdateResult.data || []).map(mapEntryRow);
+            const updatedChildren = (childUpdateResult.data || []).map((row) => mapEntryRow(row, {
+              weekId: week.id,
+              weekOwnerUserId: currentUserId,
+            }));
             const updatedChildrenById = new Map(updatedChildren.map((entry) => [entry.id, entry]));
             nextEntries = nextEntries.map((entry) => updatedChildrenById.get(entry.id) || entry);
           }
         }
 
-        setEntries(sortEntries(nextEntries));
+        const sortedOwnEntries = sortEntries(nextEntries);
+        setEntries(sortedOwnEntries);
+        setVisibleEntries((previous) => mergeVisibleEntriesWithOwnEntries(previous, sortedOwnEntries, currentUserId));
         return nextEntry;
       }
 
@@ -960,8 +1095,13 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       const { data, error: insertError } = insertResult;
       if (insertError || !data) throw insertError || new Error('Unable to save planned meal.');
 
-      const nextEntry = mapEntryRow(data);
-      setEntries((previous) => sortEntries([...previous, nextEntry]));
+      const nextEntry = mapEntryRow(data, {
+        weekId: week.id,
+        weekOwnerUserId: currentUserId,
+      });
+      const nextOwnEntries = sortEntries([...entries, nextEntry]);
+      setEntries(nextOwnEntries);
+      setVisibleEntries((previous) => mergeVisibleEntriesWithOwnEntries(previous, nextOwnEntries, currentUserId));
       return nextEntry;
     } catch (nextError) {
       if (isOutdatedMealPlannerSlotConstraintError(nextError)) {
@@ -971,7 +1111,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       }
       throw nextError;
     }
-  }, [entries, week?.id]);
+  }, [currentUserId, entries, week?.id]);
 
   const getNextDayKeyWithinWeek = useCallback((dateKey) => {
     const currentIndex = weekDays.findIndex((day) => day.key === dateKey);
@@ -985,18 +1125,27 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       : (entries.find((entry) => entry.date === date && entry.mealSlot === mealSlot) || null);
     if (!existingEntry) return;
 
+    const removedEntryIds = Array.from(new Set(
+      entries
+        .filter((entry) => entry.id === existingEntry.id || entry.carryoverSourceEntryId === existingEntry.id)
+        .map((entry) => entry.id)
+    ));
     const { error: deleteError } = await supabase
       .from('meal_plan_entries')
       .delete()
-      .eq('id', existingEntry.id);
+      .in('id', removedEntryIds);
 
     if (deleteError) throw deleteError;
 
-    setEntries((previous) => previous.filter((entry) => (
-      entry.id !== existingEntry.id
-      && entry.carryoverSourceEntryId !== existingEntry.id
-    )));
-  }, [entries]);
+    const removedEntryIdSet = new Set(removedEntryIds);
+    const nextOwnEntries = entries.filter((entry) => !removedEntryIdSet.has(entry.id));
+    setEntries(nextOwnEntries);
+    setVisibleEntries((previous) => mergeVisibleEntriesWithOwnEntries(
+      previous.filter((entry) => !removedEntryIdSet.has(entry.id)),
+      nextOwnEntries,
+      currentUserId,
+    ));
+  }, [currentUserId, entries]);
 
   const createCarryoverForNextDay = useCallback(async (sourceEntryId) => {
     const sourceEntry = entries.find((entry) => entry.id === sourceEntryId) || null;
@@ -1174,7 +1323,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setSaving(false);
     }
-  }, [loadRecipes, plannerProject?.id, replaceRecipeIngredients]);
+  }, [loadRecipes, replaceRecipeIngredients]);
 
   const duplicateRecipe = useCallback(async (recipe) => {
     await createRecipe({
@@ -1213,7 +1362,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setSaving(false);
     }
-  }, [loadRecipes, plannerProject?.id]);
+  }, [loadRecipes]);
 
   const persistExcludedDraftSourceSignatures = useCallback(async (nextSignatures = []) => {
     if (!week?.id) return null;
@@ -1494,7 +1643,10 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     excludeGroceryDraftItem,
     entryUsageById,
     groceryDraft,
+    hiddenHouseholdGroceryDraft,
     hiddenGroceryDraft,
+    householdEntryUsageById,
+    householdGroceryDraft,
     importRowsIntoLibrary,
     lastApprovedCount,
     lastImportedCount,
@@ -1514,6 +1666,8 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     updateRecipe,
     updateWeekCounts,
     upsertMealEntry,
+    visibleEntries,
+    visibleWeeks,
     week,
     weekDays,
     duplicateRecipe,

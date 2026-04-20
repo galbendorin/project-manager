@@ -2,6 +2,7 @@ import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMealPlannerData } from '../hooks/useMealPlannerData';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { supabase } from '../lib/supabase';
+import { formatSharedActorLabel } from '../utils/shoppingListViewState';
 import {
   buildNextDayCopyPrompt,
   formatDateKey,
@@ -1765,7 +1766,10 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     error,
     excludeGroceryDraftItem,
     groceryDraft,
+    hiddenHouseholdGroceryDraft,
     hiddenGroceryDraft,
+    householdEntryUsageById,
+    householdGroceryDraft,
     importRowsIntoLibrary,
     lastApprovedCount,
     lastImportedCount,
@@ -1783,6 +1787,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     updateRecipe,
     updateWeekCounts,
     upsertMealEntry,
+    visibleEntries,
+    visibleWeeks,
     week,
     weekDays,
   } = useMealPlannerData({ currentUserEmail, currentUserId });
@@ -1801,6 +1807,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const [showMobilePlannerDetails, setShowMobilePlannerDetails] = useState(false);
   const [activeMobileDayKey, setActiveMobileDayKey] = useState('');
   const [mobileActivePanel, setMobileActivePanel] = useState('planner');
+  const [planViewMode, setPlanViewMode] = useState('both');
   const [libraryVisibleCount, setLibraryVisibleCount] = useState(DESKTOP_LIBRARY_INITIAL_COUNT);
   const [partnerInput, setPartnerInput] = useState('');
   const [kidsInput, setKidsInput] = useState('');
@@ -1831,9 +1838,24 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   }, [weekDays]);
 
   const recipeMap = useMemo(() => new Map(recipes.map((recipe) => [recipe.id, recipe])), [recipes]);
-  const entryMap = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
+  const plannerIsShared = useMemo(() => (
+    Array.isArray(plannerProject?.project_members) && plannerProject.project_members.length > 0
+  ), [plannerProject?.project_members]);
+  const householdSharedWeeks = useMemo(() => (
+    visibleWeeks.filter((visibleWeek) => visibleWeek?.userId && visibleWeek.userId !== currentUserId)
+  ), [currentUserId, visibleWeeks]);
+  const isCombinedPlanView = plannerIsShared && planViewMode === 'both';
+  const plannerEntries = isCombinedPlanView ? visibleEntries : entries;
+  const plannerEntryUsageById = isCombinedPlanView ? householdEntryUsageById : entryUsageById;
+  const plannerGroceryDraft = isCombinedPlanView ? householdGroceryDraft : groceryDraft;
+  const plannerHiddenGroceryDraft = isCombinedPlanView ? hiddenHouseholdGroceryDraft : hiddenGroceryDraft;
+  const planViewHeadline = isCombinedPlanView ? 'Family total' : 'Your total';
+  const planViewDescription = isCombinedPlanView
+    ? 'Both merges every visible household week for this date range. Shared cards stay read-only while new meals still save into your plan.'
+    : 'Mine shows only the meals saved in your own weekly plan.';
+  const entryMap = useMemo(() => new Map(visibleEntries.map((entry) => [entry.id, entry])), [visibleEntries]);
   const resolvedRecipeByEntryId = useMemo(() => (
-    entries.reduce((accumulator, entry) => {
+    visibleEntries.reduce((accumulator, entry) => {
       let resolvedRecipe = recipeMap.get(entry.mealId) || null;
       if (entry.entryKind === 'carryover' && entry.carryoverSourceEntryId) {
         const sourceEntry = entryMap.get(entry.carryoverSourceEntryId);
@@ -1843,8 +1865,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       accumulator[entry.id] = resolvedRecipe;
       return accumulator;
     }, {})
-  ), [entries, entryMap, recipeMap]);
-  const entriesBySlotKey = useMemo(() => (
+  ), [entryMap, recipeMap, visibleEntries]);
+  const ownEntriesBySlotKey = useMemo(() => (
     entries.reduce((accumulator, entry) => {
       const key = `${entry.date}:${entry.mealSlot}`;
       if (!accumulator[key]) accumulator[key] = [];
@@ -1852,8 +1874,16 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       return accumulator;
     }, {})
   ), [entries]);
+  const plannerEntriesBySlotKey = useMemo(() => (
+    plannerEntries.reduce((accumulator, entry) => {
+      const key = `${entry.date}:${entry.mealSlot}`;
+      if (!accumulator[key]) accumulator[key] = [];
+      accumulator[key].push(entry);
+      return accumulator;
+    }, {})
+  ), [plannerEntries]);
   const slotEntriesByKey = useMemo(() => (
-    Object.entries(entriesBySlotKey).reduce((accumulator, [slotKey, slotEntries]) => {
+    Object.entries(plannerEntriesBySlotKey).reduce((accumulator, [slotKey, slotEntries]) => {
       accumulator[slotKey] = slotEntries
         .map((entry) => ({
           entry,
@@ -1862,7 +1892,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
         .filter(({ recipe }) => Boolean(recipe));
       return accumulator;
     }, {})
-  ), [entriesBySlotKey, resolvedRecipeByEntryId]);
+  ), [plannerEntriesBySlotKey, resolvedRecipeByEntryId]);
 
   const filteredLibraryRecipes = useMemo(() => (
     recipes.filter((recipe) => {
@@ -1875,14 +1905,16 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   ), [deferredLibrarySearch, librarySlotFilter, recipes]);
 
   const weekLabel = useMemo(() => formatWeekLabel(weekDays), [weekDays]);
-  const plannerIsShared = useMemo(() => (
-    Array.isArray(plannerProject?.project_members) && plannerProject.project_members.length > 0
-  ), [plannerProject?.project_members]);
   const partnerServingMultiplier = Math.max(0, (week?.adultCount ?? 1.75) - 1);
   useEffect(() => {
     setPartnerInput(formatPlannerNumberInput(partnerServingMultiplier));
     setKidsInput(formatPlannerNumberInput(week?.kidCount ?? 0));
   }, [partnerServingMultiplier, week?.kidCount]);
+  useEffect(() => {
+    if (!plannerIsShared && planViewMode !== 'mine') {
+      setPlanViewMode('mine');
+    }
+  }, [planViewMode, plannerIsShared]);
   const recipeNutritionById = useMemo(() => (
     recipes.reduce((accumulator, recipe) => {
       accumulator[recipe.id] = estimateRecipeNutritionFromStarterCatalog(recipe);
@@ -1898,14 +1930,14 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       return accumulator;
     }, {});
 
-    entries.forEach((entry) => {
+    plannerEntries.forEach((entry) => {
       const daySummary = summary[entry.date];
       if (!daySummary) return;
 
       const recipe = resolvedRecipeByEntryId[entry.id];
       if (!recipe) return;
 
-      const entryUsage = entryUsageById?.[entry.id] || null;
+      const entryUsage = plannerEntryUsageById?.[entry.id] || null;
       const multiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
       if (multiplier <= 0) return;
 
@@ -1926,7 +1958,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     });
 
     return summary;
-  }, [entries, entryUsageById, recipeNutritionById, resolvedRecipeByEntryId, weekDays]);
+  }, [plannerEntries, plannerEntryUsageById, recipeNutritionById, resolvedRecipeByEntryId, weekDays]);
   const activeMobileDay = useMemo(() => (
     weekDays.find((day) => day.key === activeMobileDayKey) || weekDays[0] || null
   ), [activeMobileDayKey, weekDays]);
@@ -1979,8 +2011,19 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   };
 
   const getPreferredDayKeyForSlot = (mealSlot) => {
-    const firstEmpty = weekDays.find((day) => (entriesBySlotKey[`${day.key}:${mealSlot}`] || []).length === 0);
+    const firstEmpty = weekDays.find((day) => (ownEntriesBySlotKey[`${day.key}:${mealSlot}`] || []).length === 0);
     return firstEmpty?.key || weekDays[0]?.key || '';
+  };
+
+  const getEntryOwnerLabel = (entry) => {
+    if (!entry?.weekOwnerUserId || entry.weekOwnerUserId === currentUserId) {
+      return 'You';
+    }
+    if (entry.weekOwnerUserId === plannerProject?.user_id) {
+      return 'Owner';
+    }
+    const matchingMember = (plannerProject?.project_members || []).find((member) => member?.user_id === entry.weekOwnerUserId);
+    return formatSharedActorLabel(matchingMember?.member_email) || 'Shared';
   };
 
   const dismissCopyUiForEntry = (entryId) => {
@@ -2111,7 +2154,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     setFormState(null);
   };
 
-  const handleApproveGroceries = async (draftOverride = groceryDraft) => {
+  const handleApproveGroceries = async (draftOverride = plannerGroceryDraft) => {
     try {
       await confirmGroceryDraft(draftOverride);
       setShowReviewModal(false);
@@ -2222,7 +2265,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
               </p>
               {plannerIsShared ? (
                 <p className="mt-2 max-w-3xl text-[13px] font-medium leading-5 text-sky-700 sm:text-sm sm:leading-6">
-                  This Meal Planner and recipe library follow the same shared Shopping List.
+                  This household shares one recipe library and can review weekly plans together. Switch between your plan and the combined family view whenever you need.
                 </p>
               ) : null}
               {!canUseStarterLibrary ? (
@@ -2261,13 +2304,54 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
             </div>
           ) : null}
 
+          {plannerIsShared ? (
+            <div className="mt-5 rounded-[24px] border border-sky-100 bg-sky-50 px-4 py-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-700">Plan view</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {isCombinedPlanView ? 'Seeing the combined family plan' : 'Seeing only your saved week'}
+                  </p>
+                  <p className="mt-1 text-[13px] leading-5 text-sky-800">
+                    {planViewDescription}
+                  </p>
+                </div>
+                <div className="inline-flex w-full rounded-full border border-sky-200 bg-white p-1 shadow-sm lg:w-auto">
+                  {[
+                    { id: 'mine', label: 'Mine', meta: `${entries.length}` },
+                    { id: 'both', label: 'Both', meta: householdSharedWeeks.length > 0 ? `${plannerEntries.length}` : 'Just you' },
+                  ].map((option) => {
+                    const isActive = planViewMode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setPlanViewMode(option.id)}
+                        className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold transition lg:flex-none lg:min-w-[108px] ${
+                          isActive
+                            ? 'bg-[var(--pm-accent)] text-white'
+                            : 'text-slate-600'
+                        }`}
+                      >
+                        <span className="block">{option.label}</span>
+                        <span className={`mt-1 block text-[10px] font-medium uppercase tracking-[0.16em] ${isActive ? 'text-white/80' : 'text-slate-400'}`}>
+                          {option.meta}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {isMobile ? (
             <div className="mt-4 rounded-[20px] border border-slate-200 bg-white/90 p-2 shadow-sm">
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { id: 'planner', label: 'Plan', meta: activeMobileDay?.shortLabel || 'Week' },
                   { id: 'recipes', label: 'Recipes', meta: `${filteredLibraryRecipes.length}` },
-                  { id: 'groceries', label: 'Groceries', meta: `${groceryDraft.length}` },
+                  { id: 'groceries', label: 'Groceries', meta: `${plannerGroceryDraft.length}` },
                 ].map((panel) => {
                   const isActive = mobileActivePanel === panel.id;
                   return (
@@ -2405,7 +2489,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                   onClick={() => setMobileActivePanel('groceries')}
                   className="pm-toolbar-primary mt-3 w-full rounded-full px-4 py-3 text-sm font-semibold text-white"
                 >
-                  Open grocery summary
+                  Open {isCombinedPlanView ? 'family' : 'your'} grocery summary
                 </button>
               </div>
 
@@ -2490,7 +2574,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         <h3 className="mt-1 text-lg font-semibold text-slate-950">{day.dayLabel}</h3>
                       </div>
                       <div className="w-full rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-left sm:w-auto sm:min-w-[180px] sm:shrink-0 sm:rounded-[20px] sm:text-right">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">Your total</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">{planViewHeadline}</p>
                         <p className="mt-1 text-sm font-semibold text-amber-800">
                           {daySummaryByKey[day.key]?.calories > 0 ? `${daySummaryByKey[day.key].calories} kcal` : 'No meals yet'}
                         </p>
@@ -2530,25 +2614,34 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                             <div className="mt-3 space-y-2.5">
                               {slotEntries.map(({ entry, recipe }) => {
                                 const isCarryoverEntry = entry.entryKind === 'carryover';
-                                const isCopyPromptVisible = Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
-                                const entryUsage = entryUsageById?.[entry.id] || null;
+                                const isOwnedEntry = !entry.weekOwnerUserId || entry.weekOwnerUserId === currentUserId;
+                                const entryOwnerLabel = getEntryOwnerLabel(entry);
+                                const isCopyPromptVisible = isOwnedEntry && Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
+                                const entryUsage = plannerEntryUsageById?.[entry.id] || null;
                                 const carryoverNutritionMultiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
                                 const carryoverNutrition = recipe ? recipeNutritionById[recipe.id] : null;
                                 const carryoverKcal = recipe?.estimatedKcal && carryoverNutritionMultiplier > 0
                                   ? Math.round(recipe.estimatedKcal * carryoverNutritionMultiplier)
                                   : 0;
-                                const canCreateCarryover = !isCarryoverEntry
+                                const canCreateCarryover = isOwnedEntry
+                                  && !isCarryoverEntry
                                   && Boolean(recipe)
                                   && entryUsage?.yieldMode === 'batch'
                                   && (entryUsage?.createdCarryoverPortions || 0) > 0
                                   && !entryUsage?.hasCarryoverChild
                                   && hasNextDayInWeek;
-                                const canMoveCarryover = isCarryoverEntry
+                                const canMoveCarryover = isOwnedEntry
+                                  && isCarryoverEntry
                                   && entryUsage?.carryoverStatus === 'active'
                                   && hasNextDayInWeek;
                                 const cardBody = (
                                   <>
                                     <div className={`flex flex-wrap gap-1.5 font-semibold ${isCarryoverEntry ? 'text-[10px]' : 'text-[11px]'}`}>
+                                      {plannerIsShared && isCombinedPlanView ? (
+                                        <span className={`rounded-full px-2.5 py-1 ${isOwnedEntry ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                          {entryOwnerLabel}
+                                        </span>
+                                      ) : null}
                                       {isCarryoverEntry ? (
                                         <>
                                           <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-700">
@@ -2638,7 +2731,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 );
                                 return (
                                   <div key={entry.id} className={`pm-scroll-optimize-card pm-meal-planner-repeated-card rounded-[16px] border px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3 ${isCarryoverEntry ? 'border-sky-100 bg-white' : 'border-slate-200 bg-slate-50/60'}`}>
-                                    {isCarryoverEntry ? (
+                                    {isCarryoverEntry || !isOwnedEntry ? (
                                       <div className="block w-full text-left">
                                         {cardBody}
                                       </div>
@@ -2672,48 +2765,65 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                               Move forward
                                             </button>
                                           ) : null}
-                                          <button
-                                            type="button"
-                                            onClick={() => void handleRemoveCarryover(entry.id)}
-                                            className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-2 text-[10px] font-semibold text-rose-700 transition hover:bg-rose-100"
-                                          >
-                                            Remove
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={() => openPicker(day.key, slot, { entryId: entry.id, audience: entry.audience || 'all' })}
-                                            className="pm-subtle-button rounded-full px-3 py-2 text-[11px] font-semibold sm:text-xs"
-                                          >
-                                            Change
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={async () => {
-                                              dismissCopyUiForEntry(entry.id);
-                                              await clearMealEntry({ entryId: entry.id });
-                                            }}
-                                            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 sm:text-xs"
-                                          >
-                                            Remove
-                                          </button>
-                                          {canCreateCarryover ? (
+                                          {isOwnedEntry ? (
                                             <button
                                               type="button"
-                                              onClick={() => void handleCreateCarryover(entry.id)}
-                                              className="rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700 transition hover:bg-sky-100 sm:text-xs"
+                                              onClick={() => void handleRemoveCarryover(entry.id)}
+                                              className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-2 text-[10px] font-semibold text-rose-700 transition hover:bg-rose-100"
                                             >
-                                              Carry over to next day
+                                              Remove
                                             </button>
-                                          ) : null}
-                                          {entryUsage?.hasCarryoverChild && entryUsage?.carryoverChildDate ? (
-                                            <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700 sm:text-xs">
-                                              Carried to {formatCarryoverTargetDayLabel(entryUsage.carryoverChildDate)}
+                                          ) : (
+                                            <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-2 text-[10px] font-semibold text-slate-600">
+                                              Read only
                                             </span>
-                                          ) : null}
+                                          )}
                                         </>
+                                      ) : (
+                                        isOwnedEntry ? (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => openPicker(day.key, slot, { entryId: entry.id, audience: entry.audience || 'all' })}
+                                              className="pm-subtle-button rounded-full px-3 py-2 text-[11px] font-semibold sm:text-xs"
+                                            >
+                                              Change
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={async () => {
+                                                dismissCopyUiForEntry(entry.id);
+                                                await clearMealEntry({ entryId: entry.id });
+                                              }}
+                                              className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 sm:text-xs"
+                                            >
+                                              Remove
+                                            </button>
+                                            {canCreateCarryover ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => void handleCreateCarryover(entry.id)}
+                                                className="rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700 transition hover:bg-sky-100 sm:text-xs"
+                                              >
+                                                Carry over to next day
+                                              </button>
+                                            ) : null}
+                                            {entryUsage?.hasCarryoverChild && entryUsage?.carryoverChildDate ? (
+                                              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700 sm:text-xs">
+                                                Carried to {formatCarryoverTargetDayLabel(entryUsage.carryoverChildDate)}
+                                              </span>
+                                            ) : null}
+                                          </>
+                                        ) : (
+                                          <>
+                                            <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600 sm:text-xs">
+                                              {entryOwnerLabel}&apos;s plan
+                                            </span>
+                                            <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-[11px] font-semibold text-slate-600 sm:text-xs">
+                                              Read only
+                                            </span>
+                                          </>
+                                        )
                                       )}
                                     </div>
 
@@ -2743,7 +2853,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 className="flex w-full items-center justify-center gap-2 rounded-[18px] border border-dashed border-slate-300 px-3 py-3 text-[13px] font-semibold text-slate-500 transition hover:border-[var(--pm-accent)] hover:text-[var(--pm-accent-strong)] sm:rounded-[22px] sm:py-4 sm:text-sm"
                               >
                                 <Plus className="h-4 w-4" />
-                                {slotEntries.length > 0 ? 'Add another meal' : 'Select recipe'}
+                                {slotEntries.length > 0 ? (plannerIsShared ? 'Add to your plan' : 'Add another meal') : 'Select recipe'}
                               </button>
                             </div>
                           </div>
@@ -2873,16 +2983,18 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 {isShoppingGenerationVisible ? (
                   <>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
-                      The planner aggregates ingredients across the whole week, including repeated meals like oats on multiple days.
+                      {isCombinedPlanView
+                        ? 'The planner aggregates ingredients across every visible household plan for this week, including repeated meals across family members.'
+                        : 'The planner aggregates ingredients across your week, including repeated meals like oats on multiple days.'}
                     </p>
                     <div className="mt-4 space-y-2 text-sm text-slate-600">
                       <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2.5">
                         <span>Planned slots</span>
-                        <span className="font-semibold text-slate-900">{entries.length}</span>
+                        <span className="font-semibold text-slate-900">{plannerEntries.length}</span>
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2.5">
                         <span>Draft grocery lines</span>
-                        <span className="font-semibold text-slate-900">{groceryDraft.length}</span>
+                        <span className="font-semibold text-slate-900">{plannerGroceryDraft.length}</span>
                       </div>
                     </div>
                     <button type="button" onClick={() => setShowReviewModal(true)} className="pm-toolbar-primary mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white">
@@ -3052,8 +3164,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
       {showReviewModal ? (
         <GroceryReviewModal
-          draft={groceryDraft}
-          hiddenDraft={hiddenGroceryDraft}
+          draft={plannerGroceryDraft}
+          hiddenDraft={plannerHiddenGroceryDraft}
           onApprove={(draftOverride) => void handleApproveGroceries(draftOverride)}
           onClose={() => setShowReviewModal(false)}
           onExclude={(item) => excludeGroceryDraftItem(item)}
