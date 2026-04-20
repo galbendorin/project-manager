@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useMealPlannerData } from '../hooks/useMealPlannerData';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { supabase } from '../lib/supabase';
@@ -1385,6 +1385,8 @@ function RecipeDetailModal({
   onSaveEntryDetails,
 }) {
   const recipe = context?.recipe;
+  const canEditEntry = context?.canEditEntry !== false;
+  const sharedEntryOwnerLabel = context?.entryOwnerLabel || 'Shared';
   const audienceDefaultMultipliers = useMemo(() => ({
     all: getAudienceServingMultiplier({
       audience: 'all',
@@ -1439,6 +1441,11 @@ function RecipeDetailModal({
               {context?.entry ? (
                 <span className={`rounded-full px-2.5 py-1 ${getAudiencePillClasses(audience)}`}>
                   {getMealAudienceLabel(audience)}
+                </span>
+              ) : null}
+              {context?.entry && !canEditEntry ? (
+                <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-slate-600">
+                  {sharedEntryOwnerLabel}&apos;s plan
                 </span>
               ) : null}
               {recipe.suggestedDay ? (
@@ -1505,6 +1512,11 @@ function RecipeDetailModal({
           <div className="space-y-4">
             <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
               <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Actions</h4>
+              {context?.entry && !canEditEntry ? (
+                <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">
+                  This meal slot belongs to {sharedEntryOwnerLabel}. You can edit the shared recipe here, but changes to this calendar slot still need to be made from their plan or by adding it to yours.
+                </div>
+              ) : null}
               <div className="mt-4 space-y-2">
                 <button type="button" onClick={() => onEditRecipe(recipe)} className="pm-subtle-button flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
                   <Edit className="h-4 w-4" />
@@ -1514,7 +1526,7 @@ function RecipeDetailModal({
                   <Copy className="h-4 w-4" />
                   Duplicate recipe
                 </button>
-                {context?.entry ? (
+                {context?.entry && canEditEntry ? (
                   <>
                     <button type="button" onClick={onOpenPicker} className="pm-subtle-button flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
                       <Calendar className="h-4 w-4" />
@@ -1533,7 +1545,7 @@ function RecipeDetailModal({
               </div>
             </div>
 
-            {context?.entry ? (
+            {context?.entry && canEditEntry ? (
               <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
                 <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Meal details</h4>
                 <p className="mt-2 text-sm text-slate-500">Choose who this meal is for and optionally override the default serving multiplier.</p>
@@ -1807,12 +1819,13 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const [showMobilePlannerDetails, setShowMobilePlannerDetails] = useState(false);
   const [activeMobileDayKey, setActiveMobileDayKey] = useState('');
   const [mobileActivePanel, setMobileActivePanel] = useState('planner');
-  const [planViewMode, setPlanViewMode] = useState('both');
+  const [planViewMode, setPlanViewMode] = useState('mine');
   const [libraryVisibleCount, setLibraryVisibleCount] = useState(DESKTOP_LIBRARY_INITIAL_COUNT);
   const [partnerInput, setPartnerInput] = useState('');
   const [kidsInput, setKidsInput] = useState('');
   const [householdSaving, setHouseholdSaving] = useState(false);
   const deferredLibrarySearch = useDeferredValue(librarySearch);
+  const autoResolvedPlanViewKeyRef = useRef('');
 
   useEffect(() => {
     if (lastImportedCount > 0) {
@@ -1851,7 +1864,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const plannerHiddenGroceryDraft = isCombinedPlanView ? hiddenHouseholdGroceryDraft : hiddenGroceryDraft;
   const planViewHeadline = isCombinedPlanView ? 'Family total' : 'Your total';
   const planViewDescription = isCombinedPlanView
-    ? 'Both merges every visible household week for this date range. Shared cards stay read-only while new meals still save into your plan.'
+    ? 'Both merges every visible household week for this date range. Shared calendar slots stay read-only, but shared recipes can still be opened and edited.'
     : 'Mine shows only the meals saved in your own weekly plan.';
   const entryMap = useMemo(() => new Map(visibleEntries.map((entry) => [entry.id, entry])), [visibleEntries]);
   const resolvedRecipeByEntryId = useMemo(() => (
@@ -1911,10 +1924,21 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     setKidsInput(formatPlannerNumberInput(week?.kidCount ?? 0));
   }, [partnerServingMultiplier, week?.kidCount]);
   useEffect(() => {
+    if (!plannerProject?.id || !Array.isArray(plannerProject?.project_members)) {
+      return;
+    }
+
+    const nextPlanViewDefaultKey = `${plannerProject.id}:${plannerIsShared ? 'shared' : 'private'}`;
+    if (autoResolvedPlanViewKeyRef.current !== nextPlanViewDefaultKey) {
+      autoResolvedPlanViewKeyRef.current = nextPlanViewDefaultKey;
+      setPlanViewMode(plannerIsShared ? 'both' : 'mine');
+      return;
+    }
+
     if (!plannerIsShared && planViewMode !== 'mine') {
       setPlanViewMode('mine');
     }
-  }, [planViewMode, plannerIsShared]);
+  }, [planViewMode, plannerIsShared, plannerProject?.id, plannerProject?.project_members]);
   const recipeNutritionById = useMemo(() => (
     recipes.reduce((accumulator, recipe) => {
       accumulator[recipe.id] = estimateRecipeNutritionFromStarterCatalog(recipe);
@@ -2731,7 +2755,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 );
                                 return (
                                   <div key={entry.id} className={`pm-scroll-optimize-card pm-meal-planner-repeated-card rounded-[16px] border px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3 ${isCarryoverEntry ? 'border-sky-100 bg-white' : 'border-slate-200 bg-slate-50/60'}`}>
-                                    {isCarryoverEntry || !isOwnedEntry ? (
+                                    {isCarryoverEntry ? (
                                       <div className="block w-full text-left">
                                         {cardBody}
                                       </div>
@@ -2746,6 +2770,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                           defaultServingMultiplier,
                                           adultCount: week?.adultCount ?? 1,
                                           kidCount: week?.kidCount ?? 0,
+                                          canEditEntry: isOwnedEntry,
+                                          entryOwnerLabel,
                                         })}
                                         className="block w-full text-left transition hover:text-[var(--pm-accent-strong)]"
                                       >
