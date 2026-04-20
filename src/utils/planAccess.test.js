@@ -82,6 +82,13 @@ test('household and platform AI access follow the stored profile flags', () => {
   assert.equal(canAccessHouseholdTools({ is_admin: true }), true);
   assert.equal(canAccessHouseholdTools({ is_platform_admin: true }), true);
   assert.equal(canAccessHouseholdTools({ household_tools_enabled: false, is_admin: false }), false);
+  assert.equal(
+    canAccessHouseholdTools(
+      { household_tools_enabled: false, is_admin: false, is_platform_admin: false },
+      { hasSharedHouseholdProjectAccess: true }
+    ),
+    true
+  );
   assert.equal(canUsePlatformAi({ platform_ai_enabled: true }), true);
   assert.equal(canUsePlatformAi({ platform_ai_enabled: false }), false);
 });

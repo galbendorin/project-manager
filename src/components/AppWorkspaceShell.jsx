@@ -88,8 +88,6 @@ export function AuthenticatedMealPlannerShell({
   accentTheme,
   onAccentThemeChange,
 }) {
-  const { householdToolsEnabled } = usePlan();
-
   return (
     <AuthenticatedMiniToolShell
       accentTheme={accentTheme}
@@ -100,7 +98,7 @@ export function AuthenticatedMealPlannerShell({
       title="Meal Planner"
       userEmail={userEmail}
     >
-      <MealPlannerView currentUserId={currentUserId} starterLibraryEnabled={householdToolsEnabled} />
+      <MealPlannerView currentUserId={currentUserId} currentUserEmail={userEmail} />
     </AuthenticatedMiniToolShell>
   );
 }

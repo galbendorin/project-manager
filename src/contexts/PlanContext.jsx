@@ -17,6 +17,7 @@ import {
 } from '../utils/planAccess';
 
 const PlanContext = createContext({});
+const HOUSEHOLD_PROJECT_NAME = 'Shopping List';
 
 export const usePlan = () => useContext(PlanContext);
 
@@ -36,8 +37,10 @@ export { PLAN_LIMITS, ALL_TABS, SIMULATOR_OPTIONS };
 export const PlanProvider = ({ children }) => {
   const { user } = useAuth();
   const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [householdAccessLoading, setHouseholdAccessLoading] = useState(true);
   const [projectCount, setProjectCount] = useState(0);
+  const [hasSharedHouseholdProjectAccess, setHasSharedHouseholdProjectAccess] = useState(false);
   const lastExternalRefreshAtRef = useRef(0);
 
   // ── Plan simulator state (admin only) ───────────────────────
@@ -47,7 +50,7 @@ export const PlanProvider = ({ children }) => {
   const loadProfile = useCallback(async () => {
     if (!user) {
       setProfile(null);
-      setLoading(false);
+      setProfileLoading(false);
       return;
     }
 
@@ -64,13 +67,43 @@ export const PlanProvider = ({ children }) => {
     } catch (err) {
       console.error('Profile load error:', err);
     } finally {
-      setLoading(false);
+      setProfileLoading(false);
+    }
+  }, [user]);
+
+  const loadHouseholdProjectAccess = useCallback(async () => {
+    if (!user) {
+      setHasSharedHouseholdProjectAccess(false);
+      setHouseholdAccessLoading(false);
+      return;
+    }
+
+    try {
+      const { count, error } = await supabase
+        .from('projects')
+        .select('id', { count: 'exact', head: true })
+        .eq('name', HOUSEHOLD_PROJECT_NAME);
+
+      if (error) {
+        console.error('Failed to load household project access:', error);
+        setHasSharedHouseholdProjectAccess(false);
+      } else {
+        setHasSharedHouseholdProjectAccess((count || 0) > 0);
+      }
+    } catch (err) {
+      console.error('Household project access load error:', err);
+      setHasSharedHouseholdProjectAccess(false);
+    } finally {
+      setHouseholdAccessLoading(false);
     }
   }, [user]);
 
   // ── Count projects ──────────────────────────────────────────
   const loadProjectCount = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setProjectCount(0);
+      return;
+    }
     const { count } = await supabase
       .from('projects')
       .select('id', { count: 'exact', head: true })
@@ -79,9 +112,21 @@ export const PlanProvider = ({ children }) => {
   }, [user]);
 
   useEffect(() => {
-    loadProfile();
-    loadProjectCount();
-  }, [loadProfile, loadProjectCount]);
+    if (!user) {
+      setProfile(null);
+      setProjectCount(0);
+      setHasSharedHouseholdProjectAccess(false);
+      setProfileLoading(false);
+      setHouseholdAccessLoading(false);
+      return;
+    }
+
+    setProfileLoading(true);
+    setHouseholdAccessLoading(true);
+    void loadProfile();
+    void loadProjectCount();
+    void loadHouseholdProjectAccess();
+  }, [loadHouseholdProjectAccess, loadProfile, loadProjectCount, user]);
 
   const refreshProfileFromExternalChange = useCallback(() => {
     if (!user) return;
@@ -90,8 +135,9 @@ export const PlanProvider = ({ children }) => {
     if (now - lastExternalRefreshAtRef.current < 1500) return;
 
     lastExternalRefreshAtRef.current = now;
-    loadProfile();
-  }, [user, loadProfile]);
+    void loadProfile();
+    void loadHouseholdProjectAccess();
+  }, [user, loadHouseholdProjectAccess, loadProfile]);
 
   useEffect(() => {
     if (!user || typeof window === 'undefined') return undefined;
@@ -142,10 +188,11 @@ export const PlanProvider = ({ children }) => {
   }, [user, refreshProfileFromExternalChange]);
 
   // ── Derived state ───────────────────────────────────────────
+  const loading = profileLoading || householdAccessLoading;
   const isAdmin = useMemo(() => Boolean(profile?.is_admin || profile?.is_platform_admin), [profile?.is_admin, profile?.is_platform_admin]);
   const householdToolsEnabled = useMemo(
-    () => canAccessHouseholdToolsFromProfile(profile),
-    [profile]
+    () => canAccessHouseholdToolsFromProfile(profile, { hasSharedHouseholdProjectAccess }),
+    [hasSharedHouseholdProjectAccess, profile]
   );
 
   // ── Resolve REAL plan (before simulator override) ───────────
@@ -288,8 +335,9 @@ export const PlanProvider = ({ children }) => {
   }, [loadProjectCount]);
 
   const refreshProfile = useCallback(() => {
-    loadProfile();
-  }, [loadProfile]);
+    void loadProfile();
+    void loadHouseholdProjectAccess();
+  }, [loadHouseholdProjectAccess, loadProfile]);
 
   // ── Context value ──────────────────────────────────────────
   const value = useMemo(() => ({
@@ -337,6 +385,7 @@ export const PlanProvider = ({ children }) => {
     getTaskHardLimit,
     isInTaskGrace,
     householdToolsEnabled,
+    hasSharedHouseholdProjectAccess,
 
     // Actions
     incrementAiReports,
@@ -355,7 +404,7 @@ export const PlanProvider = ({ children }) => {
     hasTabAccess,
     canCreateProject, canUseAiReport, canExport, canImport,
     canBaseline, canUseAi, canUseAiAssistant, canExportAiReport, canUsePlatformAi,
-    aiReportsRemaining, getTaskLimit, getTaskHardLimit, isInTaskGrace, householdToolsEnabled,
+    aiReportsRemaining, getTaskLimit, getTaskHardLimit, isInTaskGrace, householdToolsEnabled, hasSharedHouseholdProjectAccess,
     incrementAiReports, refreshProjectCount, refreshProfile,
     simulatedPlan,
   ]);

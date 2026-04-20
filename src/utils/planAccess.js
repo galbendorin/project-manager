@@ -4,8 +4,13 @@ export const isAdminProfile = (profile = null) => Boolean(
   profile?.is_admin || profile?.is_platform_admin
 );
 
-export const canAccessHouseholdTools = (profile = null) => Boolean(
-  profile?.household_tools_enabled || profile?.is_admin || profile?.is_platform_admin
+export const canAccessHouseholdTools = (profile = null, {
+  hasSharedHouseholdProjectAccess = false,
+} = {}) => Boolean(
+  hasSharedHouseholdProjectAccess
+  || profile?.household_tools_enabled
+  || profile?.is_admin
+  || profile?.is_platform_admin
 );
 
 export const canUsePlatformAi = (profile = null) => Boolean(profile?.platform_ai_enabled);
