@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { checkRateLimit, resetRateLimitStateForTests } from '../../api/_rateLimit.js';
+import { shouldUseStrictSharedMealEstimateRateLimit } from '../../api/meal-estimate-calories.js';
 
 test('checkRateLimit local fallback allows requests under the cap', async () => {
   resetRateLimitStateForTests();
@@ -62,4 +63,22 @@ test('checkRateLimit can require the shared limiter for sensitive production rou
   assert.equal(blocked.status, 503);
   assert.equal(blocked.reason, 'missing-admin-client');
   assert.ok(blocked.retryAfterSeconds >= 1);
+});
+
+test('meal calorie estimates use local fallback when the request comes from localhost', () => {
+  assert.equal(shouldUseStrictSharedMealEstimateRateLimit({
+    headers: {
+      host: 'localhost:3001',
+      origin: 'http://localhost:3002',
+    },
+  }), false);
+});
+
+test('meal calorie estimates require the shared limiter for non-local requests', () => {
+  assert.equal(shouldUseStrictSharedMealEstimateRateLimit({
+    headers: {
+      host: 'pmworkspace.com',
+      origin: 'https://pmworkspace.com',
+    },
+  }), true);
 });

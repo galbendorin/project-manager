@@ -34,6 +34,8 @@ const isLocalRequest = (req) => {
     || origin.includes('127.0.0.1');
 };
 
+export const shouldUseStrictSharedMealEstimateRateLimit = (req) => !isLocalRequest(req);
+
 const createHttpError = ({ message, status = 500, payload = null }) => {
   const error = new Error(message);
   error.status = status;
@@ -338,12 +340,13 @@ export default async function handler(req, res) {
   if (!user) return;
 
   const userSupabase = getUserSupabase(req);
+  const localRequest = isLocalRequest(req);
 
   const limitResult = await checkRateLimit({
     key: `meal-estimate:${getClientIp(req)}:${user.id}`,
     max: 18,
     windowMs: 60_000,
-    strictShared: true,
+    strictShared: shouldUseStrictSharedMealEstimateRateLimit(req),
   });
   if (!limitResult.ok) {
     return sendRateLimitResponse(
@@ -366,9 +369,7 @@ export default async function handler(req, res) {
   if (ingredientLines.length > MAX_INGREDIENTS) {
     return res.status(400).json({ error: `Please estimate no more than ${MAX_INGREDIENTS} ingredients at once.` });
   }
-
   const apiKey = process.env.USDA_FDC_API_KEY || 'DEMO_KEY';
-  const localRequest = isLocalRequest(req);
 
   try {
     const rememberedIngredientRows = await loadRememberedIngredientRows({
