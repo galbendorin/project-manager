@@ -155,6 +155,7 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
 
   const inserts = [];
   const updates = [];
+  const preparedItems = Array.from(consolidatedIncoming.values());
 
   for (const item of consolidatedIncoming.values()) {
     const key = normalizeShoppingTodoTitle(item.title);
@@ -176,6 +177,7 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
 
   return {
     inserts,
+    preparedItems,
     updates,
     addedCount: inserts.length,
     mergedCount: updates.length,

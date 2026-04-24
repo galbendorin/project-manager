@@ -157,8 +157,39 @@ test('planShoppingListAdds collapses duplicate incoming groceries before insert'
 
   assert.equal(plan.addedCount, 1);
   assert.equal(plan.mergedCount, 0);
+  assert.equal(plan.preparedItems.length, 1);
   assert.equal(plan.inserts[0].title, 'tomatoes');
   assert.equal(plan.inserts[0].quantityValue, 5);
+  assert.equal(plan.preparedItems[0].title, 'tomatoes');
+  assert.equal(plan.preparedItems[0].quantityValue, 5);
+});
+
+test('planShoppingListAdds keeps prepared items available for live upsert flow', () => {
+  const plan = planShoppingListAdds({
+    existingTodos: [
+      {
+        _id: 'todo-eggs-open',
+        title: 'Eggs',
+        status: 'Open',
+        quantityValue: 2,
+        quantityUnit: 'pcs',
+        updatedAt: '2026-04-16T08:00:00.000Z',
+      },
+    ],
+    incomingItems: [
+      { title: ' eggs ', quantityValue: 3, quantityUnit: 'pcs', sourceType: 'meal_plan', meta: { weekStartDate: '2026-04-21' } },
+      { title: 'Milk', quantityValue: null, quantityUnit: '', sourceType: '', meta: {} },
+    ],
+  });
+
+  assert.equal(plan.preparedItems.length, 2);
+  assert.deepEqual(
+    plan.preparedItems.map((item) => item.title),
+    ['eggs', 'Milk'],
+  );
+  assert.equal(plan.preparedItems[0].quantityValue, 3);
+  assert.equal(plan.preparedItems[0].sourceType, 'meal_plan');
+  assert.deepEqual(plan.preparedItems[0].meta, { weekStartDate: '2026-04-21' });
 });
 
 test('formatShoppingAddSummary reports mixed add and merge outcomes clearly', () => {
