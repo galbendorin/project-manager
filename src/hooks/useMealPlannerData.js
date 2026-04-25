@@ -315,12 +315,23 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   );
   const entryUsageById = mealPlanPreview.entryUsageById;
 
-  const householdMealPlanPreview = useMemo(() => buildMealPlanPreview({
-    recipes,
-    entries: visibleEntries,
-    adultPortionTotal: week?.adultCount ?? 1.75,
-    kidCount: week?.kidCount ?? 0,
-  }), [recipes, visibleEntries, week?.adultCount, week?.kidCount]);
+  const visibleEntriesMatchOwnEntries = useMemo(() => {
+    if (visibleEntries.length !== entries.length) return false;
+    return visibleEntries.every((entry, index) => entry?.id === entries[index]?.id);
+  }, [entries, visibleEntries]);
+
+  const householdMealPlanPreview = useMemo(() => {
+    if (visibleEntriesMatchOwnEntries) {
+      return mealPlanPreview;
+    }
+
+    return buildMealPlanPreview({
+      recipes,
+      entries: visibleEntries,
+      adultPortionTotal: week?.adultCount ?? 1.75,
+      kidCount: week?.kidCount ?? 0,
+    });
+  }, [mealPlanPreview, recipes, visibleEntries, visibleEntriesMatchOwnEntries, week?.adultCount, week?.kidCount]);
 
   const rawHouseholdGroceryDraft = householdMealPlanPreview.groceryDraft;
   const householdGroceryDraft = useMemo(

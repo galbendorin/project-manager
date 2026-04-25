@@ -1851,6 +1851,16 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   }, [weekDays]);
 
   const recipeMap = useMemo(() => new Map(recipes.map((recipe) => [recipe.id, recipe])), [recipes]);
+  const recipeDisplayMetaById = useMemo(() => (
+    recipes.reduce((accumulator, recipe) => {
+      accumulator[recipe.id] = {
+        cardIngredients: summarizeRecipeIngredients(recipe, 3),
+        libraryIngredients: summarizeRecipeIngredients(recipe, 4),
+        searchText: `${recipe.name} ${recipe.sourcePdf} ${summarizeRecipeIngredients(recipe, 5)}`.toLowerCase(),
+      };
+      return accumulator;
+    }, {})
+  ), [recipes]);
   const plannerIsShared = useMemo(() => (
     Array.isArray(plannerProject?.project_members) && plannerProject.project_members.length > 0
   ), [plannerProject?.project_members]);
@@ -1907,15 +1917,27 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     }, {})
   ), [plannerEntriesBySlotKey, resolvedRecipeByEntryId]);
 
+  const activeMobileDay = useMemo(() => (
+    weekDays.find((day) => day.key === activeMobileDayKey) || weekDays[0] || null
+  ), [activeMobileDayKey, weekDays]);
+  const visibleWeekDays = useMemo(() => (
+    isMobile
+      ? (activeMobileDay ? [activeMobileDay] : [])
+      : weekDays
+  ), [activeMobileDay, isMobile, weekDays]);
+  const isPlannerVisible = !isMobile || mobileActivePanel === 'planner';
+  const isRecipeLibraryVisible = !isMobile || mobileActivePanel === 'recipes';
+  const isShoppingGenerationVisible = !isMobile || mobileActivePanel === 'groceries';
+
   const filteredLibraryRecipes = useMemo(() => (
-    recipes.filter((recipe) => {
+    isRecipeLibraryVisible ? recipes.filter((recipe) => {
       if (librarySlotFilter !== 'all' && recipe.mealSlot !== librarySlotFilter) {
         return false;
       }
-      const haystack = `${recipe.name} ${recipe.sourcePdf} ${summarizeRecipeIngredients(recipe, 5)}`.toLowerCase();
+      const haystack = recipeDisplayMetaById[recipe.id]?.searchText || '';
       return haystack.includes(deferredLibrarySearch.toLowerCase());
-    })
-  ), [deferredLibrarySearch, librarySlotFilter, recipes]);
+    }) : []
+  ), [deferredLibrarySearch, isRecipeLibraryVisible, librarySlotFilter, recipeDisplayMetaById, recipes]);
 
   const weekLabel = useMemo(() => formatWeekLabel(weekDays), [weekDays]);
   const partnerServingMultiplier = Math.max(0, (week?.adultCount ?? 1.75) - 1);
@@ -1939,14 +1961,27 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       setPlanViewMode('mine');
     }
   }, [planViewMode, plannerIsShared, plannerProject?.id, plannerProject?.project_members]);
-  const recipeNutritionById = useMemo(() => (
-    recipes.reduce((accumulator, recipe) => {
-      accumulator[recipe.id] = estimateRecipeNutritionFromStarterCatalog(recipe);
-      return accumulator;
-    }, {})
-  ), [recipes]);
+  const plannedRecipeIds = useMemo(() => {
+    const ids = new Set();
+    plannerEntries.forEach((entry) => {
+      const recipe = resolvedRecipeByEntryId[entry.id];
+      if (recipe?.id) ids.add(recipe.id);
+    });
+    return ids;
+  }, [plannerEntries, resolvedRecipeByEntryId]);
+  const plannedRecipeNutritionById = useMemo(() => {
+    const accumulator = {};
+    plannedRecipeIds.forEach((recipeId) => {
+      const recipe = recipeMap.get(recipeId);
+      if (recipe) {
+        accumulator[recipeId] = estimateRecipeNutritionFromStarterCatalog(recipe);
+      }
+    });
+    return accumulator;
+  }, [plannedRecipeIds, recipeMap]);
   const daySummaryByKey = useMemo(() => {
-    const summary = weekDays.reduce((accumulator, day) => {
+    const visibleDayKeys = new Set(visibleWeekDays.map((day) => day.key));
+    const summary = visibleWeekDays.reduce((accumulator, day) => {
       accumulator[day.key] = {
         calories: 0,
         nutrition: createEmptyNutritionTotals(),
@@ -1955,6 +1990,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     }, {});
 
     plannerEntries.forEach((entry) => {
+      if (!visibleDayKeys.has(entry.date)) return;
       const daySummary = summary[entry.date];
       if (!daySummary) return;
 
@@ -1969,7 +2005,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
         daySummary.calories += recipe.estimatedKcal * multiplier;
       }
 
-      const nutrition = recipeNutritionById[recipe.id];
+      const nutrition = plannedRecipeNutritionById[recipe.id];
       if (!nutrition) return;
 
       daySummary.nutrition.proteinG += (nutrition.proteinG || 0) * multiplier;
@@ -1982,21 +2018,11 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     });
 
     return summary;
-  }, [plannerEntries, plannerEntryUsageById, recipeNutritionById, resolvedRecipeByEntryId, weekDays]);
-  const activeMobileDay = useMemo(() => (
-    weekDays.find((day) => day.key === activeMobileDayKey) || weekDays[0] || null
-  ), [activeMobileDayKey, weekDays]);
-  const visibleWeekDays = useMemo(() => (
-    isMobile
-      ? (activeMobileDay ? [activeMobileDay] : [])
-      : weekDays
-  ), [activeMobileDay, isMobile, weekDays]);
+  }, [plannedRecipeNutritionById, plannerEntries, plannerEntryUsageById, resolvedRecipeByEntryId, visibleWeekDays]);
   const visibleLibraryRecipes = useMemo(() => (
     filteredLibraryRecipes.slice(0, libraryVisibleCount)
   ), [filteredLibraryRecipes, libraryVisibleCount]);
-  const isPlannerVisible = !isMobile || mobileActivePanel === 'planner';
-  const isRecipeLibraryVisible = !isMobile || mobileActivePanel === 'recipes';
-  const isShoppingGenerationVisible = !isMobile || mobileActivePanel === 'groceries';
+  const mobileRecipeLibraryCount = isRecipeLibraryVisible ? filteredLibraryRecipes.length : recipes.length;
   const parsedPartnerInput = parsePlannerNumberInput(partnerInput);
   const parsedKidsInput = parsePlannerNumberInput(kidsInput);
   const householdCanSave = parsedPartnerInput !== null && parsedKidsInput !== null;
@@ -2374,7 +2400,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { id: 'planner', label: 'Plan', meta: activeMobileDay?.shortLabel || 'Week' },
-                  { id: 'recipes', label: 'Recipes', meta: `${filteredLibraryRecipes.length}` },
+                  { id: 'recipes', label: 'Recipes', meta: `${mobileRecipeLibraryCount}` },
                   { id: 'groceries', label: 'Groceries', meta: `${plannerGroceryDraft.length}` },
                 ].map((panel) => {
                   const isActive = mobileActivePanel === panel.id;
@@ -2643,7 +2669,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 const isCopyPromptVisible = isOwnedEntry && Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
                                 const entryUsage = plannerEntryUsageById?.[entry.id] || null;
                                 const carryoverNutritionMultiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
-                                const carryoverNutrition = recipe ? recipeNutritionById[recipe.id] : null;
+                                const carryoverNutrition = recipe ? plannedRecipeNutritionById[recipe.id] : null;
                                 const carryoverKcal = recipe?.estimatedKcal && carryoverNutritionMultiplier > 0
                                   ? Math.round(recipe.estimatedKcal * carryoverNutritionMultiplier)
                                   : 0;
@@ -2699,7 +2725,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                       ) : null}
                                     </div>
                                     <h4 className={`font-semibold leading-5 text-slate-950 ${isCarryoverEntry ? 'mt-2 text-[14px] sm:text-[15px]' : 'mt-2.5 text-[15px] sm:mt-3 sm:text-base'}`}>{recipe.name}</h4>
-                                    <p className={`text-slate-500 ${isCarryoverEntry ? 'mt-1 text-[11px] leading-4' : 'mt-1.5 text-[12px] leading-5 sm:mt-2 sm:text-sm'}`}>{summarizeRecipeIngredients(recipe, 3)}</p>
+                                    <p className={`text-slate-500 ${isCarryoverEntry ? 'mt-1 text-[11px] leading-4' : 'mt-1.5 text-[12px] leading-5 sm:mt-2 sm:text-sm'}`}>{recipeDisplayMetaById[recipe.id]?.cardIngredients || ''}</p>
                                     <div className={`flex flex-wrap font-semibold ${isCarryoverEntry ? 'mt-2 gap-1.5 text-[10px]' : 'mt-3 gap-2 text-[11px]'}`}>
                                       {isCarryoverEntry ? (
                                         <>
@@ -2892,7 +2918,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
               ) : null}
             </div>
 
-            <div className={`w-full min-w-0 space-y-4 ${isMobile && mobileActivePanel === 'planner' ? 'hidden' : ''}`}>
+            {(isRecipeLibraryVisible || isShoppingGenerationVisible) ? (
+            <div className="w-full min-w-0 space-y-4">
               <div className={`pm-scroll-optimize-section pm-meal-planner-panel w-full min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${!isRecipeLibraryVisible ? 'hidden' : ''}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
@@ -2957,7 +2984,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                               ) : null}
                             </div>
                             <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
-                            <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 4)}</p>
+                            <p className="mt-2 text-sm text-slate-500">{recipeDisplayMetaById[recipe.id]?.libraryIngredients || ''}</p>
                           </button>
                           <div className="mt-3 flex flex-wrap gap-2">
                             {recipe.estimatedKcal ? (
@@ -3034,6 +3061,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 )}
               </div>
             </div>
+            ) : null}
           </div>
         </section>
       </div>
