@@ -1641,8 +1641,15 @@ function GroceryReviewModal({
           <div>
             <p className="pm-kicker">Grocery review</p>
             <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">Weekly shopping draft</h3>
-            <p className="mt-2 text-sm text-slate-500">Review totals for {weekLabel} before they are added into Shopping List.</p>
-            <p className="mt-2 text-sm text-slate-500">Batch recipes reuse carryover first, so only newly needed ingredients appear in this draft.</p>
+            <p className="mt-2 text-sm text-slate-500">
+              Review totals for {weekLabel} before they sync into Shopping List.
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              This replaces the existing Meal plan batch for this week. Manual Shopping List items are left untouched.
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Batch recipes reuse carryover first, so only newly needed ingredients appear in this draft.
+            </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
@@ -1757,7 +1764,7 @@ function GroceryReviewModal({
         {draft.length === 0 ? (
           <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
             {canClearApprovedBatch
-              ? 'There are no grocery lines left in this draft. Update Shopping List to remove the generated meal-plan groceries for this week.'
+              ? 'There are no grocery lines left in this draft. Update Shopping List to remove the generated Meal plan batch for this week.'
               : 'There are no grocery lines left in this draft. Restore one ingredient if you want to send groceries to Shopping List.'}
           </div>
         ) : null}
@@ -2224,7 +2231,10 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       const result = await confirmGroceryDraft(draftOverride);
       setShowReviewModal(false);
       if (result?.count === 0) {
-        setStatusMessage('Updated Shopping List and removed generated meal-plan groceries for this week.');
+        setStatusMessage('Updated Shopping List and removed generated Meal plan groceries for this week.');
+      } else {
+        const syncedCount = result?.count ?? draftOverride.length;
+        setStatusMessage(`Updated Shopping List with ${syncedCount} generated Meal plan grocer${syncedCount === 1 ? 'y' : 'ies'} for this week.`);
       }
     } catch {
       // Error is surfaced through the shared banner state.
@@ -2302,6 +2312,17 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const handleRemoveCarryover = async (carryoverEntryId) => {
     try {
       await removeCarryover(carryoverEntryId);
+      setStatusMessage('Carryover removed. Review groceries and update Shopping List if this week already has generated groceries.');
+    } catch {
+      // Error banner already set in the data hook.
+    }
+  };
+
+  const handleRemovePlannedMeal = async (entryId) => {
+    try {
+      dismissCopyUiForEntry(entryId);
+      await clearMealEntry({ entryId });
+      setStatusMessage('Meal removed from the plan. Review groceries, then Update Shopping List to refresh this week\'s generated batch.');
     } catch {
       // Error banner already set in the data hook.
     }
@@ -2861,10 +2882,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                             </button>
                                             <button
                                               type="button"
-                                              onClick={async () => {
-                                                dismissCopyUiForEntry(entry.id);
-                                                await clearMealEntry({ entryId: entry.id });
-                                              }}
+                                              onClick={() => void handleRemovePlannedMeal(entry.id)}
                                               className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 sm:text-xs"
                                             >
                                               Remove
@@ -3058,18 +3076,30 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         ? 'The planner aggregates ingredients across every visible household plan for this week, including repeated meals across family members.'
                         : 'The planner aggregates ingredients across your week, including repeated meals like oats on multiple days.'}
                     </p>
+                    <div className="mt-4 rounded-[20px] border border-sky-100 bg-sky-50 px-4 py-3 text-[13px] leading-5 text-sky-800">
+                      <p className="font-semibold text-sky-900">Meal plan groceries are synced as one weekly batch.</p>
+                      <p className="mt-1">
+                        If you remove or change recipes after approving groceries, open this review again and press Update Shopping List. The generated batch is replaced, while manual groceries stay as they are.
+                      </p>
+                    </div>
                     <div className="mt-4 space-y-2 text-sm text-slate-600">
                       <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2.5">
                         <span>Planned slots</span>
                         <span className="font-semibold text-slate-900">{plannerEntries.length}</span>
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2.5">
-                        <span>Draft grocery lines</span>
+                        <span>Draft batch lines</span>
                         <span className="font-semibold text-slate-900">{plannerGroceryDraft.length}</span>
                       </div>
+                      {hasApprovedGroceryBatch ? (
+                        <div className="flex items-center justify-between gap-3 rounded-2xl bg-emerald-50 px-3 py-2.5 text-emerald-800">
+                          <span>Shopping List batch</span>
+                          <span className="font-semibold">Already synced</span>
+                        </div>
+                      ) : null}
                     </div>
                     <button type="button" onClick={() => setShowReviewModal(true)} className="pm-toolbar-primary mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white">
-                      Review groceries
+                      {hasApprovedGroceryBatch ? 'Review / update groceries' : 'Review groceries'}
                     </button>
                   </>
                 ) : (
@@ -3148,8 +3178,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           }}
           onRemoveFromDay={async () => {
             try {
-              dismissCopyUiForEntry(detailContext.entry?.id);
-              await clearMealEntry({ entryId: detailContext.entry?.id || '' });
+              await handleRemovePlannedMeal(detailContext.entry?.id || '');
               setDetailContext(null);
             } catch {
               // Error banner already set in the data hook.

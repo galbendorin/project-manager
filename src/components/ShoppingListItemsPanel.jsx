@@ -93,6 +93,7 @@ export default function ShoppingListItemsPanel({
   todos,
 }) {
   const duplicateBoughtCount = Math.max(0, completedTodos.length - completedTodoGroups.length);
+  const openMealPlanTodoCount = openTodos.filter((todo) => todo.sourceType === 'meal_plan').length;
   const [expandedOpenTodoId, setExpandedOpenTodoId] = useState('');
   const [expandedBoughtGroupId, setExpandedBoughtGroupId] = useState('');
 
@@ -152,6 +153,16 @@ export default function ShoppingListItemsPanel({
               <ListChecksIcon className="h-4 w-4 text-[var(--pm-accent)]" />
               <h4 className="text-sm font-semibold text-slate-900">To buy</h4>
             </div>
+            {openMealPlanTodoCount > 0 ? (
+              <div className="mb-3 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-[13px] leading-5 text-sky-800">
+                <p className="font-semibold text-sky-900">
+                  {openMealPlanTodoCount} generated Meal plan item{openMealPlanTodoCount === 1 ? '' : 's'} in this list
+                </p>
+                <p className="mt-1">
+                  Change recipes in Meal Planner, then use Review / update groceries there to replace the weekly batch. Manual groceries you add here stay untouched.
+                </p>
+              </div>
+            ) : null}
             <div className="space-y-3">
               {openTodos.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-500">
