@@ -1621,6 +1621,7 @@ function RecipeDetailModal({
 
 function GroceryReviewModal({
   draft,
+  canClearApprovedBatch,
   hiddenDraft,
   onApprove,
   onClose,
@@ -1755,7 +1756,9 @@ function GroceryReviewModal({
 
         {draft.length === 0 ? (
           <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-            There are no grocery lines left in this draft. Restore one ingredient if you want to send groceries to Shopping List.
+            {canClearApprovedBatch
+              ? 'There are no grocery lines left in this draft. Update Shopping List to remove the generated meal-plan groceries for this week.'
+              : 'There are no grocery lines left in this draft. Restore one ingredient if you want to send groceries to Shopping List.'}
           </div>
         ) : null}
 
@@ -1763,8 +1766,8 @@ function GroceryReviewModal({
           <button type="button" onClick={onClose} className={`pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold ${isMobile ? 'w-full' : ''}`}>
             Close
           </button>
-          <button type="button" onClick={() => onApprove(draft)} disabled={saving || draft.length === 0} className={`pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 ${isMobile ? 'w-full' : ''}`}>
-            {saving ? 'Adding groceries…' : 'Add to Shopping List'}
+          <button type="button" onClick={() => onApprove(draft)} disabled={saving || (draft.length === 0 && !canClearApprovedBatch)} className={`pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 ${isMobile ? 'w-full' : ''}`}>
+            {saving ? 'Updating groceries…' : (canClearApprovedBatch ? 'Update Shopping List' : 'Add to Shopping List')}
           </button>
         </div>
       </div>
@@ -1789,6 +1792,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     error,
     excludeGroceryDraftItem,
     groceryDraft,
+    hasApprovedGroceryBatch,
     hiddenHouseholdGroceryDraft,
     hiddenGroceryDraft,
     householdEntryUsageById,
@@ -2217,8 +2221,11 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
   const handleApproveGroceries = async (draftOverride = plannerGroceryDraft) => {
     try {
-      await confirmGroceryDraft(draftOverride);
+      const result = await confirmGroceryDraft(draftOverride);
       setShowReviewModal(false);
+      if (result?.count === 0) {
+        setStatusMessage('Updated Shopping List and removed generated meal-plan groceries for this week.');
+      }
     } catch {
       // Error is surfaced through the shared banner state.
     }
@@ -3230,6 +3237,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       {showReviewModal ? (
         <GroceryReviewModal
           draft={plannerGroceryDraft}
+          canClearApprovedBatch={hasApprovedGroceryBatch}
           hiddenDraft={plannerHiddenGroceryDraft}
           onApprove={(draftOverride) => void handleApproveGroceries(draftOverride)}
           onClose={() => setShowReviewModal(false)}

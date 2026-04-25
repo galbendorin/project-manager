@@ -1536,8 +1536,9 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   const confirmGroceryDraft = useCallback(async (draftOverride = null) => {
     if (!week?.id) return null;
     const draftRows = Array.isArray(draftOverride) ? draftOverride : groceryDraft;
+    const canClearExistingBatch = Boolean(groceryBatch?.id && groceryBatch?.status === 'approved');
 
-    if (draftRows.length === 0) {
+    if (draftRows.length === 0 && !canClearExistingBatch) {
       throw new Error('Plan at least one meal before generating groceries.');
     }
 
@@ -1546,6 +1547,38 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
 
     try {
       const shoppingProject = await resolvePlannerProject();
+      const excludedSignaturePayload = buildExcludedDraftSignaturesPayload(excludedDraftSourceSignatures, 'text-array');
+      const itemPayload = draftRows.map((item) => ({
+        title: item.title,
+        quantityValue: item.quantityValue,
+        quantityUnit: item.quantityUnit || '',
+        rawText: item.rawText,
+        occurrenceCount: item.occurrenceCount,
+        sourceMeals: item.sourceMeals,
+        weekStartDate: week.weekStartDate,
+      }));
+
+      const rpcResult = await supabase.rpc('replace_meal_plan_grocery_batch', {
+        target_week_id: week.id,
+        target_shopping_project_id: shoppingProject.id,
+        target_batch_id: groceryBatch?.id || null,
+        target_excluded_draft_signatures: excludedSignaturePayload,
+        target_items: itemPayload,
+      });
+
+      if (!rpcResult.error && rpcResult.data?.batch_id) {
+        const nextBatch = {
+          id: rpcResult.data.batch_id,
+          shoppingProjectId: shoppingProject.id,
+          status: 'approved',
+          excludedDraftSignatures: excludedSignaturePayload,
+        };
+        const count = Number(rpcResult.data.count) || 0;
+        setGroceryBatch(nextBatch);
+        setLastApprovedCount(count);
+        return { batchId: nextBatch.id, count };
+      }
+
       const batchPayload = {
         user_id: currentUserId,
         week_id: week.id,
@@ -1626,11 +1659,13 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         },
       }));
 
-      const { error: insertItemsError } = await supabase
-        .from('manual_todos')
-        .insert(rows);
+      if (rows.length > 0) {
+        const { error: insertItemsError } = await supabase
+          .from('manual_todos')
+          .insert(rows);
 
-      if (insertItemsError) throw insertItemsError;
+        if (insertItemsError) throw insertItemsError;
+      }
       setLastApprovedCount(rows.length);
       return { batchId, count: rows.length };
     } catch (nextError) {
@@ -1639,7 +1674,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setSaving(false);
     }
-  }, [currentUserId, excludedDraftSourceSignatures, groceryBatch?.id, groceryDraft, resolvePlannerProject, week?.id, week?.weekStartDate]);
+  }, [currentUserId, excludedDraftSourceSignatures, groceryBatch?.id, groceryBatch?.status, groceryDraft, resolvePlannerProject, week?.id, week?.weekStartDate]);
 
   return {
     applyMealToDates,
@@ -1654,6 +1689,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     excludeGroceryDraftItem,
     entryUsageById,
     groceryDraft,
+    hasApprovedGroceryBatch: Boolean(groceryBatch?.id && groceryBatch?.status === 'approved'),
     hiddenHouseholdGroceryDraft,
     hiddenGroceryDraft,
     householdEntryUsageById,
