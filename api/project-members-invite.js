@@ -110,6 +110,6 @@ export default async function handler(req, res) {
     return res.status(response.status).json(response.body);
   } catch (error) {
     console.error('Project invite error:', error);
-    return res.status(500).json({ error: error.message || 'Unexpected server error.' });
+    return res.status(500).json({ error: 'Unable to share this project right now.' });
   }
 }

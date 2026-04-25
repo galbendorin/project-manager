@@ -198,6 +198,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, sent });
   } catch (error) {
     console.error('Shopping push notify error:', error);
-    return res.status(500).json({ error: error.message || 'Unexpected server error.' });
+    return res.status(500).json({ error: 'Unable to send Shopping List alerts right now.' });
   }
 }

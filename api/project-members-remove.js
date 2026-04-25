@@ -132,6 +132,6 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('Project member removal error:', error);
-    return res.status(500).json({ error: error.message || 'Unexpected server error.' });
+    return res.status(500).json({ error: 'Unable to update project access right now.' });
   }
 }

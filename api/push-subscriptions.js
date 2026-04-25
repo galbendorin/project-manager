@@ -202,6 +202,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, message: 'Phone alerts are on for this device.' });
   } catch (error) {
     console.error('Push subscription error:', error);
-    return res.status(500).json({ error: error.message || 'Unexpected server error.' });
+    return res.status(500).json({ error: 'Unable to update phone alerts right now.' });
   }
 }

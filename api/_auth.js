@@ -15,7 +15,7 @@ const ALLOWED_ORIGINS = [
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-const supabaseAuthKey = supabaseServiceRoleKey || process.env.VITE_SUPABASE_ANON_KEY;
+const supabaseAuthKey = supabaseAnonKey;
 
 const authSupabase = supabaseUrl && supabaseAuthKey
   ? createClient(supabaseUrl, supabaseAuthKey)
@@ -32,6 +32,7 @@ export const applyApiCors = (req, res) => {
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key');
+  res.setHeader('Access-Control-Max-Age', '600');
   res.setHeader('Vary', 'Origin');
 };
 

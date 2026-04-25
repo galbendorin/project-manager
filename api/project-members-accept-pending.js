@@ -142,6 +142,6 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('Pending invite acceptance error:', error);
-    return res.status(500).json({ error: error.message || 'Unexpected server error.' });
+    return res.status(500).json({ error: 'Unable to accept pending project invites right now.' });
   }
 }

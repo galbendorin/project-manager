@@ -182,6 +182,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ url: session.url });
   } catch (err) {
     console.error('Stripe checkout error:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Unable to start checkout right now.' });
   }
 }
