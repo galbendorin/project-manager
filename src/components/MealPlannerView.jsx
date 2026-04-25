@@ -355,9 +355,20 @@ const fetchRecipeCalorieEstimate = async ({
 function ModalShell({ children, onClose, wide = false }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className={`fixed inset-0 z-[90] flex justify-center bg-slate-950/40 ${isMobile ? 'items-end px-0 py-0' : 'items-center px-4 py-6'}`}>
-      <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Close modal" />
+      <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-hidden="true" tabIndex={-1} />
       <div
         className={`relative w-full overflow-y-auto border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)] ${
           isMobile
@@ -550,7 +561,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
               {form.id ? 'Update recipe' : 'Create recipe'}
             </h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
+          <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
           </button>
         </div>
@@ -920,7 +931,7 @@ function ImportRecipesModal({ onClose, onImport, saving }) {
             <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">Paste recipe rows</h3>
             <p className="mt-2 text-sm text-slate-500">Use the same pipe-delimited row format you already shared.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
+          <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
           </button>
         </div>
@@ -985,7 +996,7 @@ function ChooseMoreDaysModal({ days, onClose, onConfirm }) {
             <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">Choose more days</h3>
             <p className="mt-2 text-sm text-slate-500">Apply the same recipe to other days for this meal slot.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
+          <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
           </button>
         </div>
@@ -1074,7 +1085,7 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
             <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">{recipe.name}</h3>
             <p className="mt-2 text-sm text-slate-500">Pick a day, slot, and audience for this recipe. Any recipe can be used in any slot.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
+          <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
           </button>
         </div>
@@ -1232,7 +1243,7 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
   return (
     <ModalShell onClose={onClose} wide>
       <div className="p-5 sm:p-6">
-        <div className="flex items-start justify-between gap-3">
+        <div className="sticky top-0 z-20 -mx-5 -mt-5 flex items-start justify-between gap-3 border-b border-slate-100 bg-white/95 px-5 pb-3 pt-5 backdrop-blur sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6">
           <div>
             <p className="pm-kicker">{getMealSlotLabel(slot)}</p>
             <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">Choose a recipe</h3>
@@ -1241,7 +1252,7 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
               Any recipe can be used here, and recipes already matching {getMealSlotLabel(slot).toLowerCase()} are shown first.
             </p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
+          <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
           </button>
         </div>
@@ -1459,7 +1470,7 @@ function RecipeDetailModal({
               <p className="mt-2 text-sm text-slate-500">{recipe.estimatedKcal} kcal</p>
             ) : null}
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
+          <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
           </button>
         </div>
@@ -1632,7 +1643,7 @@ function GroceryReviewModal({
             <p className="mt-2 text-sm text-slate-500">Review totals for {weekLabel} before they are added into Shopping List.</p>
             <p className="mt-2 text-sm text-slate-500">Batch recipes reuse carryover first, so only newly needed ingredients appear in this draft.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
+          <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
           </button>
         </div>
