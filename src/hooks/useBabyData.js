@@ -89,6 +89,7 @@ export function useBabyData({ currentUserId } = {}) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const hasLoadedRef = useRef(false);
   const supportsMembersRef = useRef(true);
 
   const latestWeight = useMemo(() => (
@@ -125,7 +126,7 @@ export function useBabyData({ currentUserId } = {}) {
     return preferred;
   }, [currentUserId]);
 
-  const loadProfile = useCallback(async (project = householdProject) => {
+  const loadProfile = useCallback(async (project = null) => {
     if (!currentUserId) return null;
 
     let query = supabase
@@ -146,9 +147,9 @@ export function useBabyData({ currentUserId } = {}) {
     const nextProfile = data?.[0] ? mapBabyProfile(data[0]) : null;
     setBabyProfile(nextProfile);
     return nextProfile;
-  }, [currentUserId, householdProject]);
+  }, [currentUserId]);
 
-  const loadDay = useCallback(async (profile = babyProfile, dateKey = selectedDate) => {
+  const loadDay = useCallback(async (profile, dateKey) => {
     if (!profile?.id) {
       setFeeds([]);
       setNappies([]);
@@ -173,11 +174,11 @@ export function useBabyData({ currentUserId } = {}) {
     setNappies((nappyResult.data || []).map(mapNappy));
     setSleepBlocks((sleepResult.data || []).map(mapSleepBlock));
     setWeights((weightResult.data || []).map(mapWeight));
-  }, [babyProfile, selectedDate]);
+  }, []);
 
   const loadAll = useCallback(async () => {
     if (!currentUserId) return;
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     setError('');
     try {
       const project = await loadHouseholdProject();
@@ -186,6 +187,7 @@ export function useBabyData({ currentUserId } = {}) {
     } catch (nextError) {
       setError(nextError?.message || 'Unable to load Baby tracker.');
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
     }
   }, [currentUserId, loadDay, loadHouseholdProject, loadProfile, selectedDate]);
