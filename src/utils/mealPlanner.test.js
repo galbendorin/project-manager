@@ -186,6 +186,37 @@ test('parseIngredientText accepts AI-cleaned structured ingredient rows', () => 
   assert.ok(unknownQuantity.parseConfidence < 0.5);
 });
 
+test('parsePastedRecipeText accepts strict AI cleanup output', () => {
+  const parsed = parsePastedRecipeText(`Recipe name: Chicken Caesar salad
+Meal slot: lunch
+Suggested day: Tuesday
+Yield portions: 4
+Calories per serving: unknown
+Ingredients:
+- ciabatta loaf | 1 | medium | or 4 thick slices crusty white bread
+- olive oil | 3 | tbsp |
+- chicken breasts | 2 | pcs | skinless, boneless
+- cos or romaine lettuce | 1 | large | leaves separated
+- parmesan | | | quantity not clear
+Method:
+Grill the chicken, toast the bread, mix the dressing, and serve with lettuce.`, 'dinner');
+
+  assert.equal(parsed.name, 'Chicken Caesar salad');
+  assert.equal(parsed.mealSlot, 'lunch');
+  assert.equal(parsed.suggestedDay, 'tue');
+  assert.equal(parsed.yieldMode, 'batch');
+  assert.equal(parsed.batchYieldPortions, '4');
+  assert.equal(parsed.estimatedKcal, '');
+  assert.equal(parsed.ingredientLines.length, 5);
+  assert.equal(parsed.ingredientLines[0].ingredientName, 'ciabatta loaf');
+  assert.equal(parsed.ingredientLines[0].quantityValue, 1);
+  assert.equal(parsed.ingredientLines[2].ingredientName, 'chicken breasts');
+  assert.equal(parsed.ingredientLines[2].notes, 'skinless, boneless');
+  assert.equal(parsed.ingredientLines[4].ingredientName, 'parmesan');
+  assert.equal(parsed.ingredientLines[4].quantityValue, null);
+  assert.match(parsed.howToMake, /Grill the chicken/);
+});
+
 test('buildGroceryDraft aggregates repeated meals by ingredient and unit', () => {
   const recipes = [
     {

@@ -508,6 +508,9 @@ const splitIngredientCandidates = (lines = []) => (
   lines.flatMap((line) => {
     const strippedLine = stripListMarker(line);
     if (!strippedLine) return [];
+    if (strippedLine.includes('|')) {
+      return [strippedLine];
+    }
     if (strippedLine.includes(',') && !/^\d/.test(strippedLine)) {
       return strippedLine.split(',').map((part) => stripListMarker(part)).filter(Boolean);
     }
@@ -583,13 +586,13 @@ export const parsePastedRecipeText = (rawText = '', fallbackMealSlot = 'breakfas
       }
     }
 
-    const nameValue = getLabelValue(line, ['name', 'title', 'recipe']);
+    const nameValue = getLabelValue(line, ['name', 'title', 'recipe', 'recipe name']);
     if (nameValue) {
       result.name = nameValue;
       return;
     }
 
-    const mealSlotValue = getLabelValue(line, ['meal', 'slot', 'type']);
+    const mealSlotValue = getLabelValue(line, ['meal', 'slot', 'type', 'meal slot']);
     const normalizedSlot = normalizeMealSlot(mealSlotValue);
     if (normalizedSlot) {
       result.mealSlot = normalizedSlot;
@@ -605,6 +608,15 @@ export const parsePastedRecipeText = (rawText = '', fallbackMealSlot = 'breakfas
     const sourceValue = getLabelValue(line, ['source', 'diet']);
     if (sourceValue) {
       result.sourcePdf = sourceValue;
+      return;
+    }
+
+    const calorieLabelValue = getLabelValue(line, ['calories per serving', 'calories', 'kcal', 'estimated kcal']);
+    if (calorieLabelValue) {
+      const labeledKcal = extractKcalEstimate(calorieLabelValue);
+      if (labeledKcal !== null) {
+        result.estimatedKcal = String(Math.round(labeledKcal));
+      }
       return;
     }
 

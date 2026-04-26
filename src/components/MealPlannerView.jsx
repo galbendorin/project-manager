@@ -1,4 +1,5 @@
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { usePlan } from '../contexts/PlanContext';
 import { useMealPlannerData } from '../hooks/useMealPlannerData';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { supabase } from '../lib/supabase';
@@ -16,6 +17,8 @@ import {
   summarizeRecipeIngredients,
 } from '../utils/mealPlanner';
 import { estimateRecipeNutritionFromStarterCatalog } from '../utils/mealCalorieCatalog';
+import { generateAiContent } from '../utils/aiClient';
+import { isAiConfigured, loadAiSettings } from '../utils/aiSettings';
 
 const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 const AUDIENCE_OPTIONS = ['all', 'adults', 'kids'];
@@ -55,6 +58,32 @@ Rules:
 
 Recipe to clean:
 <<<PASTE RECIPE HERE>>>`;
+const RECIPE_AI_CLEANUP_SYSTEM_PROMPT = `You clean messy copied recipe text for PM Workspace Meal Planner.
+
+Return only the cleaned recipe in this exact format:
+Recipe name:
+Meal slot:
+Suggested day:
+Yield portions:
+Calories per serving:
+Ingredients:
+- ingredient name | quantity | unit | notes
+Method:
+
+Rules:
+- Do not add commentary or markdown fences.
+- Meal slot must be one of: breakfast, lunch, dinner, snack.
+- Use one ingredient per line.
+- Use simple units only: g, ml, tsp, tbsp, cup, pcs, slice, slices, clove, cloves, block, tin, can, bunch, head, small, medium, large.
+- Put alternatives in notes, not as a second grocery row.
+- Put preparation words in notes, for example skinless, boneless, chopped, leaves separated, from a tin.
+- If a quantity is not clear, leave quantity and unit blank rather than inventing.
+- If calories are not provided by the source, write unknown.
+- Keep the method short and practical.`;
+
+const buildRecipeAiCleanupUserMessage = (rawRecipeText = '') => (
+  `Clean this recipe for PM Workspace Meal Planner:\n\n${rawRecipeText}`
+);
 
 const getAudiencePillClasses = (audience) => {
   if (audience === 'adults') {
@@ -532,7 +561,7 @@ function ModalShell({ children, onClose, wide = false }) {
   );
 }
 
-function RecipeFormModal({ initialState, onClose, onSave, saving }) {
+function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfig }) {
   const initialModalStateRef = useRef(null);
   if (!initialModalStateRef.current) {
     initialModalStateRef.current = buildRecipeFormModalStart(initialState);
@@ -543,6 +572,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
   const [quickPasteOpen, setQuickPasteOpen] = useState(!initialState?.id);
   const [quickPasteMessage, setQuickPasteMessage] = useState(initialModalStateRef.current.quickPasteMessage);
   const [draftRestored, setDraftRestored] = useState(initialModalStateRef.current.draftRestored);
+  const [aiCleanupLoading, setAiCleanupLoading] = useState(false);
   const [estimateState, setEstimateState] = useState({
     loading: false,
     error: '',
@@ -569,6 +599,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
       error: '',
       result: null,
     });
+    setAiCleanupLoading(false);
   }, [initialState]);
 
   useEffect(() => {
@@ -755,6 +786,85 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
     }
   };
 
+  const handleAiCleanupRecipe = async () => {
+    const rawText = quickPasteText.trim();
+    if (!rawText) {
+      setQuickPasteMessage('Paste the recipe text first, then use AI cleanup.');
+      return;
+    }
+
+    if (!aiCleanupConfig?.available) {
+      setQuickPasteMessage('AI cleanup is unavailable. Use Copy AI cleanup prompt or configure AI Settings.');
+      return;
+    }
+
+    setAiCleanupLoading(true);
+    setQuickPasteMessage('Cleaning recipe with AI...');
+
+    try {
+      const result = await generateAiContent({
+        provider: aiCleanupConfig.provider,
+        apiKey: aiCleanupConfig.apiKey,
+        model: aiCleanupConfig.model,
+        usePlatformKey: aiCleanupConfig.usePlatformKey,
+        systemPrompt: RECIPE_AI_CLEANUP_SYSTEM_PROMPT,
+        userMessage: buildRecipeAiCleanupUserMessage(rawText),
+        maxTokens: 1800,
+      });
+
+      if (!result.ok || !String(result.text || '').trim()) {
+        setQuickPasteMessage(result.error || 'AI cleanup could not return a usable recipe. Your pasted text was kept.');
+        return;
+      }
+
+      const cleanedText = String(result.text || '').trim();
+      const parsed = parsePastedRecipeText(cleanedText, form.mealSlot);
+      if (parsed.ingredientLines.length === 0 && !parsed.name) {
+        setQuickPasteMessage('AI cleanup returned an unexpected format. Your pasted text was kept.');
+        return;
+      }
+
+      const parsedIngredientLines = parsed.ingredientLines.map(createIngredientFormLine);
+      const nextForm = {
+        ...form,
+        name: parsed.name || form.name,
+        mealSlot: parsed.mealSlot || form.mealSlot,
+        sourcePdf: parsed.sourcePdf || form.sourcePdf || 'AI cleaned',
+        suggestedDay: parsed.suggestedDay || form.suggestedDay,
+        estimatedKcal: parsed.estimatedKcal || form.estimatedKcal,
+        imageRef: parsed.imageRef || form.imageRef,
+        howToMake: parsed.howToMake || form.howToMake,
+        yieldMode: parsed.yieldMode || form.yieldMode,
+        batchYieldPortions: parsed.yieldMode === 'batch'
+          ? parsed.batchYieldPortions
+          : form.batchYieldPortions,
+        ingredientLines: parsedIngredientLines.length > 0 ? parsedIngredientLines : form.ingredientLines,
+      };
+
+      const cleanupMessage = parsed.warnings.length > 0
+        ? `AI cleaned the recipe. Review ${parsed.warnings.length} warning${parsed.warnings.length === 1 ? '' : 's'} before saving.`
+        : 'AI cleaned the recipe. Review before saving.';
+
+      setQuickPasteText(cleanedText);
+      setQuickPasteMessage(cleanupMessage);
+      setDraftRestored(false);
+      writeNewRecipeDraft({
+        formState: nextForm,
+        quickPasteText: cleanedText,
+        quickPasteMessage: cleanupMessage,
+      });
+
+      const estimateResult = await applyCalorieEstimate(nextForm, { replaceForm: true });
+      if (estimateResult) {
+        setQuickPasteMessage(`${cleanupMessage} Calories checked against ${estimateResult.resolvedIngredientCount}/${estimateResult.totalIngredients} matched ingredient${estimateResult.totalIngredients === 1 ? '' : 's'}.`);
+      }
+    } catch {
+      setQuickPasteMessage('AI cleanup could not finish. Your pasted text was kept.');
+    } finally {
+      setAiCleanupLoading(false);
+    }
+  };
+
   const handleCopyAiCleanupPrompt = async () => {
     try {
       await navigator.clipboard.writeText(RECIPE_AI_CLEANUP_PROMPT);
@@ -859,11 +969,21 @@ Method: cook rice, grill chicken, combine.`}
                 <button
                   type="button"
                   onClick={handleQuickPasteRecipe}
-                  disabled={!quickPasteText.trim() || estimateState.loading}
+                  disabled={!quickPasteText.trim() || estimateState.loading || aiCleanupLoading}
                   className="pm-toolbar-primary rounded-full px-4 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {estimateState.loading ? 'Parsing and estimating...' : 'Parse and estimate'}
                 </button>
+                {aiCleanupConfig?.available ? (
+                  <button
+                    type="button"
+                    onClick={handleAiCleanupRecipe}
+                    disabled={!quickPasteText.trim() || aiCleanupLoading || estimateState.loading}
+                    className="pm-subtle-button rounded-full px-4 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {aiCleanupLoading ? 'Cleaning with AI...' : 'Clean with AI'}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => {
@@ -883,6 +1003,11 @@ Method: cook rice, grill chicken, combine.`}
                 </button>
                 <span className="text-xs text-slate-500">You can still edit every field before saving.</span>
               </div>
+              <p className="mt-2 text-xs text-slate-500">
+                {aiCleanupConfig?.available
+                  ? 'Best for messy web recipes. Recipe text is sent to your configured AI provider only when you press Clean with AI. Review before saving.'
+                  : 'AI cleanup is unavailable. Use Copy AI cleanup prompt or configure AI Settings.'}
+              </p>
               {quickPasteMessage ? (
                 <div className="mt-3 rounded-[18px] border border-sky-200 bg-white/80 px-3 py-2 text-xs font-semibold text-sky-800">
                   {quickPasteMessage}
@@ -2212,6 +2337,7 @@ function LazyPlannerDayCard({
 
 export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const { canUsePlatformAi, limits } = usePlan();
   const {
     applyMealToDates,
     canUseStarterLibrary,
@@ -2274,8 +2400,43 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const [partnerInput, setPartnerInput] = useState('');
   const [kidsInput, setKidsInput] = useState('');
   const [householdSaving, setHouseholdSaving] = useState(false);
+  const [aiSettings, setAiSettings] = useState(() => loadAiSettings());
   const deferredLibrarySearch = useDeferredValue(librarySearch);
   const autoResolvedPlanViewKeyRef = useRef('');
+  const hasByokAi = isAiConfigured(aiSettings);
+  const useRecipePlatformAi = Boolean(limits?.canUseAi && canUsePlatformAi && !hasByokAi);
+  const aiCleanupConfig = useMemo(() => {
+    if (!limits?.canUseAi) return { available: false };
+    if (hasByokAi) {
+      return {
+        available: true,
+        provider: aiSettings.provider,
+        apiKey: aiSettings.apiKey,
+        model: aiSettings.model,
+        usePlatformKey: false,
+      };
+    }
+    if (useRecipePlatformAi) {
+      return {
+        available: true,
+        provider: 'gemini',
+        apiKey: '',
+        model: 'gemini-2.5-flash-lite',
+        usePlatformKey: true,
+      };
+    }
+    return { available: false };
+  }, [aiSettings.apiKey, aiSettings.model, aiSettings.provider, hasByokAi, limits?.canUseAi, useRecipePlatformAi]);
+
+  useEffect(() => {
+    const refreshAiSettings = () => setAiSettings(loadAiSettings());
+    window.addEventListener('focus', refreshAiSettings);
+    window.addEventListener('storage', refreshAiSettings);
+    return () => {
+      window.removeEventListener('focus', refreshAiSettings);
+      window.removeEventListener('storage', refreshAiSettings);
+    };
+  }, []);
 
   useEffect(() => {
     if (lastImportedCount > 0) {
@@ -3598,6 +3759,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           onClose={() => setFormState(null)}
           onSave={handleCreateOrUpdateRecipe}
           saving={saving}
+          aiCleanupConfig={aiCleanupConfig}
         />
       ) : null}
 
