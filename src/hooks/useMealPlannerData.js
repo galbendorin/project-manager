@@ -34,10 +34,16 @@ const MEAL_PLAN_WEEK_SELECT_SHARED_BASE = `${MEAL_PLAN_WEEK_SELECT_BASE}, shoppi
 const MEAL_PLAN_WEEK_SELECT_SHARED_WITH_PORTIONS = `${MEAL_PLAN_WEEK_SELECT_WITH_PORTIONS}, shopping_project_id`;
 const MEAL_PLAN_GROCERY_BATCH_SELECT_BASE = 'id, shopping_project_id, status';
 const MEAL_PLAN_GROCERY_BATCH_SELECT_WITH_EXCLUSIONS = `${MEAL_PLAN_GROCERY_BATCH_SELECT_BASE}, excluded_draft_signatures`;
-const MEAL_LIBRARY_SELECT_BASE = 'id, external_id, source_pdf, suggested_day, meal_slot, name, ingredients_raw, how_to_make, estimated_kcal, image_ref, recipe_origin, created_at, updated_at';
-const MEAL_LIBRARY_SELECT_WITH_BATCH = `${MEAL_LIBRARY_SELECT_BASE}, yield_mode, batch_yield_portions`;
-const MEAL_LIBRARY_SELECT_SHARED_BASE = `${MEAL_LIBRARY_SELECT_BASE}, shopping_project_id`;
-const MEAL_LIBRARY_SELECT_SHARED_WITH_BATCH = `${MEAL_LIBRARY_SELECT_WITH_BATCH}, shopping_project_id`;
+const MEAL_LIBRARY_CORE_SELECT = 'id, external_id, source_pdf, suggested_day, meal_slot, name, ingredients_raw, how_to_make, estimated_kcal, image_ref, recipe_origin, created_at, updated_at';
+const MEAL_LIBRARY_RECIPE_NUTRITION_FIELDS = ['estimated_protein_g', 'estimated_carbs_g', 'estimated_fiber_g'];
+const getMealLibrarySelect = ({ shared = false, batch = true, nutrition = true } = {}) => (
+  [
+    MEAL_LIBRARY_CORE_SELECT,
+    nutrition ? MEAL_LIBRARY_RECIPE_NUTRITION_FIELDS.join(', ') : '',
+    batch ? 'yield_mode, batch_yield_portions' : '',
+    shared ? 'shopping_project_id' : '',
+  ].filter(Boolean).join(', ')
+);
 const STARTER_LIBRARY_ALLOWED_EMAILS = new Set([
   'dorin.galben@yahoo.com',
   'galben.dorin@yahoo.com',
@@ -87,6 +93,16 @@ const stripMealBatchFields = (payload = {}) => {
   return rest;
 };
 
+const stripMealNutritionFields = (payload = {}) => {
+  const {
+    estimated_protein_g,
+    estimated_carbs_g,
+    estimated_fiber_g,
+    ...rest
+  } = payload;
+  return rest;
+};
+
 const mapRecipeRow = (row = {}, ingredients = []) => ({
   id: row.id,
   externalId: row.external_id || '',
@@ -97,6 +113,9 @@ const mapRecipeRow = (row = {}, ingredients = []) => ({
   ingredientsRaw: row.ingredients_raw || '',
   howToMake: row.how_to_make || '',
   estimatedKcal: toNullableFiniteNumber(row.estimated_kcal),
+  estimatedProteinG: toNullableFiniteNumber(row.estimated_protein_g),
+  estimatedCarbsG: toNullableFiniteNumber(row.estimated_carbs_g),
+  estimatedFiberG: toNullableFiniteNumber(row.estimated_fiber_g),
   imageRef: row.image_ref || '',
   recipeOrigin: row.recipe_origin || 'manual',
   yieldMode: row.yield_mode || 'flexible',
@@ -345,9 +364,15 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   const householdEntryUsageById = householdMealPlanPreview.entryUsageById;
 
   const loadRecipes = useCallback(async (shoppingProjectId = '') => {
+    let supportsRecipeNutritionFields = true;
+    const buildSelect = ({ shared = supportsSharedMealPlanner, batch = true } = {}) => getMealLibrarySelect({
+      shared,
+      batch,
+      nutrition: supportsRecipeNutritionFields,
+    });
     let mealQuery = supabase
       .from('meal_library_meals')
-      .select(supportsSharedMealPlanner ? MEAL_LIBRARY_SELECT_SHARED_WITH_BATCH : MEAL_LIBRARY_SELECT_WITH_BATCH);
+      .select(buildSelect());
     if (supportsSharedMealPlanner) {
       mealQuery = mealQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
     } else {
@@ -361,15 +386,16 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
       setSupportsSharedMealPlanner(false);
       mealResult = await supabase
         .from('meal_library_meals')
-        .select(MEAL_LIBRARY_SELECT_WITH_BATCH)
+        .select(buildSelect({ shared: false }))
         .order('meal_slot', { ascending: true })
         .order('name', { ascending: true });
     }
 
-    if (mealResult.error && isMissingMealPlannerFieldError(mealResult.error, ['yield_mode', 'batch_yield_portions'])) {
+    if (mealResult.error && isMissingMealPlannerFieldError(mealResult.error, MEAL_LIBRARY_RECIPE_NUTRITION_FIELDS)) {
+      supportsRecipeNutritionFields = false;
       let fallbackMealQuery = supabase
         .from('meal_library_meals')
-        .select(supportsSharedMealPlanner ? MEAL_LIBRARY_SELECT_SHARED_BASE : MEAL_LIBRARY_SELECT_BASE);
+        .select(buildSelect());
       if (supportsSharedMealPlanner) {
         fallbackMealQuery = fallbackMealQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
       } else {
@@ -383,7 +409,30 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         setSupportsSharedMealPlanner(false);
         mealResult = await supabase
           .from('meal_library_meals')
-          .select(MEAL_LIBRARY_SELECT_BASE)
+          .select(buildSelect({ shared: false }))
+          .order('meal_slot', { ascending: true })
+          .order('name', { ascending: true });
+      }
+    }
+
+    if (mealResult.error && isMissingMealPlannerFieldError(mealResult.error, ['yield_mode', 'batch_yield_portions'])) {
+      let fallbackMealQuery = supabase
+        .from('meal_library_meals')
+        .select(buildSelect({ batch: false }));
+      if (supportsSharedMealPlanner) {
+        fallbackMealQuery = fallbackMealQuery.eq('shopping_project_id', shoppingProjectId || '00000000-0000-0000-0000-000000000000');
+      } else {
+        fallbackMealQuery = fallbackMealQuery.eq('user_id', currentUserId);
+      }
+      mealResult = await fallbackMealQuery
+        .order('meal_slot', { ascending: true })
+        .order('name', { ascending: true });
+
+      if (supportsSharedMealPlanner && mealResult.error && isMissingMealPlannerFieldError(mealResult.error, ['shopping_project_id'])) {
+        setSupportsSharedMealPlanner(false);
+        mealResult = await supabase
+          .from('meal_library_meals')
+          .select(buildSelect({ shared: false, batch: false }))
           .order('meal_slot', { ascending: true })
           .order('name', { ascending: true });
       }
@@ -530,11 +579,24 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
           }) => rest));
       }
 
+      if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, MEAL_LIBRARY_RECIPE_NUTRITION_FIELDS)) {
+        insertResult = await supabase
+          .from('meal_library_meals')
+          .insert(inserts.map((payload) => {
+            const nextPayload = stripMealNutritionFields(payload);
+            if (!useSharedProjectField) {
+              const { shopping_project_id, ...legacyPayload } = nextPayload;
+              return legacyPayload;
+            }
+            return nextPayload;
+          }));
+      }
+
       if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['yield_mode', 'batch_yield_portions'])) {
         insertResult = await supabase
           .from('meal_library_meals')
           .insert(inserts.map((payload) => {
-            const nextPayload = stripMealBatchFields(payload);
+            const nextPayload = stripMealNutritionFields(stripMealBatchFields(payload));
             if (!useSharedProjectField) {
               const { shopping_project_id, ...legacyPayload } = nextPayload;
               return legacyPayload;
@@ -1243,6 +1305,9 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         ingredientsRaw: serializeIngredientLines(ingredientLines),
         howToMake: recipeInput.howToMake || '',
         estimatedKcal: recipeInput.estimatedKcal || null,
+        estimatedProteinG: recipeInput.estimatedProteinG || null,
+        estimatedCarbsG: recipeInput.estimatedCarbsG || null,
+        estimatedFiberG: recipeInput.estimatedFiberG || null,
         imageRef: recipeInput.imageRef || '',
         ingredientLines,
         yieldMode: recipeInput.yieldMode || 'flexible',
@@ -1272,6 +1337,18 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
           .single();
       }
 
+      if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, MEAL_LIBRARY_RECIPE_NUTRITION_FIELDS)) {
+        insertResult = await supabase
+          .from('meal_library_meals')
+          .insert({
+            user_id: currentUserId,
+            ...(useSharedProjectField ? { shopping_project_id: shoppingProject.id } : {}),
+            ...stripMealNutritionFields(mealPayload),
+          })
+          .select('id')
+          .single();
+      }
+
       if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['yield_mode', 'batch_yield_portions'])) {
         if (isBatchRecipeInput) {
           throw new Error('Meal Planner needs the latest SQL migration before batch recipes can be saved.');
@@ -1280,7 +1357,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
           .from('meal_library_meals')
           .insert({
             user_id: currentUserId,
-            ...stripMealBatchFields(mealPayload),
+            ...stripMealNutritionFields(stripMealBatchFields(mealPayload)),
           })
           .select('id')
           .single();
@@ -1313,6 +1390,9 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         ingredientsRaw: serializeIngredientLines(ingredientLines),
         howToMake: recipeInput.howToMake || '',
         estimatedKcal: recipeInput.estimatedKcal || null,
+        estimatedProteinG: recipeInput.estimatedProteinG || null,
+        estimatedCarbsG: recipeInput.estimatedCarbsG || null,
+        estimatedFiberG: recipeInput.estimatedFiberG || null,
         imageRef: recipeInput.imageRef || '',
         ingredientLines,
         yieldMode: recipeInput.yieldMode || 'flexible',
@@ -1324,13 +1404,20 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         .update(mealPayload)
         .eq('id', recipeId);
 
+      if (updateResult.error && isMissingMealPlannerFieldError(updateResult.error, MEAL_LIBRARY_RECIPE_NUTRITION_FIELDS)) {
+        updateResult = await supabase
+          .from('meal_library_meals')
+          .update(stripMealNutritionFields(mealPayload))
+          .eq('id', recipeId);
+      }
+
       if (updateResult.error && isMissingMealPlannerFieldError(updateResult.error, ['yield_mode', 'batch_yield_portions'])) {
         if (isBatchRecipeInput) {
           throw new Error('Meal Planner needs the latest SQL migration before batch recipes can be saved.');
         }
         updateResult = await supabase
           .from('meal_library_meals')
-          .update(stripMealBatchFields(mealPayload))
+          .update(stripMealNutritionFields(stripMealBatchFields(mealPayload)))
           .eq('id', recipeId);
       }
 

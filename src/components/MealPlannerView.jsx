@@ -43,18 +43,24 @@ Meal slot: breakfast | lunch | dinner | snack
 Suggested day:
 Yield portions:
 Calories per serving:
+Protein per serving:
+Carbs per serving:
+Fibre per serving:
 Ingredients:
 - ingredient name | quantity | unit | notes
 Method:
 
 Rules:
+- If calories/protein/carbs/fibre are not provided by the source, estimate them per serving from the ingredient quantities using standard nutrition references.
+- Only write unknown for a nutrition field when ingredient quantities are too incomplete to make a reasonable estimate.
+- Return nutrition values as numbers with units, for example 520 kcal, 34 g, 48 g, 7 g.
 - Use one ingredient per line.
 - Use simple units only: g, ml, tsp, tbsp, cup, pcs, slice, slices, clove, cloves, block, tin, can, bunch, head, small, medium, large.
 - Put alternatives in notes, not as a second grocery row.
 - Put preparation words in notes, for example skinless, boneless, chopped, leaves separated, from a tin.
 - If a quantity is not clear, leave quantity and unit blank rather than inventing.
-- If calories are not provided by the source, write unknown.
 - Keep the method short and practical.
+- If you estimate nutrition, mention the main assumptions briefly in Method after the cooking steps.
 
 Recipe to clean:
 <<<PASTE RECIPE HERE>>>`;
@@ -66,6 +72,9 @@ Meal slot:
 Suggested day:
 Yield portions:
 Calories per serving:
+Protein per serving:
+Carbs per serving:
+Fibre per serving:
 Ingredients:
 - ingredient name | quantity | unit | notes
 Method:
@@ -73,13 +82,16 @@ Method:
 Rules:
 - Do not add commentary or markdown fences.
 - Meal slot must be one of: breakfast, lunch, dinner, snack.
+- If calories/protein/carbs/fibre are not provided by the source, estimate them per serving from the ingredient quantities using standard nutrition references.
+- Only write unknown for a nutrition field when ingredient quantities are too incomplete to make a reasonable estimate.
+- Return nutrition values as numbers with units, for example 520 kcal, 34 g, 48 g, 7 g.
 - Use one ingredient per line.
 - Use simple units only: g, ml, tsp, tbsp, cup, pcs, slice, slices, clove, cloves, block, tin, can, bunch, head, small, medium, large.
 - Put alternatives in notes, not as a second grocery row.
 - Put preparation words in notes, for example skinless, boneless, chopped, leaves separated, from a tin.
 - If a quantity is not clear, leave quantity and unit blank rather than inventing.
-- If calories are not provided by the source, write unknown.
-- Keep the method short and practical.`;
+- Keep the method short and practical.
+- If you estimate nutrition, mention the main assumptions briefly in Method after the cooking steps.`;
 
 const buildRecipeAiCleanupUserMessage = (rawRecipeText = '') => (
   `Clean this recipe for PM Workspace Meal Planner:\n\n${rawRecipeText}`
@@ -189,6 +201,9 @@ const DEFAULT_FORM_STATE = {
   sourcePdf: '',
   suggestedDay: '',
   estimatedKcal: '',
+  estimatedProteinG: '',
+  estimatedCarbsG: '',
+  estimatedFiberG: '',
   imageRef: '',
   howToMake: '',
   ingredientLines: [
@@ -262,6 +277,9 @@ const hasRecipeDraftContent = (formState = {}) => {
     formState.sourcePdf,
     formState.suggestedDay,
     formState.estimatedKcal,
+    formState.estimatedProteinG,
+    formState.estimatedCarbsG,
+    formState.estimatedFiberG,
     formState.imageRef,
     formState.howToMake,
     formState.batchYieldPortions,
@@ -392,11 +410,32 @@ const formatMacroTotal = (value) => {
   return next.toFixed(1).replace(/\.0$/, '');
 };
 
+const roundNutritionField = (value) => {
+  const next = Number(value);
+  if (!Number.isFinite(next)) return '';
+  return Math.round(next * 10) / 10;
+};
+
 const createEmptyNutritionTotals = () => ({
   proteinG: 0,
   carbsG: 0,
   fiberG: 0,
 });
+
+const estimateFormNutritionPerServing = (formState = {}) => {
+  const ingredientLines = (formState.ingredientLines || []).map(compileIngredientRow);
+  const totals = estimateRecipeNutritionFromStarterCatalog({ ingredients: ingredientLines });
+  const batchYield = Number(formState.batchYieldPortions);
+  const divisor = formState.yieldMode === 'batch' && Number.isFinite(batchYield) && batchYield > 0
+    ? batchYield
+    : 1;
+
+  return {
+    estimatedProteinG: roundNutritionField((totals.proteinG || 0) / divisor),
+    estimatedCarbsG: roundNutritionField((totals.carbsG || 0) / divisor),
+    estimatedFiberG: roundNutritionField((totals.fiberG || 0) / divisor),
+  };
+};
 
 const parsePlannerNumberInput = (value) => {
   const normalized = String(value ?? '').trim().replace(',', '.');
@@ -456,6 +495,9 @@ const buildRecipeFormState = (recipe) => {
     sourcePdf: recipe.sourcePdf || '',
     suggestedDay: recipe.suggestedDay || '',
     estimatedKcal: recipe.estimatedKcal ?? '',
+    estimatedProteinG: recipe.estimatedProteinG ?? '',
+    estimatedCarbsG: recipe.estimatedCarbsG ?? '',
+    estimatedFiberG: recipe.estimatedFiberG ?? '',
     imageRef: recipe.imageRef || '',
     howToMake: recipe.howToMake || '',
     ingredientLines: (recipe.ingredients || []).map((ingredient) => ({
@@ -646,6 +688,9 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
       await onSave({
         ...form,
         estimatedKcal: form.estimatedKcal === '' ? null : Number(form.estimatedKcal),
+        estimatedProteinG: form.estimatedProteinG === '' ? null : Number(form.estimatedProteinG),
+        estimatedCarbsG: form.estimatedCarbsG === '' ? null : Number(form.estimatedCarbsG),
+        estimatedFiberG: form.estimatedFiberG === '' ? null : Number(form.estimatedFiberG),
         batchYieldPortions: form.yieldMode === 'batch' && form.batchYieldPortions !== ''
           ? Number(form.batchYieldPortions)
           : null,
@@ -721,6 +766,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
             };
           }),
           ...(result.perServingKcal !== null ? { estimatedKcal: String(result.perServingKcal) } : {}),
+          ...estimateFormNutritionPerServing(baseForm),
         };
       });
 
@@ -760,6 +806,9 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
       sourcePdf: parsed.sourcePdf || form.sourcePdf,
       suggestedDay: parsed.suggestedDay || form.suggestedDay,
       estimatedKcal: parsed.estimatedKcal || form.estimatedKcal,
+      estimatedProteinG: parsed.estimatedProteinG || form.estimatedProteinG,
+      estimatedCarbsG: parsed.estimatedCarbsG || form.estimatedCarbsG,
+      estimatedFiberG: parsed.estimatedFiberG || form.estimatedFiberG,
       imageRef: parsed.imageRef || form.imageRef,
       howToMake: parsed.howToMake || form.howToMake,
       yieldMode: parsed.yieldMode || form.yieldMode,
@@ -832,6 +881,9 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
         sourcePdf: parsed.sourcePdf || form.sourcePdf || 'AI cleaned',
         suggestedDay: parsed.suggestedDay || form.suggestedDay,
         estimatedKcal: parsed.estimatedKcal || form.estimatedKcal,
+        estimatedProteinG: parsed.estimatedProteinG || form.estimatedProteinG,
+        estimatedCarbsG: parsed.estimatedCarbsG || form.estimatedCarbsG,
+        estimatedFiberG: parsed.estimatedFiberG || form.estimatedFiberG,
         imageRef: parsed.imageRef || form.imageRef,
         howToMake: parsed.howToMake || form.howToMake,
         yieldMode: parsed.yieldMode || form.yieldMode,
@@ -1126,6 +1178,64 @@ Method: cook rice, grill chicken, combine.`}
               </div>
             ) : null}
           </label>
+
+          <div className="sm:col-span-2 rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Nutrition per serving</span>
+                <p className="mt-1 text-xs text-slate-500">Used for daily protein, carbs, and fibre totals. AI cleanup can fill these, and you can edit them.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setForm((previous) => ({
+                  ...previous,
+                  ...estimateFormNutritionPerServing(previous),
+                }))}
+                disabled={!canEstimateCalories}
+                className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Estimate macros
+              </button>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Protein g</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={form.estimatedProteinG}
+                  onChange={(event) => setForm((previous) => ({ ...previous, estimatedProteinG: event.target.value }))}
+                  className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm"
+                  placeholder="34"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Carbs g</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={form.estimatedCarbsG}
+                  onChange={(event) => setForm((previous) => ({ ...previous, estimatedCarbsG: event.target.value }))}
+                  className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm"
+                  placeholder="48"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Fibre g</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={form.estimatedFiberG}
+                  onChange={(event) => setForm((previous) => ({ ...previous, estimatedFiberG: event.target.value }))}
+                  className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-sm"
+                  placeholder="7"
+                />
+              </label>
+            </div>
+          </div>
 
           <label className="block">
             <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Image ref</span>

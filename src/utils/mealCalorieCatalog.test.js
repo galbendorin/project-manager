@@ -129,3 +129,20 @@ test('estimateRecipeNutritionFromStarterCatalog totals protein, carbs, and fiber
     fiberG: 9.5,
   });
 });
+
+test('estimateRecipeNutritionFromStarterCatalog prefers saved recipe macro estimates', () => {
+  const result = estimateRecipeNutritionFromStarterCatalog({
+    estimatedProteinG: 31.2,
+    estimatedCarbsG: 44,
+    estimatedFiberG: 6.8,
+    ingredients: [
+      { ingredientName: 'unknown homemade sauce', quantityValue: 1, quantityUnit: 'pcs', notes: '' },
+    ],
+  });
+
+  assert.deepEqual(result, {
+    proteinG: 31.2,
+    carbsG: 44,
+    fiberG: 6.8,
+  });
+});

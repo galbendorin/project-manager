@@ -474,6 +474,27 @@ const extractKcalEstimate = (line = '') => {
   return Number.isFinite(next) && next >= 0 ? next : null;
 };
 
+const extractGramEstimate = (line = '') => {
+  const normalizedLine = normalizeSpace(line);
+  const match = normalizedLine.match(/(\d+(?:[.,]\d+)?)(?:\s*g\b)?/i);
+  if (!match) return null;
+  const next = Number(String(match[1]).replace(',', '.'));
+  return Number.isFinite(next) && next >= 0 ? next : null;
+};
+
+const extractMacroValueFromLine = (line = '', macroLabels = []) => {
+  const normalizedLine = normalizeSpace(line);
+  for (const label of macroLabels) {
+    const pattern = new RegExp(`${label}[^0-9]*(\\d+(?:[.,]\\d+)?)\\s*g?\\b`, 'i');
+    const match = normalizedLine.match(pattern);
+    if (match) {
+      const next = Number(String(match[1]).replace(',', '.'));
+      return Number.isFinite(next) && next >= 0 ? next : null;
+    }
+  }
+  return null;
+};
+
 const looksLikeIngredientLine = (line = '') => {
   const normalizedLine = stripListMarker(line);
   if (!normalizedLine) return false;
@@ -530,6 +551,9 @@ export const parsePastedRecipeText = (rawText = '', fallbackMealSlot = 'breakfas
     sourcePdf: 'Manual paste',
     suggestedDay: '',
     estimatedKcal: '',
+    estimatedProteinG: '',
+    estimatedCarbsG: '',
+    estimatedFiberG: '',
     imageRef: '',
     howToMake: '',
     yieldMode: 'flexible',
@@ -618,6 +642,39 @@ export const parsePastedRecipeText = (rawText = '', fallbackMealSlot = 'breakfas
         result.estimatedKcal = String(Math.round(labeledKcal));
       }
       return;
+    }
+
+    const proteinLabelValue = getLabelValue(line, ['protein per serving', 'protein']);
+    if (proteinLabelValue) {
+      const proteinG = extractGramEstimate(proteinLabelValue) ?? extractMacroValueFromLine(proteinLabelValue, ['protein']);
+      if (proteinG !== null) result.estimatedProteinG = String(proteinG);
+      return;
+    }
+
+    const carbsLabelValue = getLabelValue(line, ['carbs per serving', 'carbohydrates per serving', 'carbohydrate per serving', 'carbs', 'carbohydrates', 'carbohydrate']);
+    if (carbsLabelValue) {
+      const carbsG = extractGramEstimate(carbsLabelValue) ?? extractMacroValueFromLine(carbsLabelValue, ['carbs', 'carbohydrates?', 'carbohydrate']);
+      if (carbsG !== null) result.estimatedCarbsG = String(carbsG);
+      return;
+    }
+
+    const fiberLabelValue = getLabelValue(line, ['fibre per serving', 'fiber per serving', 'fibre', 'fiber']);
+    if (fiberLabelValue) {
+      const fiberG = extractGramEstimate(fiberLabelValue) ?? extractMacroValueFromLine(fiberLabelValue, ['fib(?:er|re)']);
+      if (fiberG !== null) result.estimatedFiberG = String(fiberG);
+      return;
+    }
+
+    if (/nutrition\s+per\s+serving|per\s+serving/i.test(line)) {
+      const inlineKcal = extractKcalEstimate(line);
+      const inlineProtein = extractMacroValueFromLine(line, ['protein']);
+      const inlineCarbs = extractMacroValueFromLine(line, ['carbs', 'carbohydrates?', 'carbohydrate']);
+      const inlineFiber = extractMacroValueFromLine(line, ['fib(?:er|re)']);
+      if (inlineKcal !== null) result.estimatedKcal = String(Math.round(inlineKcal));
+      if (inlineProtein !== null) result.estimatedProteinG = String(inlineProtein);
+      if (inlineCarbs !== null) result.estimatedCarbsG = String(inlineCarbs);
+      if (inlineFiber !== null) result.estimatedFiberG = String(inlineFiber);
+      if (inlineKcal !== null || inlineProtein !== null || inlineCarbs !== null || inlineFiber !== null) return;
     }
 
     const servingCount = extractServingCount(line);
@@ -960,6 +1017,9 @@ export const buildMealLibraryRecords = (rows = [], origin = 'imported') => (
     ingredients_raw: row.ingredientsRaw || serializeIngredientLines(row.ingredientLines),
     how_to_make: row.howToMake || '',
     estimated_kcal: toNullableFiniteNumber(row.estimatedKcal),
+    estimated_protein_g: toNullableFiniteNumber(row.estimatedProteinG),
+    estimated_carbs_g: toNullableFiniteNumber(row.estimatedCarbsG),
+    estimated_fiber_g: toNullableFiniteNumber(row.estimatedFiberG),
     image_ref: row.imageRef || '',
     recipe_origin: origin,
     yield_mode: normalizeRecipeYieldMode(row.yieldMode),

@@ -381,6 +381,17 @@ export const estimateIngredientNutritionFromStarterCatalog = (ingredient = {}) =
 };
 
 export const estimateRecipeNutritionFromStarterCatalog = (recipe = {}) => {
+  const storedProtein = toPositiveFiniteNumber(recipe.estimatedProteinG ?? recipe.estimated_protein_g);
+  const storedCarbs = toPositiveFiniteNumber(recipe.estimatedCarbsG ?? recipe.estimated_carbs_g);
+  const storedFiber = toPositiveFiniteNumber(recipe.estimatedFiberG ?? recipe.estimated_fiber_g);
+  if (storedProtein !== null || storedCarbs !== null || storedFiber !== null) {
+    return {
+      proteinG: roundTo(storedProtein || 0, 1) ?? 0,
+      carbsG: roundTo(storedCarbs || 0, 1) ?? 0,
+      fiberG: roundTo(storedFiber || 0, 1) ?? 0,
+    };
+  }
+
   const totals = (recipe.ingredients || []).reduce((sum, ingredient) => {
     const nutrientResult = estimateIngredientNutritionFromStarterCatalog(ingredient);
     if (!nutrientResult) return sum;
