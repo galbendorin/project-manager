@@ -87,6 +87,11 @@ export function useBabyData({ currentUserId } = {}) {
   const [nappies, setNappies] = useState([]);
   const [sleepBlocks, setSleepBlocks] = useState([]);
   const [weights, setWeights] = useState([]);
+  const [rangeFeeds, setRangeFeeds] = useState([]);
+  const [rangeNappies, setRangeNappies] = useState([]);
+  const [rangeSleepBlocks, setRangeSleepBlocks] = useState([]);
+  const [rangeLoading, setRangeLoading] = useState(false);
+  const [dayVersion, setDayVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -175,7 +180,58 @@ export function useBabyData({ currentUserId } = {}) {
     setNappies((nappyResult.data || []).map(mapNappy));
     setSleepBlocks((sleepResult.data || []).map(mapSleepBlock));
     setWeights((weightResult.data || []).map(mapWeight));
+    setDayVersion((version) => version + 1);
   }, []);
+
+  const loadRangeData = useCallback(async ({ startDate, endDate } = {}) => {
+    if (!babyProfile?.id || !startDate || !endDate) {
+      setRangeFeeds([]);
+      setRangeNappies([]);
+      setRangeSleepBlocks([]);
+      return;
+    }
+
+    setRangeLoading(true);
+    try {
+      const [feedResult, nappyResult, sleepResult] = await Promise.all([
+        supabase
+          .from('baby_feed_entries')
+          .select(FEED_SELECT)
+          .eq('baby_id', babyProfile.id)
+          .gte('local_date', startDate)
+          .lte('local_date', endDate)
+          .order('occurred_at', { ascending: true }),
+        supabase
+          .from('baby_nappy_entries')
+          .select(NAPPY_SELECT)
+          .eq('baby_id', babyProfile.id)
+          .gte('local_date', startDate)
+          .lte('local_date', endDate)
+          .order('occurred_at', { ascending: true }),
+        supabase
+          .from('baby_sleep_blocks')
+          .select(SLEEP_SELECT)
+          .eq('baby_id', babyProfile.id)
+          .gte('sleep_date', startDate)
+          .lte('sleep_date', endDate)
+          .eq('status', 'asleep')
+          .order('sleep_date', { ascending: true })
+          .order('block_index', { ascending: true }),
+      ]);
+
+      if (feedResult.error) throw feedResult.error;
+      if (nappyResult.error) throw nappyResult.error;
+      if (sleepResult.error) throw sleepResult.error;
+
+      setRangeFeeds((feedResult.data || []).map(mapFeed));
+      setRangeNappies((nappyResult.data || []).map(mapNappy));
+      setRangeSleepBlocks((sleepResult.data || []).map(mapSleepBlock));
+    } catch (nextError) {
+      setError(nextError?.message || 'Unable to load Baby pattern.');
+    } finally {
+      setRangeLoading(false);
+    }
+  }, [babyProfile?.id]);
 
   const loadAll = useCallback(async () => {
     if (!currentUserId) return;
@@ -414,7 +470,13 @@ export function useBabyData({ currentUserId } = {}) {
     latestWeight,
     loading,
     nappies,
+    dayVersion,
     refresh: loadAll,
+    loadRangeData,
+    rangeFeeds,
+    rangeLoading,
+    rangeNappies,
+    rangeSleepBlocks,
     saveSleepBlocks,
     saving,
     selectedDate,

@@ -1,7 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useBabyData } from '../hooks/useBabyData';
 import {
-  BLOCKS_PER_DAY,
+  addBabyDays,
   buildBabyActivityLog,
   formatBabyDateKey,
   formatBabyDisplayDate,
@@ -32,6 +32,13 @@ const NAPPY_TYPES = [
   { value: 'mixed', label: 'Mixed nappy' },
 ];
 
+const PATTERN_RANGES = [
+  { value: 'day', label: '1 day' },
+  { value: 'week', label: '1 week' },
+  { value: 'month', label: '1 month' },
+  { value: 'last30', label: 'Last 30 days' },
+];
+
 const formatDuration = (minutes = 0) => {
   const total = Number(minutes) || 0;
   if (total < 60) return `${total} min`;
@@ -54,6 +61,55 @@ const formatBreastSide = (side = '') => {
   if (normalized === 'both') return 'Both sides';
   return '';
 };
+
+const getDateParts = (dateKey = formatBabyDateKey()) => {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  return { year: year || new Date().getFullYear(), month: month || 1, day: day || 1 };
+};
+
+const getPatternRange = (range, selectedDate) => {
+  const { year, month, day } = getDateParts(selectedDate);
+  const selected = new Date(year, month - 1, day);
+
+  if (range === 'week') {
+    const monday = new Date(selected);
+    const dayIndex = monday.getDay() || 7;
+    monday.setDate(monday.getDate() - dayIndex + 1);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return { startDate: formatBabyDateKey(monday), endDate: formatBabyDateKey(sunday) };
+  }
+
+  if (range === 'month') {
+    const first = new Date(year, month - 1, 1);
+    const last = new Date(year, month, 0);
+    return { startDate: formatBabyDateKey(first), endDate: formatBabyDateKey(last) };
+  }
+
+  if (range === 'last30') {
+    return { startDate: addBabyDays(selectedDate, -29), endDate: selectedDate };
+  }
+
+  return { startDate: selectedDate, endDate: selectedDate };
+};
+
+const getDateKeysBetween = (startDate, endDate) => {
+  const keys = [];
+  let cursor = startDate;
+  while (cursor <= endDate && keys.length < 40) {
+    keys.push(cursor);
+    cursor = addBabyDays(cursor, 1);
+  }
+  return keys;
+};
+
+const groupByDate = (items, fieldName) => items.reduce((groups, item) => {
+  const dateKey = item[fieldName] || '';
+  if (!dateKey) return groups;
+  if (!groups[dateKey]) groups[dateKey] = [];
+  groups[dateKey].push(item);
+  return groups;
+}, {});
 
 const ModalShell = ({ title, children, onClose }) => (
   <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/40 px-0 sm:items-center sm:px-4">
@@ -282,6 +338,56 @@ const NappyModal = ({ dateKey, nappy, onClose, onSave, saving }) => {
   );
 };
 
+const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPointerEnter = null, compact = false }) => (
+  <div className={`min-w-[26px] rounded-xl border ${hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'} p-1`}>
+    <div className={`mb-1 text-center font-bold tabular-nums ${hour % 6 === 0 ? 'text-slate-700' : 'text-slate-400'} ${compact ? 'text-[8px]' : 'text-[10px]'}`}>
+      {hour % 3 === 0 ? String(hour).padStart(2, '0') : ''}
+    </div>
+    <div className="grid gap-[3px]">
+      {[0, 1, 2, 3].map((quarter) => {
+        const index = (hour * 4) + quarter;
+        const asleep = asleepSet.has(index);
+        const className = `${compact ? 'h-2' : 'h-4 sm:h-5'} rounded-md border transition ${
+          asleep
+            ? 'border-sky-500 bg-sky-500 shadow-sm'
+            : 'border-white bg-white hover:bg-sky-50'
+        }`;
+
+        if (!onBlockPointerDown) {
+          return <div key={index} title={getSleepBlockTimeLabel(index)} className={className} />;
+        }
+
+        return (
+          <button
+            key={index}
+            type="button"
+            title={getSleepBlockTimeLabel(index)}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              onBlockPointerDown(index);
+            }}
+            onPointerEnter={() => onBlockPointerEnter?.(index)}
+            className={className}
+          />
+        );
+      })}
+    </div>
+  </div>
+);
+
+const SleepPatternStrip = ({ sleepBlocks = [], compact = false }) => {
+  const asleepSet = useMemo(() => normalizeSleepBlocks(sleepBlocks), [sleepBlocks]);
+  return (
+    <div className="overflow-x-auto pb-1">
+      <div className="grid min-w-[720px] gap-1" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
+        {Array.from({ length: 24 }, (_, hour) => (
+          <SleepHourColumn key={hour} hour={hour} asleepSet={asleepSet} compact={compact} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
   const initialSet = useMemo(() => normalizeSleepBlocks(sleepBlocks), [sleepBlocks]);
   const [draftSet, setDraftSet] = useState(initialSet);
@@ -328,35 +434,133 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         </button>
       </div>
 
-      <div className="mt-4 select-none overflow-hidden rounded-[22px] border border-slate-100 bg-slate-50 p-2" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
-        <div className="grid gap-[2px]" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
-          {Array.from({ length: BLOCKS_PER_DAY }, (_, index) => {
-            const asleep = draftSet.has(index);
-            const isHourStart = index % 4 === 0;
+      <div className="mt-4 select-none overflow-x-auto rounded-[24px] border border-slate-100 bg-slate-50 p-2 pb-3 touch-pan-x" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
+        <div className="grid min-w-[720px] gap-1" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
+          {Array.from({ length: 24 }, (_, hour) => (
+            <SleepHourColumn
+              key={hour}
+              hour={hour}
+              asleepSet={draftSet}
+              onBlockPointerDown={startToggle}
+              onBlockPointerEnter={(index) => {
+                if (dragModeRef.current) applyBlock(index, dragModeRef.current);
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
+        <span className="rounded-full bg-slate-100 px-2 py-1">Major markers every 6h</span>
+        <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue = asleep</span>
+        <span className="rounded-full bg-white px-2 py-1">White = awake</span>
+      </div>
+    </section>
+  );
+};
+
+const PatternPanel = ({
+  dateKeys,
+  feeds,
+  nappies,
+  patternRange,
+  rangeLabel,
+  rangeLoading,
+  selectedDate,
+  setPatternRange,
+  sleepBlocks,
+}) => {
+  const feedsByDate = useMemo(() => groupByDate(feeds, 'localDate'), [feeds]);
+  const nappiesByDate = useMemo(() => groupByDate(nappies, 'localDate'), [nappies]);
+  const sleepByDate = useMemo(() => groupByDate(sleepBlocks, 'sleepDate'), [sleepBlocks]);
+
+  const patternDays = useMemo(() => dateKeys.map((dateKey) => {
+    const dayFeeds = feedsByDate[dateKey] || [];
+    const dayNappies = nappiesByDate[dateKey] || [];
+    const daySleep = sleepByDate[dateKey] || [];
+    return {
+      dateKey,
+      summary: summarizeBabyDay({ feeds: dayFeeds, nappies: dayNappies, sleepBlocks: daySleep }),
+      feeds: dayFeeds,
+      nappies: dayNappies,
+      sleepBlocks: daySleep,
+    };
+  }), [dateKeys, feedsByDate, nappiesByDate, sleepByDate]);
+
+  const rangeTotals = useMemo(() => patternDays.reduce((totals, day) => ({
+    feeds: totals.feeds + day.summary.feedCount,
+    feedMinutes: totals.feedMinutes + day.summary.totalFeedMinutes,
+    nappies: totals.nappies + day.summary.totalNappies,
+    sleepMinutes: totals.sleepMinutes + day.summary.sleep.totalMinutes,
+  }), { feeds: 0, feedMinutes: 0, nappies: 0, sleepMinutes: 0 }), [patternDays]);
+
+  return (
+    <section className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="pm-kicker">Pattern</p>
+          <h2 className="mt-1 text-xl font-black tracking-[-0.04em] text-slate-950">Sleep, feeds, nappies</h2>
+          <p className="mt-1 text-xs text-slate-500">{rangeLabel}</p>
+        </div>
+        <div className="flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+          {PATTERN_RANGES.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setPatternRange(option.value)}
+              className={`rounded-xl px-3 py-2 text-[11px] font-black transition ${
+                patternRange === option.value
+                  ? 'bg-slate-950 text-white shadow-sm'
+                  : 'text-slate-500 hover:bg-white'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-4">
+        <div className="rounded-2xl bg-sky-50 px-3 py-2 text-xs font-bold text-sky-800">{rangeTotals.feeds} feeds</div>
+        <div className="rounded-2xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800">{formatDuration(rangeTotals.feedMinutes)} feeding</div>
+        <div className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{rangeTotals.nappies} nappies</div>
+        <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">{formatDuration(rangeTotals.sleepMinutes)} sleep</div>
+      </div>
+
+      {rangeLoading ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm font-semibold text-slate-500">
+          Loading pattern...
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {patternDays.map((day) => {
+            const hasCare = day.summary.feedCount || day.summary.totalNappies || day.summary.sleep.totalMinutes;
             return (
-              <button
-                key={index}
-                type="button"
-                title={getSleepBlockTimeLabel(index)}
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  startToggle(index);
-                }}
-                onPointerEnter={() => {
-                  if (dragModeRef.current) applyBlock(index, dragModeRef.current);
-                }}
-                className={`h-8 rounded-[7px] border text-[8px] transition sm:h-9 ${
-                  asleep
-                    ? 'border-sky-300 bg-sky-500 text-white shadow-sm'
-                    : 'border-white bg-white text-slate-300 hover:bg-sky-50'
-                }`}
-              >
-                {isHourStart ? getSleepBlockTimeLabel(index).slice(0, 2) : ''}
-              </button>
+              <div key={day.dateKey} className={`rounded-[24px] border p-3 ${day.dateKey === selectedDate ? 'border-sky-200 bg-sky-50/40' : 'border-slate-100 bg-slate-50/70'}`}>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-black text-slate-950">{formatBabyDisplayDate(day.dateKey)}</div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                      {hasCare
+                        ? `${day.summary.feedCount} feeds · ${day.summary.totalNappies} nappies · ${formatDuration(day.summary.sleep.totalMinutes)} sleep`
+                        : 'No records yet'}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1 text-[10px] font-bold">
+                    {day.feeds.length ? <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-700">Feeds {day.feeds.length}</span> : null}
+                    {day.nappies.length ? <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">Nappies {day.nappies.length}</span> : null}
+                  </div>
+                </div>
+                <SleepPatternStrip sleepBlocks={day.sleepBlocks} compact />
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
+                  <span>Day {formatDuration(day.summary.sleep.daytimeMinutes)}</span>
+                  <span>Night {formatDuration(day.summary.sleep.nightMinutes)}</span>
+                  <span>Feeds {day.feeds.map((feed) => formatDateTime(feed.occurredAt)).filter(Boolean).join(', ') || 'none'}</span>
+                </div>
+              </div>
             );
           })}
         </div>
-      </div>
+      )}
     </section>
   );
 };
@@ -368,6 +572,7 @@ export default function BabyView({ currentUserId }) {
     addWeight,
     babyProfile,
     createBabyProfile,
+    dayVersion,
     deleteFeed,
     deleteNappy,
     error,
@@ -376,8 +581,13 @@ export default function BabyView({ currentUserId }) {
     goToPreviousDay,
     goToToday,
     latestWeight,
+    loadRangeData,
     loading,
     nappies,
+    rangeFeeds,
+    rangeLoading,
+    rangeNappies,
+    rangeSleepBlocks,
     saveSleepBlocks,
     saving,
     selectedDate,
@@ -390,10 +600,21 @@ export default function BabyView({ currentUserId }) {
   } = useBabyData({ currentUserId });
   const [feedModal, setFeedModal] = useState(null);
   const [nappyModal, setNappyModal] = useState(null);
+  const [patternRange, setPatternRange] = useState('day');
   const [weightModalOpen, setWeightModalOpen] = useState(false);
 
   const daySummary = useMemo(() => summarizeBabyDay({ feeds, nappies, sleepBlocks, latestWeight }), [feeds, latestWeight, nappies, sleepBlocks]);
   const activityLog = useMemo(() => buildBabyActivityLog({ feeds, nappies, sleepBlocks }), [feeds, nappies, sleepBlocks]);
+  const patternWindow = useMemo(() => getPatternRange(patternRange, selectedDate), [patternRange, selectedDate]);
+  const patternDateKeys = useMemo(() => getDateKeysBetween(patternWindow.startDate, patternWindow.endDate), [patternWindow]);
+  const rangeLabel = patternRange === 'day'
+    ? formatBabyDisplayDate(selectedDate)
+    : `${formatBabyDisplayDate(patternWindow.startDate)} to ${formatBabyDisplayDate(patternWindow.endDate)}`;
+
+  useEffect(() => {
+    if (!babyProfile?.id) return;
+    void loadRangeData(patternWindow);
+  }, [babyProfile?.id, dayVersion, loadRangeData, patternWindow]);
 
   if (loading) {
     return <div className="flex min-h-[420px] items-center justify-center text-sm font-semibold text-slate-500">Loading Baby...</div>;
@@ -455,20 +676,17 @@ export default function BabyView({ currentUserId }) {
             <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
               <div className="space-y-5">
                 <SleepGrid sleepBlocks={sleepBlocks} onSave={saveSleepBlocks} saving={saving} />
-                <section className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                  <p className="pm-kicker">Pattern</p>
-                  <div className="mt-3 grid gap-[2px] rounded-2xl bg-slate-50 p-2" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
-                    {Array.from({ length: BLOCKS_PER_DAY }, (_, index) => {
-                      const asleep = daySummary.sleep.asleepBlocks.includes(index);
-                      return <div key={index} className={`h-4 rounded ${asleep ? 'bg-sky-400' : 'bg-white'}`} title={getSleepBlockTimeLabel(index)} />;
-                    })}
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-slate-500">
-                    <span>Day sleep {formatDuration(daySummary.sleep.daytimeMinutes)}</span>
-                    <span>Night sleep {formatDuration(daySummary.sleep.nightMinutes)}</span>
-                    <span>Feeds {feeds.map((feed) => formatDateTime(feed.occurredAt)).filter(Boolean).join(', ') || 'none'}</span>
-                  </div>
-                </section>
+                <PatternPanel
+                  dateKeys={patternDateKeys}
+                  feeds={rangeFeeds}
+                  nappies={rangeNappies}
+                  patternRange={patternRange}
+                  rangeLabel={rangeLabel}
+                  rangeLoading={rangeLoading}
+                  selectedDate={selectedDate}
+                  setPatternRange={setPatternRange}
+                  sleepBlocks={rangeSleepBlocks}
+                />
               </div>
 
               <aside className="space-y-5">
