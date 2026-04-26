@@ -609,6 +609,12 @@ export default function BabyView({ currentUserId }) {
   const daySummary = useMemo(() => summarizeBabyDay({ feeds, nappies, sleepBlocks, latestWeight }), [feeds, latestWeight, nappies, sleepBlocks]);
   const activityLog = useMemo(() => buildBabyActivityLog({ feeds, nappies, sleepBlocks }), [feeds, nappies, sleepBlocks]);
   const latestActivity = activityLog[activityLog.length - 1] || null;
+  const latestActivityTime = latestActivity
+    ? (latestActivity.type === 'sleep' ? latestActivity.raw.startTime : formatDateTime(latestActivity.occurredAt))
+    : '';
+  const latestActivityExtra = latestActivity?.type === 'feed' && latestActivity.raw.breastSide
+    ? formatBreastSide(latestActivity.raw.breastSide)
+    : latestActivity?.detail || '';
   const patternWindow = useMemo(() => getPatternRange(patternRange, selectedDate), [patternRange, selectedDate]);
   const patternDateKeys = useMemo(() => getDateKeysBetween(patternWindow.startDate, patternWindow.endDate), [patternWindow]);
   const rangeLabel = patternRange === 'day'
@@ -672,6 +678,28 @@ export default function BabyView({ currentUserId }) {
               </div>
             </div>
 
+            <div className="mt-4 rounded-[26px] border border-slate-200 bg-gradient-to-r from-slate-950 to-slate-800 px-4 py-3 text-white shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-4">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/55">Last entry</p>
+                {latestActivity ? (
+                  <p className="mt-1 text-lg font-black tracking-[-0.04em]">
+                    {latestActivityTime} · {latestActivity.label}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-lg font-black tracking-[-0.04em]">No entries yet</p>
+                )}
+              </div>
+              {latestActivity ? (
+                <div className="mt-2 rounded-2xl bg-white/10 px-3 py-2 text-xs font-bold text-white/80 sm:mt-0">
+                  {latestActivityExtra || 'Logged today'}
+                </div>
+              ) : (
+                <div className="mt-2 rounded-2xl bg-white/10 px-3 py-2 text-xs font-bold text-white/75 sm:mt-0">
+                  Add a feed or nappy to start
+                </div>
+              )}
+            </div>
+
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
               <SummaryCard label="Feeds" value={daySummary.feedCount} detail={`${formatDuration(daySummary.totalFeedMinutes)} total`} tone="sky" />
               <SummaryCard label="Avg feed" value={`${daySummary.averageFeedMinutes}m`} detail="per feed" tone="slate" />
@@ -723,7 +751,7 @@ export default function BabyView({ currentUserId }) {
                             {activityLog.length} {activityLog.length === 1 ? 'event' : 'events'} logged
                           </p>
                           <p className="mt-1 text-xs font-semibold text-slate-500">
-                            Latest: {latestActivity.type === 'sleep' ? latestActivity.raw.startTime : formatDateTime(latestActivity.occurredAt)} · {latestActivity.label}
+                            Latest: {latestActivityTime} · {latestActivity.label}
                           </p>
                         </div>
                         <span className="w-fit rounded-full bg-white px-3 py-1 text-[11px] font-black text-slate-500 shadow-sm">
