@@ -1782,6 +1782,108 @@ function GroceryReviewModal({
   );
 }
 
+function LazyPlannerDayCard({
+  day,
+  daySummary,
+  forceRender = false,
+  planViewHeadline,
+  renderDetails,
+}) {
+  const cardRef = useRef(null);
+  const detailsRef = useRef(null);
+  const [isNearViewport, setIsNearViewport] = useState(forceRender);
+  const [reservedDetailsHeight, setReservedDetailsHeight] = useState(180);
+  const shouldRenderDetails = forceRender || isNearViewport;
+
+  useEffect(() => {
+    if (forceRender) {
+      setIsNearViewport(true);
+      return undefined;
+    }
+
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) {
+      setIsNearViewport(true);
+      return undefined;
+    }
+
+    const target = cardRef.current;
+    if (!target) return undefined;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsNearViewport(Boolean(entry?.isIntersecting));
+      },
+      {
+        root: null,
+        rootMargin: '900px 0px',
+        threshold: 0,
+      }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [forceRender]);
+
+  useEffect(() => {
+    if (!shouldRenderDetails || !detailsRef.current) return;
+    const measuredHeight = Math.ceil(detailsRef.current.getBoundingClientRect().height);
+    if (measuredHeight > 0) {
+      setReservedDetailsHeight((previousHeight) => (
+        Math.abs(previousHeight - measuredHeight) > 24 ? measuredHeight : previousHeight
+      ));
+    }
+  }, [shouldRenderDetails]);
+
+  return (
+    <div ref={cardRef} className="pm-scroll-optimize-day pm-meal-planner-repeated-card rounded-[22px] border border-slate-200 bg-slate-50/70 p-3 sm:rounded-[26px] sm:p-4">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{day.shortLabel}</p>
+          <h3 className="mt-1 text-lg font-semibold text-slate-950">{day.dayLabel}</h3>
+        </div>
+        <div className="w-full rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-left sm:w-auto sm:min-w-[180px] sm:shrink-0 sm:rounded-[20px] sm:text-right">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">{planViewHeadline}</p>
+          <p className="mt-1 text-sm font-semibold text-amber-800">
+            {daySummary?.calories > 0 ? `${daySummary.calories} kcal` : 'No meals yet'}
+          </p>
+          {daySummary?.calories > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold sm:justify-end">
+              <span className="rounded-full bg-white px-2 py-1 text-sky-700">
+                P {formatMacroTotal(daySummary?.nutrition?.proteinG)}g
+              </span>
+              <span className="rounded-full bg-white px-2 py-1 text-indigo-700">
+                C {formatMacroTotal(daySummary?.nutrition?.carbsG)}g
+              </span>
+              <span className="rounded-full bg-white px-2 py-1 text-emerald-700">
+                Fib {formatMacroTotal(daySummary?.nutrition?.fiberG)}g
+              </span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {shouldRenderDetails ? (
+        <div ref={detailsRef}>
+          {renderDetails()}
+        </div>
+      ) : (
+        <div
+          className="mt-3 grid gap-2.5 lg:grid-cols-2 2xl:grid-cols-4"
+          style={{ minHeight: `${reservedDetailsHeight}px` }}
+          aria-hidden="true"
+        >
+          {SLOT_ORDER.map((slot) => (
+            <div key={`placeholder-${day.key}-${slot}`} className="rounded-[18px] border border-slate-200 bg-white/70 p-3">
+              <div className="h-3 w-20 rounded-full bg-slate-200/80" />
+              <div className="mt-4 h-14 rounded-[16px] border border-dashed border-slate-200 bg-slate-50/80" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const {
@@ -2656,33 +2758,13 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                   const hasNextDayInWeek = currentDayIndex >= 0 && currentDayIndex < weekDays.length - 1;
 
                   return (
-                  <div key={day.key} className="pm-scroll-optimize-day pm-meal-planner-repeated-card rounded-[22px] border border-slate-200 bg-slate-50/70 p-3 sm:rounded-[26px] sm:p-4">
-                    <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{day.shortLabel}</p>
-                        <h3 className="mt-1 text-lg font-semibold text-slate-950">{day.dayLabel}</h3>
-                      </div>
-                      <div className="w-full rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-left sm:w-auto sm:min-w-[180px] sm:shrink-0 sm:rounded-[20px] sm:text-right">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">{planViewHeadline}</p>
-                        <p className="mt-1 text-sm font-semibold text-amber-800">
-                          {daySummaryByKey[day.key]?.calories > 0 ? `${daySummaryByKey[day.key].calories} kcal` : 'No meals yet'}
-                        </p>
-                        {daySummaryByKey[day.key]?.calories > 0 ? (
-                          <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold sm:justify-end">
-                            <span className="rounded-full bg-white px-2 py-1 text-sky-700">
-                              P {formatMacroTotal(daySummaryByKey[day.key]?.nutrition?.proteinG)}g
-                            </span>
-                            <span className="rounded-full bg-white px-2 py-1 text-indigo-700">
-                              C {formatMacroTotal(daySummaryByKey[day.key]?.nutrition?.carbsG)}g
-                            </span>
-                            <span className="rounded-full bg-white px-2 py-1 text-emerald-700">
-                              Fib {formatMacroTotal(daySummaryByKey[day.key]?.nutrition?.fiberG)}g
-                            </span>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-
+                  <LazyPlannerDayCard
+                    key={day.key}
+                    day={day}
+                    daySummary={daySummaryByKey[day.key]}
+                    forceRender={isMobile || currentDayIndex < 2 || copyPrompt?.dateKey === day.key}
+                    planViewHeadline={planViewHeadline}
+                    renderDetails={() => (
                     <div className="mt-3 grid gap-2.5 lg:grid-cols-2 2xl:grid-cols-4">
                       {SLOT_ORDER.map((slot) => {
                         const slotEntries = slotEntriesByKey[`${day.key}:${slot}`] || [];
@@ -2949,7 +3031,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         );
                       })}
                     </div>
-                  </div>
+                    )}
+                  />
                 )})}
               </div>
               ) : null}
