@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { isOfflineTempId } from '../utils/offlineState';
+
+const MEAL_PLAN_NOTICE_STORAGE_KEY = 'pmworkspace:shopping-meal-plan-notice-seen:v1';
 
 const formatQuantity = (value) => {
   if (!Number.isFinite(Number(value))) return '';
@@ -94,8 +96,28 @@ export default function ShoppingListItemsPanel({
 }) {
   const duplicateBoughtCount = Math.max(0, completedTodos.length - completedTodoGroups.length);
   const openMealPlanTodoCount = openTodos.filter((todo) => todo.sourceType === 'meal_plan').length;
+  const [showMealPlanNotice, setShowMealPlanNotice] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem(MEAL_PLAN_NOTICE_STORAGE_KEY) !== 'true';
+  });
   const [expandedOpenTodoId, setExpandedOpenTodoId] = useState('');
   const [expandedBoughtGroupId, setExpandedBoughtGroupId] = useState('');
+
+  useEffect(() => {
+    if (openMealPlanTodoCount <= 0 || !showMealPlanNotice || typeof window === 'undefined') return;
+    window.localStorage.setItem(MEAL_PLAN_NOTICE_STORAGE_KEY, 'true');
+    const hideTimer = window.setTimeout(() => {
+      setShowMealPlanNotice(false);
+    }, 8000);
+    return () => window.clearTimeout(hideTimer);
+  }, [openMealPlanTodoCount, showMealPlanNotice]);
+
+  const dismissMealPlanNotice = () => {
+    setShowMealPlanNotice(false);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(MEAL_PLAN_NOTICE_STORAGE_KEY, 'true');
+    }
+  };
 
   return (
     <div className="pm-list-shell rounded-[28px] p-3 sm:p-4">
@@ -153,14 +175,25 @@ export default function ShoppingListItemsPanel({
               <ListChecksIcon className="h-4 w-4 text-[var(--pm-accent)]" />
               <h4 className="text-sm font-semibold text-slate-900">To buy</h4>
             </div>
-            {openMealPlanTodoCount > 0 ? (
+            {openMealPlanTodoCount > 0 && showMealPlanNotice ? (
               <div className="mb-3 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-[13px] leading-5 text-sky-800">
-                <p className="font-semibold text-sky-900">
-                  {openMealPlanTodoCount} generated Meal plan item{openMealPlanTodoCount === 1 ? '' : 's'} in this list
-                </p>
-                <p className="mt-1">
-                  Change recipes in Meal Planner, then use Review / update groceries there to replace the weekly batch. Manual groceries you add here stay untouched.
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-sky-900">
+                      {openMealPlanTodoCount} generated Meal plan item{openMealPlanTodoCount === 1 ? '' : 's'} in this list
+                    </p>
+                    <p className="mt-1">
+                      Change recipes in Meal Planner, then use Review / update groceries there to replace the weekly batch. Manual groceries you add here stay untouched.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={dismissMealPlanNotice}
+                    className="shrink-0 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-sky-700 transition hover:bg-sky-100"
+                  >
+                    Hide
+                  </button>
+                </div>
               </div>
             ) : null}
             <div className="space-y-3">

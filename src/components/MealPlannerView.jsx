@@ -2465,9 +2465,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
             </div>
           ) : null}
 
-          <div className="mt-5 grid w-full min-w-0 gap-4 xl:grid-cols-[minmax(0,1.65fr)_360px]">
+          <div className="mt-5 grid w-full min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.65fr)_360px]">
             <div className="pm-scroll-optimize-section pm-meal-planner-panel w-full min-w-0 rounded-[24px] border border-slate-200 bg-white p-3.5 shadow-sm sm:rounded-[28px] sm:p-5">
-              <div className="grid min-w-0 gap-3 xl:grid-cols-[auto_minmax(0,1fr)] xl:items-start">
+              <div className="grid min-w-0 gap-3 2xl:grid-cols-[auto_minmax(0,1fr)] 2xl:items-start">
                 <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                   <button type="button" onClick={() => handleMoveWeek(-1)} className="pm-subtle-button shrink-0 rounded-full p-2.5">
                     <ChevronLeft className="h-4 w-4" />
@@ -2480,7 +2480,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                   </button>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-3 xl:justify-self-end">
+                <div className="grid gap-2 sm:grid-cols-3 2xl:justify-self-end">
                   <div className="min-w-0 rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-2.5">
                     <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">You</span>
                     <span className="mt-1 block text-sm font-semibold text-slate-900 sm:text-[15px]">1.0</span>
@@ -2683,7 +2683,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       </div>
                     </div>
 
-                    <div className="mt-3 grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-3 grid gap-2.5 lg:grid-cols-2 2xl:grid-cols-4">
                       {SLOT_ORDER.map((slot) => {
                         const slotEntries = slotEntriesByKey[`${day.key}:${slot}`] || [];
 
@@ -2704,6 +2704,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                               {slotEntries.map(({ entry, recipe }) => {
                                 const isCarryoverEntry = entry.entryKind === 'carryover';
                                 const isOwnedEntry = !entry.weekOwnerUserId || entry.weekOwnerUserId === currentUserId;
+                                const canModifyEntry = isOwnedEntry || (plannerIsShared && isCombinedPlanView);
                                 const entryOwnerLabel = getEntryOwnerLabel(entry);
                                 const isCopyPromptVisible = isOwnedEntry && Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
                                 const entryUsage = plannerEntryUsageById?.[entry.id] || null;
@@ -2712,14 +2713,14 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 const carryoverKcal = recipe?.estimatedKcal && carryoverNutritionMultiplier > 0
                                   ? Math.round(recipe.estimatedKcal * carryoverNutritionMultiplier)
                                   : 0;
-                                const canCreateCarryover = isOwnedEntry
+                                const canCreateCarryover = canModifyEntry
                                   && !isCarryoverEntry
                                   && Boolean(recipe)
                                   && entryUsage?.yieldMode === 'batch'
                                   && (entryUsage?.createdCarryoverPortions || 0) > 0
                                   && !entryUsage?.hasCarryoverChild
                                   && hasNextDayInWeek;
-                                const canMoveCarryover = isOwnedEntry
+                                const canMoveCarryover = canModifyEntry
                                   && isCarryoverEntry
                                   && entryUsage?.carryoverStatus === 'active'
                                   && hasNextDayInWeek;
@@ -2835,7 +2836,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                           defaultServingMultiplier,
                                           adultCount: week?.adultCount ?? 1,
                                           kidCount: week?.kidCount ?? 0,
-                                          canEditEntry: isOwnedEntry,
+                                          canEditEntry: canModifyEntry,
                                           entryOwnerLabel,
                                         })}
                                         className="block w-full text-left transition hover:text-[var(--pm-accent-strong)]"
@@ -2856,7 +2857,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                               Move forward
                                             </button>
                                           ) : null}
-                                          {isOwnedEntry ? (
+                                          {canModifyEntry ? (
                                             <button
                                               type="button"
                                               onClick={() => void handleRemoveCarryover(entry.id)}
@@ -2871,7 +2872,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                           )}
                                         </>
                                       ) : (
-                                        isOwnedEntry ? (
+                                        canModifyEntry ? (
                                           <>
                                             <button
                                               type="button"
