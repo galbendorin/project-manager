@@ -62,6 +62,8 @@ const formatBreastSide = (side = '') => {
   return '';
 };
 
+const getDefaultFeedStartedAt = () => new Date(Date.now() - (20 * 60 * 1000));
+
 const getDateParts = (dateKey = formatBabyDateKey()) => {
   const [year, month, day] = String(dateKey).split('-').map(Number);
   return { year: year || new Date().getFullYear(), month: month || 1, day: day || 1 };
@@ -195,10 +197,10 @@ const BabySetupCard = ({ onCreate, saving }) => {
 
 const FeedModal = ({ dateKey, feed = null, onClose, onSave, saving }) => {
   const date = feed?.occurredAt ? new Date(feed.occurredAt) : new Date();
-  const [time, setTime] = useState(feed?.occurredAt ? formatBabyTime(date) : formatBabyTime());
+  const [time, setTime] = useState(feed?.occurredAt ? formatBabyTime(date) : formatBabyTime(getDefaultFeedStartedAt()));
   const [durationMinutes, setDurationMinutes] = useState(feed?.durationMinutes || 20);
-  const [feedType, setFeedType] = useState(feed?.feedType || '');
-  const [breastSide, setBreastSide] = useState(feed?.breastSide || '');
+  const [feedType, setFeedType] = useState(feed ? feed.feedType || '' : 'breastfeeding');
+  const [breastSide, setBreastSide] = useState(feed ? feed.breastSide || '' : 'both');
   const [notes, setNotes] = useState(feed?.notes || '');
   const showBreastSide = feedType === 'breastfeeding';
 
