@@ -11,7 +11,7 @@ import { normalizeProjectRecord } from '../utils/projectSharing';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const BABY_PROFILE_SELECT = 'id, user_id, household_project_id, name, birth_date, archived_at, created_at, updated_at';
-const FEED_SELECT = 'id, baby_id, user_id, household_project_id, occurred_at, local_date, duration_minutes, feed_type, notes, created_at, updated_at';
+const FEED_SELECT = 'id, baby_id, user_id, household_project_id, occurred_at, local_date, duration_minutes, feed_type, breast_side, notes, created_at, updated_at';
 const NAPPY_SELECT = 'id, baby_id, user_id, household_project_id, occurred_at, local_date, nappy_type, notes, created_at, updated_at';
 const SLEEP_SELECT = 'id, baby_id, user_id, household_project_id, sleep_date, block_index, status, created_at, updated_at';
 const WEIGHT_SELECT = 'id, baby_id, user_id, household_project_id, measured_at, weight_value, weight_unit, notes, created_at, updated_at';
@@ -43,6 +43,7 @@ const mapFeed = (row = {}) => ({
   localDate: row.local_date || '',
   durationMinutes: Number(row.duration_minutes) || 0,
   feedType: row.feed_type || '',
+  breastSide: row.breast_side || '',
   notes: row.notes || '',
 });
 
@@ -244,7 +245,7 @@ export function useBabyData({ currentUserId } = {}) {
     return babyProfile;
   }, [babyProfile]);
 
-  const addFeed = useCallback(async ({ dateKey = selectedDate, time = null, durationMinutes = 20, feedType = '', notes = '' } = {}) => {
+  const addFeed = useCallback(async ({ dateKey = selectedDate, time = null, durationMinutes = 20, feedType = '', breastSide = '', notes = '' } = {}) => {
     const profile = requireProfile();
     const occurredAt = combineBabyDateAndTime(dateKey, time);
     setSaving(true);
@@ -258,6 +259,7 @@ export function useBabyData({ currentUserId } = {}) {
         local_date: dateKey,
         duration_minutes: Math.max(0, Number(durationMinutes) || 0),
         feed_type: feedType || null,
+        breast_side: breastSide || null,
         notes: notes || '',
       });
       if (insertError) throw insertError;
@@ -280,6 +282,7 @@ export function useBabyData({ currentUserId } = {}) {
     }
     if (patch.durationMinutes !== undefined) payload.duration_minutes = Math.max(0, Number(patch.durationMinutes) || 0);
     if (patch.feedType !== undefined) payload.feed_type = patch.feedType || null;
+    if (patch.breastSide !== undefined) payload.breast_side = patch.breastSide || null;
     if (patch.notes !== undefined) payload.notes = patch.notes || '';
     const { error: updateError } = await supabase.from('baby_feed_entries').update(payload).eq('id', feedId);
     if (updateError) throw updateError;

@@ -152,15 +152,20 @@ const getEventMinuteOfDay = (entry = {}) => {
 };
 
 export const buildBabyActivityLog = ({ feeds = [], nappies = [], sleepBlocks = [] } = {}) => {
-  const feedEvents = feeds.map((feed) => ({
-    id: `feed:${feed.id}`,
-    sourceId: feed.id,
-    type: 'feed',
-    occurredAt: feed.occurredAt || feed.occurred_at,
-    label: 'Feed',
-    detail: `${Number(feed.durationMinutes ?? feed.duration_minutes) || 0} min`,
-    raw: feed,
-  }));
+  const feedEvents = feeds.map((feed) => {
+    const feedType = String(feed.feedType ?? feed.feed_type ?? '').toLowerCase();
+    const breastSide = String(feed.breastSide ?? feed.breast_side ?? '').toLowerCase();
+    const sideLabel = breastSide === 'left' ? 'left' : breastSide === 'right' ? 'right' : breastSide === 'both' ? 'both sides' : '';
+    return {
+      id: `feed:${feed.id}`,
+      sourceId: feed.id,
+      type: 'feed',
+      occurredAt: feed.occurredAt || feed.occurred_at,
+      label: feedType === 'breastfeeding' ? 'Breastfeed' : 'Feed',
+      detail: `${Number(feed.durationMinutes ?? feed.duration_minutes) || 0} min${sideLabel ? ` · ${sideLabel}` : ''}`,
+      raw: feed,
+    };
+  });
 
   const nappyEvents = nappies.map((nappy) => {
     const type = String(nappy.nappyType ?? nappy.nappy_type ?? '').toLowerCase();

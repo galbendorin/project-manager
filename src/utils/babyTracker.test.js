@@ -65,3 +65,20 @@ test('buildBabyActivityLog merges care events chronologically', () => {
 
   assert.deepEqual(events.map((event) => event.id), ['feed:feed_1', 'nappy:nappy_1', 'feed:feed_2']);
 });
+
+test('buildBabyActivityLog includes breastfeeding side details', () => {
+  const events = buildBabyActivityLog({
+    feeds: [
+      {
+        id: 'feed_left',
+        occurredAt: '2026-04-26T07:00:00',
+        durationMinutes: 10,
+        feedType: 'breastfeeding',
+        breastSide: 'left',
+      },
+    ],
+  });
+
+  assert.equal(events[0].label, 'Breastfeed');
+  assert.equal(events[0].detail, '10 min · left');
+});
