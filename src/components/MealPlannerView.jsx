@@ -2791,7 +2791,6 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 const isCopyPromptVisible = isOwnedEntry && Boolean(recipe) && copyPrompt?.sourceEntryId === entry.id;
                                 const entryUsage = plannerEntryUsageById?.[entry.id] || null;
                                 const carryoverNutritionMultiplier = getDisplayedNutritionMultiplier(entry, entryUsage);
-                                const carryoverNutrition = recipe ? plannedRecipeNutritionById[recipe.id] : null;
                                 const carryoverKcal = recipe?.estimatedKcal && carryoverNutritionMultiplier > 0
                                   ? Math.round(recipe.estimatedKcal * carryoverNutritionMultiplier)
                                   : 0;
@@ -2808,7 +2807,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                   && hasNextDayInWeek;
                                 const cardBody = (
                                   <>
-                                    <div className={`flex flex-wrap gap-1.5 font-semibold ${isCarryoverEntry ? 'text-[10px]' : 'text-[11px]'}`}>
+                                    <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold sm:text-[11px]">
                                       {plannerIsShared && isCombinedPlanView ? (
                                         <span className={`rounded-full px-2.5 py-1 ${isOwnedEntry ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                                           {entryOwnerLabel}
@@ -2830,46 +2829,18 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                           {getMealAudienceLabel(entry.audience)}
                                         </span>
                                       )}
-                                      {!isCarryoverEntry && entry.servingMultiplier ? (
+                                      {entry.servingMultiplier ? (
                                         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
                                           {entry.servingMultiplier}x
                                         </span>
                                       ) : null}
-                                      {recipe.sourcePdf && !isCarryoverEntry ? (
-                                        <span className="hidden rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm sm:inline-flex">
-                                          {recipe.sourcePdf}
-                                        </span>
-                                      ) : null}
-                                      {recipe.yieldMode === 'batch' && recipe.batchYieldPortions && !isCarryoverEntry ? (
-                                        <span className="hidden rounded-full bg-sky-50 px-2.5 py-1 text-sky-700 sm:inline-flex">
-                                          Batch {recipe.batchYieldPortions}
-                                        </span>
-                                      ) : null}
                                     </div>
-                                    <h4 className={`font-semibold leading-5 text-slate-950 ${isCarryoverEntry ? 'mt-2 text-[14px] sm:text-[15px]' : 'mt-2.5 text-[15px] sm:mt-3 sm:text-base'}`}>{recipe.name}</h4>
-                                    <p className={`text-slate-500 ${isCarryoverEntry ? 'mt-1 text-[11px] leading-4' : 'mt-1.5 text-[12px] leading-5 sm:mt-2 sm:text-sm'}`}>{recipeDisplayMetaById[recipe.id]?.cardIngredients || ''}</p>
-                                    <div className={`flex flex-wrap font-semibold ${isCarryoverEntry ? 'mt-2 gap-1.5 text-[10px]' : 'mt-3 gap-2 text-[11px]'}`}>
-                                      {isCarryoverEntry ? (
-                                        <>
-                                          {carryoverKcal > 0 ? (
-                                            <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700">{carryoverKcal} kcal</span>
-                                          ) : null}
-                                          {carryoverNutrition && carryoverNutritionMultiplier > 0 ? (
-                                            <>
-                                              <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">
-                                                P {formatMacroTotal((carryoverNutrition.proteinG || 0) * carryoverNutritionMultiplier)}g
-                                              </span>
-                                              <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">
-                                                C {formatMacroTotal((carryoverNutrition.carbsG || 0) * carryoverNutritionMultiplier)}g
-                                              </span>
-                                              <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">
-                                                Fib {formatMacroTotal((carryoverNutrition.fiberG || 0) * carryoverNutritionMultiplier)}g
-                                              </span>
-                                            </>
-                                          ) : null}
-                                        </>
-                                      ) : recipe.estimatedKcal ? (
-                                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{recipe.estimatedKcal} kcal</span>
+                                    <h4 className="mt-2 text-[15px] font-semibold leading-5 text-slate-950 sm:text-base">{recipe.name}</h4>
+                                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold">
+                                      {(isCarryoverEntry ? carryoverKcal : recipe.estimatedKcal) ? (
+                                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">
+                                          {isCarryoverEntry ? carryoverKcal : recipe.estimatedKcal} kcal
+                                        </span>
                                       ) : null}
                                     </div>
                                     {isCarryoverEntry ? (
@@ -2885,19 +2856,19 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                         </div>
                                       )
                                     ) : (
-                                      <>
+                                      <div className="mt-2 space-y-2">
                                         {entryUsage?.usedCarryoverPortions > 0 ? (
-                                          <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700">
+                                          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700">
                                             Carryover {formatIngredientQuantity(entryUsage.usedCarryoverPortions)} portions
                                             {entryUsage.carryoverSourceDate ? ` from ${formatCarryoverDayLabel(entryUsage.carryoverSourceDate)}` : ''}
                                           </div>
                                         ) : null}
                                         {entryUsage?.usedCarryoverPortions === 0 && entryUsage?.createdCarryoverPortions > 0 ? (
-                                          <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700">
+                                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700">
                                             Carryover ready: {formatIngredientQuantity(entryUsage.createdCarryoverPortions)} portions
                                           </div>
                                         ) : null}
-                                      </>
+                                      </div>
                                     )}
                                   </>
                                 );
@@ -2927,7 +2898,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                       </button>
                                     )}
 
-                                    <div className={`grid ${isCarryoverEntry ? 'mt-2 grid-cols-2 gap-1.5' : 'mt-3 grid-cols-2 gap-2 sm:flex sm:flex-wrap'}`}>
+                                    <div className={`grid ${isCarryoverEntry ? 'mt-2 grid-cols-2 gap-1.5' : 'mt-3 grid-cols-2 gap-2'}`}>
                                       {isCarryoverEntry ? (
                                         <>
                                           {canMoveCarryover ? (
