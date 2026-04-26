@@ -16,6 +16,7 @@ import {
   getWeekDayEntries,
   normalizeMealAudience,
   parseIngredientText,
+  parsePastedRecipeText,
   parseRecipeImportText,
   splitIngredientList,
 } from './mealPlanner.js';
@@ -84,6 +85,45 @@ D1_B1|Dieta1|Mon|Bruschetta|wholegrain bread 70g, avocado 70g|Toast bread|400|D1
   assert.equal(rows[0].sourcePdf, 'Dieta1');
   assert.equal(rows[0].suggestedDay, 'mon');
   assert.equal(rows[0].ingredientLines.length, 2);
+});
+
+test('parsePastedRecipeText extracts a free-form recipe into editable fields', () => {
+  const parsed = parsePastedRecipeText(`Chicken rice bowl
+Serves: 4
+
+Ingredients:
+- 600g chicken breast
+- basmati rice 240g
+- olive oil 10 ml
+
+Method:
+Cook rice, grill chicken, combine.`, 'lunch');
+
+  assert.equal(parsed.name, 'Chicken rice bowl');
+  assert.equal(parsed.mealSlot, 'lunch');
+  assert.equal(parsed.yieldMode, 'batch');
+  assert.equal(parsed.batchYieldPortions, '4');
+  assert.equal(parsed.ingredientLines.length, 3);
+  assert.equal(parsed.ingredientLines[0].ingredientName, 'chicken breast');
+  assert.equal(parsed.ingredientLines[0].quantityValue, 600);
+  assert.equal(parsed.ingredientLines[0].quantityUnit, 'g');
+  assert.match(parsed.howToMake, /Cook rice/);
+});
+
+test('parsePastedRecipeText handles label-first recipes and uncertain ingredients', () => {
+  const parsed = parsePastedRecipeText(`Recipe: Omelette
+Meal: breakfast
+Calories: 350 kcal per serving
+Ingredients: eggs 2, cheese, spinach handful
+Instructions: whisk and cook`, 'dinner');
+
+  assert.equal(parsed.name, 'Omelette');
+  assert.equal(parsed.mealSlot, 'breakfast');
+  assert.equal(parsed.estimatedKcal, '350');
+  assert.equal(parsed.ingredientLines.length, 3);
+  assert.equal(parsed.ingredientLines[0].ingredientName, 'eggs');
+  assert.equal(parsed.ingredientLines[0].quantityValue, 2);
+  assert.ok(parsed.warnings.length > 0);
 });
 
 test('buildGroceryDraft aggregates repeated meals by ingredient and unit', () => {

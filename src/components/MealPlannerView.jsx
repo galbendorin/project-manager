@@ -11,6 +11,7 @@ import {
   getMealAudienceLabel,
   getMealSlotLabel,
   getRecipeYieldModeLabel,
+  parsePastedRecipeText,
   parseRecipeImportText,
   summarizeRecipeIngredients,
 } from '../utils/mealPlanner';
@@ -185,6 +186,19 @@ const compileIngredientRow = (row = {}) => {
     parseConfidence: ingredientName && quantityValue ? 1 : 0.6,
   };
 };
+
+const createIngredientFormLine = (ingredient = {}) => ({
+  ingredientName: ingredient.ingredientName || '',
+  quantityValue: ingredient.quantityValue ?? '',
+  quantityUnit: ingredient.quantityUnit || '',
+  notes: ingredient.notes || '',
+  estimatedKcal: ingredient.estimatedKcal ?? '',
+  manualKcal: ingredient.manualKcal ?? '',
+  kcalSource: ingredient.kcalSource || '',
+  kcalPer100: ingredient.kcalPer100 ?? '',
+  linkedFdcId: ingredient.linkedFdcId ?? '',
+  matchedFoodLabel: ingredient.matchedFoodLabel || '',
+});
 
 const getIngredientDisplayKcal = (ingredient = {}) => {
   const manual = ingredient.manualKcal === '' || ingredient.manualKcal === null || ingredient.manualKcal === undefined
@@ -384,6 +398,9 @@ function ModalShell({ children, onClose, wide = false }) {
 
 function RecipeFormModal({ initialState, onClose, onSave, saving }) {
   const [form, setForm] = useState(initialState);
+  const [quickPasteText, setQuickPasteText] = useState('');
+  const [quickPasteOpen, setQuickPasteOpen] = useState(!initialState?.id);
+  const [quickPasteMessage, setQuickPasteMessage] = useState('');
   const [estimateState, setEstimateState] = useState({
     loading: false,
     error: '',
@@ -400,6 +417,9 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
 
   useEffect(() => {
     setForm(initialState);
+    setQuickPasteText('');
+    setQuickPasteOpen(!initialState?.id);
+    setQuickPasteMessage('');
     setEstimateState({
       loading: false,
       error: '',
@@ -449,18 +469,25 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
     });
   };
 
-  const handleEstimateCalories = async () => {
-    const ingredientLines = form.ingredientLines
-      .map(compileIngredientRow)
-      .filter((row) => row.ingredientName && row.quantityValue !== null);
+  const applyCalorieEstimate = async (targetForm = form, { replaceForm = false } = {}) => {
+    const compiledRows = targetForm.ingredientLines.map(compileIngredientRow);
+    const estimationIndexes = [];
+    const ingredientLines = compiledRows.filter((row, index) => {
+      const canEstimate = row.ingredientName && row.quantityValue !== null && Number.isFinite(row.quantityValue);
+      if (canEstimate) estimationIndexes.push(index);
+      return canEstimate;
+    });
 
     if (ingredientLines.length === 0) {
+      if (replaceForm) {
+        setForm(targetForm);
+      }
       setEstimateState({
         loading: false,
         error: 'Add ingredient names and quantities before estimating calories.',
         result: null,
       });
-      return;
+      return null;
     }
 
     setEstimateState({
@@ -472,17 +499,23 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
     try {
       const result = await fetchRecipeCalorieEstimate({
         ingredientLines,
-        yieldMode: form.yieldMode,
-        batchYieldPortions: form.yieldMode === 'batch' && form.batchYieldPortions !== ''
-          ? Number(form.batchYieldPortions)
+        yieldMode: targetForm.yieldMode,
+        batchYieldPortions: targetForm.yieldMode === 'batch' && targetForm.batchYieldPortions !== ''
+          ? Number(targetForm.batchYieldPortions)
           : null,
       });
 
-      if (result.perServingKcal !== null) {
-        setForm((previous) => ({
-          ...previous,
-          ingredientLines: previous.ingredientLines.map((line, index) => {
-            const ingredientResult = result.ingredientResults?.[index];
+      const ingredientResultByFormIndex = new Map();
+      estimationIndexes.forEach((formIndex, resultIndex) => {
+        ingredientResultByFormIndex.set(formIndex, result.ingredientResults?.[resultIndex]);
+      });
+
+      setForm((previous) => {
+        const baseForm = replaceForm ? targetForm : previous;
+        return {
+          ...baseForm,
+          ingredientLines: baseForm.ingredientLines.map((line, index) => {
+            const ingredientResult = ingredientResultByFormIndex.get(index);
             if (!ingredientResult) return line;
             const hasManualKcal = line.manualKcal !== '' && line.manualKcal !== null && line.manualKcal !== undefined;
             return {
@@ -496,40 +529,63 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
               matchedFoodLabel: ingredientResult.matchedFood?.description || '',
             };
           }),
-          estimatedKcal: String(result.perServingKcal),
-        }));
-      } else {
-        setForm((previous) => ({
-          ...previous,
-          ingredientLines: previous.ingredientLines.map((line, index) => {
-            const ingredientResult = result.ingredientResults?.[index];
-            if (!ingredientResult) return line;
-            const hasManualKcal = line.manualKcal !== '' && line.manualKcal !== null && line.manualKcal !== undefined;
-            return {
-              ...line,
-              estimatedKcal: ingredientResult.estimatedKcal ?? '',
-              kcalSource: hasManualKcal
-                ? 'manual'
-                : (ingredientResult.lookupSource || ''),
-              kcalPer100: ingredientResult.kcalPer100 ?? '',
-              linkedFdcId: ingredientResult.matchedFood?.fdcId ?? '',
-              matchedFoodLabel: ingredientResult.matchedFood?.description || '',
-            };
-          }),
-        }));
-      }
+          ...(result.perServingKcal !== null ? { estimatedKcal: String(result.perServingKcal) } : {}),
+        };
+      });
 
       setEstimateState({
         loading: false,
         error: '',
         result,
       });
+      return result;
     } catch (error) {
+      if (replaceForm) {
+        setForm(targetForm);
+      }
       setEstimateState({
         loading: false,
         error: error?.message || 'Unable to estimate calories right now.',
         result: null,
       });
+      return null;
+    }
+  };
+
+  const handleEstimateCalories = async () => {
+    await applyCalorieEstimate(form);
+  };
+
+  const handleQuickPasteRecipe = async () => {
+    const rawText = quickPasteText.trim();
+    if (!rawText) return;
+
+    const parsed = parsePastedRecipeText(rawText, form.mealSlot);
+    const parsedIngredientLines = parsed.ingredientLines.map(createIngredientFormLine);
+    const nextForm = {
+      ...form,
+      name: parsed.name || form.name,
+      mealSlot: parsed.mealSlot || form.mealSlot,
+      sourcePdf: parsed.sourcePdf || form.sourcePdf,
+      suggestedDay: parsed.suggestedDay || form.suggestedDay,
+      estimatedKcal: parsed.estimatedKcal || form.estimatedKcal,
+      imageRef: parsed.imageRef || form.imageRef,
+      howToMake: parsed.howToMake || form.howToMake,
+      yieldMode: parsed.yieldMode || form.yieldMode,
+      batchYieldPortions: parsed.yieldMode === 'batch'
+        ? parsed.batchYieldPortions
+        : form.batchYieldPortions,
+      ingredientLines: parsedIngredientLines.length > 0 ? parsedIngredientLines : form.ingredientLines,
+    };
+
+    const parsedMessage = parsed.warnings.length > 0
+      ? `Parsed ${parsedIngredientLines.length} ingredient${parsedIngredientLines.length === 1 ? '' : 's'} with ${parsed.warnings.length} thing${parsed.warnings.length === 1 ? '' : 's'} to review.`
+      : `Parsed ${parsedIngredientLines.length} ingredient${parsedIngredientLines.length === 1 ? '' : 's'}. Review, adjust if needed, then save.`;
+    setQuickPasteMessage(parsedMessage);
+
+    const result = await applyCalorieEstimate(nextForm, { replaceForm: true });
+    if (result) {
+      setQuickPasteMessage(`${parsedMessage} Calories checked against ${result.resolvedIngredientCount}/${result.totalIngredients} matched ingredient${result.totalIngredients === 1 ? '' : 's'}.`);
     }
   };
 
@@ -564,6 +620,72 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
           <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
             <Close className="h-4 w-4" />
           </button>
+        </div>
+
+        <div className="mt-5 rounded-[26px] border border-sky-100 bg-sky-50/70 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="pm-kicker text-sky-700">Quick paste</p>
+              <p className="mt-1 text-sm font-semibold text-slate-800">Paste a recipe from anywhere and let the app fill the form.</p>
+              <p className="mt-1 text-xs text-slate-500">
+                No strict format needed. The app parses locally, then estimates nutrition from saved ingredient memory and lookups.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuickPasteOpen((previous) => !previous)}
+              className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold"
+            >
+              {quickPasteOpen ? 'Hide paste box' : 'Paste recipe'}
+            </button>
+          </div>
+
+          {quickPasteOpen ? (
+            <div className="mt-4">
+              <textarea
+                value={quickPasteText}
+                onChange={(event) => {
+                  setQuickPasteText(event.target.value);
+                  setQuickPasteMessage('');
+                }}
+                rows={7}
+                className="pm-input w-full rounded-[24px] px-4 py-3 text-sm"
+                placeholder={`Chicken rice bowl
+Serves 4
+Ingredients:
+- chicken breast 600g
+- basmati rice 240g
+- olive oil 10 ml
+Method: cook rice, grill chicken, combine.`}
+              />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleQuickPasteRecipe}
+                  disabled={!quickPasteText.trim() || estimateState.loading}
+                  className="pm-toolbar-primary rounded-full px-4 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {estimateState.loading ? 'Parsing and estimating...' : 'Parse and estimate'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickPasteText('');
+                    setQuickPasteMessage('');
+                  }}
+                  className="pm-subtle-button rounded-full px-4 py-2.5 text-xs font-semibold"
+                >
+                  Clear paste
+                </button>
+                <span className="text-xs text-slate-500">You can still edit every field before saving.</span>
+              </div>
+              {quickPasteMessage ? (
+                <div className="mt-3 rounded-[18px] border border-sky-200 bg-white/80 px-3 py-2 text-xs font-semibold text-sky-800">
+                  {quickPasteMessage}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2">

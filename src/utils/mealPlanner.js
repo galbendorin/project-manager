@@ -34,6 +34,11 @@ const RECIPE_YIELD_MODE_LABELS = {
 };
 
 const SIZE_WORDS = new Set(['small', 'medium', 'large']);
+const SECTION_LABELS = {
+  ingredients: ['ingredients', 'ingredient', 'you need', 'what you need'],
+  method: ['method', 'instructions', 'directions', 'preparation', 'how to make', 'steps'],
+  notes: ['notes', 'note'],
+};
 
 const normalizeSpace = (value = '') => String(value || '').replace(/\s+/g, ' ').trim();
 const toNullableFiniteNumber = (value) => {
@@ -95,7 +100,7 @@ const toNumber = (rawValue = '') => {
 };
 
 const parseStartQuantityIngredient = (rawText) => {
-  const match = rawText.match(/^(\d+(?:[.,]\d+)?(?:\/\d+)?)\s+([a-zA-Z]+)\s+(.+)$/);
+  const match = rawText.match(/^(\d+(?:[.,]\d+)?(?:\/\d+)?)\s*([a-zA-Z]+)\s+(.+)$/);
   if (!match) return null;
 
   const quantityValue = toNumber(match[1]);
@@ -218,6 +223,218 @@ export const splitIngredientList = (value = '') => (
     .filter(Boolean)
     .map((rawText) => parseIngredientText(rawText))
 );
+
+const stripListMarker = (value = '') => normalizeSpace(
+  String(value || '')
+    .replace(/^[-*•]+\s*/, '')
+    .replace(/^\d+[.)]\s*/, '')
+    .replace(/^[-–—]\s*/, '')
+);
+
+const normalizePastedRecipeText = (value = '') => (
+  String(value || '')
+    .replace(/[¼]/g, ' 1/4 ')
+    .replace(/[½]/g, ' 1/2 ')
+    .replace(/[¾]/g, ' 3/4 ')
+    .replace(/\bhalf\s+(?=\w+)/gi, '1/2 ')
+);
+
+const getSectionForLine = (line = '') => {
+  const normalized = normalizeSpace(line).replace(/:$/, '').toLowerCase();
+  if (!normalized) return '';
+  if (SECTION_LABELS.ingredients.includes(normalized)) return 'ingredients';
+  if (SECTION_LABELS.method.includes(normalized)) return 'method';
+  if (SECTION_LABELS.notes.includes(normalized)) return 'notes';
+  return '';
+};
+
+const getLabelValue = (line = '', labels = []) => {
+  const normalizedLine = normalizeSpace(line);
+  for (const label of labels) {
+    const pattern = new RegExp(`^${label}\\s*:\\s*(.+)$`, 'i');
+    const match = normalizedLine.match(pattern);
+    if (match) return normalizeSpace(match[1]);
+  }
+  return '';
+};
+
+const extractServingCount = (line = '') => {
+  const normalizedLine = normalizeSpace(line);
+  const match = normalizedLine.match(/\b(?:serves|servings|yield|yields|makes|portions)\b[^0-9]*(\d+(?:[.,]\d+)?)/i);
+  if (!match) return null;
+  const next = Number(String(match[1]).replace(',', '.'));
+  return Number.isFinite(next) && next > 0 ? next : null;
+};
+
+const extractKcalEstimate = (line = '') => {
+  const normalizedLine = normalizeSpace(line);
+  const match = normalizedLine.match(/(\d+(?:[.,]\d+)?)\s*(?:kcal|calories|cal)\b/i);
+  if (!match) return null;
+  const next = Number(String(match[1]).replace(',', '.'));
+  return Number.isFinite(next) && next >= 0 ? next : null;
+};
+
+const looksLikeIngredientLine = (line = '') => {
+  const normalizedLine = stripListMarker(line);
+  if (!normalizedLine) return false;
+  if (/^(serves|servings|yield|method|instructions|directions|preparation|how to make)\b/i.test(normalizedLine)) {
+    return false;
+  }
+  if (/\d/.test(normalizedLine) && /\b(g|kg|ml|l|tsp|tbsp|cup|cups|pcs|pieces|piece|egg|eggs)\b/i.test(normalizedLine)) {
+    return true;
+  }
+  return /^\d+(?:[.,]\d+)?(?:\/\d+)?\s+\w+/.test(normalizedLine);
+};
+
+const splitIngredientCandidates = (lines = []) => (
+  lines.flatMap((line) => {
+    const strippedLine = stripListMarker(line);
+    if (!strippedLine) return [];
+    if (strippedLine.includes(',') && !/^\d/.test(strippedLine)) {
+      return strippedLine.split(',').map((part) => stripListMarker(part)).filter(Boolean);
+    }
+    return [strippedLine];
+  })
+);
+
+export const parsePastedRecipeText = (rawText = '', fallbackMealSlot = 'breakfast') => {
+  const lines = normalizePastedRecipeText(rawText)
+    .split(/\r?\n/)
+    .map((line) => stripListMarker(line))
+    .filter(Boolean);
+
+  const result = {
+    name: '',
+    mealSlot: normalizeMealSlot(fallbackMealSlot) || 'breakfast',
+    sourcePdf: 'Manual paste',
+    suggestedDay: '',
+    estimatedKcal: '',
+    imageRef: '',
+    howToMake: '',
+    yieldMode: 'flexible',
+    batchYieldPortions: '',
+    ingredientLines: [],
+    warnings: [],
+  };
+
+  if (lines.length === 0) {
+    result.warnings.push('Paste a recipe name, ingredients, and method.');
+    return result;
+  }
+
+  let activeSection = '';
+  const ingredientLines = [];
+  const methodLines = [];
+  const looseIngredientLines = [];
+  const looseMethodLines = [];
+
+  lines.forEach((line, index) => {
+    const section = getSectionForLine(line);
+    if (section) {
+      activeSection = section;
+      return;
+    }
+
+    const inlineSectionMatch = line.match(/^(ingredients?|method|instructions|directions|preparation|how to make|notes?)\s*:\s*(.+)$/i);
+    if (inlineSectionMatch) {
+      const inlineSection = getSectionForLine(inlineSectionMatch[1]);
+      const inlineValue = normalizeSpace(inlineSectionMatch[2]);
+      activeSection = inlineSection || activeSection;
+      if (inlineSection === 'ingredients') {
+        ingredientLines.push(inlineValue);
+        return;
+      }
+      if (inlineSection === 'method' || inlineSection === 'notes') {
+        methodLines.push(inlineValue);
+        return;
+      }
+    }
+
+    const nameValue = getLabelValue(line, ['name', 'title', 'recipe']);
+    if (nameValue) {
+      result.name = nameValue;
+      return;
+    }
+
+    const mealSlotValue = getLabelValue(line, ['meal', 'slot', 'type']);
+    const normalizedSlot = normalizeMealSlot(mealSlotValue);
+    if (normalizedSlot) {
+      result.mealSlot = normalizedSlot;
+      return;
+    }
+
+    const dayValue = getLabelValue(line, ['day', 'suggested day']);
+    if (dayValue) {
+      result.suggestedDay = normalizeSuggestedDay(dayValue);
+      return;
+    }
+
+    const sourceValue = getLabelValue(line, ['source', 'diet']);
+    if (sourceValue) {
+      result.sourcePdf = sourceValue;
+      return;
+    }
+
+    const servingCount = extractServingCount(line);
+    if (servingCount !== null) {
+      result.yieldMode = 'batch';
+      result.batchYieldPortions = String(servingCount);
+      return;
+    }
+
+    const kcalEstimate = extractKcalEstimate(line);
+    if (kcalEstimate !== null && /(?:per serving|serving|portion|kcal|calories|cal)/i.test(line)) {
+      result.estimatedKcal = String(Math.round(kcalEstimate));
+      return;
+    }
+
+    if (!result.name && index === 0 && !looksLikeIngredientLine(line)) {
+      result.name = line;
+      return;
+    }
+
+    if (activeSection === 'ingredients') {
+      ingredientLines.push(line);
+      return;
+    }
+
+    if (activeSection === 'method' || activeSection === 'notes') {
+      methodLines.push(line);
+      return;
+    }
+
+    if (looksLikeIngredientLine(line)) {
+      looseIngredientLines.push(line);
+      return;
+    }
+
+    looseMethodLines.push(line);
+  });
+
+  const ingredientCandidates = splitIngredientCandidates(
+    ingredientLines.length > 0 ? ingredientLines : looseIngredientLines
+  );
+
+  result.ingredientLines = ingredientCandidates.map((line) => parseIngredientText(line));
+  result.howToMake = [...methodLines, ...looseMethodLines].join('\n').trim();
+
+  if (!result.name) {
+    result.name = lines.find((line) => !looksLikeIngredientLine(line) && !getSectionForLine(line)) || '';
+  }
+
+  if (result.ingredientLines.length === 0) {
+    result.warnings.push('No ingredient rows were detected. Add ingredients manually before estimating.');
+  }
+
+  const uncertainIngredients = result.ingredientLines.filter((ingredient) => (
+    !ingredient.quantityValue || !ingredient.quantityUnit || ingredient.parseConfidence < 0.7
+  ));
+  if (uncertainIngredients.length > 0) {
+    result.warnings.push(`${uncertainIngredients.length} ingredient${uncertainIngredients.length === 1 ? '' : 's'} need review before calorie estimates are reliable.`);
+  }
+
+  return result;
+};
 
 export const parseRecipeImportText = (rawText = '', mealSlot = '') => {
   const normalizedSlot = normalizeMealSlot(mealSlot);
