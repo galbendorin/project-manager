@@ -20,7 +20,7 @@ const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 const AUDIENCE_OPTIONS = ['all', 'adults', 'kids'];
 const INGREDIENT_UNIT_SUGGESTIONS = ['pcs', 'g', 'ml', 'tsp', 'tbsp', 'cup'];
 const MOBILE_LIBRARY_INITIAL_COUNT = 8;
-const DESKTOP_LIBRARY_INITIAL_COUNT = 16;
+const DESKTOP_LIBRARY_INITIAL_COUNT = 8;
 const PICKER_INITIAL_COUNT = 18;
 const PERSONAL_DAILY_TARGETS = {
   proteinG: 77,
