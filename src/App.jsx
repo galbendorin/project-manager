@@ -17,6 +17,7 @@ const MainApp = lazy(() => import('./components/AppWorkspaceShell').then((module
 const AuthenticatedTrackShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedTrackShell })));
 const AuthenticatedShoppingShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedShoppingShell })));
 const AuthenticatedMealPlannerShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedMealPlannerShell })));
+const AuthenticatedBabyShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedBabyShell })));
 
 const normalizeAppPath = (value = '/') => {
   const normalized = String(value || '/').replace(/\/+$/, '');
@@ -45,6 +46,29 @@ const renderLazyPage = (node, label) => (
   <Suspense fallback={<PageFallback label={label} />}>
     {node}
   </Suspense>
+);
+
+const HouseholdToolUnavailable = ({ onGoToProjects }) => (
+  <div className="min-h-screen bg-[var(--pm-page-bg,#f8fafc)] px-4 py-10">
+    <div className="mx-auto flex min-h-[70vh] max-w-xl items-center">
+      <div className="w-full rounded-[32px] border border-slate-200 bg-white p-6 text-center shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+        <p className="pm-kicker">Household tools</p>
+        <h1 className="mt-3 text-3xl font-black tracking-[-0.05em] text-slate-950">
+          Baby is not available on this account
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-slate-500">
+          Baby is a private household mini-tool. It only appears when household tools are enabled for your account.
+        </p>
+        <button
+          type="button"
+          onClick={onGoToProjects}
+          className="pm-toolbar-primary mt-6 rounded-2xl px-5 py-3 text-sm font-bold text-white"
+        >
+          Back to projects
+        </button>
+      </div>
+    </div>
+  </div>
 );
 
 const getUserDisplayName = (user) => {
@@ -187,7 +211,7 @@ function App() {
     );
   }
 
-  if (planLoading && (currentPath === '/shopping' || currentPath === '/meals')) {
+  if (planLoading && (currentPath === '/shopping' || currentPath === '/meals' || currentPath === '/baby')) {
     return (
       <>
         <OfflineBanner isOnline={isOnline} />
@@ -237,6 +261,20 @@ function App() {
                   />,
                   'Loading Meal Planner...'
                 )
+              : currentPath === '/baby' && householdToolsEnabled
+                ? renderLazyPage(
+                    <AuthenticatedBabyShell
+                      currentUserId={user.id}
+                      userEmail={user.email}
+                      onGoToProjects={openProjectSelector}
+                      onSignOut={signOut}
+                      accentTheme={accentTheme}
+                      onAccentThemeChange={setAccentTheme}
+                    />,
+                    'Loading Baby...'
+                  )
+                : currentPath === '/baby'
+                  ? <HouseholdToolUnavailable onGoToProjects={openProjectSelector} />
             : renderLazyPage(
                 <ProjectSelector
                   onSelectProject={(project) => {
@@ -247,6 +285,7 @@ function App() {
                   onOpenTrack={() => navigateToPath('/track')}
                   onOpenShopping={() => householdToolsEnabled && navigateToPath('/shopping')}
                   onOpenMeals={() => householdToolsEnabled && navigateToPath('/meals')}
+                  onOpenBaby={() => householdToolsEnabled && navigateToPath('/baby')}
                   accentTheme={accentTheme}
                   onAccentThemeChange={setAccentTheme}
                 />,

@@ -33,6 +33,7 @@ const RACIView = lazy(() => import('./RACIView'));
 const TimesheetView = lazy(() => import('./TimesheetView'));
 const ShoppingListView = lazy(() => import('./ShoppingListView'));
 const MealPlannerView = lazy(() => import('./MealPlannerView'));
+const BabyView = lazy(() => import('./BabyView'));
 
 export function AuthenticatedTrackShell({
   currentUserId,
@@ -99,6 +100,29 @@ export function AuthenticatedMealPlannerShell({
       userEmail={userEmail}
     >
       <MealPlannerView currentUserId={currentUserId} currentUserEmail={userEmail} />
+    </AuthenticatedMiniToolShell>
+  );
+}
+
+export function AuthenticatedBabyShell({
+  currentUserId,
+  userEmail,
+  onGoToProjects,
+  onSignOut,
+  accentTheme,
+  onAccentThemeChange,
+}) {
+  return (
+    <AuthenticatedMiniToolShell
+      accentTheme={accentTheme}
+      fallbackLabel="Loading Baby..."
+      onAccentThemeChange={onAccentThemeChange}
+      onGoToProjects={onGoToProjects}
+      onSignOut={onSignOut}
+      title="Baby"
+      userEmail={userEmail}
+    >
+      <BabyView currentUserId={currentUserId} />
     </AuthenticatedMiniToolShell>
   );
 }

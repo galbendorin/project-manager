@@ -39,7 +39,7 @@ const getFriendlyProjectCreateErrorMessage = (error) => {
   return getProjectCreationErrorMessage(error);
 };
 
-const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShopping, accentTheme, onAccentThemeChange }) => {
+const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenMeals, onOpenTrack, onOpenShopping, accentTheme, onAccentThemeChange }) => {
   const { user, signOut } = useAuth();
   const { canCreateProject, limits, householdToolsEnabled, isReadOnly, refreshProjectCount } = usePlan();
   const [projects, setProjects] = useState([]);
@@ -420,6 +420,39 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
                   </div>
                 )}
 
+                {showInternalLaunchCards && (
+                  <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="pm-kicker">Baby</p>
+                        <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Track care</h2>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                          Log feeds, nappies, sleep, and weight in one shared household dashboard.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onOpenBaby}
+                        className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
+                      >
+                        Open
+                      </button>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                        Feeds
+                      </span>
+                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                        Nappies
+                      </span>
+                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
+                        Sleep grid
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -536,6 +569,24 @@ const ProjectSelector = ({ onSelectProject, onOpenMeals, onOpenTrack, onOpenShop
                       <button
                         type="button"
                         onClick={onOpenShopping}
+                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
+                      >
+                        Open
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {showInternalLaunchCards && (
+                  <div className="pm-utility-card mt-3 rounded-[22px] px-3.5 py-3 lg:hidden">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="pm-kicker mb-1">Baby</p>
+                        <h2 className="truncate text-base font-semibold text-slate-900">Track care</h2>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onOpenBaby}
                         className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
                       >
                         Open
