@@ -34,6 +34,65 @@ const RECIPE_YIELD_MODE_LABELS = {
 };
 
 const SIZE_WORDS = new Set(['small', 'medium', 'large']);
+const KNOWN_START_UNITS = new Set([
+  'g',
+  'gram',
+  'grams',
+  'kg',
+  'ml',
+  'l',
+  'tsp',
+  'tbsp',
+  'cup',
+  'cups',
+  'pcs',
+  'piece',
+  'pieces',
+  'slice',
+  'slices',
+  'clove',
+  'cloves',
+  'block',
+  'blocks',
+  'tin',
+  'tins',
+  'can',
+  'cans',
+  'bunch',
+  'head',
+  'handful',
+]);
+const TRAILING_MEASURE_UNITS = new Set([
+  'clove',
+  'cloves',
+  'slice',
+  'slices',
+  'block',
+  'blocks',
+  'tin',
+  'tins',
+  'can',
+  'cans',
+  'bunch',
+  'head',
+  'handful',
+]);
+const PREP_DESCRIPTOR_WORDS = new Set([
+  'boneless',
+  'skinless',
+  'chopped',
+  'diced',
+  'sliced',
+  'grated',
+  'crushed',
+  'fresh',
+  'frozen',
+  'thick',
+  'thin',
+  'crusty',
+  'white',
+  'whole',
+]);
 const SECTION_LABELS = {
   ingredients: ['ingredients', 'ingredient', 'you need', 'what you need'],
   method: ['method', 'instructions', 'directions', 'preparation', 'how to make', 'steps'],
@@ -99,12 +158,122 @@ const toNumber = (rawValue = '') => {
   return Number.isFinite(next) ? next : null;
 };
 
+const appendNotes = (...notes) => notes.map((note) => normalizeSpace(note)).filter(Boolean).join('; ');
+
+const splitInlineIngredientNotes = (rawText = '') => {
+  const notes = [];
+  const text = normalizeSpace(rawText).replace(/\(([^)]*)\)/g, (_, note) => {
+    notes.push(note);
+    return ' ';
+  });
+  return {
+    text: normalizeSpace(text),
+    notes: appendNotes(...notes),
+  };
+};
+
+const splitLeadingIngredientDescriptors = (ingredientText = '') => {
+  const words = normalizeSpace(ingredientText)
+    .replace(/\s*,\s*/g, ' , ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const descriptors = [];
+  const ingredientWords = [];
+  let inIngredient = false;
+
+  words.forEach((word) => {
+    const cleanedWord = word.replace(/,$/, '').toLowerCase();
+    if (!inIngredient && (word === ',' || PREP_DESCRIPTOR_WORDS.has(cleanedWord))) {
+      if (word !== ',') descriptors.push(word.replace(/,$/, ''));
+      return;
+    }
+    inIngredient = true;
+    ingredientWords.push(word === ',' ? ',' : word);
+  });
+
+  return {
+    ingredientName: normalizeSpace(ingredientWords.join(' ').replace(/\s*,\s*/g, ', ')),
+    notes: appendNotes(descriptors.join(', ')),
+  };
+};
+
+const parseStructuredIngredientText = (rawText) => {
+  if (!rawText.includes('|')) return null;
+  const parts = rawText.split('|').map((part) => normalizeSpace(part));
+  if (parts.length < 3) return null;
+
+  const [ingredientName, quantityRaw, quantityUnit, ...noteParts] = parts;
+  const quantityValue = quantityRaw === '' ? null : toNumber(quantityRaw);
+  if (!ingredientName || (quantityRaw !== '' && quantityValue === null)) return null;
+
+  return {
+    rawText,
+    ingredientName,
+    quantityValue,
+    quantityUnit,
+    notes: appendNotes(...noteParts),
+    parseConfidence: quantityValue === null ? 0.42 : 0.99,
+  };
+};
+
+const parseImplicitSingleUnitIngredient = (rawText) => {
+  const match = rawText.match(/^(small|medium|large)\s+(block|blocks|tin|tins|can|cans|bunch|head|loaf|loaves)\s+(.+)$/i);
+  if (!match) return null;
+
+  return {
+    rawText,
+    ingredientName: normalizeSpace(match[3]),
+    quantityValue: 1,
+    quantityUnit: normalizeSpace(match[2]),
+    notes: normalizeSpace(match[1]),
+    parseConfidence: 0.58,
+  };
+};
+
 const parseStartQuantityIngredient = (rawText) => {
   const match = rawText.match(/^(\d+(?:[.,]\d+)?(?:\/\d+)?)\s*([a-zA-Z]+)\s+(.+)$/);
   if (!match) return null;
 
   const quantityValue = toNumber(match[1]);
   if (quantityValue === null) return null;
+
+  const unitCandidate = normalizeSpace(match[2]);
+  const ingredientRemainder = normalizeSpace(match[3]);
+  const unitKey = unitCandidate.toLowerCase();
+
+  if (KNOWN_START_UNITS.has(unitKey) || SIZE_WORDS.has(unitKey)) {
+    return {
+      rawText,
+      ingredientName: ingredientRemainder,
+      quantityValue,
+      quantityUnit: unitCandidate,
+      notes: '',
+      parseConfidence: 0.72,
+    };
+  }
+
+  if (TRAILING_MEASURE_UNITS.has(ingredientRemainder.toLowerCase())) {
+    return {
+      rawText,
+      ingredientName: unitCandidate,
+      quantityValue,
+      quantityUnit: ingredientRemainder,
+      notes: '',
+      parseConfidence: 0.82,
+    };
+  }
+
+  const descriptorSplit = splitLeadingIngredientDescriptors(`${unitCandidate} ${ingredientRemainder}`);
+  if (descriptorSplit.ingredientName) {
+    return {
+      rawText,
+      ingredientName: descriptorSplit.ingredientName,
+      quantityValue,
+      quantityUnit: 'pcs',
+      notes: descriptorSplit.notes,
+      parseConfidence: descriptorSplit.notes ? 0.62 : 0.55,
+    };
+  }
 
   return {
     rawText,
@@ -113,6 +282,24 @@ const parseStartQuantityIngredient = (rawText) => {
     quantityUnit: normalizeSpace(match[2]),
     notes: '',
     parseConfidence: 0.72,
+  };
+};
+
+const parseLeadingCountIngredient = (rawText) => {
+  const match = rawText.match(/^(\d+(?:[.,]\d+)?(?:\/\d+)?)\s+(.+)$/);
+  if (!match) return null;
+
+  const quantityValue = toNumber(match[1]);
+  if (quantityValue === null) return null;
+
+  const descriptorSplit = splitLeadingIngredientDescriptors(match[2]);
+  return {
+    rawText,
+    ingredientName: descriptorSplit.ingredientName || normalizeSpace(match[2]),
+    quantityValue,
+    quantityUnit: 'pcs',
+    notes: descriptorSplit.notes,
+    parseConfidence: descriptorSplit.notes ? 0.62 : 0.68,
   };
 };
 
@@ -204,16 +391,29 @@ export const parseIngredientText = (rawText = '') => {
     };
   }
 
-  return parseStartQuantityIngredient(normalized)
-    || parseEndQuantityIngredient(normalized)
-    || {
+  const { text, notes } = splitInlineIngredientNotes(normalized);
+  const parsed = parseStructuredIngredientText(text)
+    || parseImplicitSingleUnitIngredient(text)
+    || parseStartQuantityIngredient(text)
+    || parseEndQuantityIngredient(text)
+    || parseLeadingCountIngredient(text);
+
+  if (parsed) {
+    return {
+      ...parsed,
       rawText: normalized,
-      ingredientName: normalized,
-      quantityValue: null,
-      quantityUnit: '',
-      notes: '',
-      parseConfidence: 0.08,
+      notes: appendNotes(parsed.notes, notes),
     };
+  }
+
+  return {
+    rawText: normalized,
+    ingredientName: text || normalized,
+    quantityValue: null,
+    quantityUnit: '',
+    notes,
+    parseConfidence: 0.08,
+  };
 };
 
 export const splitIngredientList = (value = '') => (
@@ -280,10 +480,28 @@ const looksLikeIngredientLine = (line = '') => {
   if (/^(serves|servings|yield|method|instructions|directions|preparation|how to make)\b/i.test(normalizedLine)) {
     return false;
   }
+  if (parseImplicitSingleUnitIngredient(normalizedLine)) return true;
   if (/\d/.test(normalizedLine) && /\b(g|kg|ml|l|tsp|tbsp|cup|cups|pcs|pieces|piece|egg|eggs)\b/i.test(normalizedLine)) {
     return true;
   }
   return /^\d+(?:[.,]\d+)?(?:\/\d+)?\s+\w+/.test(normalizedLine);
+};
+
+const isIngredientSubheading = (line = '') => /^(for the |for |dressing|sauce|marinade|topping|to serve)\b/i.test(normalizeSpace(line));
+
+const getIngredientContinuationNote = (line = '') => {
+  const normalizedLine = normalizeSpace(line);
+  if (/^\(.+\)$/.test(normalizedLine)) return normalizedLine.replace(/^\((.+)\)$/, '$1');
+  if (/^or\s+\d/i.test(normalizedLine)) return normalizedLine;
+  if (/^from\s+(a|an|the)\b/i.test(normalizedLine)) return normalizedLine;
+  if (/^leaves?\s+separated$/i.test(normalizedLine)) return normalizedLine;
+  return '';
+};
+
+const appendNoteToIngredientLine = (lines, note) => {
+  if (lines.length === 0) return false;
+  lines[lines.length - 1] = `${lines[lines.length - 1]} (${note})`;
+  return true;
 };
 
 const splitIngredientCandidates = (lines = []) => (
@@ -332,6 +550,21 @@ export const parsePastedRecipeText = (rawText = '', fallbackMealSlot = 'breakfas
     const section = getSectionForLine(line);
     if (section) {
       activeSection = section;
+      return;
+    }
+
+    if (isIngredientSubheading(line)) {
+      return;
+    }
+
+    const continuationNote = getIngredientContinuationNote(line);
+    if (
+      continuationNote
+      && (
+        appendNoteToIngredientLine(ingredientLines, continuationNote)
+        || appendNoteToIngredientLine(looseIngredientLines, continuationNote)
+      )
+    ) {
       return;
     }
 

@@ -126,6 +126,66 @@ Instructions: whisk and cook`, 'dinner');
   assert.ok(parsed.warnings.length > 0);
 });
 
+test('parsePastedRecipeText handles common web recipe ingredient lists', () => {
+  const parsed = parsePastedRecipeText(`1 medium ciabatta loaf
+(or 4 thick slices crusty white bread)
+3 tbsp olive oil
+2 skinless, boneless chicken breasts
+1 large cos or romaine lettuce
+leaves separated
+For the dressing
+1 garlic clove
+2 anchovies
+from a tin
+medium block parmesan`, 'lunch');
+
+  assert.equal(parsed.howToMake, '');
+  assert.equal(parsed.ingredientLines.length, 7);
+
+  assert.equal(parsed.ingredientLines[0].ingredientName, 'ciabatta loaf');
+  assert.equal(parsed.ingredientLines[0].quantityValue, 1);
+  assert.equal(parsed.ingredientLines[0].quantityUnit, 'medium');
+  assert.match(parsed.ingredientLines[0].notes, /or 4 thick slices/);
+
+  assert.equal(parsed.ingredientLines[2].ingredientName, 'chicken breasts');
+  assert.equal(parsed.ingredientLines[2].quantityValue, 2);
+  assert.equal(parsed.ingredientLines[2].quantityUnit, 'pcs');
+  assert.match(parsed.ingredientLines[2].notes, /skinless/);
+
+  assert.equal(parsed.ingredientLines[3].ingredientName, 'cos or romaine lettuce');
+  assert.match(parsed.ingredientLines[3].notes, /leaves separated/);
+
+  assert.equal(parsed.ingredientLines[4].ingredientName, 'garlic');
+  assert.equal(parsed.ingredientLines[4].quantityValue, 1);
+  assert.equal(parsed.ingredientLines[4].quantityUnit, 'clove');
+
+  assert.equal(parsed.ingredientLines[5].ingredientName, 'anchovies');
+  assert.equal(parsed.ingredientLines[5].quantityValue, 2);
+  assert.equal(parsed.ingredientLines[5].quantityUnit, 'pcs');
+  assert.match(parsed.ingredientLines[5].notes, /from a tin/);
+
+  assert.equal(parsed.ingredientLines[6].ingredientName, 'parmesan');
+  assert.equal(parsed.ingredientLines[6].quantityValue, 1);
+  assert.equal(parsed.ingredientLines[6].quantityUnit, 'block');
+});
+
+test('parseIngredientText accepts AI-cleaned structured ingredient rows', () => {
+  assert.deepEqual(parseIngredientText('ciabatta loaf | 1 | medium | or 4 thick slices crusty white bread'), {
+    rawText: 'ciabatta loaf | 1 | medium | or 4 thick slices crusty white bread',
+    ingredientName: 'ciabatta loaf',
+    quantityValue: 1,
+    quantityUnit: 'medium',
+    notes: 'or 4 thick slices crusty white bread',
+    parseConfidence: 0.99,
+  });
+
+  const unknownQuantity = parseIngredientText('parmesan | | | quantity not clear');
+  assert.equal(unknownQuantity.ingredientName, 'parmesan');
+  assert.equal(unknownQuantity.quantityValue, null);
+  assert.equal(unknownQuantity.notes, 'quantity not clear');
+  assert.ok(unknownQuantity.parseConfidence < 0.5);
+});
+
 test('buildGroceryDraft aggregates repeated meals by ingredient and unit', () => {
   const recipes = [
     {

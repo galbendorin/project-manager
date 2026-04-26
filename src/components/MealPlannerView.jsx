@@ -30,6 +30,31 @@ const PERSONAL_DAILY_TARGETS = {
   fiberG: 30,
   caloriesFor64KgKcal: 1485,
 };
+const RECIPE_AI_CLEANUP_PROMPT = `Convert the recipe below into the exact PM Workspace Meal Planner format.
+
+Return only the cleaned recipe. Do not add commentary.
+
+Format:
+Recipe name:
+Meal slot: breakfast | lunch | dinner | snack
+Suggested day:
+Yield portions:
+Calories per serving:
+Ingredients:
+- ingredient name | quantity | unit | notes
+Method:
+
+Rules:
+- Use one ingredient per line.
+- Use simple units only: g, ml, tsp, tbsp, cup, pcs, slice, slices, clove, cloves, block, tin, can, bunch, head, small, medium, large.
+- Put alternatives in notes, not as a second grocery row.
+- Put preparation words in notes, for example skinless, boneless, chopped, leaves separated, from a tin.
+- If a quantity is not clear, leave quantity and unit blank rather than inventing.
+- If calories are not provided by the source, write unknown.
+- Keep the method short and practical.
+
+Recipe to clean:
+<<<PASTE RECIPE HERE>>>`;
 
 const getAudiencePillClasses = (audience) => {
   if (audience === 'adults') {
@@ -730,6 +755,15 @@ function RecipeFormModal({ initialState, onClose, onSave, saving }) {
     }
   };
 
+  const handleCopyAiCleanupPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(RECIPE_AI_CLEANUP_PROMPT);
+      setQuickPasteMessage('AI cleanup prompt copied. Paste it into ChatGPT, Claude, or Gemini with the recipe, then paste the cleaned result back here.');
+    } catch {
+      setQuickPasteMessage('Could not copy the AI prompt automatically. I can still share the prompt text with you.');
+    }
+  };
+
   const handleDiscardDraft = () => {
     clearNewRecipeDraft();
     setForm(initialState);
@@ -839,6 +873,13 @@ Method: cook rice, grill chicken, combine.`}
                   className="pm-subtle-button rounded-full px-4 py-2.5 text-xs font-semibold"
                 >
                   Clear paste
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyAiCleanupPrompt}
+                  className="pm-subtle-button rounded-full px-4 py-2.5 text-xs font-semibold"
+                >
+                  Copy AI cleanup prompt
                 </button>
                 <span className="text-xs text-slate-500">You can still edit every field before saving.</span>
               </div>
