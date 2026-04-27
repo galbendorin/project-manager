@@ -118,6 +118,79 @@ const buildCareMarkersByBlock = ({ feeds = [], nappies = [] } = {}) => {
 
 const getMarkerColor = (marker) => CARE_MARKER_STYLES[marker]?.color || '#334155';
 
+const getTimelinePercent = (blockIndex) => Math.min(100, Math.max(0, ((Number(blockIndex) || 0) / 96) * 100));
+
+const formatTimelineMarkerTime = (entry = {}) => formatDateTime(entry.occurredAt || entry.occurred_at);
+
+const buildTimelineMarkerClusters = (points = []) => {
+  const sorted = points
+    .filter((point) => Number.isInteger(point.blockIndex))
+    .sort((left, right) => left.blockIndex - right.blockIndex);
+  const clusters = [];
+
+  sorted.forEach((point) => {
+    const previous = clusters[clusters.length - 1];
+    if (previous && point.blockIndex - previous.endBlock <= 2) {
+      previous.points.push(point);
+      previous.endBlock = Math.max(previous.endBlock, point.blockIndex);
+      return;
+    }
+
+    clusters.push({
+      startBlock: point.blockIndex,
+      endBlock: point.blockIndex,
+      points: [point],
+    });
+  });
+
+  return clusters.map((cluster) => {
+    const counts = cluster.points.reduce((acc, point) => {
+      acc[point.marker] = (acc[point.marker] || 0) + 1;
+      return acc;
+    }, {});
+    const pieces = ['F', 'W', 'S', 'WS']
+      .filter((marker) => counts[marker])
+      .map((marker) => ({
+        marker,
+        label: counts[marker] > 1 ? `${marker}${counts[marker]}` : marker,
+      }));
+    const averageBlock = cluster.points.reduce((sum, point) => sum + point.blockIndex, 0) / cluster.points.length;
+    const title = cluster.points.map((point) => `${point.timeLabel} ${point.title}`).join(', ');
+
+    return {
+      id: `${cluster.startBlock}-${cluster.endBlock}-${pieces.map((piece) => piece.label).join('-')}`,
+      blockIndex: Math.round(averageBlock),
+      pieces,
+      title,
+    };
+  });
+};
+
+const buildMobilePatternMarkers = ({ feeds = [], nappies = [] } = {}) => {
+  const feedPoints = feeds.map((feed) => ({
+    blockIndex: getCareBlockIndex(feed.occurredAt),
+    marker: 'F',
+    timeLabel: formatTimelineMarkerTime(feed),
+    title: 'feed',
+  }));
+
+  const nappyPoints = nappies.map((nappy) => {
+    const marker = getNappyMarker(nappy.nappyType);
+    const label = marker === 'W' ? 'wet nappy' : marker === 'S' ? 'solid nappy' : marker === 'WS' ? 'mixed nappy' : 'nappy';
+    return {
+      blockIndex: getCareBlockIndex(nappy.occurredAt),
+      marker,
+      timeLabel: formatTimelineMarkerTime(nappy),
+      title: label,
+    };
+  });
+
+  return {
+    feeds: buildTimelineMarkerClusters(feedPoints),
+    nappies: buildTimelineMarkerClusters(nappyPoints),
+  };
+};
+
 const getSleepBlockIndexFromPoint = (clientX, clientY) => {
   const target = document.elementFromPoint(clientX, clientY);
   const block = target?.closest?.('[data-sleep-block-index]');
@@ -532,21 +605,82 @@ const SleepMatrix = ({ days, selectedDate }) => (
   </div>
 );
 
+const TimelineBackdrop = () => (
+  <>
+    <span className="absolute inset-y-0 left-0 bg-indigo-50/80" style={{ width: `${(7 / 24) * 100}%` }} />
+    <span className="absolute inset-y-0 bg-indigo-50/80" style={{ left: `${(22 / 24) * 100}%`, right: 0 }} />
+    {[0, 6, 12, 18, 24].map((hour) => (
+      <span
+        key={hour}
+        className="absolute inset-y-0 w-px bg-slate-200"
+        style={{ left: `${(hour / 24) * 100}%` }}
+      />
+    ))}
+  </>
+);
+
+const TimelineAxis = () => (
+  <div className="grid grid-cols-[42px_minmax(0,1fr)] items-center gap-2">
+    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Time</span>
+    <div className="flex justify-between text-[10px] font-black tabular-nums text-slate-400">
+      {['00', '06', '12', '18', '24'].map((label) => <span key={label}>{label}</span>)}
+    </div>
+  </div>
+);
+
+const TimelineLane = ({ label, tone = 'slate', children }) => {
+  const toneClass = {
+    sleep: 'text-sky-700',
+    feed: 'text-fuchsia-700',
+    nappy: 'text-amber-700',
+    slate: 'text-slate-500',
+  }[tone] || 'text-slate-500';
+
+  return (
+    <div className="grid grid-cols-[42px_minmax(0,1fr)] items-center gap-2">
+      <span className={`text-[9px] font-black uppercase tracking-[0.14em] ${toneClass}`}>{label}</span>
+      <div className="relative h-9 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner">
+        <TimelineBackdrop />
+        {children}
+      </div>
+    </div>
+  );
+};
+
+const TimelineMarker = ({ cluster }) => (
+  <span
+    className="absolute left-0 top-1/2 z-10 flex min-h-6 min-w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-0.5 rounded-full border border-white bg-white/95 px-1.5 text-[10px] font-black shadow-sm ring-1 ring-slate-200"
+    style={{ left: `${Math.min(98, Math.max(2, getTimelinePercent(cluster.blockIndex + 0.5)))}%` }}
+    title={cluster.title}
+  >
+    {cluster.pieces.map((piece) => (
+      <span
+        key={piece.label}
+        style={{
+          color: getMarkerColor(piece.marker),
+          WebkitTextFillColor: getMarkerColor(piece.marker),
+        }}
+      >
+        {piece.label}
+      </span>
+    ))}
+  </span>
+);
+
 const MobilePatternTimeline = ({ days, selectedDate }) => (
   <div className="space-y-3">
     {days.map((day) => {
-      const careMarkers = Array.from(buildCareMarkersByBlock({ feeds: day.feeds, nappies: day.nappies }).entries())
-        .sort(([left], [right]) => left - right);
       const sleepSummary = summarizeSleepBlocks(day.sleepBlocks);
+      const markers = buildMobilePatternMarkers({ feeds: day.feeds, nappies: day.nappies });
       const isSelected = day.dateKey === selectedDate;
 
       return (
         <article key={day.dateKey} className={`rounded-[24px] border p-3 shadow-sm ${isSelected ? 'border-sky-200 bg-sky-50/50' : 'border-slate-200 bg-white'}`}>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-black leading-tight text-slate-950">{formatBabyDisplayDate(day.dateKey)}</p>
+              <p className="text-base font-black leading-tight text-slate-950">{formatBabyDisplayDate(day.dateKey)}</p>
               <p className="mt-1 text-[11px] font-bold text-slate-500">
-                F{day.summary.feedCount} · W{day.summary.wetNappies} · S{day.summary.pooNappies} · {formatDuration(day.summary.sleep.totalMinutes)} sleep
+                {day.summary.feedCount} feeds · {day.summary.wetNappies} wet · {day.summary.pooNappies} solid · {formatDuration(day.summary.sleep.totalMinutes)} sleep
               </p>
             </div>
             {isSelected ? (
@@ -554,51 +688,37 @@ const MobilePatternTimeline = ({ days, selectedDate }) => (
             ) : null}
           </div>
 
-          <div className="mt-3">
-            <div className="grid grid-cols-5 text-[10px] font-black tabular-nums text-slate-400">
-              {['00', '06', '12', '18', '24'].map((label) => <span key={label}>{label}</span>)}
-            </div>
-            <div className="relative mt-1 h-16 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <span className="absolute inset-y-0 left-0 bg-indigo-50" style={{ width: `${(7 / 24) * 100}%` }} />
-              <span className="absolute inset-y-0 bg-indigo-50" style={{ left: `${(22 / 24) * 100}%`, right: 0 }} />
-              {[0, 6, 12, 18, 24].map((hour) => (
-                <span
-                  key={hour}
-                  className="absolute inset-y-0 w-px bg-slate-200"
-                  style={{ left: `${(hour / 24) * 100}%` }}
-                />
-              ))}
-              <div className="absolute inset-x-2 top-5 h-5 rounded-full bg-slate-100" />
+          <div className="mt-3 space-y-2 rounded-[20px] border border-slate-100 bg-slate-50 p-2.5">
+            <TimelineAxis />
+            <TimelineLane label="Sleep" tone="sleep">
+              <span className="absolute inset-x-1 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-100" />
               {sleepSummary.sessions.map((session) => {
-                const left = (session.startBlock / 96) * 100;
+                const left = getTimelinePercent(session.startBlock);
                 const width = ((session.endBlock - session.startBlock + 1) / 96) * 100;
                 return (
                   <span
                     key={`${session.startBlock}-${session.endBlock}`}
-                    className="absolute top-5 h-5 rounded-full bg-sky-500 shadow-sm"
-                    style={{ left: `${left}%`, width: `${Math.max(width, 1.5)}%` }}
+                    className="absolute top-1/2 z-10 h-4 -translate-y-1/2 rounded-full bg-sky-500 shadow-sm"
+                    style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
                     title={`${session.startTime}-${session.endTime}`}
                   />
                 );
               })}
-              {careMarkers.map(([blockIndex, markers]) => {
-                const label = markers.join('');
-                return (
-                  <span
-                    key={blockIndex}
-                    className="absolute top-9 flex h-5 min-w-5 -translate-x-1/2 items-center justify-center rounded-full bg-white px-1 text-[10px] font-black shadow-sm ring-1 ring-slate-200"
-                    style={{
-                      left: `${Math.min(98, Math.max(2, (blockIndex / 95) * 100))}%`,
-                      color: getMarkerColor(markers.includes('WS') ? 'WS' : markers[0]),
-                      WebkitTextFillColor: getMarkerColor(markers.includes('WS') ? 'WS' : markers[0]),
-                    }}
-                    title={`${getSleepBlockTimeLabel(blockIndex)} · ${label}`}
-                  >
-                    {label}
-                  </span>
-                );
-              })}
-            </div>
+            </TimelineLane>
+            <TimelineLane label="Feed" tone="feed">
+              {markers.feeds.length ? (
+                markers.feeds.map((cluster) => <TimelineMarker key={cluster.id} cluster={cluster} />)
+              ) : (
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">No feeds</span>
+              )}
+            </TimelineLane>
+            <TimelineLane label="Nappy" tone="nappy">
+              {markers.nappies.length ? (
+                markers.nappies.map((cluster) => <TimelineMarker key={cluster.id} cluster={cluster} />)
+              ) : (
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">No nappies</span>
+              )}
+            </TimelineLane>
           </div>
         </article>
       );
