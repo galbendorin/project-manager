@@ -118,20 +118,30 @@ const buildCareMarkersByBlock = ({ feeds = [], nappies = [] } = {}) => {
 
 const getMarkerColor = (marker) => CARE_MARKER_STYLES[marker]?.color || '#334155';
 
-const getPointerSleepBlockIndex = (event) => {
-  const target = document.elementFromPoint(event.clientX, event.clientY);
+const getSleepBlockIndexFromPoint = (clientX, clientY) => {
+  const target = document.elementFromPoint(clientX, clientY);
   const block = target?.closest?.('[data-sleep-block-index]');
-  const index = Number(block?.dataset?.sleepBlockIndex);
-  return Number.isInteger(index) && index >= 0 && index < 96 ? index : null;
+  const blockIndex = Number(block?.dataset?.sleepBlockIndex);
+  if (Number.isInteger(blockIndex) && blockIndex >= 0 && blockIndex < 96) return blockIndex;
+
+  const hourElement = target?.closest?.('[data-sleep-hour]');
+  const hour = Number(hourElement?.dataset?.sleepHour);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+
+  const rect = hourElement.getBoundingClientRect();
+  const relativeX = Math.min(Math.max(clientX - rect.left, 0), rect.width);
+  const quarter = Math.min(3, Math.max(0, Math.floor((relativeX / rect.width) * 4)));
+  return (hour * 4) + quarter;
+};
+
+const getPointerSleepBlockIndex = (event) => {
+  return getSleepBlockIndexFromPoint(event.clientX, event.clientY);
 };
 
 const getTouchSleepBlockIndex = (event) => {
   const touch = event.touches?.[0] || event.changedTouches?.[0];
   if (!touch) return null;
-  const target = document.elementFromPoint(touch.clientX, touch.clientY);
-  const block = target?.closest?.('[data-sleep-block-index]');
-  const index = Number(block?.dataset?.sleepBlockIndex);
-  return Number.isInteger(index) && index >= 0 && index < 96 ? index : null;
+  return getSleepBlockIndexFromPoint(touch.clientX, touch.clientY);
 };
 
 const getDateParts = (dateKey = formatBabyDateKey()) => {
@@ -411,7 +421,7 @@ const NappyModal = ({ dateKey, nappy, onClose, onSave, saving }) => {
 const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPointerEnter = null, compact = false }) => {
   const isBedtime = hour < 7 || hour >= 22;
   return (
-    <div className={`min-w-0 rounded-xl border p-1 ${isBedtime ? 'border-indigo-100 bg-indigo-50' : hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'}`}>
+    <div data-sleep-hour={hour} className={`min-w-0 rounded-xl border p-1 ${isBedtime ? 'border-indigo-100 bg-indigo-50' : hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'}`}>
       <div className={`mb-1 text-center font-black tabular-nums ${isBedtime ? 'text-indigo-700' : hour % 6 === 0 ? 'text-slate-700' : 'text-slate-400'} ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
         {compact || hour % 3 === 0 ? `${String(hour).padStart(2, '0')}:00` : ''}
       </div>
@@ -600,6 +610,7 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
   const initialSet = useMemo(() => normalizeSleepBlocks(sleepBlocks), [sleepBlocks]);
   const [draftSet, setDraftSet] = useState(initialSet);
   const dragModeRef = useRef(null);
+  const lastDragIndexRef = useRef(null);
 
   React.useEffect(() => {
     setDraftSet(initialSet);
@@ -613,20 +624,36 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
       return next;
     });
   };
+  const applyBlockRange = (fromIndex, toIndex, mode) => {
+    const start = Math.min(fromIndex, toIndex);
+    const end = Math.max(fromIndex, toIndex);
+    setDraftSet((previous) => {
+      const next = new Set(previous);
+      for (let index = start; index <= end; index += 1) {
+        if (mode === 'asleep') next.add(index);
+        if (mode === 'awake') next.delete(index);
+      }
+      return next;
+    });
+  };
 
   const startToggle = (index) => {
     const mode = draftSet.has(index) ? 'awake' : 'asleep';
     dragModeRef.current = mode;
+    lastDragIndexRef.current = index;
     applyBlock(index, mode);
   };
 
   const stopToggle = () => {
     dragModeRef.current = null;
+    lastDragIndexRef.current = null;
   };
   const continueToggle = (event) => {
     if (!dragModeRef.current) return;
     const index = getPointerSleepBlockIndex(event);
-    if (index !== null) applyBlock(index, dragModeRef.current);
+    if (index === null) return;
+    applyBlockRange(lastDragIndexRef.current ?? index, index, dragModeRef.current);
+    lastDragIndexRef.current = index;
   };
   const startTouchToggle = (event) => {
     const index = getTouchSleepBlockIndex(event);
@@ -639,7 +666,8 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
     const index = getTouchSleepBlockIndex(event);
     if (index === null) return;
     event.preventDefault();
-    applyBlock(index, dragModeRef.current);
+    applyBlockRange(lastDragIndexRef.current ?? index, index, dragModeRef.current);
+    lastDragIndexRef.current = index;
   };
   const hourLabels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`);
 
