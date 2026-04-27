@@ -842,23 +842,21 @@ export default function BabyView({ currentUserId }) {
               <SummaryCard label="Weight" value={latestWeight?.weightValue ? `${latestWeight.weightValue}${latestWeight.weightUnit}` : '—'} detail={latestWeight?.measuredAt || 'optional'} tone="rose" />
             </div>
 
-            <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_390px]">
-              <div className="space-y-5">
-                <SleepGrid sleepBlocks={sleepBlocks} onSave={saveSleepBlocks} saving={saving} />
-                <PatternPanel
-                  dateKeys={patternDateKeys}
-                  feeds={rangeFeeds}
-                  nappies={rangeNappies}
-                  patternRange={patternRange}
-                  rangeLabel={rangeLabel}
-                  rangeLoading={rangeLoading}
-                  selectedDate={selectedDate}
-                  setPatternRange={setPatternRange}
-                  sleepBlocks={rangeSleepBlocks}
-                />
-              </div>
+            <div className="mt-6 space-y-5">
+              <SleepGrid sleepBlocks={sleepBlocks} onSave={saveSleepBlocks} saving={saving} />
+              <PatternPanel
+                dateKeys={patternDateKeys}
+                feeds={rangeFeeds}
+                nappies={rangeNappies}
+                patternRange={patternRange}
+                rangeLabel={rangeLabel}
+                rangeLoading={rangeLoading}
+                selectedDate={selectedDate}
+                setPatternRange={setPatternRange}
+                sleepBlocks={rangeSleepBlocks}
+              />
 
-              <aside className="space-y-5">
+              <aside className="grid gap-5 lg:grid-cols-2">
                 <section className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
