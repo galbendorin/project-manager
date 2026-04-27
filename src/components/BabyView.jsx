@@ -78,7 +78,7 @@ const getNappyMarker = (type = '') => {
   const normalized = String(type || '').toLowerCase();
   if (normalized === 'wet') return 'W';
   if (normalized === 'poo') return 'S';
-  if (normalized === 'mixed') return 'M';
+  if (normalized === 'mixed') return 'WS';
   return 'N';
 };
 
@@ -86,22 +86,22 @@ const CARE_MARKER_STYLES = {
   F: {
     text: 'text-fuchsia-700',
     onSleep: 'text-fuchsia-100',
-    label: 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
+    chip: 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
   },
   W: {
     text: 'text-teal-700',
     onSleep: 'text-teal-100',
-    label: 'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
+    chip: 'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
   },
   S: {
     text: 'text-orange-700',
     onSleep: 'text-orange-100',
-    label: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
+    chip: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
   },
-  M: {
+  WS: {
     text: 'text-violet-700',
     onSleep: 'text-violet-100',
-    label: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
+    chip: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
   },
 };
 
@@ -464,7 +464,11 @@ const SleepMatrix = ({ days, selectedDate }) => (
                 (() => {
                   const markers = careMarkers.get(index) || [];
                   const asleep = asleepSet.has(index);
-                  const primaryMarker = markers[0] || '';
+                  const primaryMarker = markers.includes('WS')
+                    ? 'WS'
+                    : markers.includes('F')
+                      ? 'F'
+                      : markers[0] || '';
                   const markerStyle = CARE_MARKER_STYLES[primaryMarker];
                   const markerTone = markerStyle ? (asleep ? markerStyle.onSleep : markerStyle.text) : '';
                   return (
@@ -684,10 +688,10 @@ const PatternPanel = ({
           <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
             <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue cells = asleep</span>
             <span className="rounded-full bg-slate-100 px-2 py-1">Each cell = 15 min</span>
-            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.label}`}>F = feed</span>
-            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.W.label}`}>W = wet nappy</span>
-            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.S.label}`}>S = solid nappy</span>
-            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.M.label}`}>M = mixed</span>
+            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.chip}`}>F = feed</span>
+            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.W.chip}`}>W = wet nappy</span>
+            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.S.chip}`}>S = solid / poo nappy</span>
+            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.WS.chip}`}>WS = mixed nappy</span>
           </div>
         </div>
       )}
@@ -802,6 +806,7 @@ export default function BabyView({ currentUserId }) {
                 <button type="button" onClick={() => void addFeed({ feedType: 'breastfeeding', breastSide: 'right', durationMinutes: 10 })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Right breast</button>
                 <button type="button" onClick={() => void addNappy({ nappyType: 'wet' })} className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-bold text-sky-700">Wet nappy</button>
                 <button type="button" onClick={() => void addNappy({ nappyType: 'poo' })} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-700">Poo nappy</button>
+                <button type="button" onClick={() => void addNappy({ nappyType: 'mixed' })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Mixed nappy</button>
                 <button type="button" onClick={() => setWeightModalOpen(true)} className="pm-subtle-button rounded-2xl px-4 py-2.5 text-xs font-bold">Add weight</button>
               </div>
             </div>
