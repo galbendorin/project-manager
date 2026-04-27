@@ -191,9 +191,9 @@ const SummaryCard = ({ label, value, detail, tone = 'slate' }) => {
   }[tone] || 'border-slate-100 bg-white text-slate-800';
 
   return (
-    <div className={`rounded-[22px] border px-4 py-3 shadow-sm ${toneClass}`}>
-      <p className="text-[11px] font-bold uppercase tracking-[0.2em] opacity-70">{label}</p>
-      <p className="mt-2 text-2xl font-black tracking-[-0.05em]">{value}</p>
+    <div className={`rounded-[20px] border px-3 py-3 shadow-sm sm:rounded-[22px] sm:px-4 ${toneClass}`}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 sm:text-[11px]">{label}</p>
+      <p className="mt-1 text-xl font-black tracking-[-0.05em] sm:mt-2 sm:text-2xl">{value}</p>
       {detail ? <p className="mt-1 text-xs font-semibold opacity-70">{detail}</p> : null}
     </div>
   );
@@ -389,109 +389,114 @@ const NappyModal = ({ dateKey, nappy, onClose, onSave, saving }) => {
   );
 };
 
-const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPointerEnter = null, compact = false }) => (
-  <div className={`min-w-0 rounded-xl border ${hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'} p-1`}>
-    <div className={`mb-1 text-center font-bold tabular-nums ${hour % 6 === 0 ? 'text-slate-700' : 'text-slate-400'} ${compact ? 'text-[8px]' : 'text-[10px]'}`}>
-      {hour % 3 === 0 ? String(hour).padStart(2, '0') : ''}
-    </div>
-    <div className="grid gap-[3px]">
-      {[0, 1, 2, 3].map((quarter) => {
-        const index = (hour * 4) + quarter;
-        const asleep = asleepSet.has(index);
-        const className = `${compact ? 'h-2' : 'h-4 sm:h-5'} rounded-md border transition ${
-          asleep
-            ? 'border-sky-500 bg-sky-500 shadow-sm'
-            : 'border-white bg-white hover:bg-sky-50'
-        }`;
+const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPointerEnter = null, compact = false }) => {
+  const isBedtime = hour < 7 || hour >= 22;
+  return (
+    <div className={`min-w-0 rounded-xl border p-1 ${isBedtime ? 'border-indigo-100 bg-indigo-50' : hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'}`}>
+      <div className={`mb-1 text-center font-black tabular-nums ${isBedtime ? 'text-indigo-700' : hour % 6 === 0 ? 'text-slate-700' : 'text-slate-400'} ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
+        {compact || hour % 3 === 0 ? `${String(hour).padStart(2, '0')}:00` : ''}
+      </div>
+      <div className={compact ? 'grid grid-cols-4 gap-[3px]' : 'grid gap-[3px]'}>
+        {[0, 1, 2, 3].map((quarter) => {
+          const index = (hour * 4) + quarter;
+          const asleep = asleepSet.has(index);
+          const className = `${compact ? 'h-5' : 'h-4 sm:h-5'} rounded-md border transition ${
+            asleep
+              ? 'border-sky-500 bg-sky-500 shadow-sm'
+              : 'border-white bg-white hover:bg-sky-50'
+          }`;
 
-        if (!onBlockPointerDown) {
-          return <div key={index} title={getSleepBlockTimeLabel(index)} className={className} />;
-        }
+          if (!onBlockPointerDown) {
+            return <div key={index} title={getSleepBlockTimeLabel(index)} className={className} />;
+          }
 
-        return (
-          <button
-            key={index}
-            type="button"
-            title={getSleepBlockTimeLabel(index)}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              onBlockPointerDown(index);
-            }}
-            onPointerEnter={() => onBlockPointerEnter?.(index)}
-            className={className}
-          />
-        );
-      })}
+          return (
+            <button
+              key={index}
+              type="button"
+              title={getSleepBlockTimeLabel(index)}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                onBlockPointerDown(index);
+              }}
+              onPointerEnter={() => onBlockPointerEnter?.(index)}
+              className={className}
+            />
+          );
+        })}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const SleepMatrix = ({ days, selectedDate }) => (
-  <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-    <div className="grid grid-cols-[64px_minmax(0,1fr)] border-b border-slate-200 bg-slate-50 sm:grid-cols-[92px_minmax(0,1fr)]">
-      <div className="border-r border-slate-200 px-2 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-        Date
+  <div className="overflow-x-auto rounded-[24px] border border-slate-200 bg-white shadow-sm">
+    <div className="min-w-[720px] sm:min-w-0">
+      <div className="grid grid-cols-[76px_minmax(0,1fr)] border-b border-slate-200 bg-slate-50 sm:grid-cols-[92px_minmax(0,1fr)]">
+        <div className="border-r border-slate-200 px-2 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+          Date
+        </div>
+        <div className="grid" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
+          {Array.from({ length: 24 }, (_, hour) => (
+            <div key={hour} className={`border-r border-slate-200 px-0.5 py-2 text-center text-[8px] font-black tabular-nums text-slate-500 last:border-r-0 sm:text-[10px] ${hour % 3 === 0 ? '' : 'text-transparent sm:text-slate-400'}`}>
+              {String(hour).padStart(2, '0')}
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
-        {Array.from({ length: 24 }, (_, hour) => (
-          <div key={hour} className={`border-r border-slate-200 px-0.5 py-2 text-center text-[8px] font-black tabular-nums text-slate-500 last:border-r-0 sm:text-[10px] ${hour % 3 === 0 ? '' : 'text-transparent sm:text-slate-400'}`}>
-            {String(hour).padStart(2, '0')}
-          </div>
-        ))}
-      </div>
-    </div>
-    <div>
-      {days.map((day) => {
-        const asleepSet = normalizeSleepBlocks(day.sleepBlocks);
-        const careMarkers = buildCareMarkersByBlock({ feeds: day.feeds, nappies: day.nappies });
-        const hasAnySleep = asleepSet.size > 0;
-        return (
-          <div key={day.dateKey} className={`grid grid-cols-[64px_minmax(0,1fr)] border-b border-slate-100 last:border-b-0 sm:grid-cols-[92px_minmax(0,1fr)] ${day.dateKey === selectedDate ? 'bg-sky-50/50' : 'bg-white'}`}>
-            <div className="border-r border-slate-200 px-2 py-2">
-              <div className="text-[10px] font-black leading-tight text-slate-900 sm:text-xs">{formatBabyDisplayDate(day.dateKey)}</div>
-              <div className="mt-1 flex flex-wrap gap-1 text-[9px] font-bold text-slate-500">
-                {day.summary.feedCount ? <span>F{day.summary.feedCount}</span> : null}
-                {day.summary.totalNappies ? <span>N{day.summary.totalNappies}</span> : null}
-                {hasAnySleep ? <span>{formatDuration(day.summary.sleep.totalMinutes)}</span> : <span>No sleep</span>}
+      <div>
+        {days.map((day) => {
+          const asleepSet = normalizeSleepBlocks(day.sleepBlocks);
+          const careMarkers = buildCareMarkersByBlock({ feeds: day.feeds, nappies: day.nappies });
+          const hasAnySleep = asleepSet.size > 0;
+          return (
+            <div key={day.dateKey} className={`grid grid-cols-[76px_minmax(0,1fr)] border-b border-slate-100 last:border-b-0 sm:grid-cols-[92px_minmax(0,1fr)] ${day.dateKey === selectedDate ? 'bg-sky-50/50' : 'bg-white'}`}>
+              <div className="border-r border-slate-200 px-2 py-2">
+                <div className="text-[10px] font-black leading-tight text-slate-900 sm:text-xs">{formatBabyDisplayDate(day.dateKey)}</div>
+                <div className="mt-1 flex flex-wrap gap-1 text-[9px] font-bold text-slate-500">
+                  {day.summary.feedCount ? <span>F{day.summary.feedCount}</span> : null}
+                  {day.summary.totalNappies ? <span>N{day.summary.totalNappies}</span> : null}
+                  {hasAnySleep ? <span>{formatDuration(day.summary.sleep.totalMinutes)}</span> : <span>No sleep</span>}
+                </div>
+              </div>
+              <div className="grid gap-px bg-slate-200 p-px" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
+                {Array.from({ length: 96 }, (_, index) => (
+                  (() => {
+                    const markers = careMarkers.get(index) || [];
+                    const asleep = asleepSet.has(index);
+                    return (
+                      <div
+                        key={index}
+                        title={`${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)}${markers.length ? ` · ${markers.join('')}` : ''}`}
+                        className={`flex h-5 min-w-0 items-center justify-center overflow-hidden text-[8px] font-black leading-none ${
+                          asleep
+                            ? 'bg-sky-500 text-white'
+                          : index % 4 === 0
+                            ? 'bg-slate-50 text-slate-800'
+                            : 'bg-white text-slate-800'
+                        } ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
+                      >
+                        {markers.map((marker) => (
+                          <span
+                            key={marker}
+                            className={asleep ? 'inline-block rounded-sm bg-white/95 px-px' : 'inline-block'}
+                            style={{
+                              color: CARE_MARKER_STYLES[marker]?.color || '#334155',
+                              WebkitTextFillColor: CARE_MARKER_STYLES[marker]?.color || '#334155',
+                            }}
+                          >
+                            {marker}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()
+                ))}
               </div>
             </div>
-            <div className="grid gap-px bg-slate-200 p-px" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
-              {Array.from({ length: 96 }, (_, index) => (
-                (() => {
-                  const markers = careMarkers.get(index) || [];
-                  const asleep = asleepSet.has(index);
-                  return (
-                    <div
-                      key={index}
-                      title={`${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)}${markers.length ? ` · ${markers.join('')}` : ''}`}
-                      className={`flex h-5 min-w-0 items-center justify-center overflow-hidden text-[8px] font-black leading-none ${
-                        asleep
-                          ? 'bg-sky-500 text-white'
-                        : index % 4 === 0
-                          ? 'bg-slate-50 text-slate-800'
-                          : 'bg-white text-slate-800'
-                      } ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
-                    >
-                      {markers.map((marker) => (
-                        <span
-                          key={marker}
-                          className={asleep ? 'inline-block rounded-sm bg-white/95 px-px' : 'inline-block'}
-                          style={{
-                            color: CARE_MARKER_STYLES[marker]?.color || '#334155',
-                            WebkitTextFillColor: CARE_MARKER_STYLES[marker]?.color || '#334155',
-                          }}
-                        >
-                          {marker}
-                        </span>
-                      ))}
-                    </div>
-                  );
-                })()
-              ))}
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   </div>
 );
@@ -543,13 +548,14 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         </button>
       </div>
 
-      <div className="mt-4 select-none rounded-[24px] border border-slate-100 bg-slate-50 p-2 pb-3 sm:hidden touch-none" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
-        <div className="grid grid-cols-4 gap-1">
+      <div className="mt-4 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
+        <div className="grid grid-cols-3 gap-1.5">
           {Array.from({ length: 24 }, (_, hour) => (
             <SleepHourColumn
               key={hour}
               hour={hour}
               asleepSet={draftSet}
+              compact
               onBlockPointerDown={startToggle}
               onBlockPointerEnter={(index) => {
                 if (dragModeRef.current) applyBlock(index, dragModeRef.current);
@@ -653,7 +659,7 @@ const PatternPanel = ({
           <h2 className="mt-1 text-xl font-black tracking-[-0.04em] text-slate-950">Sleep, feeds, nappies</h2>
           <p className="mt-1 text-xs text-slate-500">{rangeLabel}</p>
         </div>
-        <div className="flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        <div className="grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1 sm:flex sm:flex-wrap">
           {PATTERN_RANGES.map((option) => (
             <button
               key={option.value}
@@ -671,7 +677,7 @@ const PatternPanel = ({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="rounded-2xl bg-sky-50 px-3 py-2 text-xs font-bold text-sky-800">{rangeTotals.feeds} feeds</div>
         <div className="rounded-2xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800">{formatDuration(rangeTotals.feedMinutes)} feeding</div>
         <div className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{rangeTotals.nappies} nappies</div>
@@ -833,7 +839,7 @@ export default function BabyView({ currentUserId }) {
               )}
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <div className="mt-5 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-6">
               <SummaryCard label="Feeds" value={daySummary.feedCount} detail={`${formatDuration(daySummary.totalFeedMinutes)} total`} tone="sky" />
               <SummaryCard label="Avg feed" value={`${daySummary.averageFeedMinutes}m`} detail="per feed" tone="slate" />
               <SummaryCard label="Wet" value={daySummary.wetNappies} detail="nappies" tone="emerald" />
