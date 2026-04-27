@@ -65,6 +65,37 @@ const formatBreastSide = (side = '') => {
 
 const getDefaultFeedStartedAt = () => new Date(Date.now() - (20 * 60 * 1000));
 
+const getCareBlockIndex = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const minutes = (date.getHours() * 60) + date.getMinutes();
+  const index = Math.floor(minutes / 15);
+  return Math.max(0, Math.min(95, index));
+};
+
+const getNappyMarker = (type = '') => {
+  const normalized = String(type || '').toLowerCase();
+  if (normalized === 'wet') return 'W';
+  if (normalized === 'poo') return 'S';
+  if (normalized === 'mixed') return 'M';
+  return 'N';
+};
+
+const buildCareMarkersByBlock = ({ feeds = [], nappies = [] } = {}) => {
+  const markers = new Map();
+  const addMarker = (index, marker) => {
+    if (index === null) return;
+    const existing = markers.get(index) || [];
+    if (!existing.includes(marker)) existing.push(marker);
+    markers.set(index, existing);
+  };
+
+  feeds.forEach((feed) => addMarker(getCareBlockIndex(feed.occurredAt), 'F'));
+  nappies.forEach((nappy) => addMarker(getCareBlockIndex(nappy.occurredAt), getNappyMarker(nappy.nappyType)));
+  return markers;
+};
+
 const getDateParts = (dateKey = formatBabyDateKey()) => {
   const [year, month, day] = String(dateKey).split('-').map(Number);
   return { year: year || new Date().getFullYear(), month: month || 1, day: day || 1 };
@@ -393,6 +424,7 @@ const SleepMatrix = ({ days, selectedDate }) => (
     <div>
       {days.map((day) => {
         const asleepSet = normalizeSleepBlocks(day.sleepBlocks);
+        const careMarkers = buildCareMarkersByBlock({ feeds: day.feeds, nappies: day.nappies });
         const hasAnySleep = asleepSet.size > 0;
         return (
           <div key={day.dateKey} className={`grid grid-cols-[64px_minmax(0,1fr)] border-b border-slate-100 last:border-b-0 sm:grid-cols-[92px_minmax(0,1fr)] ${day.dateKey === selectedDate ? 'bg-sky-50/50' : 'bg-white'}`}>
@@ -406,17 +438,32 @@ const SleepMatrix = ({ days, selectedDate }) => (
             </div>
             <div className="grid gap-px bg-slate-200 p-px" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
               {Array.from({ length: 96 }, (_, index) => (
-                <div
-                  key={index}
-                  title={`${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)}`}
-                  className={`h-5 min-w-0 ${
-                    asleepSet.has(index)
-                      ? 'bg-sky-500'
-                      : index % 4 === 0
-                        ? 'bg-slate-50'
-                        : 'bg-white'
-                  } ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
-                />
+                (() => {
+                  const markers = careMarkers.get(index) || [];
+                  const asleep = asleepSet.has(index);
+                  const markerTone = !asleep && markers.includes('F')
+                    ? 'text-rose-700'
+                    : !asleep && markers.includes('W')
+                      ? 'text-emerald-700'
+                      : !asleep && (markers.includes('S') || markers.includes('M'))
+                        ? 'text-amber-700'
+                        : '';
+                  return (
+                    <div
+                      key={index}
+                      title={`${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)}${markers.length ? ` · ${markers.join('')}` : ''}`}
+                      className={`flex h-5 min-w-0 items-center justify-center overflow-hidden text-[8px] font-black leading-none ${
+                        asleep
+                          ? 'bg-sky-500 text-white'
+                          : index % 4 === 0
+                            ? 'bg-slate-50 text-slate-800'
+                            : 'bg-white text-slate-800'
+                      } ${markerTone} ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
+                    >
+                      {markers.join('')}
+                    </div>
+                  );
+                })()
               ))}
             </div>
           </div>
@@ -609,7 +656,10 @@ const PatternPanel = ({
           <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
             <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue cells = asleep</span>
             <span className="rounded-full bg-slate-100 px-2 py-1">Each cell = 15 min</span>
-            <span className="rounded-full bg-white px-2 py-1">F = feeds, N = nappies</span>
+            <span className="rounded-full bg-rose-50 px-2 py-1 text-rose-700">F = feed</span>
+            <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">W = wet nappy</span>
+            <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700">S = solid nappy</span>
+            <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">M = mixed</span>
           </div>
         </div>
       )}
