@@ -65,7 +65,6 @@ export default async function handler(req, res) {
       key: `push-subscriptions:${user.id}:${getClientIp(req)}`,
       max: 20,
       windowMs: 5 * 60_000,
-      strictShared: true,
     });
     if (!limitResult.ok) {
       return sendRateLimitResponse(res, limitResult, 'Too many notification changes. Please wait a moment and try again.');
