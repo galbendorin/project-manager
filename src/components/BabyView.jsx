@@ -446,6 +446,7 @@ const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPo
               data-sleep-block-index={index}
               title={getSleepBlockTimeLabel(index)}
               onPointerDown={(event) => {
+                if (compact && event.pointerType === 'touch') return;
                 event.preventDefault();
                 event.currentTarget.setPointerCapture?.(event.pointerId);
                 onBlockPointerDown(index);
@@ -609,11 +610,18 @@ const MobilePatternTimeline = ({ days, selectedDate }) => (
 const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
   const initialSet = useMemo(() => normalizeSleepBlocks(sleepBlocks), [sleepBlocks]);
   const [draftSet, setDraftSet] = useState(initialSet);
+  const [pendingRangeStart, setPendingRangeStart] = useState(null);
   const dragModeRef = useRef(null);
   const lastDragIndexRef = useRef(null);
+  const rangeStartRef = useRef(null);
+  const touchMovedRef = useRef(false);
 
   React.useEffect(() => {
     setDraftSet(initialSet);
+    setPendingRangeStart(null);
+    rangeStartRef.current = null;
+    lastDragIndexRef.current = null;
+    dragModeRef.current = null;
   }, [initialSet]);
 
   const applyBlock = (index, mode) => {
@@ -643,6 +651,23 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
     lastDragIndexRef.current = index;
     applyBlock(index, mode);
   };
+  const startTouchRange = (index) => {
+    if (rangeStartRef.current !== null && dragModeRef.current) {
+      applyBlockRange(rangeStartRef.current, index, dragModeRef.current);
+      rangeStartRef.current = null;
+      lastDragIndexRef.current = null;
+      dragModeRef.current = null;
+      setPendingRangeStart(null);
+      return;
+    }
+
+    const mode = draftSet.has(index) ? 'awake' : 'asleep';
+    dragModeRef.current = mode;
+    rangeStartRef.current = index;
+    lastDragIndexRef.current = index;
+    setPendingRangeStart(index);
+    applyBlock(index, mode);
+  };
 
   const stopToggle = () => {
     dragModeRef.current = null;
@@ -659,15 +684,33 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
     const index = getTouchSleepBlockIndex(event);
     if (index === null) return;
     event.preventDefault();
-    startToggle(index);
+    touchMovedRef.current = false;
+    startTouchRange(index);
   };
   const continueTouchToggle = (event) => {
     if (!dragModeRef.current) return;
     const index = getTouchSleepBlockIndex(event);
     if (index === null) return;
     event.preventDefault();
+    touchMovedRef.current = true;
     applyBlockRange(lastDragIndexRef.current ?? index, index, dragModeRef.current);
     lastDragIndexRef.current = index;
+  };
+  const stopTouchToggle = () => {
+    if (touchMovedRef.current) {
+      rangeStartRef.current = null;
+      setPendingRangeStart(null);
+      stopToggle();
+    }
+    touchMovedRef.current = false;
+  };
+  const stopPointerToggle = (event) => {
+    if (event.pointerType === 'touch') return;
+    stopToggle();
+  };
+  const continuePointerToggle = (event) => {
+    if (event.pointerType === 'touch') return;
+    continueToggle(event);
   };
   const hourLabels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`);
 
@@ -691,12 +734,12 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
 
       <div
         className="mt-4 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none"
-        onPointerCancel={stopToggle}
-        onPointerLeave={stopToggle}
-        onPointerMove={continueToggle}
-        onPointerUp={stopToggle}
-        onTouchCancel={stopToggle}
-        onTouchEnd={stopToggle}
+        onPointerCancel={stopPointerToggle}
+        onPointerLeave={stopPointerToggle}
+        onPointerMove={continuePointerToggle}
+        onPointerUp={stopPointerToggle}
+        onTouchCancel={stopTouchToggle}
+        onTouchEnd={stopTouchToggle}
         onTouchMove={continueTouchToggle}
         onTouchStart={startTouchToggle}
       >
@@ -714,6 +757,15 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
             />
           ))}
         </div>
+        {pendingRangeStart !== null ? (
+          <div className="mt-2 rounded-2xl bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700">
+            Range start: {getSleepBlockTimeLabel(pendingRangeStart)}. Tap another slot to fill everything between.
+          </div>
+        ) : (
+          <div className="mt-2 rounded-2xl bg-white px-3 py-2 text-[11px] font-bold text-slate-500">
+            Tip: tap a start slot, then tap an end slot to mark a longer sleep.
+          </div>
+        )}
       </div>
 
       <div className="mt-4 hidden select-none rounded-[24px] border border-slate-100 bg-slate-50 p-3 sm:block" onPointerCancel={stopToggle} onPointerLeave={stopToggle} onPointerMove={continueToggle} onPointerUp={stopToggle}>
