@@ -5,6 +5,7 @@ export default function ShoppingListMobileControls({
   describeShoppingProject,
   handleDisablePushAlerts,
   handleEnablePushAlerts,
+  handleTestPushAlert,
   onOpenShare,
   projectError,
   projects,
@@ -81,14 +82,24 @@ export default function ShoppingListMobileControls({
             ) : null}
 
             {!pushSupported ? null : pushEnabled ? (
-              <button
-                type="button"
-                onClick={handleDisablePushAlerts}
-                disabled={pushBusy}
-                className="pm-subtle-button rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {pushBusy ? 'Updating…' : 'Turn off alerts'}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleTestPushAlert}
+                  disabled={pushBusy}
+                  className="pm-toolbar-primary rounded-2xl px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {pushBusy ? 'Sending…' : 'Send test alert'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDisablePushAlerts}
+                  disabled={pushBusy}
+                  className="pm-subtle-button rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {pushBusy ? 'Updating…' : 'Turn off alerts'}
+                </button>
+              </>
             ) : (
               <button
                 type="button"
@@ -102,7 +113,7 @@ export default function ShoppingListMobileControls({
           </div>
 
           <p className="text-xs leading-5 text-slate-500">
-            Keep the list surface simple while you shop. Sharing and phone alerts live here when you need them.
+            Alerts are per device. They notify the other household members when you add groceries, and the test button checks this device directly.
           </p>
 
           {pushMessage ? (

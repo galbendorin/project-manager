@@ -249,6 +249,7 @@ export default function ShoppingListView({ currentUserId }) {
     pushMessage,
     handleEnablePushAlerts,
     handleDisablePushAlerts,
+    handleTestPushAlert,
   } = useShoppingListLiveUpdates({
     currentUserId,
     isOnline,
@@ -483,6 +484,7 @@ export default function ShoppingListView({ currentUserId }) {
                 describeShoppingProject={describeShoppingProject}
                 handleDisablePushAlerts={handleDisablePushAlerts}
                 handleEnablePushAlerts={handleEnablePushAlerts}
+                handleTestPushAlert={handleTestPushAlert}
                 onOpenShare={() => setShareOpen(true)}
                 projectError={projectError}
                 projects={projects}
@@ -516,6 +518,7 @@ export default function ShoppingListView({ currentUserId }) {
                     describeShoppingProject={describeShoppingProject}
                     handleDisablePushAlerts={handleDisablePushAlerts}
                     handleEnablePushAlerts={handleEnablePushAlerts}
+                    handleTestPushAlert={handleTestPushAlert}
                     onOpenShare={() => setShareOpen(true)}
                     projectError={projectError}
                     projects={projects}

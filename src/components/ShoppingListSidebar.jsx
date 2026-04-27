@@ -5,6 +5,7 @@ export default function ShoppingListSidebar({
   describeShoppingProject,
   handleDisablePushAlerts,
   handleEnablePushAlerts,
+  handleTestPushAlert,
   onOpenShare,
   projectError,
   projects,
@@ -102,7 +103,7 @@ export default function ShoppingListSidebar({
               </span>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500">
-              Get a device alert when someone adds groceries while this list is closed or in the background.
+              Alerts are per device. They notify the other household members when you add groceries, and the test button checks this device directly.
             </p>
             {pushMessage ? (
               <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
@@ -110,14 +111,24 @@ export default function ShoppingListSidebar({
               </div>
             ) : null}
             {!pushSupported ? null : pushEnabled ? (
-              <button
-                type="button"
-                onClick={handleDisablePushAlerts}
-                disabled={pushBusy}
-                className="pm-subtle-button mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {pushBusy ? 'Updating…' : 'Turn off alerts'}
-              </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestPushAlert}
+                  disabled={pushBusy}
+                  className="pm-toolbar-primary inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {pushBusy ? 'Sending…' : 'Send test alert'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDisablePushAlerts}
+                  disabled={pushBusy}
+                  className="pm-subtle-button inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {pushBusy ? 'Updating…' : 'Turn off alerts'}
+                </button>
+              </div>
             ) : (
               <button
                 type="button"

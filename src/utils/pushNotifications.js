@@ -43,6 +43,11 @@ const getServiceWorkerRegistration = async () => {
   return navigator.serviceWorker.ready;
 };
 
+const getCurrentPushSubscription = async () => {
+  const registration = await getServiceWorkerRegistration();
+  return registration?.pushManager?.getSubscription?.() || null;
+};
+
 export const isPushNotificationsSupported = () => (
   typeof window !== 'undefined'
   && 'Notification' in window
@@ -72,8 +77,7 @@ export const syncExistingPushSubscription = async () => {
     };
   }
 
-  const registration = await getServiceWorkerRegistration();
-  const subscription = await registration?.pushManager?.getSubscription?.();
+  const subscription = await getCurrentPushSubscription();
   if (!subscription) {
     return {
       supported: true,
@@ -194,8 +198,7 @@ export const disablePushAlerts = async () => {
   }
 
   const permission = window.Notification.permission;
-  const registration = await getServiceWorkerRegistration();
-  const subscription = await registration?.pushManager?.getSubscription?.();
+  const subscription = await getCurrentPushSubscription();
   const endpoint = subscription?.endpoint || '';
   const headers = await buildAuthHeaders();
 
@@ -255,5 +258,80 @@ export const notifyShoppingListSubscribers = async ({
     });
   } catch {
     // Keep shopping interactions fast even if push delivery is unavailable.
+  }
+};
+
+export const sendShoppingTestAlert = async () => {
+  if (!isPushNotificationsSupported()) {
+    return {
+      supported: false,
+      enabled: false,
+      permission: 'unsupported',
+      message: 'This browser does not support background alerts.',
+    };
+  }
+
+  const permission = window.Notification.permission;
+  if (permission !== 'granted') {
+    return {
+      supported: true,
+      enabled: false,
+      permission,
+      message: permission === 'denied'
+        ? 'Notifications are blocked. Allow them in browser settings, then try the test again.'
+        : 'Enable phone alerts first, then send a test alert.',
+    };
+  }
+
+  const subscription = await getCurrentPushSubscription();
+  const endpoint = String(subscription?.endpoint || '').trim();
+  if (!endpoint) {
+    return {
+      supported: true,
+      enabled: false,
+      permission,
+      message: 'No alert subscription was found on this device. Turn alerts on, then try the test again.',
+    };
+  }
+
+  const headers = await buildAuthHeaders();
+  if (!headers.Authorization) {
+    return {
+      supported: true,
+      enabled: true,
+      permission,
+      message: 'Sign in again before sending a test alert.',
+    };
+  }
+
+  try {
+    const response = await fetch(SHOPPING_NOTIFY_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify({
+        test: true,
+        endpoint,
+      }),
+    });
+    const data = await parseJsonResponse(response);
+
+    return {
+      supported: true,
+      enabled: response.ok,
+      permission,
+      message: response.ok
+        ? (data?.message || 'Test alert sent to this device.')
+        : (data?.error || 'Unable to send a test alert right now.'),
+    };
+  } catch (error) {
+    return {
+      supported: true,
+      enabled: true,
+      permission,
+      message: error?.message || 'Unable to send a test alert right now.',
+    };
   }
 };

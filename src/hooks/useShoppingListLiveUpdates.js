@@ -5,6 +5,7 @@ import {
   disablePushAlerts,
   enablePushAlerts,
   isPushNotificationsSupported,
+  sendShoppingTestAlert,
   syncExistingPushSubscription,
 } from '../utils/pushNotifications';
 
@@ -304,6 +305,16 @@ export function useShoppingListLiveUpdates({
     setPushBusy(false);
   }, [pushPermission]);
 
+  const handleTestPushAlert = useCallback(async () => {
+    setPushBusy(true);
+    const result = await sendShoppingTestAlert();
+    setPushSupported(Boolean(result.supported));
+    setPushEnabled(Boolean(result.enabled));
+    setPushPermission(result.permission || pushPermission);
+    setPushMessage(result.message || 'Test alert requested.');
+    setPushBusy(false);
+  }, [pushPermission]);
+
   return {
     liveUpdateMessage,
     pushSupported,
@@ -313,5 +324,6 @@ export function useShoppingListLiveUpdates({
     pushMessage,
     handleEnablePushAlerts,
     handleDisablePushAlerts,
+    handleTestPushAlert,
   };
 }
