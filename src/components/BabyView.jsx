@@ -9,6 +9,7 @@ import {
   getSleepBlockTimeLabel,
   normalizeSleepBlocks,
   summarizeBabyDay,
+  summarizeSleepBlocks,
 } from '../utils/babyTracker';
 
 const FEED_TYPES = [
@@ -113,6 +114,15 @@ const buildCareMarkersByBlock = ({ feeds = [], nappies = [] } = {}) => {
   feeds.forEach((feed) => addMarker(getCareBlockIndex(feed.occurredAt), 'F'));
   nappies.forEach((nappy) => addMarker(getCareBlockIndex(nappy.occurredAt), getNappyMarker(nappy.nappyType)));
   return markers;
+};
+
+const getMarkerColor = (marker) => CARE_MARKER_STYLES[marker]?.color || '#334155';
+
+const getPointerSleepBlockIndex = (event) => {
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  const block = target?.closest?.('[data-sleep-block-index]');
+  const index = Number(block?.dataset?.sleepBlockIndex);
+  return Number.isInteger(index) && index >= 0 && index < 96 ? index : null;
 };
 
 const getDateParts = (dateKey = formatBabyDateKey()) => {
@@ -413,12 +423,14 @@ const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPo
           return (
             <button
               key={index}
-              type="button"
-              title={getSleepBlockTimeLabel(index)}
-              onPointerDown={(event) => {
-                event.preventDefault();
-                onBlockPointerDown(index);
-              }}
+            type="button"
+            data-sleep-block-index={index}
+            title={getSleepBlockTimeLabel(index)}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.currentTarget.setPointerCapture?.(event.pointerId);
+              onBlockPointerDown(index);
+            }}
               onPointerEnter={() => onBlockPointerEnter?.(index)}
               className={className}
             />
@@ -501,6 +513,80 @@ const SleepMatrix = ({ days, selectedDate }) => (
   </div>
 );
 
+const MobilePatternTimeline = ({ days, selectedDate }) => (
+  <div className="space-y-3">
+    {days.map((day) => {
+      const careMarkers = Array.from(buildCareMarkersByBlock({ feeds: day.feeds, nappies: day.nappies }).entries())
+        .sort(([left], [right]) => left - right);
+      const sleepSummary = summarizeSleepBlocks(day.sleepBlocks);
+      const isSelected = day.dateKey === selectedDate;
+
+      return (
+        <article key={day.dateKey} className={`rounded-[24px] border p-3 shadow-sm ${isSelected ? 'border-sky-200 bg-sky-50/50' : 'border-slate-200 bg-white'}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-black leading-tight text-slate-950">{formatBabyDisplayDate(day.dateKey)}</p>
+              <p className="mt-1 text-[11px] font-bold text-slate-500">
+                F{day.summary.feedCount} · W{day.summary.wetNappies} · S{day.summary.pooNappies} · {formatDuration(day.summary.sleep.totalMinutes)} sleep
+              </p>
+            </div>
+            {isSelected ? (
+              <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-black text-sky-700">Selected</span>
+            ) : null}
+          </div>
+
+          <div className="mt-3">
+            <div className="grid grid-cols-5 text-[10px] font-black tabular-nums text-slate-400">
+              {['00', '06', '12', '18', '24'].map((label) => <span key={label}>{label}</span>)}
+            </div>
+            <div className="relative mt-1 h-16 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <span className="absolute inset-y-0 left-0 bg-indigo-50" style={{ width: `${(7 / 24) * 100}%` }} />
+              <span className="absolute inset-y-0 bg-indigo-50" style={{ left: `${(22 / 24) * 100}%`, right: 0 }} />
+              {[0, 6, 12, 18, 24].map((hour) => (
+                <span
+                  key={hour}
+                  className="absolute inset-y-0 w-px bg-slate-200"
+                  style={{ left: `${(hour / 24) * 100}%` }}
+                />
+              ))}
+              <div className="absolute inset-x-2 top-5 h-5 rounded-full bg-slate-100" />
+              {sleepSummary.sessions.map((session) => {
+                const left = (session.startBlock / 96) * 100;
+                const width = ((session.endBlock - session.startBlock + 1) / 96) * 100;
+                return (
+                  <span
+                    key={`${session.startBlock}-${session.endBlock}`}
+                    className="absolute top-5 h-5 rounded-full bg-sky-500 shadow-sm"
+                    style={{ left: `${left}%`, width: `${Math.max(width, 1.5)}%` }}
+                    title={`${session.startTime}-${session.endTime}`}
+                  />
+                );
+              })}
+              {careMarkers.map(([blockIndex, markers]) => {
+                const label = markers.join('');
+                return (
+                  <span
+                    key={blockIndex}
+                    className="absolute top-9 flex h-5 min-w-5 -translate-x-1/2 items-center justify-center rounded-full bg-white px-1 text-[10px] font-black shadow-sm ring-1 ring-slate-200"
+                    style={{
+                      left: `${Math.min(98, Math.max(2, (blockIndex / 95) * 100))}%`,
+                      color: getMarkerColor(markers.includes('WS') ? 'WS' : markers[0]),
+                      WebkitTextFillColor: getMarkerColor(markers.includes('WS') ? 'WS' : markers[0]),
+                    }}
+                    title={`${getSleepBlockTimeLabel(blockIndex)} · ${label}`}
+                  >
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        </article>
+      );
+    })}
+  </div>
+);
+
 const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
   const initialSet = useMemo(() => normalizeSleepBlocks(sleepBlocks), [sleepBlocks]);
   const [draftSet, setDraftSet] = useState(initialSet);
@@ -528,6 +614,11 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
   const stopToggle = () => {
     dragModeRef.current = null;
   };
+  const continueToggle = (event) => {
+    if (!dragModeRef.current) return;
+    const index = getPointerSleepBlockIndex(event);
+    if (index !== null) applyBlock(index, dragModeRef.current);
+  };
   const hourLabels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`);
 
   return (
@@ -548,7 +639,7 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         </button>
       </div>
 
-      <div className="mt-4 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
+      <div className="mt-4 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none" onPointerCancel={stopToggle} onPointerLeave={stopToggle} onPointerMove={continueToggle} onPointerUp={stopToggle}>
         <div className="grid grid-cols-3 gap-1.5">
           {Array.from({ length: 24 }, (_, hour) => (
             <SleepHourColumn
@@ -565,7 +656,7 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         </div>
       </div>
 
-      <div className="mt-4 hidden select-none rounded-[24px] border border-slate-100 bg-slate-50 p-3 sm:block" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
+      <div className="mt-4 hidden select-none rounded-[24px] border border-slate-100 bg-slate-50 p-3 sm:block" onPointerCancel={stopToggle} onPointerLeave={stopToggle} onPointerMove={continueToggle} onPointerUp={stopToggle}>
         <div className="relative mb-2 h-3 overflow-hidden rounded-full bg-slate-100">
           <span className="absolute inset-y-0 left-0 rounded-full bg-indigo-300" style={{ width: `${(7 / 24) * 100}%` }} />
           <span className="absolute inset-y-0 rounded-full bg-indigo-300" style={{ left: `${(22 / 24) * 100}%`, right: 0 }} />
@@ -585,9 +676,11 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
               <button
                 key={index}
                 type="button"
+                data-sleep-block-index={index}
                 title={getSleepBlockTimeLabel(index)}
                 onPointerDown={(event) => {
                   event.preventDefault();
+                  event.currentTarget.setPointerCapture?.(event.pointerId);
                   startToggle(index);
                 }}
                 onPointerEnter={() => {
@@ -690,10 +783,15 @@ const PatternPanel = ({
         </div>
       ) : (
         <div className="mt-4">
-          <SleepMatrix days={patternDays} selectedDate={selectedDate} />
+          <div className="sm:hidden">
+            <MobilePatternTimeline days={patternDays} selectedDate={selectedDate} />
+          </div>
+          <div className="hidden sm:block">
+            <SleepMatrix days={patternDays} selectedDate={selectedDate} />
+          </div>
           <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
-            <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue cells = asleep</span>
-            <span className="rounded-full bg-slate-100 px-2 py-1">Each cell = 15 min</span>
+            <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue = asleep</span>
+            <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">Pale = bedtime</span>
             <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.chip}`}>F = feed</span>
             <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.W.chip}`}>W = wet nappy</span>
             <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.S.chip}`}>S = solid / poo nappy</span>
