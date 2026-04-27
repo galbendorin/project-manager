@@ -125,6 +125,15 @@ const getPointerSleepBlockIndex = (event) => {
   return Number.isInteger(index) && index >= 0 && index < 96 ? index : null;
 };
 
+const getTouchSleepBlockIndex = (event) => {
+  const touch = event.touches?.[0] || event.changedTouches?.[0];
+  if (!touch) return null;
+  const target = document.elementFromPoint(touch.clientX, touch.clientY);
+  const block = target?.closest?.('[data-sleep-block-index]');
+  const index = Number(block?.dataset?.sleepBlockIndex);
+  return Number.isInteger(index) && index >= 0 && index < 96 ? index : null;
+};
+
 const getDateParts = (dateKey = formatBabyDateKey()) => {
   const [year, month, day] = String(dateKey).split('-').map(Number);
   return { year: year || new Date().getFullYear(), month: month || 1, day: day || 1 };
@@ -619,6 +628,19 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
     const index = getPointerSleepBlockIndex(event);
     if (index !== null) applyBlock(index, dragModeRef.current);
   };
+  const startTouchToggle = (event) => {
+    const index = getTouchSleepBlockIndex(event);
+    if (index === null) return;
+    event.preventDefault();
+    startToggle(index);
+  };
+  const continueTouchToggle = (event) => {
+    if (!dragModeRef.current) return;
+    const index = getTouchSleepBlockIndex(event);
+    if (index === null) return;
+    event.preventDefault();
+    applyBlock(index, dragModeRef.current);
+  };
   const hourLabels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`);
 
   return (
@@ -639,7 +661,17 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         </button>
       </div>
 
-      <div className="mt-4 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none" onPointerCancel={stopToggle} onPointerLeave={stopToggle} onPointerMove={continueToggle} onPointerUp={stopToggle}>
+      <div
+        className="mt-4 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none"
+        onPointerCancel={stopToggle}
+        onPointerLeave={stopToggle}
+        onPointerMove={continueToggle}
+        onPointerUp={stopToggle}
+        onTouchCancel={stopToggle}
+        onTouchEnd={stopToggle}
+        onTouchMove={continueTouchToggle}
+        onTouchStart={startTouchToggle}
+      >
         <div className="grid grid-cols-3 gap-1.5">
           {Array.from({ length: 24 }, (_, hour) => (
             <SleepHourColumn
