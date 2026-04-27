@@ -423,14 +423,14 @@ const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPo
           return (
             <button
               key={index}
-            type="button"
-            data-sleep-block-index={index}
-            title={getSleepBlockTimeLabel(index)}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.currentTarget.setPointerCapture?.(event.pointerId);
-              onBlockPointerDown(index);
-            }}
+              type="button"
+              data-sleep-block-index={index}
+              title={getSleepBlockTimeLabel(index)}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+                onBlockPointerDown(index);
+              }}
               onPointerEnter={() => onBlockPointerEnter?.(index)}
               className={className}
             />
