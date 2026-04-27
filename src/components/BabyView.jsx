@@ -88,8 +88,8 @@ const CARE_MARKER_STYLES = {
     chip: 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
   },
   W: {
-    color: '#0f766e',
-    chip: 'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
+    color: '#059669',
+    chip: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
   },
   S: {
     color: '#ea580c',
@@ -475,8 +475,11 @@ const SleepMatrix = ({ days, selectedDate }) => (
                       {markers.map((marker) => (
                         <span
                           key={marker}
-                          className={asleep ? 'rounded-sm bg-white/90 px-px' : ''}
-                          style={{ color: CARE_MARKER_STYLES[marker]?.color || '#334155' }}
+                          className={asleep ? 'inline-block rounded-sm bg-white/95 px-px' : 'inline-block'}
+                          style={{
+                            color: CARE_MARKER_STYLES[marker]?.color || '#334155',
+                            WebkitTextFillColor: CARE_MARKER_STYLES[marker]?.color || '#334155',
+                          }}
                         >
                           {marker}
                         </span>
