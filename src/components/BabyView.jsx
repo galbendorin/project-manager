@@ -478,8 +478,8 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         </button>
       </div>
 
-      <div className="mt-4 select-none rounded-[24px] border border-slate-100 bg-slate-50 p-2 pb-3 touch-none" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
-        <div className="grid grid-cols-4 gap-1 sm:grid-cols-6 lg:grid-cols-12 xl:[grid-template-columns:repeat(24,minmax(0,1fr))]">
+      <div className="mt-4 select-none rounded-[24px] border border-slate-100 bg-slate-50 p-2 pb-3 sm:hidden touch-none" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
+        <div className="grid grid-cols-4 gap-1">
           {Array.from({ length: 24 }, (_, hour) => (
             <SleepHourColumn
               key={hour}
@@ -493,8 +493,43 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
           ))}
         </div>
       </div>
+
+      <div className="mt-4 hidden select-none rounded-[24px] border border-slate-100 bg-slate-50 p-3 sm:block" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
+        <div className="grid gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
+          {Array.from({ length: 96 }, (_, index) => {
+            const asleep = draftSet.has(index);
+            return (
+              <button
+                key={index}
+                type="button"
+                title={getSleepBlockTimeLabel(index)}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  startToggle(index);
+                }}
+                onPointerEnter={() => {
+                  if (dragModeRef.current) applyBlock(index, dragModeRef.current);
+                }}
+                className={`h-8 border-l transition first:border-l-0 ${
+                  asleep
+                    ? 'border-sky-600 bg-sky-500 hover:bg-sky-600'
+                    : index % 4 === 0
+                      ? 'border-slate-300 bg-white hover:bg-sky-50'
+                      : 'border-slate-100 bg-white hover:bg-sky-50'
+                } ${index % 16 === 0 ? 'shadow-[inset_2px_0_0_rgba(15,23,42,0.16)]' : ''}`}
+              />
+            );
+          })}
+        </div>
+        <div className="mt-2 grid grid-cols-9 text-[10px] font-black tabular-nums text-slate-500">
+          {['00', '03', '06', '09', '12', '15', '18', '21', '24'].map((label, index) => (
+            <span key={label} className={index === 0 ? 'text-left' : index === 8 ? 'text-right' : 'text-center'}>{label}</span>
+          ))}
+        </div>
+      </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
-        <span className="rounded-full bg-slate-100 px-2 py-1">Hours wrap on phone</span>
+        <span className="rounded-full bg-slate-100 px-2 py-1">Desktop shows one 24h row</span>
+        <span className="rounded-full bg-slate-100 px-2 py-1">Phone wraps hours</span>
         <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue = asleep</span>
         <span className="rounded-full bg-white px-2 py-1">White = awake</span>
       </div>
