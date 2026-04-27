@@ -138,12 +138,6 @@ const getPointerSleepBlockIndex = (event) => {
   return getSleepBlockIndexFromPoint(event.clientX, event.clientY);
 };
 
-const getTouchSleepBlockIndex = (event) => {
-  const touch = event.touches?.[0] || event.changedTouches?.[0];
-  if (!touch) return null;
-  return getSleepBlockIndexFromPoint(touch.clientX, touch.clientY);
-};
-
 const getDateParts = (dateKey = formatBabyDateKey()) => {
   const [year, month, day] = String(dateKey).split('-').map(Number);
   return { year: year || new Date().getFullYear(), month: month || 1, day: day || 1 };
@@ -418,7 +412,7 @@ const NappyModal = ({ dateKey, nappy, onClose, onSave, saving }) => {
   );
 };
 
-const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPointerEnter = null, compact = false }) => {
+const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPointerEnter = null, onBlockTap = null, compact = false }) => {
   const isBedtime = hour < 7 || hour >= 22;
   return (
     <div data-sleep-hour={hour} className={`min-w-0 rounded-xl border p-1 ${isBedtime ? 'border-indigo-100 bg-indigo-50' : hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'}`}>
@@ -452,6 +446,11 @@ const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPo
                 onBlockPointerDown(index);
               }}
               onPointerEnter={() => onBlockPointerEnter?.(index)}
+              onClick={(event) => {
+                if (!compact || !onBlockTap) return;
+                event.preventDefault();
+                onBlockTap(index);
+              }}
               className={className}
             />
           );
@@ -614,7 +613,6 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
   const dragModeRef = useRef(null);
   const lastDragIndexRef = useRef(null);
   const rangeStartRef = useRef(null);
-  const touchMovedRef = useRef(false);
 
   React.useEffect(() => {
     setDraftSet(initialSet);
@@ -680,30 +678,6 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
     applyBlockRange(lastDragIndexRef.current ?? index, index, dragModeRef.current);
     lastDragIndexRef.current = index;
   };
-  const startTouchToggle = (event) => {
-    const index = getTouchSleepBlockIndex(event);
-    if (index === null) return;
-    event.preventDefault();
-    touchMovedRef.current = false;
-    startTouchRange(index);
-  };
-  const continueTouchToggle = (event) => {
-    if (!dragModeRef.current) return;
-    const index = getTouchSleepBlockIndex(event);
-    if (index === null) return;
-    event.preventDefault();
-    touchMovedRef.current = true;
-    applyBlockRange(lastDragIndexRef.current ?? index, index, dragModeRef.current);
-    lastDragIndexRef.current = index;
-  };
-  const stopTouchToggle = () => {
-    if (touchMovedRef.current) {
-      rangeStartRef.current = null;
-      setPendingRangeStart(null);
-      stopToggle();
-    }
-    touchMovedRef.current = false;
-  };
   const stopPointerToggle = (event) => {
     if (event.pointerType === 'touch') return;
     stopToggle();
@@ -738,10 +712,6 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         onPointerLeave={stopPointerToggle}
         onPointerMove={continuePointerToggle}
         onPointerUp={stopPointerToggle}
-        onTouchCancel={stopTouchToggle}
-        onTouchEnd={stopTouchToggle}
-        onTouchMove={continueTouchToggle}
-        onTouchStart={startTouchToggle}
       >
         <div className="grid grid-cols-3 gap-1.5">
           {Array.from({ length: 24 }, (_, hour) => (
@@ -754,6 +724,7 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
               onBlockPointerEnter={(index) => {
                 if (dragModeRef.current) applyBlock(index, dragModeRef.current);
               }}
+              onBlockTap={startTouchRange}
             />
           ))}
         </div>
