@@ -485,7 +485,7 @@ const NappyModal = ({ dateKey, nappy, onClose, onSave, saving }) => {
   );
 };
 
-const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPointerEnter = null, onBlockTap = null, compact = false }) => {
+const SleepHourColumn = ({ hour, asleepSet, careMarkers = new Map(), onBlockPointerDown = null, onBlockPointerEnter = null, onBlockTap = null, compact = false }) => {
   const isBedtime = hour < 7 || hour >= 22;
   return (
     <div data-sleep-hour={hour} className={`min-w-0 rounded-xl border p-1 ${isBedtime ? 'border-indigo-100 bg-indigo-50' : hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'}`}>
@@ -496,14 +496,34 @@ const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPo
         {[0, 1, 2, 3].map((quarter) => {
           const index = (hour * 4) + quarter;
           const asleep = asleepSet.has(index);
-          const className = `${compact ? 'h-5' : 'h-4 sm:h-5'} rounded-md border transition ${
+          const markers = careMarkers.get(index) || [];
+          const className = `${compact ? 'flex h-5 items-center justify-center overflow-hidden text-[8px] font-black leading-none' : 'h-4 sm:h-5'} rounded-md border transition ${
             asleep
               ? 'border-sky-500 bg-sky-500 shadow-sm'
               : 'border-white bg-white hover:bg-sky-50'
           }`;
+          const markerContent = compact && markers.length ? (
+            <span className={asleep ? 'flex items-center gap-px rounded bg-white/95 px-0.5' : 'flex items-center gap-px'}>
+              {markers.map((marker) => (
+                <span
+                  key={marker}
+                  style={{
+                    color: getMarkerColor(marker),
+                    WebkitTextFillColor: getMarkerColor(marker),
+                  }}
+                >
+                  {marker}
+                </span>
+              ))}
+            </span>
+          ) : null;
 
           if (!onBlockPointerDown) {
-            return <div key={index} title={getSleepBlockTimeLabel(index)} className={className} />;
+            return (
+              <div key={index} title={`${getSleepBlockTimeLabel(index)}${markers.length ? ` · ${markers.join('')}` : ''}`} className={className}>
+                {markerContent}
+              </div>
+            );
           }
 
           return (
@@ -511,7 +531,7 @@ const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPo
               key={index}
               type="button"
               data-sleep-block-index={index}
-              title={getSleepBlockTimeLabel(index)}
+              title={`${getSleepBlockTimeLabel(index)}${markers.length ? ` · ${markers.join('')}` : ''}`}
               onPointerDown={(event) => {
                 if (compact && event.pointerType === 'touch') return;
                 event.preventDefault();
@@ -525,7 +545,9 @@ const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPo
                 onBlockTap(index);
               }}
               className={className}
-            />
+            >
+              {markerContent}
+            </button>
           );
         })}
       </div>
@@ -726,8 +748,9 @@ const MobilePatternTimeline = ({ days, selectedDate }) => (
   </div>
 );
 
-const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
+const SleepGrid = ({ feeds = [], nappies = [], sleepBlocks, onSave, saving }) => {
   const initialSet = useMemo(() => normalizeSleepBlocks(sleepBlocks), [sleepBlocks]);
+  const careMarkers = useMemo(() => buildCareMarkersByBlock({ feeds, nappies }), [feeds, nappies]);
   const [draftSet, setDraftSet] = useState(initialSet);
   const [pendingRangeStart, setPendingRangeStart] = useState(null);
   const dragModeRef = useRef(null);
@@ -839,6 +862,7 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
               key={hour}
               hour={hour}
               asleepSet={draftSet}
+              careMarkers={careMarkers}
               compact
               onBlockPointerDown={startToggle}
               onBlockPointerEnter={(index) => {
@@ -907,6 +931,10 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">Bedtime guide 22:00-07:00</span>
         <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue = asleep</span>
         <span className="rounded-full bg-white px-2 py-1">White = awake</span>
+        <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.chip}`}>F = feed</span>
+        <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.W.chip}`}>W = wet</span>
+        <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.S.chip}`}>S = solid</span>
+        <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.WS.chip}`}>WS = mixed</span>
       </div>
     </section>
   );
@@ -1150,7 +1178,7 @@ export default function BabyView({ currentUserId }) {
             </div>
 
             <div className="mt-6 space-y-5">
-              <SleepGrid sleepBlocks={sleepBlocks} onSave={saveSleepBlocks} saving={saving} />
+              <SleepGrid feeds={feeds} nappies={nappies} sleepBlocks={sleepBlocks} onSave={saveSleepBlocks} saving={saving} />
               <PatternPanel
                 dateKeys={patternDateKeys}
                 feeds={rangeFeeds}
