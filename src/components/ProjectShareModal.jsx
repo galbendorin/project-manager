@@ -21,6 +21,7 @@ const isMissingInviteTableError = (error) => {
 
 const ProjectShareModal = ({
   isOpen,
+  readOnly = false,
   project,
   onClose,
   onMembershipChanged,
@@ -233,7 +234,9 @@ const ProjectShareModal = ({
 
         <div className="space-y-4 px-6 py-5">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Owner-only controls stay owner-only: sharing, project deletion, billing, and quota ownership.
+            {readOnly
+              ? 'You can view and edit shared household records, but only the owner can add or remove access.'
+              : 'Owner-only controls stay owner-only: sharing, project deletion, billing, and quota ownership.'}
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
@@ -275,14 +278,16 @@ const ProjectShareModal = ({
                           <span className="rounded-full border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
                             Editor
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMember(member)}
-                            disabled={submitting}
-                            className="rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Remove
-                          </button>
+                          {!readOnly ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(member)}
+                              disabled={submitting}
+                              className="rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Remove
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -305,14 +310,16 @@ const ProjectShareModal = ({
                           <span className="rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700">
                             Pending
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveInvite(invite)}
-                            disabled={submitting}
-                            className="rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Remove
-                          </button>
+                          {!readOnly ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveInvite(invite)}
+                              disabled={submitting}
+                              className="rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Remove
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -328,34 +335,43 @@ const ProjectShareModal = ({
             </div>
 
             <div className="space-y-4">
-              <form onSubmit={handleInviteSubmit} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div className="space-y-3">
-                  <div>
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Invite by email
-                    </span>
-                    <input
-                      type="email"
-                      value={inviteEmail}
-                      onChange={(event) => setInviteEmail(event.target.value)}
-                      placeholder="name@example.com"
-                      autoComplete="email"
+              {!readOnly ? (
+                <form onSubmit={handleInviteSubmit} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                  <div className="space-y-3">
+                    <div>
+                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Invite by email
+                      </span>
+                      <input
+                        type="email"
+                        value={inviteEmail}
+                        onChange={(event) => setInviteEmail(event.target.value)}
+                        placeholder="name@example.com"
+                        autoComplete="email"
+                        disabled={submitting || slotsLeft <= 0}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-slate-50"
+                      />
+                    </div>
+                    <p className="text-xs leading-5 text-slate-500">
+                      Existing users get access straight away. If the email has not created an account yet, the access will attach after signup.
+                    </p>
+                    <button
+                      type="submit"
                       disabled={submitting || slotsLeft <= 0}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-slate-50"
-                    />
+                      className="w-full rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {submitting ? 'Saving access...' : slotsLeft <= 0 ? 'Project at capacity' : 'Share Project'}
+                    </button>
                   </div>
-                  <p className="text-xs leading-5 text-slate-500">
-                    Existing users get access straight away. If the email has not created an account yet, the access will attach after signup.
+                </form>
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Shared household</div>
+                  <p className="mt-2 leading-6">
+                    This dashboard follows the same access as the shared grocery list. Ask the owner to add or remove people.
                   </p>
-                  <button
-                    type="submit"
-                    disabled={submitting || slotsLeft <= 0}
-                    className="w-full rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {submitting ? 'Saving access...' : slotsLeft <= 0 ? 'Project at capacity' : 'Share Project'}
-                  </button>
                 </div>
-              </form>
+              )}
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Sharing rules</div>

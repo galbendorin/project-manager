@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useBabyData } from '../hooks/useBabyData';
+import ProjectShareModal from './ProjectShareModal';
 import {
   addBabyDays,
   buildBabyActivityLog,
@@ -1049,6 +1050,7 @@ export default function BabyView({ currentUserId }) {
     goToNextDay,
     goToPreviousDay,
     goToToday,
+    householdProject,
     latestWeight,
     loadRangeData,
     loading,
@@ -1057,6 +1059,7 @@ export default function BabyView({ currentUserId }) {
     rangeLoading,
     rangeNappies,
     rangeSleepBlocks,
+    refresh,
     saveSleepBlocks,
     saving,
     selectedDate,
@@ -1071,9 +1074,19 @@ export default function BabyView({ currentUserId }) {
   const [nappyModal, setNappyModal] = useState(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [patternRange, setPatternRange] = useState('day');
+  const [shareOpen, setShareOpen] = useState(false);
   const [weightModalOpen, setWeightModalOpen] = useState(false);
 
   const daySummary = useMemo(() => summarizeBabyDay({ feeds, nappies, sleepBlocks, latestWeight }), [feeds, latestWeight, nappies, sleepBlocks]);
+  const householdMembers = useMemo(() => (
+    Array.isArray(householdProject?.project_members) ? householdProject.project_members : []
+  ), [householdProject?.project_members]);
+  const householdIsShared = householdMembers.length > 0;
+  const canManageHouseholdSharing = Boolean(householdProject?.isOwned);
+  const sharingStatusLabel = householdIsShared
+    ? `Shared with ${householdMembers.length}`
+    : 'Private dashboard';
+  const sharingActionLabel = canManageHouseholdSharing ? 'Manage sharing' : 'View access';
   const activityLog = useMemo(() => buildBabyActivityLog({ feeds, nappies, sleepBlocks }), [feeds, nappies, sleepBlocks]);
   const latestActivity = activityLog[activityLog.length - 1] || null;
   const latestActivityTime = latestActivity
@@ -1134,6 +1147,18 @@ export default function BabyView({ currentUserId }) {
               <div>
                 <h2 className="text-xl font-black tracking-[-0.04em] text-slate-950">{babyProfile.name}</h2>
                 <p className="text-sm text-slate-500">{formatBabyDisplayDate(selectedDate)}</p>
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(true)}
+                  disabled={!householdProject}
+                  className="mt-3 inline-flex max-w-full flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-bold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className={`rounded-full px-2 py-1 ${householdIsShared ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                    {sharingStatusLabel}
+                  </span>
+                  <span className="text-slate-400">Shared access</span>
+                  <span className="text-indigo-600">{householdProject ? sharingActionLabel : 'Open groceries to share'}</span>
+                </button>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => setFeedModal({})} className="pm-toolbar-primary rounded-2xl px-4 py-2.5 text-xs font-bold text-white">Add feed</button>
@@ -1322,6 +1347,14 @@ export default function BabyView({ currentUserId }) {
           }}
         />
       ) : null}
+
+      <ProjectShareModal
+        isOpen={shareOpen && Boolean(householdProject)}
+        readOnly={!canManageHouseholdSharing}
+        project={householdProject}
+        onClose={() => setShareOpen(false)}
+        onMembershipChanged={refresh}
+      />
     </div>
   );
 }
