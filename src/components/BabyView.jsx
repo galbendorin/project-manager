@@ -84,23 +84,19 @@ const getNappyMarker = (type = '') => {
 
 const CARE_MARKER_STYLES = {
   F: {
-    text: 'text-fuchsia-700',
-    onSleep: 'text-fuchsia-100',
+    color: '#c026d3',
     chip: 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
   },
   W: {
-    text: 'text-teal-700',
-    onSleep: 'text-teal-100',
+    color: '#0f766e',
     chip: 'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
   },
   S: {
-    text: 'text-orange-700',
-    onSleep: 'text-orange-100',
+    color: '#ea580c',
     chip: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
   },
   WS: {
-    text: 'text-violet-700',
-    onSleep: 'text-violet-100',
+    color: '#4f46e5',
     chip: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
   },
 };
@@ -464,13 +460,6 @@ const SleepMatrix = ({ days, selectedDate }) => (
                 (() => {
                   const markers = careMarkers.get(index) || [];
                   const asleep = asleepSet.has(index);
-                  const primaryMarker = markers.includes('WS')
-                    ? 'WS'
-                    : markers.includes('F')
-                      ? 'F'
-                      : markers[0] || '';
-                  const markerStyle = CARE_MARKER_STYLES[primaryMarker];
-                  const markerTone = markerStyle ? (asleep ? markerStyle.onSleep : markerStyle.text) : '';
                   return (
                     <div
                       key={index}
@@ -478,12 +467,20 @@ const SleepMatrix = ({ days, selectedDate }) => (
                       className={`flex h-5 min-w-0 items-center justify-center overflow-hidden text-[8px] font-black leading-none ${
                         asleep
                           ? 'bg-sky-500 text-white'
-                          : index % 4 === 0
-                            ? 'bg-slate-50 text-slate-800'
-                            : 'bg-white text-slate-800'
-                      } ${markerTone} ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
+                        : index % 4 === 0
+                          ? 'bg-slate-50 text-slate-800'
+                          : 'bg-white text-slate-800'
+                      } ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
                     >
-                      {markers.join('')}
+                      {markers.map((marker) => (
+                        <span
+                          key={marker}
+                          className={asleep ? 'rounded-sm bg-white/90 px-px' : ''}
+                          style={{ color: CARE_MARKER_STYLES[marker]?.color || '#334155' }}
+                        >
+                          {marker}
+                        </span>
+                      ))}
                     </div>
                   );
                 })()
