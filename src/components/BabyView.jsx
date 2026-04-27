@@ -342,16 +342,17 @@ const BabySetupCard = ({ onCreate, saving }) => {
 };
 
 const FeedModal = ({ dateKey, feed = null, onClose, onSave, saving }) => {
+  const isEditing = Boolean(feed?.id);
   const date = feed?.occurredAt ? new Date(feed.occurredAt) : new Date();
   const [time, setTime] = useState(feed?.occurredAt ? formatBabyTime(date) : formatBabyTime(getDefaultFeedStartedAt()));
   const [durationMinutes, setDurationMinutes] = useState(feed?.durationMinutes || 20);
-  const [feedType, setFeedType] = useState(feed ? feed.feedType || '' : 'breastfeeding');
-  const [breastSide, setBreastSide] = useState(feed ? feed.breastSide || '' : 'both');
+  const [feedType, setFeedType] = useState(feed?.feedType || 'breastfeeding');
+  const [breastSide, setBreastSide] = useState(feed?.breastSide || 'both');
   const [notes, setNotes] = useState(feed?.notes || '');
   const showBreastSide = feedType === 'breastfeeding';
 
   return (
-    <ModalShell title={feed ? 'Edit feed' : 'Add feed'} onClose={onClose}>
+    <ModalShell title={isEditing ? 'Edit feed' : 'Add feed'} onClose={onClose}>
       <form
         className="mt-5 space-y-4"
         onSubmit={(event) => {
@@ -444,13 +445,14 @@ const WeightModal = ({ dateKey, onClose, onSave, saving }) => {
 };
 
 const NappyModal = ({ dateKey, nappy, onClose, onSave, saving }) => {
+  const isEditing = Boolean(nappy?.id);
   const date = nappy?.occurredAt ? new Date(nappy.occurredAt) : new Date();
   const [time, setTime] = useState(nappy?.occurredAt ? formatBabyTime(date) : formatBabyTime());
   const [nappyType, setNappyType] = useState(nappy?.nappyType || 'wet');
   const [notes, setNotes] = useState(nappy?.notes || '');
 
   return (
-    <ModalShell title="Edit nappy" onClose={onClose}>
+    <ModalShell title={isEditing ? 'Edit nappy' : 'Add nappy'} onClose={onClose}>
       <form
         className="mt-5 space-y-4"
         onSubmit={(event) => {
@@ -1162,11 +1164,11 @@ export default function BabyView({ currentUserId }) {
               </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => setFeedModal({})} className="pm-toolbar-primary rounded-2xl px-4 py-2.5 text-xs font-bold text-white">Add feed</button>
-                <button type="button" onClick={() => void addFeed({ feedType: 'breastfeeding', breastSide: 'left', durationMinutes: 10 })} className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700">Left breast</button>
-                <button type="button" onClick={() => void addFeed({ feedType: 'breastfeeding', breastSide: 'right', durationMinutes: 10 })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Right breast</button>
-                <button type="button" onClick={() => void addNappy({ nappyType: 'wet' })} className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-bold text-sky-700">Wet nappy</button>
-                <button type="button" onClick={() => void addNappy({ nappyType: 'poo' })} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-700">Poo nappy</button>
-                <button type="button" onClick={() => void addNappy({ nappyType: 'mixed' })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Mixed nappy</button>
+                <button type="button" onClick={() => setFeedModal({ feedType: 'breastfeeding', breastSide: 'left', durationMinutes: 20 })} className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700">Left breast</button>
+                <button type="button" onClick={() => setFeedModal({ feedType: 'breastfeeding', breastSide: 'right', durationMinutes: 20 })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Right breast</button>
+                <button type="button" onClick={() => setNappyModal({ nappyType: 'wet' })} className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-bold text-sky-700">Wet nappy</button>
+                <button type="button" onClick={() => setNappyModal({ nappyType: 'poo' })} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-700">Poo nappy</button>
+                <button type="button" onClick={() => setNappyModal({ nappyType: 'mixed' })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Mixed nappy</button>
                 <button type="button" onClick={() => setWeightModalOpen(true)} className="pm-subtle-button rounded-2xl px-4 py-2.5 text-xs font-bold">Add weight</button>
               </div>
             </div>
@@ -1309,7 +1311,7 @@ export default function BabyView({ currentUserId }) {
       {feedModal ? (
         <FeedModal
           dateKey={selectedDate}
-          feed={feedModal.id ? feedModal : null}
+          feed={feedModal}
           saving={saving}
           onClose={() => setFeedModal(null)}
           onSave={async (payload) => {
@@ -1330,7 +1332,11 @@ export default function BabyView({ currentUserId }) {
           saving={saving}
           onClose={() => setNappyModal(null)}
           onSave={async (payload) => {
-            await updateNappy(nappyModal.id, { ...payload, dateKey: selectedDate });
+            if (nappyModal.id) {
+              await updateNappy(nappyModal.id, { ...payload, dateKey: selectedDate });
+            } else {
+              await addNappy({ ...payload, dateKey: selectedDate });
+            }
             setNappyModal(null);
           }}
         />
