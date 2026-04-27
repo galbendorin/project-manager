@@ -560,9 +560,13 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
       </div>
 
       <div className="mt-4 hidden select-none rounded-[24px] border border-slate-100 bg-slate-50 p-3 sm:block" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
+        <div className="relative mb-2 h-3 overflow-hidden rounded-full bg-slate-100">
+          <span className="absolute inset-y-0 left-0 rounded-full bg-indigo-300" style={{ width: `${(7 / 24) * 100}%` }} />
+          <span className="absolute inset-y-0 rounded-full bg-indigo-300" style={{ left: `${(22 / 24) * 100}%`, right: 0 }} />
+        </div>
         <div className="grid overflow-hidden rounded-t-2xl border border-b-0 border-slate-300 bg-slate-100" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
           {hourLabels.map((label, hour) => (
-            <div key={label} className={`border-r border-slate-300 px-0.5 py-1.5 text-center text-[10px] font-black tabular-nums last:border-r-0 ${hour % 2 === 0 ? 'bg-white text-slate-800' : 'bg-slate-50 text-slate-600'}`}>
+            <div key={label} className={`border-r border-slate-300 px-0.5 py-1.5 text-center text-[10px] font-black tabular-nums last:border-r-0 ${hour < 7 || hour >= 22 ? 'bg-indigo-50 text-indigo-900' : 'bg-white text-slate-800'}`}>
               {label}
             </div>
           ))}
@@ -586,10 +590,10 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
                 className={`h-8 transition ${
                   asleep
                     ? 'bg-sky-500 hover:bg-sky-600'
-                    : index % 4 === 0
-                      ? 'bg-white hover:bg-sky-50'
+                    : hour < 7 || hour >= 22
+                      ? 'bg-indigo-50 hover:bg-sky-50'
                       : 'bg-white hover:bg-sky-50'
-                } ${hour % 2 === 1 && !asleep ? 'bg-slate-50' : ''} ${index % 4 === 0 ? 'shadow-[inset_2px_0_0_rgba(15,23,42,0.34)]' : ''} ${index % 16 === 0 ? 'shadow-[inset_3px_0_0_rgba(15,23,42,0.55)]' : ''}`}
+                } ${index % 4 === 0 ? 'shadow-[inset_2px_0_0_rgba(15,23,42,0.34)]' : ''}`}
               />
             );
           })}
@@ -598,6 +602,7 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
         <span className="rounded-full bg-slate-100 px-2 py-1">Desktop shows one 24h row</span>
         <span className="rounded-full bg-slate-100 px-2 py-1">Phone wraps hours</span>
+        <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">Bedtime guide 22:00-07:00</span>
         <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue = asleep</span>
         <span className="rounded-full bg-white px-2 py-1">White = awake</span>
       </div>
