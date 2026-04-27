@@ -519,6 +519,7 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
   const stopToggle = () => {
     dragModeRef.current = null;
   };
+  const hourLabels = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -555,9 +556,17 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
       </div>
 
       <div className="mt-4 hidden select-none rounded-[24px] border border-slate-100 bg-slate-50 p-3 sm:block" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
-        <div className="grid gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
+        <div className="grid overflow-hidden rounded-t-2xl border border-b-0 border-slate-300 bg-slate-100" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
+          {hourLabels.map((label, hour) => (
+            <div key={label} className={`border-r border-slate-300 px-0.5 py-1.5 text-center text-[10px] font-black tabular-nums last:border-r-0 ${hour % 2 === 0 ? 'bg-white text-slate-800' : 'bg-slate-50 text-slate-600'}`}>
+              {label}
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-px overflow-hidden rounded-b-2xl border border-slate-300 bg-slate-300" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
           {Array.from({ length: 96 }, (_, index) => {
             const asleep = draftSet.has(index);
+            const hour = Math.floor(index / 4);
             return (
               <button
                 key={index}
@@ -570,20 +579,20 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
                 onPointerEnter={() => {
                   if (dragModeRef.current) applyBlock(index, dragModeRef.current);
                 }}
-                className={`h-8 border-l transition first:border-l-0 ${
+                className={`h-8 transition ${
                   asleep
-                    ? 'border-sky-600 bg-sky-500 hover:bg-sky-600'
+                    ? 'bg-sky-500 hover:bg-sky-600'
                     : index % 4 === 0
-                      ? 'border-slate-300 bg-white hover:bg-sky-50'
-                      : 'border-slate-100 bg-white hover:bg-sky-50'
-                } ${index % 16 === 0 ? 'shadow-[inset_2px_0_0_rgba(15,23,42,0.16)]' : ''}`}
+                      ? 'bg-white hover:bg-sky-50'
+                      : 'bg-white hover:bg-sky-50'
+                } ${hour % 2 === 1 && !asleep ? 'bg-slate-50' : ''} ${index % 4 === 0 ? 'shadow-[inset_2px_0_0_rgba(15,23,42,0.34)]' : ''} ${index % 16 === 0 ? 'shadow-[inset_3px_0_0_rgba(15,23,42,0.55)]' : ''}`}
               />
             );
           })}
         </div>
-        <div className="mt-2 grid grid-cols-9 text-[10px] font-black tabular-nums text-slate-500">
-          {['00', '03', '06', '09', '12', '15', '18', '21', '24'].map((label, index) => (
-            <span key={label} className={index === 0 ? 'text-left' : index === 8 ? 'text-right' : 'text-center'}>{label}</span>
+        <div className="mt-2 grid grid-cols-6 text-[10px] font-black tabular-nums text-slate-500">
+          {['00', '04', '08', '12', '16', '20'].map((label) => (
+            <span key={label}>{label}:00</span>
           ))}
         </div>
       </div>
