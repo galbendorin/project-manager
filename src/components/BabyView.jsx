@@ -64,6 +64,14 @@ const formatBreastSide = (side = '') => {
 
 const getDefaultFeedStartedAt = () => new Date(Date.now() - (20 * 60 * 1000));
 
+const getEventPosition = (value) => {
+  if (!value) return 0;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 0;
+  const minutes = (date.getHours() * 60) + date.getMinutes();
+  return Math.max(0, Math.min(100, (minutes / 1440) * 100));
+};
+
 const getDateParts = (dateKey = formatBabyDateKey()) => {
   const [year, month, day] = String(dateKey).split('-').map(Number);
   return { year: year || new Date().getFullYear(), month: month || 1, day: day || 1 };
@@ -341,7 +349,7 @@ const NappyModal = ({ dateKey, nappy, onClose, onSave, saving }) => {
 };
 
 const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPointerEnter = null, compact = false }) => (
-  <div className={`min-w-[26px] rounded-xl border ${hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'} p-1`}>
+  <div className={`min-w-0 rounded-xl border ${hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'} p-1`}>
     <div className={`mb-1 text-center font-bold tabular-nums ${hour % 6 === 0 ? 'text-slate-700' : 'text-slate-400'} ${compact ? 'text-[8px]' : 'text-[10px]'}`}>
       {hour % 3 === 0 ? String(hour).padStart(2, '0') : ''}
     </div>
@@ -377,14 +385,48 @@ const SleepHourColumn = ({ hour, asleepSet, onBlockPointerDown = null, onBlockPo
   </div>
 );
 
-const SleepPatternStrip = ({ sleepBlocks = [], compact = false }) => {
+const CareTimeline = ({ sleepBlocks = [], feeds = [], nappies = [] }) => {
   const asleepSet = useMemo(() => normalizeSleepBlocks(sleepBlocks), [sleepBlocks]);
+
   return (
-    <div className="overflow-x-auto pb-1">
-      <div className="grid min-w-[720px] gap-1" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
-        {Array.from({ length: 24 }, (_, hour) => (
-          <SleepHourColumn key={hour} hour={hour} asleepSet={asleepSet} compact={compact} />
+    <div className="rounded-[20px] border border-white bg-white/80 p-2 shadow-sm">
+      <div className="relative">
+        <div className="grid h-9 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
+          {Array.from({ length: 96 }, (_, index) => (
+            <div
+              key={index}
+              className={`${asleepSet.has(index) ? 'bg-sky-500' : 'bg-white'} ${
+                index % 24 === 0 ? 'border-l border-slate-300' : index % 4 === 0 ? 'border-l border-slate-100' : ''
+              }`}
+              title={getSleepBlockTimeLabel(index)}
+            />
+          ))}
+        </div>
+        {feeds.map((feed) => (
+          <span
+            key={`feed-${feed.id}`}
+            className="absolute top-1 h-7 w-1.5 -translate-x-1/2 rounded-full bg-rose-500 shadow-sm ring-2 ring-white"
+            style={{ left: `${getEventPosition(feed.occurredAt)}%` }}
+            title={`Feed ${formatDateTime(feed.occurredAt)}`}
+          />
         ))}
+        {nappies.map((nappy) => (
+          <span
+            key={`nappy-${nappy.id}`}
+            className={`absolute bottom-1 h-2.5 w-2.5 -translate-x-1/2 rounded-full shadow-sm ring-2 ring-white ${
+              nappy.nappyType === 'poo' ? 'bg-amber-500' : nappy.nappyType === 'mixed' ? 'bg-orange-500' : 'bg-emerald-500'
+            }`}
+            style={{ left: `${getEventPosition(nappy.occurredAt)}%` }}
+            title={`${nappy.nappyType} ${formatDateTime(nappy.occurredAt)}`}
+          />
+        ))}
+      </div>
+      <div className="mt-1 grid grid-cols-5 text-[10px] font-black text-slate-400">
+        <span>00</span>
+        <span className="text-center">06</span>
+        <span className="text-center">12</span>
+        <span className="text-center">18</span>
+        <span className="text-right">24</span>
       </div>
     </div>
   );
@@ -436,8 +478,8 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         </button>
       </div>
 
-      <div className="mt-4 select-none overflow-x-auto rounded-[24px] border border-slate-100 bg-slate-50 p-2 pb-3 touch-pan-x" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
-        <div className="grid min-w-[720px] gap-1" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
+      <div className="mt-4 select-none rounded-[24px] border border-slate-100 bg-slate-50 p-2 pb-3 touch-none" onPointerLeave={stopToggle} onPointerUp={stopToggle}>
+        <div className="grid grid-cols-4 gap-1 sm:grid-cols-6 lg:grid-cols-12 xl:[grid-template-columns:repeat(24,minmax(0,1fr))]">
           {Array.from({ length: 24 }, (_, hour) => (
             <SleepHourColumn
               key={hour}
@@ -452,7 +494,7 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
-        <span className="rounded-full bg-slate-100 px-2 py-1">Major markers every 6h</span>
+        <span className="rounded-full bg-slate-100 px-2 py-1">Hours wrap on phone</span>
         <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue = asleep</span>
         <span className="rounded-full bg-white px-2 py-1">White = awake</span>
       </div>
@@ -552,11 +594,12 @@ const PatternPanel = ({
                     {day.nappies.length ? <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">Nappies {day.nappies.length}</span> : null}
                   </div>
                 </div>
-                <SleepPatternStrip sleepBlocks={day.sleepBlocks} compact />
+                <CareTimeline sleepBlocks={day.sleepBlocks} feeds={day.feeds} nappies={day.nappies} />
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
                   <span>Day {formatDuration(day.summary.sleep.daytimeMinutes)}</span>
                   <span>Night {formatDuration(day.summary.sleep.nightMinutes)}</span>
-                  <span>Feeds {day.feeds.map((feed) => formatDateTime(feed.occurredAt)).filter(Boolean).join(', ') || 'none'}</span>
+                  <span className="rounded-full bg-rose-50 px-2 py-1 text-rose-700">Feed markers</span>
+                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">Nappy markers</span>
                 </div>
               </div>
             );
