@@ -685,8 +685,8 @@ export default function BabyView({ currentUserId }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
-      <div className="rounded-[34px] border border-white/70 bg-white/90 p-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-7">
+    <div className="mx-auto w-full max-w-[1800px] px-3 py-4 sm:px-5 sm:py-6 2xl:px-8">
+      <div className="rounded-[34px] border border-white/70 bg-white/90 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-6 2xl:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="pm-kicker">Baby</p>
@@ -759,7 +759,7 @@ export default function BabyView({ currentUserId }) {
               <SummaryCard label="Weight" value={latestWeight?.weightValue ? `${latestWeight.weightValue}${latestWeight.weightUnit}` : '—'} detail={latestWeight?.measuredAt || 'optional'} tone="rose" />
             </div>
 
-            <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+            <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_390px]">
               <div className="space-y-5">
                 <SleepGrid sleepBlocks={sleepBlocks} onSave={saveSleepBlocks} saving={saving} />
                 <PatternPanel
