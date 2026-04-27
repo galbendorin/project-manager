@@ -82,6 +82,29 @@ const getNappyMarker = (type = '') => {
   return 'N';
 };
 
+const CARE_MARKER_STYLES = {
+  F: {
+    text: 'text-fuchsia-700',
+    onSleep: 'text-fuchsia-100',
+    label: 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
+  },
+  W: {
+    text: 'text-teal-700',
+    onSleep: 'text-teal-100',
+    label: 'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
+  },
+  S: {
+    text: 'text-orange-700',
+    onSleep: 'text-orange-100',
+    label: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
+  },
+  M: {
+    text: 'text-violet-700',
+    onSleep: 'text-violet-100',
+    label: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
+  },
+};
+
 const buildCareMarkersByBlock = ({ feeds = [], nappies = [] } = {}) => {
   const markers = new Map();
   const addMarker = (index, marker) => {
@@ -441,13 +464,9 @@ const SleepMatrix = ({ days, selectedDate }) => (
                 (() => {
                   const markers = careMarkers.get(index) || [];
                   const asleep = asleepSet.has(index);
-                  const markerTone = !asleep && markers.includes('F')
-                    ? 'text-rose-700'
-                    : !asleep && markers.includes('W')
-                      ? 'text-emerald-700'
-                      : !asleep && (markers.includes('S') || markers.includes('M'))
-                        ? 'text-amber-700'
-                        : '';
+                  const primaryMarker = markers[0] || '';
+                  const markerStyle = CARE_MARKER_STYLES[primaryMarker];
+                  const markerTone = markerStyle ? (asleep ? markerStyle.onSleep : markerStyle.text) : '';
                   return (
                     <div
                       key={index}
@@ -656,10 +675,10 @@ const PatternPanel = ({
           <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
             <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue cells = asleep</span>
             <span className="rounded-full bg-slate-100 px-2 py-1">Each cell = 15 min</span>
-            <span className="rounded-full bg-rose-50 px-2 py-1 text-rose-700">F = feed</span>
-            <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">W = wet nappy</span>
-            <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700">S = solid nappy</span>
-            <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">M = mixed</span>
+            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.label}`}>F = feed</span>
+            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.W.label}`}>W = wet nappy</span>
+            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.S.label}`}>S = solid nappy</span>
+            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.M.label}`}>M = mixed</span>
           </div>
         </div>
       )}
