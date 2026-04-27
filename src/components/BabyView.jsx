@@ -523,7 +523,7 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
   const stopToggle = () => {
     dragModeRef.current = null;
   };
-  const hourLabels = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
+  const hourLabels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`);
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -593,11 +593,6 @@ const SleepGrid = ({ sleepBlocks, onSave, saving }) => {
               />
             );
           })}
-        </div>
-        <div className="mt-2 grid grid-cols-6 text-[10px] font-black tabular-nums text-slate-500">
-          {['00', '04', '08', '12', '16', '20'].map((label) => (
-            <span key={label}>{label}:00</span>
-          ))}
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
