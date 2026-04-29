@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { SCHEMAS } from '../utils/constants';
 import AuthenticatedFooter from './AuthenticatedFooter';
 import Header from './Header';
@@ -21,6 +21,7 @@ import MobileSyncCenter from './MobileSyncCenter';
 import { useWorkspaceAiActions } from '../hooks/useWorkspaceAiActions';
 import { useWorkspaceImportExport } from '../hooks/useWorkspaceImportExport';
 import { useWorkspaceQuickCapture } from '../hooks/useWorkspaceQuickCapture';
+import { getStoredProjectTab, saveStoredProjectTab } from '../utils/projectTabMemory';
 
 const ScheduleView = lazy(() => import('./ScheduleView'));
 const RegisterView = lazy(() => import('./RegisterView'));
@@ -135,7 +136,8 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     refreshProfile, simulatedPlan, setSimulatedPlan, simulatorOptions,
   } = usePlan();
 
-  const [activeTab, setActiveTab] = useState('schedule');
+  const [activeTab, setActiveTab] = useState(() => getStoredProjectTab(project?.id));
+  const skipNextTabPersistRef = useRef(false);
   const [activeSubView, setActiveSubView] = useState(null);
   const [viewMode, setViewMode] = useState('week');
   const [isExternalView, setIsExternalView] = useState(false);
@@ -153,6 +155,21 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
   const hasByok = isAiConfigured(aiSettings);
   const usePlatformKey = effectivePlan && canUsePlatformAi && !hasByok;
   const aiReady = limits.canUseAi && (hasByok || usePlatformKey);
+
+  useEffect(() => {
+    skipNextTabPersistRef.current = true;
+    setActiveTab(getStoredProjectTab(project?.id));
+    setActiveSubView(null);
+  }, [project?.id]);
+
+  useEffect(() => {
+    if (skipNextTabPersistRef.current) {
+      skipNextTabPersistRef.current = false;
+      return;
+    }
+
+    saveStoredProjectTab(project?.id, activeTab);
+  }, [activeTab, project?.id]);
 
   const {
     projectData,
