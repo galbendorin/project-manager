@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { addHabitDays, getHabitTodayKey, getHabitWeekStart } from '../utils/habitTracker';
+import {
+  addHabitDays,
+  getHabitTodayKey,
+  getHabitWeekStart,
+  normalizeHabitReminderTime,
+  normalizeHabitReminderWeekdays,
+} from '../utils/habitTracker';
 
 const HABIT_SELECT = 'id, user_id, household_project_id, name, direction, color, sort_order, archived_at, created_at, updated_at';
 const ENTRY_SELECT = 'id, habit_id, user_id, household_project_id, entry_date, status, note, created_at, updated_at';
+const REMINDER_SELECT = 'id, user_id, habit_id, household_project_id, title, reminder_time, frequency, weekdays, is_enabled, timezone, last_triggered_date, created_at, updated_at';
 
 const mapHabit = (row = {}) => ({
   id: row.id,
@@ -30,6 +37,22 @@ const mapEntry = (row = {}) => ({
   updatedAt: row.updated_at || '',
 });
 
+const mapReminder = (row = {}) => ({
+  id: row.id,
+  userId: row.user_id || '',
+  habitId: row.habit_id || '',
+  householdProjectId: row.household_project_id || '',
+  title: row.title || 'It is time to update your journal.',
+  reminderTime: normalizeHabitReminderTime(row.reminder_time || '21:00'),
+  frequency: ['daily', 'weekdays', 'custom'].includes(row.frequency) ? row.frequency : 'daily',
+  weekdays: normalizeHabitReminderWeekdays(row.weekdays || []),
+  isEnabled: row.is_enabled !== false,
+  timezone: row.timezone || 'Europe/London',
+  lastTriggeredDate: row.last_triggered_date || '',
+  createdAt: row.created_at || '',
+  updatedAt: row.updated_at || '',
+});
+
 const getRangeStart = (selectedDate) => addHabitDays(getHabitWeekStart(selectedDate), -180);
 const getRangeEnd = (selectedDate) => addHabitDays(getHabitWeekStart(selectedDate), 13);
 
@@ -38,13 +61,20 @@ const isMissingHabitsTableError = (error) => {
   return msg.includes('habit_items') || msg.includes('habit_entries');
 };
 
+const isMissingRemindersTableError = (error) => {
+  const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return msg.includes('habit_reminders');
+};
+
 export function useHabitsData({ currentUserId } = {}) {
   const [selectedDate, setSelectedDate] = useState(getHabitTodayKey);
   const [habits, setHabits] = useState([]);
   const [entries, setEntries] = useState([]);
+  const [reminders, setReminders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [reminderError, setReminderError] = useState('');
 
   const range = useMemo(() => ({
     startDate: getRangeStart(selectedDate),
@@ -83,6 +113,21 @@ export function useHabitsData({ currentUserId } = {}) {
     return nextEntries;
   }, [currentUserId, range.endDate, range.startDate]);
 
+  const loadReminders = useCallback(async () => {
+    if (!currentUserId) return [];
+    const { data, error: loadError } = await supabase
+      .from('habit_reminders')
+      .select(REMINDER_SELECT)
+      .eq('user_id', currentUserId)
+      .order('reminder_time', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (loadError) throw loadError;
+    const nextReminders = (data || []).map(mapReminder);
+    setReminders(nextReminders);
+    return nextReminders;
+  }, [currentUserId]);
+
   const loadAll = useCallback(async () => {
     if (!currentUserId) return;
     setLoading(true);
@@ -92,6 +137,17 @@ export function useHabitsData({ currentUserId } = {}) {
         loadHabits(),
         loadEntries(),
       ]);
+      try {
+        await loadReminders();
+        setReminderError('');
+      } catch (remindersError) {
+        if (isMissingRemindersTableError(remindersError)) {
+          setReminders([]);
+          setReminderError('Run the latest Habits reminders SQL migration to enable reminders.');
+        } else {
+          throw remindersError;
+        }
+      }
     } catch (nextError) {
       setError(isMissingHabitsTableError(nextError)
         ? 'Habits needs the latest SQL migration before it can load.'
@@ -99,7 +155,7 @@ export function useHabitsData({ currentUserId } = {}) {
     } finally {
       setLoading(false);
     }
-  }, [currentUserId, loadEntries, loadHabits]);
+  }, [currentUserId, loadEntries, loadHabits, loadReminders]);
 
   useEffect(() => {
     void loadAll();
@@ -249,14 +305,126 @@ export function useHabitsData({ currentUserId } = {}) {
     });
   }, [entries, setEntryStatus]);
 
+  const addReminder = useCallback(async ({
+    title = 'It is time to update your journal.',
+    habitId = '',
+    reminderTime = '21:00',
+    frequency = 'daily',
+    weekdays = [0, 1, 2, 3, 4, 5, 6],
+    isEnabled = true,
+  } = {}) => {
+    setSaving(true);
+    setError('');
+    setReminderError('');
+    try {
+      const habit = habits.find((item) => item.id === habitId) || null;
+      const payload = {
+        user_id: currentUserId,
+        habit_id: habit?.id || null,
+        household_project_id: habit?.householdProjectId || null,
+        title: String(title || '').trim() || 'It is time to update your journal.',
+        reminder_time: normalizeHabitReminderTime(reminderTime),
+        frequency: ['daily', 'weekdays', 'custom'].includes(frequency) ? frequency : 'daily',
+        weekdays: normalizeHabitReminderWeekdays(weekdays).length
+          ? normalizeHabitReminderWeekdays(weekdays)
+          : [0, 1, 2, 3, 4, 5, 6],
+        is_enabled: isEnabled !== false,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London',
+      };
+      const { data, error: insertError } = await supabase
+        .from('habit_reminders')
+        .insert(payload)
+        .select(REMINDER_SELECT)
+        .single();
+      if (insertError) throw insertError;
+      const nextReminder = mapReminder(data);
+      setReminders((previous) => [...previous, nextReminder].sort((left, right) => left.reminderTime.localeCompare(right.reminderTime)));
+      return nextReminder;
+    } catch (nextError) {
+      const message = isMissingRemindersTableError(nextError)
+        ? 'Run the latest Habits reminders SQL migration to enable reminders.'
+        : (nextError?.message || 'Unable to add reminder.');
+      setReminderError(message);
+      throw nextError;
+    } finally {
+      setSaving(false);
+    }
+  }, [currentUserId, habits]);
+
+  const updateReminder = useCallback(async (reminderId, patch = {}) => {
+    const payload = {};
+    if (patch.title !== undefined) payload.title = String(patch.title || '').trim() || 'It is time to update your journal.';
+    if (patch.habitId !== undefined) {
+      const habit = habits.find((item) => item.id === patch.habitId) || null;
+      payload.habit_id = habit?.id || null;
+      payload.household_project_id = habit?.householdProjectId || null;
+    }
+    if (patch.reminderTime !== undefined) payload.reminder_time = normalizeHabitReminderTime(patch.reminderTime);
+    if (patch.frequency !== undefined) payload.frequency = ['daily', 'weekdays', 'custom'].includes(patch.frequency) ? patch.frequency : 'daily';
+    if (patch.weekdays !== undefined) payload.weekdays = normalizeHabitReminderWeekdays(patch.weekdays);
+    if (patch.isEnabled !== undefined) payload.is_enabled = patch.isEnabled !== false;
+    if (!Object.keys(payload).length) return;
+
+    setSaving(true);
+    setError('');
+    setReminderError('');
+    try {
+      const { data, error: updateError } = await supabase
+        .from('habit_reminders')
+        .update(payload)
+        .eq('id', reminderId)
+        .select(REMINDER_SELECT)
+        .single();
+      if (updateError) throw updateError;
+      const nextReminder = mapReminder(data);
+      setReminders((previous) => previous
+        .map((reminder) => (reminder.id === reminderId ? nextReminder : reminder))
+        .sort((left, right) => left.reminderTime.localeCompare(right.reminderTime)));
+    } catch (nextError) {
+      const message = isMissingRemindersTableError(nextError)
+        ? 'Run the latest Habits reminders SQL migration to enable reminders.'
+        : (nextError?.message || 'Unable to update reminder.');
+      setReminderError(message);
+      throw nextError;
+    } finally {
+      setSaving(false);
+    }
+  }, [habits]);
+
+  const deleteReminder = useCallback(async (reminderId) => {
+    setSaving(true);
+    setError('');
+    setReminderError('');
+    try {
+      const { error: deleteError } = await supabase
+        .from('habit_reminders')
+        .delete()
+        .eq('id', reminderId);
+      if (deleteError) throw deleteError;
+      setReminders((previous) => previous.filter((reminder) => reminder.id !== reminderId));
+    } catch (nextError) {
+      const message = isMissingRemindersTableError(nextError)
+        ? 'Run the latest Habits reminders SQL migration to enable reminders.'
+        : (nextError?.message || 'Unable to delete reminder.');
+      setReminderError(message);
+      throw nextError;
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
   return {
     addHabit,
+    addReminder,
     archiveHabit,
+    deleteReminder,
     entries,
     error,
     habits,
     loading,
     refresh: loadAll,
+    reminderError,
+    reminders,
     saving,
     selectedDate,
     setEntryStatus,
@@ -264,6 +432,7 @@ export function useHabitsData({ currentUserId } = {}) {
     today: getHabitTodayKey(),
     updateEntryNote,
     updateHabit,
+    updateReminder,
     goToPreviousWeek: () => setSelectedDate((current) => addHabitDays(current, -7)),
     goToNextWeek: () => setSelectedDate((current) => addHabitDays(current, 7)),
     goToToday: () => setSelectedDate(getHabitTodayKey()),

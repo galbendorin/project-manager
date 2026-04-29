@@ -55,6 +55,110 @@ export const isPushNotificationsSupported = () => (
   && 'PushManager' in window
 );
 
+export const requestAppNotificationPermission = async () => {
+  if (!isPushNotificationsSupported()) {
+    return {
+      supported: false,
+      permission: 'unsupported',
+      message: 'This browser does not support reminders.',
+    };
+  }
+
+  const permission = await window.Notification.requestPermission();
+  return {
+    supported: true,
+    permission,
+    message: permission === 'granted'
+      ? 'Reminders are enabled on this device.'
+      : permission === 'denied'
+        ? 'Notifications are blocked. Allow them in browser settings to get reminders.'
+        : 'Notification permission was not granted.',
+  };
+};
+
+export const showAppNotification = async ({
+  title = 'PM Workspace',
+  body = 'You have a new reminder.',
+  tag = 'pmworkspace-reminder',
+  url = '/',
+  kind = 'app-reminder',
+} = {}) => {
+  if (!isPushNotificationsSupported()) {
+    return { ok: false, message: 'This browser does not support reminders.' };
+  }
+
+  if (window.Notification.permission !== 'granted') {
+    return { ok: false, message: 'Enable reminders on this device first.' };
+  }
+
+  const options = {
+    body,
+    icon: '/pmworkspace-icon-192.png',
+    badge: '/pmworkspace-icon-192.png',
+    tag,
+    data: { url, kind },
+  };
+
+  try {
+    const registration = await getServiceWorkerRegistration();
+    if (registration?.showNotification) {
+      await registration.showNotification(title, options);
+      return { ok: true, message: 'Reminder sent to this device.' };
+    }
+  } catch {
+    // Fall through to the browser Notification constructor.
+  }
+
+  try {
+    const notification = new window.Notification(title, options);
+    notification.onclick = () => {
+      window.focus();
+      if (url) window.location.assign(url);
+    };
+    return { ok: true, message: 'Reminder sent to this device.' };
+  } catch (error) {
+    return { ok: false, message: error?.message || 'Unable to show the reminder.' };
+  }
+};
+
+export const sendHabitReminderTestAlert = async () => {
+  if (!isPushNotificationsSupported()) {
+    return {
+      supported: false,
+      enabled: false,
+      permission: 'unsupported',
+      message: 'This browser does not support reminders.',
+    };
+  }
+
+  const permission = window.Notification.permission;
+  if (permission !== 'granted') {
+    return {
+      supported: true,
+      enabled: false,
+      permission,
+      message: permission === 'denied'
+        ? 'Notifications are blocked. Allow them in browser settings, then try the test again.'
+        : 'Enable reminders first, then send a test reminder.',
+    };
+  }
+
+  const result = await showAppNotification({
+    title: 'Habit reminder test',
+    body: 'Reminders are working on this device.',
+    tag: 'habit-reminder-test',
+    url: '/habits',
+    kind: 'habit-reminder',
+  });
+
+  return {
+    supported: true,
+    enabled: result.ok,
+    permission,
+    message: result.message || (result.ok ? 'Test reminder sent.' : 'Unable to send a test reminder.'),
+  };
+};
+
 export const syncExistingPushSubscription = async () => {
   if (!isPushNotificationsSupported()) {
     return {

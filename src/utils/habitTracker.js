@@ -1,6 +1,7 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const HABIT_STATUSES = ['yes', 'no', 'skip'];
+export const HABIT_REMINDER_FREQUENCIES = ['daily', 'weekdays', 'custom'];
 
 export const formatHabitDateKey = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
@@ -142,4 +143,47 @@ export const getHabitStreak = ({ habit, entries = [], endDate = getHabitTodayKey
     cursor = addHabitDays(cursor, -1);
   }
   return streak;
+};
+
+export const normalizeHabitReminderTime = (value = '') => {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return '21:00';
+  const hours = Math.min(23, Math.max(0, Number(match[1]) || 0));
+  const minutes = Math.min(59, Math.max(0, Number(match[2]) || 0));
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+export const getHabitReminderWeekday = (dateKey = getHabitTodayKey()) => {
+  const date = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return new Date().getDay();
+  return date.getDay();
+};
+
+export const normalizeHabitReminderWeekdays = (value = []) => {
+  const source = Array.isArray(value) ? value : [];
+  const days = source
+    .map((day) => Number(day))
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+  return [...new Set(days)].sort((left, right) => left - right);
+};
+
+export const isHabitReminderDueOnDate = (reminder = {}, dateKey = getHabitTodayKey()) => {
+  if (reminder.isEnabled === false) return false;
+  const frequency = HABIT_REMINDER_FREQUENCIES.includes(reminder.frequency)
+    ? reminder.frequency
+    : 'daily';
+  if (frequency === 'daily') return true;
+
+  const weekday = getHabitReminderWeekday(dateKey);
+  if (frequency === 'weekdays') return weekday >= 1 && weekday <= 5;
+
+  return normalizeHabitReminderWeekdays(reminder.weekdays).includes(weekday);
+};
+
+export const getDueHabitReminders = ({ reminders = [], dateKey = getHabitTodayKey(), time = '' } = {}) => {
+  const normalizedTime = normalizeHabitReminderTime(time);
+  return reminders.filter((reminder) => (
+    normalizeHabitReminderTime(reminder.reminderTime || reminder.reminder_time) === normalizedTime
+    && isHabitReminderDueOnDate(reminder, dateKey)
+  ));
 };

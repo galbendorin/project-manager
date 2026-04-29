@@ -4,10 +4,14 @@ import assert from 'node:assert/strict';
 import {
   buildHabitTrendBuckets,
   cycleHabitStatus,
+  getDueHabitReminders,
   getHabitStreak,
   getHabitWeekDays,
   getHabitWeekStart,
+  isHabitReminderDueOnDate,
   isHabitSuccess,
+  normalizeHabitReminderTime,
+  normalizeHabitReminderWeekdays,
   summarizeHabitRange,
 } from './habitTracker.js';
 
@@ -100,4 +104,38 @@ test('getHabitStreak counts consecutive successful days', () => {
       { habitId: 'alcohol', entryDate: '2026-04-29', status: 'no' },
     ],
   }), 2);
+});
+
+test('habit reminder helpers normalize time and weekdays', () => {
+  assert.equal(normalizeHabitReminderTime('7:05:00'), '07:05');
+  assert.equal(normalizeHabitReminderTime('25:99'), '23:59');
+  assert.equal(normalizeHabitReminderTime('not a time'), '21:00');
+  assert.deepEqual(normalizeHabitReminderWeekdays([1, 2, 2, 7, '3', -1]), [1, 2, 3]);
+});
+
+test('habit reminder due checks support daily, weekdays, and custom schedules', () => {
+  assert.equal(isHabitReminderDueOnDate({ frequency: 'daily', isEnabled: true }, '2026-04-26'), true);
+  assert.equal(isHabitReminderDueOnDate({ frequency: 'weekdays', isEnabled: true }, '2026-04-27'), true);
+  assert.equal(isHabitReminderDueOnDate({ frequency: 'weekdays', isEnabled: true }, '2026-04-26'), false);
+  assert.equal(isHabitReminderDueOnDate({ frequency: 'custom', weekdays: [0, 6], isEnabled: true }, '2026-04-26'), true);
+  assert.equal(isHabitReminderDueOnDate({ frequency: 'custom', weekdays: [0, 6], isEnabled: true }, '2026-04-27'), false);
+  assert.equal(isHabitReminderDueOnDate({ frequency: 'daily', isEnabled: false }, '2026-04-27'), false);
+});
+
+test('getDueHabitReminders returns reminders matching date and time', () => {
+  const reminders = [
+    { id: 'daily', reminderTime: '21:55', frequency: 'daily', isEnabled: true },
+    { id: 'wrong-time', reminderTime: '21:56', frequency: 'daily', isEnabled: true },
+    { id: 'weekend', reminderTime: '21:55', frequency: 'weekdays', isEnabled: true },
+    { id: 'disabled', reminderTime: '21:55', frequency: 'daily', isEnabled: false },
+  ];
+
+  assert.deepEqual(
+    getDueHabitReminders({ reminders, dateKey: '2026-04-27', time: '21:55' }).map((reminder) => reminder.id),
+    ['daily', 'weekend']
+  );
+  assert.deepEqual(
+    getDueHabitReminders({ reminders, dateKey: '2026-04-26', time: '21:55' }).map((reminder) => reminder.id),
+    ['daily']
+  );
 });
