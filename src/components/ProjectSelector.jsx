@@ -355,165 +355,90 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
                 )}
 
                 {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
-                    <div className="flex items-start justify-between gap-3">
+                  <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="pm-kicker">Meal Planner</p>
-                        <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Plan meals</h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">
-                          Build a Monday-to-Sunday meal plan, reuse recipes, and turn the week into one grocery draft.
-                        </p>
+                        <p className="pm-kicker mb-1">Meal Planner</p>
+                        <h2 className="truncate text-base font-semibold text-slate-900">Plan meals</h2>
                       </div>
                       <button
                         type="button"
                         onClick={onOpenMeals}
-                        className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
+                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
                       >
                         Open
                       </button>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Weekly planner
-                      </span>
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Recipe library
-                      </span>
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Shopping draft
-                      </span>
                     </div>
                   </div>
                 )}
 
                 {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
-                    <div className="flex items-start justify-between gap-3">
+                  <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="pm-kicker">Shopping List</p>
-                        <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Share groceries</h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">
-                          Keep one simple grocery list you can share with your household and update by voice.
-                        </p>
+                        <p className="pm-kicker mb-1">Shopping List</p>
+                        <h2 className="truncate text-base font-semibold text-slate-900">Share groceries</h2>
                       </div>
                       <button
                         type="button"
                         onClick={onOpenShopping}
-                        className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
+                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
                       >
                         Open
                       </button>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Shared list
-                      </span>
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Voice add
-                      </span>
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Groceries
-                      </span>
                     </div>
                   </div>
                 )}
 
                 {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
-                    <div className="flex items-start justify-between gap-3">
+                  <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="pm-kicker">Baby</p>
-                        <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Track care</h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">
-                          Log feeds, nappies, sleep, and weight in one shared household dashboard.
-                        </p>
+                        <p className="pm-kicker mb-1">Baby</p>
+                        <h2 className="truncate text-base font-semibold text-slate-900">Track care</h2>
                       </div>
                       <button
                         type="button"
                         onClick={onOpenBaby}
-                        className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
+                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
                       >
                         Open
                       </button>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Feeds
-                      </span>
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Nappies
-                      </span>
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Sleep grid
-                      </span>
                     </div>
                   </div>
                 )}
 
                 {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
-                    <div className="flex items-start justify-between gap-3">
+                  <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="pm-kicker">Habits</p>
-                        <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Track habits</h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">
-                          Mark daily behaviours, review trends, and keep lightweight journal notes.
-                        </p>
+                        <p className="pm-kicker mb-1">Habits</p>
+                        <h2 className="truncate text-base font-semibold text-slate-900">Track habits</h2>
                       </div>
                       <button
                         type="button"
                         onClick={onOpenHabits}
-                        className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
+                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
                       >
                         Open
                       </button>
                     </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Journal
-                      </span>
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Trends
-                      </span>
-                      <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                        Notes
-                      </span>
-                    </div>
                   </div>
                 )}
 
-                <div className="pm-utility-card mt-5 hidden rounded-[28px] p-5 lg:block">
-                  <div className="flex items-start justify-between gap-3">
+                <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
+                  <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="pm-kicker">Timesheets</p>
-                      <h2 className="mt-2 text-[1.5rem] font-bold tracking-[-0.04em] text-slate-950">Log hours</h2>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">
-                        Track time across owned and shared work without leaving the workspace.
-                      </p>
+                      <p className="pm-kicker mb-1">Timesheets</p>
+                      <h2 className="truncate text-base font-semibold text-slate-900">Log hours</h2>
                     </div>
                     <button
                       type="button"
                       onClick={onOpenTrack}
-                      className="pm-subtle-button shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition"
+                      className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
                     >
                       Open
                     </button>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                      Weekly view
-                    </span>
-                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                      Owned + shared
-                    </span>
-                    <span className="pm-utility-chip rounded-full px-2.5 py-1 text-[11px] font-medium">
-                      Excel export
-                    </span>
                   </div>
                 </div>
               </div>
