@@ -18,6 +18,7 @@ const AuthenticatedTrackShell = lazy(() => import('./components/AppWorkspaceShel
 const AuthenticatedShoppingShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedShoppingShell })));
 const AuthenticatedMealPlannerShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedMealPlannerShell })));
 const AuthenticatedBabyShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedBabyShell })));
+const AuthenticatedHabitsShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedHabitsShell })));
 
 const normalizeAppPath = (value = '/') => {
   const normalized = String(value || '/').replace(/\/+$/, '');
@@ -48,16 +49,16 @@ const renderLazyPage = (node, label) => (
   </Suspense>
 );
 
-const HouseholdToolUnavailable = ({ onGoToProjects }) => (
+const HouseholdToolUnavailable = ({ onGoToProjects, toolName = 'This tool' }) => (
   <div className="min-h-screen bg-[var(--pm-page-bg,#f8fafc)] px-4 py-10">
     <div className="mx-auto flex min-h-[70vh] max-w-xl items-center">
       <div className="w-full rounded-[32px] border border-slate-200 bg-white p-6 text-center shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
         <p className="pm-kicker">Household tools</p>
         <h1 className="mt-3 text-3xl font-black tracking-[-0.05em] text-slate-950">
-          Baby is not available on this account
+          {toolName} is not available on this account
         </h1>
         <p className="mt-3 text-sm leading-6 text-slate-500">
-          Baby is a private household mini-tool. It only appears when household tools are enabled for your account.
+          {toolName} is a private personal mini-tool. It only appears when household tools are enabled for your account.
         </p>
         <button
           type="button"
@@ -211,7 +212,7 @@ function App() {
     );
   }
 
-  if (planLoading && (currentPath === '/shopping' || currentPath === '/meals' || currentPath === '/baby')) {
+  if (planLoading && (currentPath === '/shopping' || currentPath === '/meals' || currentPath === '/baby' || currentPath === '/habits')) {
     return (
       <>
         <OfflineBanner isOnline={isOnline} />
@@ -273,8 +274,20 @@ function App() {
                     />,
                     'Loading Baby...'
                   )
-                : currentPath === '/baby'
-                  ? <HouseholdToolUnavailable onGoToProjects={openProjectSelector} />
+                : currentPath === '/habits' && householdToolsEnabled
+                  ? renderLazyPage(
+                      <AuthenticatedHabitsShell
+                        currentUserId={user.id}
+                        userEmail={user.email}
+                        onGoToProjects={openProjectSelector}
+                        onSignOut={signOut}
+                        accentTheme={accentTheme}
+                        onAccentThemeChange={setAccentTheme}
+                      />,
+                      'Loading Habits...'
+                    )
+                  : currentPath === '/baby' || currentPath === '/habits'
+                    ? <HouseholdToolUnavailable onGoToProjects={openProjectSelector} toolName={currentPath === '/habits' ? 'Habits' : 'Baby'} />
             : renderLazyPage(
                 <ProjectSelector
                   onSelectProject={(project) => {
@@ -286,6 +299,7 @@ function App() {
                   onOpenShopping={() => householdToolsEnabled && navigateToPath('/shopping')}
                   onOpenMeals={() => householdToolsEnabled && navigateToPath('/meals')}
                   onOpenBaby={() => householdToolsEnabled && navigateToPath('/baby')}
+                  onOpenHabits={() => householdToolsEnabled && navigateToPath('/habits')}
                   accentTheme={accentTheme}
                   onAccentThemeChange={setAccentTheme}
                 />,
