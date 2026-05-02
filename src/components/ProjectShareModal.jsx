@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeInviteEmail } from '../utils/projectSharing';
 
@@ -33,6 +33,7 @@ const ProjectShareModal = ({
   const [pendingInvites, setPendingInvites] = useState([]);
   const [loadingPendingInvites, setLoadingPendingInvites] = useState(false);
   const [supportsPendingInvites, setSupportsPendingInvites] = useState(true);
+  const closeButtonRef = useRef(null);
 
   const members = useMemo(
     () => (Array.isArray(project?.project_members) ? project.project_members : []),
@@ -88,6 +89,26 @@ const ProjectShareModal = ({
     if (!isOpen || !project?.id) return;
     void fetchPendingInvites();
   }, [fetchPendingInvites, isOpen, project?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose?.();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const focusFrame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.cancelAnimationFrame(focusFrame);
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen || !project) return null;
 
@@ -210,29 +231,40 @@ const ProjectShareModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-      <div className="absolute inset-0" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
-        <div className="border-b border-slate-200 bg-slate-50 px-6 py-5">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 px-0 sm:items-center sm:px-4">
+      <button
+        type="button"
+        className="absolute inset-0 w-full cursor-default"
+        onClick={onClose}
+        aria-label="Close project access dialog"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="project-share-title"
+        className="relative z-10 flex max-h-[calc(100dvh-16px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-slate-200 bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-[28px]"
+      >
+        <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-4 py-5 sm:px-6">
           <div className="flex items-start justify-between gap-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Project access</p>
-              <h2 className="mt-1 text-xl font-bold text-slate-900">{project.name}</h2>
+              <h2 id="project-share-title" className="mt-1 break-words text-xl font-bold text-slate-900">{project.name}</h2>
               <p className="mt-2 text-sm text-slate-500">
                 Add up to {MAX_PROJECT_EDITORS} editors. Existing accounts are added straight away; new accounts can accept access after signup.
               </p>
             </div>
             <button
+              ref={closeButtonRef}
               type="button"
               onClick={onClose}
-              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
             >
               Close
             </button>
           </div>
         </div>
 
-        <div className="space-y-4 px-6 py-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom,0px)+20px)] sm:px-6 sm:pb-5">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
             {readOnly
               ? 'You can view and edit shared household records, but only the owner can add or remove access.'
@@ -269,12 +301,12 @@ const ProjectShareModal = ({
 
                   {members.map((member) => (
                     <div key={member.id || member.user_id || member.member_email} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">{member.member_email}</p>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="break-all text-sm font-semibold text-slate-900">{member.member_email}</p>
                           <p className="mt-1 text-xs text-slate-500">Editor access</p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="rounded-full border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
                             Editor
                           </span>
@@ -301,12 +333,12 @@ const ProjectShareModal = ({
 
                   {pendingInvites.map((invite) => (
                     <div key={invite.id} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">{invite.member_email}</p>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="break-all text-sm font-semibold text-slate-900">{invite.member_email}</p>
                           <p className="mt-1 text-xs text-slate-500">Pending until this person signs up or signs in</p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700">
                             Pending
                           </span>

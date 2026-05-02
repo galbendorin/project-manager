@@ -2,49 +2,54 @@
 
 ### Source of truth
 
-- Primary working repo: `/Users/doringalben/Documents/project-manager`
+- Primary working repo: `/Users/doringalben/Documents/New project 2/project-manager-live`
 - GitHub remote: `https://github.com/galbendorin/project-manager.git`
 
 Work from this repo for all app changes.
 
-Do not use these folders as the main working copy:
+Treat these folders as older archives or scratch copies unless the user explicitly moves the active project again:
 
 - `/Users/doringalben/Documents/New project 2`
+- `/Users/doringalben/Documents/project-manager`
 - `/tmp/project-manager-publish`
-
-Those can stay as archive or scratch space, but not as the place we edit and ship from.
 
 ### Branch rules
 
-- `main` = stable branch only
-- `codex/stability` = current working branch for cleanup, fixes, and safe app improvements
-- future work branches should follow `codex/<topic>`
+- `main` = stable branch only; do not push it live while it is behind `origin/main` or has unrelated local changes.
+- Work branches should follow `codex/<topic>`.
+- Keep household tools behind `household_tools_enabled` and out of the public PM launch surface unless explicitly enabled.
 
 ### Local workflow
 
 ```bash
-cd /Users/doringalben/Documents/project-manager
-git checkout main
-git pull
-git checkout codex/stability
+cd "/Users/doringalben/Documents/New project 2/project-manager-live"
+git status --short --branch
+git fetch origin
 npm install
 npm run dev
 ```
 
+If the worktree is clean and `main` is behind, sync before release work:
+
+```bash
+git pull --ff-only origin main
+```
+
 ### Before pushing
 
-Run the core checks from the real repo:
+Run the local preflight from the real repo:
 
 ```bash
-npm run test:ci
-npm run build
+npm run release:preflight
 ```
 
-Optional browser smoke test:
+If authenticated smoke credentials are not available locally, run the deterministic checks and skip smoke only for local iteration:
 
 ```bash
-npm run smoke:user
+npm run release:preflight -- --skip-smoke
 ```
+
+Run `npm run smoke:user` before pushing live when the `SMOKE_*` environment variables are available.
 
 ### Release flow
 

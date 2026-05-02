@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TASK_TYPES, DEP_TYPES, DEFAULT_TASK } from '../utils/constants';
 
 const TaskModal = ({ 
@@ -9,6 +9,7 @@ const TaskModal = ({
   insertAfterId = null 
 }) => {
   const [formData, setFormData] = useState(DEFAULT_TASK);
+  const closeButtonRef = useRef(null);
 
   useEffect(() => {
     if (task) {
@@ -39,24 +40,58 @@ const TaskModal = ({
     onClose();
   };
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose?.();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const focusFrame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.cancelAnimationFrame(focusFrame);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center modal-overlay">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden m-4 border border-slate-200">
-        <div className="bg-slate-50 px-10 py-6 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="text-xl font-black text-slate-800 tracking-tight">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 px-0 sm:items-center sm:px-4">
+      <button
+        type="button"
+        className="absolute inset-0 w-full cursor-default"
+        onClick={onClose}
+        aria-label="Close task editor"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="task-modal-title"
+        className="relative z-10 flex max-h-[calc(100dvh-16px)] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
+      >
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 bg-slate-50 px-4 py-4 sm:px-10 sm:py-6">
+          <h3 id="task-modal-title" className="text-xl font-black tracking-tight text-slate-800">
             {task ? 'Edit Task' : 'New Task'}
           </h3>
           <button
+            ref={closeButtonRef}
+            type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-900 text-3xl"
+            className="rounded-full p-1 text-3xl leading-none text-slate-400 hover:text-slate-900"
+            aria-label="Close task editor"
           >
             &times;
           </button>
         </div>
 
-        <div className="p-10 space-y-6">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-5 sm:space-y-6 sm:p-10">
           {/* Task Name */}
           <div>
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
@@ -72,7 +107,7 @@ const TaskModal = ({
           </div>
 
           {/* Type and Start Date */}
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
                 Type
@@ -103,7 +138,7 @@ const TaskModal = ({
           </div>
 
           {/* Duration, Predecessor, Dependency Type */}
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-6">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
                 Dur (Days)
@@ -148,7 +183,7 @@ const TaskModal = ({
           </div>
 
           {/* Indent and Progress */}
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
                 Indent Level
@@ -177,16 +212,18 @@ const TaskModal = ({
           </div>
         </div>
 
-        <div className="bg-slate-50 px-10 py-6 border-t border-slate-100 flex justify-end gap-3">
+        <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-100 bg-slate-50 px-4 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+16px)] sm:flex-row sm:justify-end sm:px-10 sm:py-6">
           <button
+            type="button"
             onClick={onClose}
-            className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
+            className="rounded-2xl px-6 py-3 text-sm font-bold text-slate-500 transition-colors hover:bg-white hover:text-slate-800"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSubmit}
-            className="px-12 py-3 text-sm font-black text-white bg-indigo-600 rounded-2xl hover:bg-indigo-700 shadow-xl transition-all"
+            className="rounded-2xl bg-indigo-600 px-12 py-3 text-sm font-black text-white shadow-xl transition-all hover:bg-indigo-700"
           >
             Save Changes
           </button>

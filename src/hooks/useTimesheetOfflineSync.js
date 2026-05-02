@@ -5,6 +5,21 @@ import { replaceQueuedTargetId } from '../utils/offlineQueue';
 
 const TIME_ENTRY_SELECT = 'id, project_id, user_id, entry_date, start_minutes, duration_minutes, description, created_at, updated_at';
 
+const getTimesheetSyncFailure = (operation, error) => {
+  const actionByKind = {
+    create: 'add',
+    update: 'update',
+    delete: 'delete',
+  };
+  const action = actionByKind[operation?.kind] || 'sync';
+
+  return {
+    targetId: operation?.targetId || operation?.record?.localId || '',
+    message: `Unable to ${action} this Timesheet entry right now. The change is still saved on this device; retry when the connection settles.`,
+    technicalMessage: error?.message || '',
+  };
+};
+
 export function useTimesheetOfflineSync({
   currentUserId,
   isOnline,
@@ -21,6 +36,7 @@ export function useTimesheetOfflineSync({
   formatSyncTimeLabel,
 }) {
   const [syncingQueue, setSyncingQueue] = useState(false);
+  const [syncFailure, setSyncFailure] = useState(null);
   const syncingQueueRef = useRef(false);
 
   const syncOfflineQueue = useCallback(async () => {
@@ -32,68 +48,97 @@ export function useTimesheetOfflineSync({
 
     syncingQueueRef.current = true;
     setSyncingQueue(true);
+    setSyncFailure(null);
     let entriesByWeek = { ...(cachedState.entriesByWeek || {}) };
+    let failure = null;
+    let currentOp = null;
 
-    while (queue.length > 0) {
-      const op = queue[0];
+    try {
+      while (queue.length > 0) {
+        const op = queue[0];
+        currentOp = op;
 
-      if (op.kind === 'create') {
-        const { data, error } = await supabase
-          .from('time_entries')
-          .insert(op.record?.payload || op.record?.data || op.payload)
-          .select(TIME_ENTRY_SELECT)
-          .single();
+        if (op.kind === 'create') {
+          const { data, error } = await supabase
+            .from('time_entries')
+            .insert(op.record?.payload || op.record?.data || op.payload)
+            .select(TIME_ENTRY_SELECT)
+            .single();
 
-        if (error || !data) break;
+          if (error || !data) {
+            failure = getTimesheetSyncFailure(op, error || new Error('No saved entry returned.'));
+            break;
+          }
 
-        const previousId = op.targetId;
-        Object.keys(entriesByWeek).forEach((key) => {
-          entriesByWeek[key] = sortEntries((entriesByWeek[key] || []).map((entry) => (
-            entry.id === previousId ? data : entry
-          )));
-        });
-        queue = replaceQueuedTargetId(queue.slice(1), previousId, data.id);
-        continue;
+          const previousId = op.targetId;
+          Object.keys(entriesByWeek).forEach((key) => {
+            entriesByWeek[key] = sortEntries((entriesByWeek[key] || []).map((entry) => (
+              entry.id === previousId ? data : entry
+            )));
+          });
+          queue = replaceQueuedTargetId(queue.slice(1), previousId, data.id);
+          continue;
+        }
+
+        if (op.kind === 'update') {
+          const { error } = await supabase
+            .from('time_entries')
+            .update(op.patch)
+            .eq('id', op.targetId)
+            .eq('user_id', currentUserId);
+
+          if (error) {
+            failure = getTimesheetSyncFailure(op, error);
+            break;
+          }
+          queue = queue.slice(1);
+          continue;
+        }
+
+        if (op.kind === 'delete') {
+          const { error } = await supabase
+            .from('time_entries')
+            .delete()
+            .eq('id', op.targetId)
+            .eq('user_id', currentUserId);
+
+          if (error) {
+            failure = getTimesheetSyncFailure(op, error);
+            break;
+          }
+          queue = queue.slice(1);
+          continue;
+        }
+
+        failure = getTimesheetSyncFailure(op, new Error(`Unsupported offline operation: ${op.kind || 'unknown'}`));
+        break;
       }
-
-      if (op.kind === 'update') {
-        const { error } = await supabase
-          .from('time_entries')
-          .update(op.patch)
-          .eq('id', op.targetId)
-          .eq('user_id', currentUserId);
-
-        if (error) break;
-        queue = queue.slice(1);
-        continue;
-      }
-
-      if (op.kind === 'delete') {
-        const { error } = await supabase
-          .from('time_entries')
-          .delete()
-          .eq('id', op.targetId)
-          .eq('user_id', currentUserId);
-
-        if (error) break;
-        queue = queue.slice(1);
-      }
+    } catch (error) {
+      failure = getTimesheetSyncFailure(currentOp, error);
     }
 
-    persistOfflineState({
-      ...cachedState,
-      entriesByWeek,
-      queue,
-      selectedProjectId,
-      weekStart,
-      viewMode,
-      lastSyncedAt: queue.length === 0 ? new Date().toISOString() : cachedState.lastSyncedAt,
-    });
-    if (entriesByWeek[weekStart]) {
-      setEntries(sortEntries(entriesByWeek[weekStart]));
+    try {
+      persistOfflineState({
+        ...cachedState,
+        entriesByWeek,
+        queue,
+        selectedProjectId,
+        weekStart,
+        viewMode,
+        lastSyncedAt: queue.length === 0 ? new Date().toISOString() : cachedState.lastSyncedAt,
+      });
+      if (entriesByWeek[weekStart]) {
+        setEntries(sortEntries(entriesByWeek[weekStart]));
+      }
+      if (queue.length === 0) {
+        setSyncFailure(null);
+      } else if (failure) {
+        setSyncFailure(failure);
+      }
+    } finally {
+      syncingQueueRef.current = false;
+      setSyncingQueue(false);
     }
-    syncingQueueRef.current = false;
-    setSyncingQueue(false);
   }, [
     currentUserId,
     isOnline,
@@ -107,6 +152,11 @@ export function useTimesheetOfflineSync({
   ]);
 
   useEffect(() => {
+    void syncOfflineQueue();
+  }, [syncOfflineQueue]);
+
+  const retryTimesheetSync = useCallback(() => {
+    setSyncFailure(null);
     void syncOfflineQueue();
   }, [syncOfflineQueue]);
 
@@ -129,6 +179,9 @@ export function useTimesheetOfflineSync({
     if (syncingQueue && queueCount > 0) {
       return `Syncing ${queueCount} offline change${queueCount === 1 ? '' : 's'}...`;
     }
+    if (syncFailure && queueCount > 0) {
+      return syncFailure.message;
+    }
     if (queueCount > 0) {
       return isOnline
         ? `${queueCount} offline change${queueCount === 1 ? '' : 's'} ready to sync.`
@@ -141,7 +194,7 @@ export function useTimesheetOfflineSync({
     return isOnline
       ? 'This week stays cached on this device once it loads.'
       : 'You are working from the last cached copy on this device.';
-  }, [formatSyncTimeLabel, isOnline, lastSyncedAt, offlineQueue.length, syncingQueue]);
+  }, [formatSyncTimeLabel, isOnline, lastSyncedAt, offlineQueue.length, syncFailure, syncingQueue]);
 
   const syncCenterItems = useMemo(() => {
     const items = [
@@ -160,11 +213,25 @@ export function useTimesheetOfflineSync({
       items.push({
         id: 'queue',
         label: `${offlineQueue.length} Timesheet change${offlineQueue.length === 1 ? '' : 's'} waiting`,
-        detail: syncingQueue
+        detail: syncFailure
+          ? 'One queued change needs another attempt before the queue can finish.'
+          : syncingQueue
           ? 'The queued entries are being pushed to the server now.'
           : 'These entries stay on your phone and will sync automatically.',
-        status: syncingQueue ? 'syncing' : 'queue',
-        statusLabel: syncingQueue ? 'Syncing' : 'Queued',
+        status: syncFailure ? 'error' : syncingQueue ? 'syncing' : 'queue',
+        statusLabel: syncFailure ? 'Needs retry' : syncingQueue ? 'Syncing' : 'Queued',
+      });
+    }
+
+    if (syncFailure) {
+      items.push({
+        id: 'failed',
+        label: 'Timesheet sync needs attention',
+        detail: syncFailure.message,
+        status: 'error',
+        statusLabel: 'Retry',
+        actionLabel: isOnline && !syncingQueue ? 'Retry sync' : '',
+        onAction: isOnline && !syncingQueue ? retryTimesheetSync : undefined,
       });
     }
 
@@ -179,10 +246,11 @@ export function useTimesheetOfflineSync({
     }
 
     return items;
-  }, [formatSyncTimeLabel, isOnline, lastSyncedAt, offlineQueue.length, syncingQueue]);
+  }, [formatSyncTimeLabel, isOnline, lastSyncedAt, offlineQueue.length, retryTimesheetSync, syncFailure, syncingQueue]);
 
   return {
     syncingQueue,
+    syncFailure,
     entrySyncStateById,
     offlineStatusLabel,
     syncCenterItems,

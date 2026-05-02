@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { PlanProvider } from './contexts/PlanContext';
 import App from './App';
 import './styles/index.css';
+import { isSupabaseConfigured, supabaseConfigStatus } from './lib/supabase';
 import { registerServiceWorker } from './utils/registerServiceWorker';
 import {
   buildChunkRecoveryUrl,
@@ -85,12 +86,38 @@ window.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('pageshow', applyStandaloneViewport);
 registerServiceWorker();
 
+const missingConfigLabel = import.meta.env.DEV ? 'Local setup' : 'Configuration';
+const missingConfigMessage = import.meta.env.DEV
+  ? 'PM Workspace needs its public Supabase URL and anon key before the app can start locally. Add the missing Vite variables, then restart the dev server.'
+  : 'PM Workspace is missing required public Supabase configuration. Please try again shortly.';
+
+const MissingSupabaseConfig = () => (
+  <div className="min-h-screen bg-slate-950 px-6 py-10 text-white">
+    <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-xl flex-col justify-center">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-2xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300">{missingConfigLabel}</p>
+        <h1 className="mt-3 text-2xl font-bold">Supabase environment is missing</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-300">{missingConfigMessage}</p>
+        <div className="mt-5 rounded-xl border border-white/10 bg-slate-900 px-4 py-3 font-mono text-sm text-slate-100">
+          {supabaseConfigStatus.missingKeys.map((key) => (
+            <div key={key}>{key}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <AuthProvider>
-      <PlanProvider>
-        <App />
-      </PlanProvider>
-    </AuthProvider>
+    {isSupabaseConfigured ? (
+      <AuthProvider>
+        <PlanProvider>
+          <App />
+        </PlanProvider>
+      </AuthProvider>
+    ) : (
+      <MissingSupabaseConfig />
+    )}
   </React.StrictMode>
 );

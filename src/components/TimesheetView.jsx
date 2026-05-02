@@ -521,6 +521,7 @@ export default function TimesheetView({
   ]);
   const {
     syncingQueue,
+    syncFailure,
     entrySyncStateById,
     offlineStatusLabel,
     syncCenterItems,
@@ -584,7 +585,7 @@ export default function TimesheetView({
         onBackToProject={onBackToProject}
       />
       <MobileSyncCenter
-        shouldShow={!isOnline || syncingQueue || offlineQueue.length > 0}
+        shouldShow={!isOnline || syncingQueue || offlineQueue.length > 0 || Boolean(syncFailure)}
         title="Timesheet sync"
         summary={offlineStatusLabel}
         queueCount={offlineQueue.length}

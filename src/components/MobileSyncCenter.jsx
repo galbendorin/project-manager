@@ -49,7 +49,7 @@ export default function MobileSyncCenter({
             onClick={() => setOpen(false)}
             className="absolute inset-0 bg-slate-950/35"
           />
-          <div className="absolute inset-x-0 bottom-0 rounded-t-[28px] border border-slate-200 bg-[#faf7f1] px-4 pb-6 pt-4 shadow-[0_-18px_55px_-28px_rgba(15,23,42,0.45)]">
+          <div className="absolute inset-x-0 bottom-0 max-h-[calc(100dvh-24px)] overflow-y-auto rounded-t-[28px] border border-slate-200 bg-[#faf7f1] px-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] pt-4 shadow-[0_-18px_55px_-28px_rgba(15,23,42,0.45)]">
             <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-300" />
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -72,12 +72,12 @@ export default function MobileSyncCenter({
                 <div key={item.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold text-slate-900">{item.label}</div>
+                      <div className="break-words text-sm font-semibold text-slate-900">{item.label}</div>
                       {item.detail ? (
-                        <div className="mt-1 text-xs leading-5 text-slate-500">{item.detail}</div>
+                        <div className="mt-1 break-words text-xs leading-5 text-slate-500">{item.detail}</div>
                       ) : null}
                     </div>
-                    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClassName(item.status)}`}>
+                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClassName(item.status)}`}>
                       {item.statusLabel}
                     </span>
                   </div>
