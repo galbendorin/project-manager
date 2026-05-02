@@ -246,7 +246,7 @@ const MobileLayout = ({
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-white">
+    <div className="flex h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-white">
       <MobileHeader
         projectName={project.name}
         moduleType={mobileHeaderModuleType}

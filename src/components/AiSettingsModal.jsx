@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PROVIDERS, loadAiSettings, saveAiSettings, clearAiSettings, isAiConfigured, STORAGE_SCOPES } from '../utils/aiSettings';
 import { supabase } from '../lib/supabase';
 
@@ -7,6 +7,7 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
   const [showKey, setShowKey] = useState(false);
   const [testStatus, setTestStatus] = useState(null); // null | 'testing' | 'success' | 'error'
   const [testError, setTestError] = useState('');
+  const closeButtonRef = useRef(null);
 
   const currentProvider = PROVIDERS[settings.provider];
 
@@ -93,18 +94,44 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
   const canSave = settings.apiKey.trim().length > 0;
   const canTest = isAiConfigured(settings);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose?.();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const focusFrame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.cancelAnimationFrame(focusFrame);
+    };
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center px-4">
-      <div className="w-full max-w-md bg-white border border-slate-200 rounded-xl shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 px-0 sm:items-center sm:px-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-settings-title"
+        className="flex max-h-[calc(100dvh-16px)] w-full max-w-md flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white shadow-xl sm:max-h-[90vh] sm:rounded-xl"
+      >
         {/* Header */}
-        <div className="px-5 pt-5 pb-3 border-b border-slate-100">
+        <div className="shrink-0 border-b border-slate-100 px-5 pb-3 pt-5">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-[13px] font-bold text-slate-800">AI Configuration</h2>
+              <h2 id="ai-settings-title" className="text-[13px] font-bold text-slate-800">AI Configuration</h2>
               <p className="text-[11px] text-slate-400 mt-0.5">Bring Your Own Key — stored locally only</p>
             </div>
             <button
+              ref={closeButtonRef}
+              type="button"
               onClick={onClose}
+              aria-label="Close AI configuration"
               className="text-slate-400 hover:text-slate-600 text-lg leading-none p-1"
             >
               ✕
@@ -113,18 +140,19 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
         </div>
 
         {/* Body */}
-        <div className="px-5 py-4 space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {/* Provider selector */}
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
               Provider
             </label>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {Object.values(PROVIDERS).map(p => (
                 <button
+                  type="button"
                   key={p.id}
                   onClick={() => handleProviderChange(p.id)}
-                  className={`flex-1 text-[11px] font-medium px-3 py-2 rounded-lg border transition-all ${
+                  className={`text-[11px] font-medium px-3 py-2 rounded-lg border transition-all ${
                     settings.provider === p.id
                       ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                       : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
@@ -179,6 +207,7 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
                 autoComplete="off"
               />
               <button
+                type="button"
                 onClick={() => setShowKey(!showKey)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-400 hover:text-slate-600 px-1.5 py-0.5"
               >
@@ -231,8 +260,9 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
 
           {/* Test connection */}
           {canTest && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
+                type="button"
                 onClick={handleTest}
                 disabled={testStatus === 'testing'}
                 className={`text-[11px] font-medium px-3 py-1.5 rounded-md border transition-all ${
@@ -247,7 +277,7 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
                 <span className="text-[11px] font-medium text-emerald-600">✓ Connected</span>
               )}
               {testStatus === 'error' && (
-                <span className="text-[11px] font-medium text-rose-600" title={testError}>
+                <span className="break-words text-[11px] font-medium text-rose-600" title={testError}>
                   ✕ {testError.length > 50 ? testError.slice(0, 50) + '…' : testError}
                 </span>
               )}
@@ -256,8 +286,9 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] sm:pb-3">
           <button
+            type="button"
             onClick={handleClear}
             className="text-[11px] font-medium text-rose-500 hover:text-rose-700 px-2 py-1"
           >
@@ -265,12 +296,14 @@ const AiSettingsModal = ({ onClose, onSettingsChange }) => {
           </button>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={onClose}
               className="text-[11px] font-medium text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-md transition-all"
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={handleSave}
               disabled={!canSave}
               className={`text-[11px] font-medium px-3 py-1.5 rounded-md transition-all ${

@@ -200,11 +200,12 @@ const Navigation = ({ activeTab, onTabChange }) => {
 
   const mobileSheet = moreOpen && isPhone && typeof document !== 'undefined'
     ? createPortal(
-        <div className="nav-sheet-backdrop" aria-hidden="true">
+        <div className="nav-sheet-backdrop">
           <button
             type="button"
             className="nav-sheet-backdrop__scrim"
             onClick={() => setMoreOpen(false)}
+            aria-label="Close more project pages"
           />
           <div
             ref={moreMenuRef}
@@ -271,7 +272,7 @@ const Navigation = ({ activeTab, onTabChange }) => {
               type="button"
               className={moreButtonClasses}
               onClick={() => setMoreOpen((prev) => !prev)}
-              aria-haspopup="menu"
+              aria-haspopup={isPhone ? 'dialog' : 'menu'}
               aria-expanded={moreOpen ? 'true' : 'false'}
             >
               <span className="nav-tab__label">More</span>

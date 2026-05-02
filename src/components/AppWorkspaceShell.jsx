@@ -208,6 +208,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     saveConflict,
     saveError,
     remoteUpdateAvailable,
+    offlinePendingSync,
     usingOfflineSnapshot,
     pendingProjectSyncCount,
     addTask,
@@ -384,7 +385,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
       onAction: isOnline && !saving ? retryProjectSync : undefined,
     }] : [];
 
-    const errorItem = saveError && pendingProjectSyncCount > 0 ? [{
+    const errorItem = saveError && (pendingProjectSyncCount > 0 || offlinePendingSync) ? [{
       id: 'project-error',
       label: 'Project sync needs attention',
       detail: saveError,
@@ -394,8 +395,60 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
       onAction: saveConflict ? reloadProject : retryProjectSync,
     }] : [];
 
-    return [...errorItem, ...queueItem];
-  }, [isOnline, pendingProjectSyncCount, reloadProject, retryProjectSync, saveConflict, saveError, saving]);
+    const offlineSnapshotItem = usingOfflineSnapshot ? [{
+      id: 'project-offline-snapshot',
+      label: 'Offline project copy loaded',
+      detail: isOnline
+        ? 'You are viewing a cached copy while the latest project data reloads.'
+        : 'You are viewing the last copy saved on this device. Changes will sync when signal returns.',
+      status: isOnline ? 'queue' : 'offline',
+      statusLabel: isOnline ? 'Cached' : 'Offline',
+      actionLabel: isOnline ? 'Reload latest' : '',
+      onAction: isOnline ? reloadProject : undefined,
+    }] : [];
+
+    const queuedWorkspaceItem = offlinePendingSync && pendingProjectSyncCount === 0 ? [{
+      id: 'workspace-offline-queue',
+      label: 'Workspace changes waiting',
+      detail: isOnline
+        ? 'Some saved edits are queued on this device and will be pushed up shortly.'
+        : 'Some saved edits are queued on this device until you are back online.',
+      status: isOnline ? 'queue' : 'offline',
+      statusLabel: isOnline ? 'Queued' : 'Offline',
+    }] : [];
+
+    return [...errorItem, ...queueItem, ...offlineSnapshotItem, ...queuedWorkspaceItem];
+  }, [
+    isOnline,
+    offlinePendingSync,
+    pendingProjectSyncCount,
+    reloadProject,
+    retryProjectSync,
+    saveConflict,
+    saveError,
+    saving,
+    usingOfflineSnapshot,
+  ]);
+
+  const mobileSyncSummary = useMemo(() => {
+    if (saveError && (pendingProjectSyncCount > 0 || offlinePendingSync)) {
+      return saveError;
+    }
+    if (pendingProjectSyncCount > 0) {
+      return `${pendingProjectSyncCount} project change${pendingProjectSyncCount === 1 ? '' : 's'} waiting to sync.`;
+    }
+    if (offlinePendingSync) {
+      return isOnline
+        ? 'Saved workspace changes are queued on this device.'
+        : 'Saved workspace changes will sync when signal returns.';
+    }
+    if (usingOfflineSnapshot) {
+      return isOnline
+        ? 'A cached project copy is visible while the latest data reloads.'
+        : 'A cached project copy is available offline.';
+    }
+    return '';
+  }, [isOnline, offlinePendingSync, pendingProjectSyncCount, saveError, usingOfflineSnapshot]);
 
   const handleLoadDemoData = useCallback(() => {
     const proceed = window.confirm(
@@ -715,29 +768,25 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
           isOnline={isOnline}
           projectName={project.name}
           statusMessage={quickCaptureStatus}
-        routeLabel={activeCaptureRoute.meta.label}
-        routeDestination={activeCaptureRoute.meta.destination}
-        routeReason={quickCaptureMode === 'smart' ? quickCaptureSuggestion.reason : ''}
-        routeBreakdown={quickCaptureRouteBreakdown}
-        routeConfidenceLabel={quickCaptureMode === 'smart' ? activeCaptureRoute.confidenceMeta?.label : ''}
-        routeDueDate={['task', 'action', 'issue'].includes(activeCaptureRoute.type) ? activeCaptureRoute.dueDate : ''}
-        routeOwnerText={['task', 'action', 'issue', 'risk', 'decision'].includes(activeCaptureRoute.type) ? activeCaptureRoute.ownerText : ''}
-        onOpen={handleOpenQuickCapture}
-        onClose={handleCloseQuickCapture}
-        onModeChange={setQuickCaptureMode}
+          routeLabel={activeCaptureRoute.meta.label}
+          routeDestination={activeCaptureRoute.meta.destination}
+          routeReason={quickCaptureMode === 'smart' ? quickCaptureSuggestion.reason : ''}
+          routeBreakdown={quickCaptureRouteBreakdown}
+          routeConfidenceLabel={quickCaptureMode === 'smart' ? activeCaptureRoute.confidenceMeta?.label : ''}
+          routeDueDate={['task', 'action', 'issue'].includes(activeCaptureRoute.type) ? activeCaptureRoute.dueDate : ''}
+          routeOwnerText={['task', 'action', 'issue', 'risk', 'decision'].includes(activeCaptureRoute.type) ? activeCaptureRoute.ownerText : ''}
+          onOpen={handleOpenQuickCapture}
+          onClose={handleCloseQuickCapture}
+          onModeChange={setQuickCaptureMode}
           onValueChange={setQuickCaptureText}
           onSubmit={handleSubmitQuickCapture}
         />
       ) : null}
 
       <MobileSyncCenter
-        shouldShow={isMobile && (pendingProjectSyncCount > 0 || (saveError && pendingProjectSyncCount > 0))}
+        shouldShow={isMobile && (offlinePendingSync || usingOfflineSnapshot || pendingProjectSyncCount > 0 || Boolean(saveError && (pendingProjectSyncCount > 0 || offlinePendingSync)))}
         title="Project sync"
-        summary={
-          pendingProjectSyncCount > 0
-            ? `${pendingProjectSyncCount} project change${pendingProjectSyncCount === 1 ? '' : 's'} waiting to sync.`
-            : ''
-        }
+        summary={mobileSyncSummary}
         queueCount={pendingProjectSyncCount}
         items={mobileProjectSyncItems}
       />

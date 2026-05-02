@@ -5,7 +5,14 @@ import { useCheckoutStatus, CheckoutToast } from './hooks/useCheckoutStatus.jsx'
 import OfflineBanner from './components/OfflineBanner';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { applyAccentTheme, loadAccentTheme, saveAccentTheme } from './utils/appearance';
-import { clearLastProject, loadLastAppPath, loadLastProject, saveLastAppPath, saveLastProject } from './utils/navigationState';
+import {
+  clearLastProject,
+  isHouseholdToolPath,
+  loadLastAppPath,
+  loadLastProject,
+  saveLastAppPath,
+  saveLastProject,
+} from './utils/navigationState';
 import { readAppShortcutIntent } from './utils/appShortcutIntent';
 import { activatePendingServiceWorker } from './utils/registerServiceWorker';
 
@@ -132,10 +139,11 @@ function App() {
     };
   }, [applyingUpdate]);
 
-  const navigateToPath = useCallback((path) => {
+  const navigateToPath = useCallback((path, { replace = false } = {}) => {
     const nextPath = normalizeAppPath(path);
     if (typeof window !== 'undefined' && normalizeAppPath(window.location.pathname) !== nextPath) {
-      window.history.pushState({}, '', nextPath);
+      const historyMethod = replace ? 'replaceState' : 'pushState';
+      window.history[historyMethod]({}, '', nextPath);
     }
     setCurrentPath(nextPath);
     saveLastAppPath(nextPath);
@@ -167,6 +175,11 @@ function App() {
     if (!savedProject?.id) return;
     setCurrentProject(savedProject);
   }, [currentPath, currentProject, user]);
+
+  useEffect(() => {
+    if (planLoading || householdToolsEnabled || !isHouseholdToolPath(currentPath)) return;
+    navigateToPath('/', { replace: true });
+  }, [currentPath, householdToolsEnabled, navigateToPath, planLoading]);
 
   if (currentPath === '/privacy') {
     return renderLazyPage(<LegalPage page="privacy" />, 'Loading policy...');

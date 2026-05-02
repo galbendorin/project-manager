@@ -8,11 +8,16 @@ import AuthenticatedFooter from './AuthenticatedFooter';
 import ProjectShareModal from './ProjectShareModal';
 import PmWorkspaceLogo from './PmWorkspaceLogo';
 import AccentThemePicker from './AccentThemePicker';
+import { TABS } from '../utils/constants';
 import {
   normalizeProjectRecord,
   summarizeProjectAccess,
 } from '../utils/projectSharing';
 import { createProjectWithLimits, getProjectCreationErrorMessage } from '../utils/projectCreation';
+import { loadLastProject } from '../utils/navigationState';
+import { getStoredProjectTab } from '../utils/projectTabMemory';
+
+const PROJECT_TAB_LABEL_BY_ID = new Map(TABS.map((tab) => [tab.id, tab.label]));
 
 const isMissingColumnError = (error, columnName) => {
   const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
@@ -51,6 +56,7 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
   const [createError, setCreateError] = useState('');
   const [sampleProjectError, setSampleProjectError] = useState('');
   const [shareProjectId, setShareProjectId] = useState(null);
+  const [storedLastProject, setStoredLastProject] = useState(() => loadLastProject());
   const supportsIsDemoRef = useRef(true);
   const supportsProjectMembersRef = useRef(true);
   const inputRef = useRef(null);
@@ -67,6 +73,19 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
     () => projects.find((project) => project.id === shareProjectId) || null,
     [projects, shareProjectId]
   );
+  const continueProject = useMemo(() => {
+    if (loading || projects.length === 0) return null;
+    return (
+      (storedLastProject?.id && projects.find((project) => project.id === storedLastProject.id))
+      || projects[0]
+      || null
+    );
+  }, [loading, projects, storedLastProject?.id]);
+  const continueProjectTabLabel = useMemo(() => {
+    const storedTab = getStoredProjectTab(continueProject?.id);
+    return PROJECT_TAB_LABEL_BY_ID.get(storedTab) || 'Project Plan';
+  }, [continueProject?.id]);
+  const continueActionLabel = storedLastProject?.id === continueProject?.id ? 'Continue' : 'Open latest';
 
   const createProjectRecord = useCallback(async (payload, includeIsDemo = supportsIsDemoRef.current) => {
     const snapshot = {
@@ -237,6 +256,7 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
     setShareProjectId((currentId) => (
       currentId && projects.some((project) => project.id === currentId) ? currentId : null
     ));
+    setStoredLastProject(loadLastProject());
   }, [projects]);
 
   // Bug A fix: use a separate handler that doesn't trigger re-renders during typing
@@ -476,7 +496,7 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
                   </div>
                   {!canCreateProject && (
                     <button
-                      onClick={() => window.open('/pricing', '_blank')}
+                      onClick={() => window.open('/pricing', '_blank', 'noopener,noreferrer')}
                       className="text-sm font-semibold text-indigo-600 hover:text-indigo-700"
                     >
                       Upgrade to Pro →
@@ -491,7 +511,7 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
                       Your {limits.label} plan allows {limits.maxProjects} project{limits.maxProjects !== 1 ? 's' : ''}. Delete extra projects to regain edit access, or upgrade.
                     </p>
                     <button
-                      onClick={() => window.open('/pricing', '_blank')}
+                      onClick={() => window.open('/pricing', '_blank', 'noopener,noreferrer')}
                       className="pm-toolbar-primary mt-3 rounded-xl px-4 py-2 text-xs font-bold text-white transition-colors"
                     >
                       Upgrade to Pro — £7.99/mo
@@ -587,6 +607,25 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
                   </div>
                 </div>
 
+                {continueProject ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectProject(continueProject)}
+                    className="pm-utility-card mt-4 flex w-full items-center justify-between gap-3 rounded-[22px] px-3.5 py-3 text-left transition active:scale-[0.99] lg:hidden"
+                  >
+                    <div className="min-w-0">
+                      <p className="pm-kicker mb-1">{continueActionLabel}</p>
+                      <h2 className="truncate text-base font-semibold text-slate-900">{continueProject.name}</h2>
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {continueProjectTabLabel} · Updated {formatDate(continueProject.updated_at)}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                      Open
+                    </span>
+                  </button>
+                ) : null}
+
                 <form
                   onSubmit={handleCreateSubmit}
                   className="pm-surface-soft mt-5 rounded-[28px] p-4 sm:p-5"
@@ -681,10 +720,10 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
                               onSelectProject(project);
                             }
                           }}
-                          className="w-full text-left rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-slate-50 group cursor-pointer"
+                          className="group w-full cursor-pointer rounded-[24px] border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-slate-50"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
                                 <h4 className="truncate text-base font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
                                   {project.name}
@@ -710,7 +749,7 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
                               </p>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                               {supportsProjectMembersRef.current && project.isOwned && (
                                 <button
                                   onClick={(e) => {
@@ -730,9 +769,10 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
                               {project.isOwned && (
                                 <button
                                   onClick={(e) => deleteProject(project.id, e)}
-                                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 p-1 transition-all"
+                                  className="rounded-full p-2 text-slate-400 opacity-100 transition-all hover:bg-rose-50 hover:text-rose-500 sm:p-1 sm:opacity-0 sm:group-hover:opacity-100"
                                   title="Delete project"
                                   type="button"
+                                  aria-label={`Delete ${project.name}`}
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path

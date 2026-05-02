@@ -62,7 +62,7 @@ const EmailDigestModal = ({ onClose, onGenerate, projectName }) => {
 
     const body = lines.slice(bodyStart).join('\n').trim();
     const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.open(mailto, '_blank');
+    window.open(mailto, '_blank', 'noopener,noreferrer');
   };
 
   const isGenerating = status === 'generating';

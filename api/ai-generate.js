@@ -16,6 +16,27 @@ const adminSupabase = getAdminSupabase()
 
 // Max request body size (200KB — generous for prompts)
 const MAX_BODY_SIZE = 200_000
+const PROVIDER_TIMEOUT_MS = 55_000
+const STREAM_PROVIDER_TIMEOUT_MS = 90_000
+
+const buildProviderTimeoutSignal = (stream = false) => {
+  const timeoutMs = stream ? STREAM_PROVIDER_TIMEOUT_MS : PROVIDER_TIMEOUT_MS
+  const AbortSignalApi = globalThis.AbortSignal
+
+  if (typeof AbortSignalApi?.timeout === 'function') {
+    return AbortSignalApi.timeout(timeoutMs)
+  }
+
+  const controller = new globalThis.AbortController()
+  setTimeout(() => controller.abort(), timeoutMs)
+  return controller.signal
+}
+
+const isAbortError = (error) => {
+  const name = String(error?.name || '').toLowerCase()
+  const message = String(error?.message || '').toLowerCase()
+  return name === 'aborterror' || name === 'timeouterror' || message.includes('aborted')
+}
 
 const isMissingAiAllowanceRpcError = (error) => {
   const code = String(error?.code || '').toLowerCase()
@@ -188,7 +209,25 @@ export default async function handler(req, res) {
         console.error('Failed to release AI allowance after proxy error:', error)
       }
     }
+
+    if (isAbortError(err)) {
+      console.error('AI provider timed out:', err.message)
+      if (!res.headersSent) {
+        return res.status(504).json({ error: 'AI provider timed out. Please retry in a moment or use a shorter request.' })
+      }
+      if (!res.writableEnded) {
+        res.end()
+      }
+      return
+    }
+
     console.error('AI proxy error:', err.message)
+    if (res.headersSent) {
+      if (!res.writableEnded) {
+        res.end()
+      }
+      return
+    }
     return res.status(500).json({ error: 'Internal proxy error' })
   }
 }
@@ -213,7 +252,8 @@ async function handleAnthropic({ apiKey, model, systemPrompt, userMessage, maxTo
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01'
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: buildProviderTimeoutSignal(stream)
   })
 
   if (!response.ok) {
@@ -303,7 +343,8 @@ async function handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxToken
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: buildProviderTimeoutSignal(stream)
   })
 
   if (!response.ok) {
@@ -395,7 +436,8 @@ async function handleGemini({ apiKey, model, systemPrompt, userMessage, maxToken
       'Content-Type': 'application/json',
       'x-goog-api-key': apiKey
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: buildProviderTimeoutSignal(stream)
   })
 
   if (!response.ok) {

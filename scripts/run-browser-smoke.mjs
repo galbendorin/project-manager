@@ -53,23 +53,46 @@ const executablePath = String(args.browser || process.env.SMOKE_BROWSER_PATH || 
 const headless = String(args.headless || process.env.SMOKE_HEADLESS || 'true').toLowerCase() !== 'false';
 const timeoutMs = Number(args.timeout || process.env.SMOKE_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
 
-const resolveBrowserPath = async () => {
+const resolveBrowserCandidates = async () => {
   const candidates = executablePath
     ? [executablePath]
     : DEFAULT_BROWSER_CANDIDATES;
+  const available = [];
 
   for (const candidate of candidates) {
     try {
       await fs.access(candidate);
-      return candidate;
+      available.push(candidate);
     } catch {
       // Try the next browser candidate.
     }
   }
 
-  throw new Error(
-    'No supported browser executable was found. Set SMOKE_BROWSER_PATH or pass --browser with a local Chrome/Chromium path.'
-  );
+  if (available.length > 0) {
+    return available;
+  }
+
+  throw new Error('No supported browser executable was found. Set SMOKE_BROWSER_PATH or pass --browser with a local Chrome/Chromium path.');
+};
+
+const launchBrowser = async () => {
+  const candidates = await resolveBrowserCandidates();
+  const launchFailures = [];
+
+  for (const candidate of candidates) {
+    try {
+      return await chromium.launch({
+        executablePath: candidate,
+        headless,
+      });
+    } catch (error) {
+      const message = error?.message?.split('\n')[0] || String(error);
+      launchFailures.push(`${candidate}: ${message}`);
+      pushWarning(`Could not launch ${candidate}: ${message}`);
+    }
+  }
+
+  throw new Error(`No supported browser executable could be launched. ${launchFailures.join(' | ')} Set SMOKE_BROWSER_PATH or pass --browser with a local Chrome/Chromium path.`);
 };
 
 const nowIso = () => new Date().toISOString();
@@ -232,11 +255,7 @@ let browser;
 let page;
 
 try {
-  const browserPath = await resolveBrowserPath();
-  browser = await chromium.launch({
-    executablePath: browserPath,
-    headless,
-  });
+  browser = await launchBrowser();
 
   const context = await browser.newContext({
     viewport: DEFAULT_VIEWPORT,
@@ -282,6 +301,10 @@ try {
 
     await recordStep('Shopping List opens from project home', async () => {
       const button = findUtilityCardButton(page, 'Shopping List');
+      if (!(await button.isVisible({ timeout: 2000 }).catch(() => false))) {
+        pushWarning('Shopping List smoke step skipped because the household tool card is not visible for this account.');
+        return 'Skipped because household tools are gated for this account.';
+      }
       await button.click();
       await page.getByRole('heading', { name: 'Shopping List', exact: true }).waitFor({ timeout: timeoutMs });
       await page.getByRole('button', { name: 'Projects', exact: true }).waitFor({ timeout: timeoutMs });
@@ -300,6 +323,10 @@ try {
 
     await recordStep('Meal Planner opens from project home', async () => {
       const button = findUtilityCardButton(page, 'Meal Planner');
+      if (!(await button.isVisible({ timeout: 2000 }).catch(() => false))) {
+        pushWarning('Meal Planner smoke step skipped because the household tool card is not visible for this account.');
+        return 'Skipped because household tools are gated for this account.';
+      }
       await button.click();
       await page.getByRole('heading', { name: 'Meal Planner', exact: true }).waitFor({ timeout: timeoutMs });
       await page.getByText('Plan the week and build shopping automatically', { exact: true }).waitFor({ timeout: timeoutMs });

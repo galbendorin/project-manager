@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint src api scripts *.config.js",
     "smoke:user": "node scripts/run-browser-smoke.mjs",
+    "release:preflight": "node scripts/preflight-release.mjs",
     "check:react-hooks": "node scripts/check-react-hook-imports.mjs",
     "test": "node --test ./src/**/*.test.js",
     "test:watch": "node --test --watch ./src/**/*.test.js",
