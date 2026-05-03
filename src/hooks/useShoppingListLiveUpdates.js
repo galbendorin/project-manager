@@ -9,6 +9,9 @@ import {
   syncExistingPushSubscription,
 } from '../utils/pushNotifications';
 
+const FOREGROUND_REFRESH_INTERVAL_MS = 60000;
+const HIDDEN_REFRESH_DELAY_MS = 30000;
+
 const canUseRealtimeUpdates = () => {
   if (typeof window === 'undefined') return false;
   const isSecurePage = (
@@ -42,6 +45,8 @@ export function useShoppingListLiveUpdates({
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMessage, setPushMessage] = useState('');
   const shoppingRealtimeChannelRef = useRef(null);
+  const lastForegroundRefreshAtRef = useRef(Date.now());
+  const hiddenAtRef = useRef(0);
 
   const persistProjectTodos = useCallback((projectId, nextTodos) => {
     const cachedState = loadShoppingOfflineState(currentUserId);
@@ -109,14 +114,45 @@ export function useShoppingListLiveUpdates({
   useEffect(() => {
     if (!selectedProject?.id || typeof window === 'undefined') return undefined;
 
-    const handleForegroundRefresh = () => {
-      if (document.visibilityState === 'visible') {
-        void loadTodos();
+    const loadTodosPreservingScroll = () => {
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
+
+      void loadTodos().finally(() => {
+        window.requestAnimationFrame(() => {
+          window.scrollTo(scrollX, scrollY);
+        });
+      });
+    };
+
+    const refreshIfStale = ({ force = false } = {}) => {
+      const now = Date.now();
+      if (!force && now - lastForegroundRefreshAtRef.current < FOREGROUND_REFRESH_INTERVAL_MS) {
+        return;
       }
+
+      lastForegroundRefreshAtRef.current = now;
+      loadTodosPreservingScroll();
+    };
+
+    const handleForegroundRefresh = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now();
+        return;
+      }
+
+      const hiddenAt = hiddenAtRef.current;
+      hiddenAtRef.current = 0;
+
+      if (!hiddenAt || Date.now() - hiddenAt < HIDDEN_REFRESH_DELAY_MS) {
+        return;
+      }
+
+      refreshIfStale({ force: true });
     };
 
     const handleWindowFocus = () => {
-      void loadTodos();
+      refreshIfStale();
     };
 
     const handleWorkerMessage = (event) => {
@@ -127,7 +163,7 @@ export function useShoppingListLiveUpdates({
 
       const messageProjectId = String(message.projectId || '').trim();
       if (messageProjectId && messageProjectId !== selectedProject.id) return;
-      void loadTodos();
+      refreshIfStale({ force: true });
     };
 
     document.addEventListener('visibilitychange', handleForegroundRefresh);
