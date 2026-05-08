@@ -49,7 +49,9 @@ If authenticated smoke credentials are not available locally, run the determinis
 npm run release:preflight -- --skip-smoke
 ```
 
-Run `npm run smoke:user` before pushing live when the `SMOKE_*` environment variables are available.
+Run `npm run smoke:local` before pushing live when `.env.smoke.local` or `SMOKE_*` environment variables are available. See `docs/smoke-testing.md`.
+
+For phone-sensitive changes, also run the manual checklist in `docs/mobile-regression-checklist.md`.
 
 ### Release flow
 

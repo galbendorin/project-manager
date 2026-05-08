@@ -1430,7 +1430,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setSaving(false);
     }
-  }, [loadRecipes, replaceRecipeIngredients]);
+  }, [loadRecipes, plannerProject?.id, replaceRecipeIngredients]);
 
   const duplicateRecipe = useCallback(async (recipe) => {
     await createRecipe({
@@ -1469,7 +1469,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setSaving(false);
     }
-  }, [loadRecipes]);
+  }, [loadRecipes, plannerProject?.id]);
 
   const persistExcludedDraftSourceSignatures = useCallback(async (nextSignatures = []) => {
     if (!week?.id) return null;
