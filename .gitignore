@@ -8,6 +8,7 @@ build/
 # Environment variables
 .env
 .env.local
+.env.smoke.local
 .env.development.local
 .env.test.local
 .env.production.local
@@ -32,6 +33,7 @@ Thumbs.db
 
 # Testing
 coverage/
+tmp/
 .vercel
 .env.bak*
 backups/

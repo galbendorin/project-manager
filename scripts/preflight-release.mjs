@@ -12,7 +12,7 @@ const commands = [
   ...(
     shouldSkipSmoke
       ? []
-      : [['npm', ['run', 'smoke:user']]]
+      : [['npm', ['run', 'smoke:local']]]
   ),
 ];
 
@@ -42,7 +42,7 @@ try {
   }
 
   if (shouldSkipSmoke) {
-    console.log('\nSmoke test skipped. Run `npm run smoke:user` with SMOKE_* env vars before pushing live when credentials are available.');
+    console.log('\nSmoke test skipped. Run `npm run smoke:local` with .env.smoke.local or SMOKE_* env vars before pushing live when credentials are available.');
   }
 
   console.log('\nPreflight complete.');
