@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { buildProjectReadiness } from '../../utils/projectReadiness';
 
 const ragStyle = (rag) => {
   if (rag === 'red') return { bg: 'bg-rose-50', dot: 'bg-rose-500', text: 'text-rose-700', border: 'border-rose-200' };
@@ -12,7 +13,19 @@ const displayDate = (d) => {
   catch { return d; }
 };
 
-const MobileHome = ({ tasks, registers, statusReport, onUpdateTask }) => {
+const checkStyle = (status) => (
+  status === 'pass'
+    ? { dot: 'bg-emerald-500', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100' }
+    : { dot: 'bg-amber-500', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100' }
+);
+
+const focusTone = (item) => {
+  if (item.deltaDays !== null && item.deltaDays < 0) return 'border-rose-100 bg-rose-50 text-rose-700';
+  if (item.deltaDays === 0) return 'border-indigo-100 bg-indigo-50 text-indigo-700';
+  return 'border-slate-100 bg-slate-50 text-slate-600';
+};
+
+const MobileHome = ({ tasks, registers, tracker = [], statusReport, todos = [], onUpdateTask }) => {
   const stats = useMemo(() => {
     const total = tasks.length;
     const completed = tasks.filter(t => t.pct >= 100).length;
@@ -48,6 +61,14 @@ const MobileHome = ({ tasks, registers, statusReport, onUpdateTask }) => {
     return open;
   }, [registers]);
 
+  const readiness = useMemo(() => buildProjectReadiness({
+    tasks,
+    registers,
+    tracker,
+    statusReport,
+    todos,
+  }), [tasks, registers, tracker, statusReport, todos]);
+
   return (
     <div className="p-3.5 space-y-3 pb-6">
       {/* Health Stats */}
@@ -79,6 +100,75 @@ const MobileHome = ({ tasks, registers, statusReport, onUpdateTask }) => {
           <span><span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" />Complete</span>
           <span><span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 mr-1" />In Progress</span>
           {riskCount > 0 && <span className="text-rose-500 ml-auto font-semibold">{riskCount} open risks</span>}
+        </div>
+      </div>
+
+      {/* Today / Next 3 */}
+      <div className="bg-white rounded-xl p-3.5 border border-slate-100 shadow-sm">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <h3 className="text-xs font-bold text-slate-800">Today / Next 3</h3>
+            <p className="mt-0.5 text-[10px] font-medium text-slate-400">
+              {readiness.allFocusItemCount > 3 ? `${readiness.allFocusItemCount} open dated items` : 'Fastest work to pick up'}
+            </p>
+          </div>
+          <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black ${readiness.isReady ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+            {readiness.scoreLabel} ready
+          </span>
+        </div>
+
+        {readiness.focusItems.length > 0 ? (
+          <div className="space-y-2">
+            {readiness.focusItems.map((item) => (
+              <div key={item.id} className="flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5">
+                <div className={`mt-0.5 shrink-0 rounded-lg border px-2 py-1 text-[9px] font-black ${focusTone(item)}`}>
+                  {item.dateLabel}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-slate-400">
+                      {item.source}
+                    </span>
+                    {item.owner ? (
+                      <span className="truncate text-[10px] font-semibold text-slate-400">{item.owner}</span>
+                    ) : null}
+                  </div>
+                  <div className="mt-1 text-[13px] font-semibold leading-4 text-slate-800">
+                    {item.title}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-500">
+            Add a dated task, action, or issue and it will appear here for quick mobile follow-up.
+          </div>
+        )}
+      </div>
+
+      {/* Readiness Check */}
+      <div className="bg-white rounded-xl p-3.5 border border-slate-100 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-xs font-bold text-slate-800">Readiness check</h3>
+            <p className="mt-0.5 text-[10px] font-medium text-slate-400">Small checks before sharing or moving work on.</p>
+          </div>
+          <span className="shrink-0 text-xs font-black text-slate-700">{readiness.scoreLabel}</span>
+        </div>
+        <div className="grid gap-2">
+          {readiness.checks.map((check) => {
+            const style = checkStyle(check.status);
+            return (
+              <div key={check.key} className={`rounded-xl border px-3 py-2 ${style.bg} ${style.border}`}>
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
+                  <span className={`min-w-0 flex-1 text-[12px] font-bold ${style.text}`}>{check.label}</span>
+                </div>
+                <p className="mt-1 pl-4 text-[10px] leading-4 text-slate-500">{check.detail}</p>
+              </div>
+            );
+          })}
         </div>
       </div>
 
