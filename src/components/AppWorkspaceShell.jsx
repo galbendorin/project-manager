@@ -10,6 +10,7 @@ import PricingPage from './PricingPage';
 import BillingScreen from './BillingScreen';
 import { TrialBanner, CancellationBanner, ReadOnlyBanner } from './UpgradeBanner';
 import WorkspaceProjectStatusBar from './WorkspaceProjectStatusBar';
+import ProjectFocusReadinessPanel from './ProjectFocusReadinessPanel';
 import AuthenticatedMiniToolShell from './AuthenticatedMiniToolShell';
 import { useProjectData } from '../hooks/useProjectData';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -633,6 +634,16 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
           }
         }}
       />
+
+      {isMobile && !showPricing && !showBilling ? (
+        <ProjectFocusReadinessPanel
+          tasks={projectData}
+          registers={registers}
+          tracker={tracker}
+          statusReport={statusReport}
+          todos={todos}
+        />
+      ) : null}
 
       <main className="relative flex-grow min-h-0 overflow-hidden">
         <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-slate-500">Loading view...</div>}>
