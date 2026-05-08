@@ -184,7 +184,9 @@ const MobileLayout = ({
             <MobileHome
               tasks={projectData}
               registers={registers}
+              tracker={tracker}
               statusReport={statusReport}
+              todos={todos}
               onUpdateTask={updateTask}
             />
           </div>
