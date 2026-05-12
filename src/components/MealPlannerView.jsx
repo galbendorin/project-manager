@@ -35,9 +35,9 @@ const PERSONAL_DAILY_TARGETS = {
 };
 const RECIPE_AI_CLEANUP_PROMPT = `Convert the recipe below into the exact PM Workspace Meal Planner format.
 
-Return only the cleaned recipe. Do not add commentary.
+Return only the cleaned recipe. Do not add commentary, markdown tables, or code fences.
 
-Format:
+Use this exact top-level order:
 Recipe name:
 Meal slot: breakfast | lunch | dinner | snack
 Suggested day:
@@ -51,23 +51,35 @@ Ingredients:
 Method:
 
 Rules:
+- The app expects exactly 5 pipe-separated ingredient fields in this order:
+  ingredient name | quantity | unit | kcal | notes
+- Correct ingredient examples:
+  - ghee | 20 | g | 175 | for sauteing
+  - leek | 100 | g | 61 | chopped
+  - onion | 100 | g | 40 | chopped
+- Do not write kcal: in the ingredient kcal field.
+- The 4th field must contain only the ingredient kcal number for the full amount used in the whole recipe.
+- The 5th field is only for preparation notes such as chopped, drained, skinless, boneless, or for sauteing.
+- Do not put ingredient kcal in notes.
+- Do not add a 6th field.
 - If calories/protein/carbs/fibre are not provided by the source, estimate them per serving from the ingredient quantities using standard nutrition references.
 - Only write unknown for a nutrition field when ingredient quantities are too incomplete to make a reasonable estimate.
 - Return nutrition values as numbers with units, for example 520 kcal, 34 g, 48 g, 7 g.
 - Use one ingredient per line.
-- Use simple units only: g, ml, tsp, tbsp, cup, pcs, slice, slices, clove, cloves, block, tin, can, bunch, head, small, medium, large.
-- Put each ingredient's estimated kcal in the fourth field as a plain number, for example 175.
+- Use simple units only: pcs, g, ml, tsp, tbsp, cup.
 - Put alternatives in notes, not as a second grocery row.
-- Put preparation words in notes, for example skinless, boneless, chopped, leaves separated, from a tin.
-- If a quantity is not clear, leave quantity and unit blank rather than inventing.
+- If a quantity is not clear, leave quantity, unit, and kcal blank rather than inventing.
 - Keep the method short and practical.
 - If you estimate nutrition, mention the main assumptions briefly in Method after the cooking steps.
+- Do not add Suggested day, Ingredients, or any other labels inside Method.
 
 Recipe to clean:
 <<<PASTE RECIPE HERE>>>`;
 const RECIPE_AI_CLEANUP_SYSTEM_PROMPT = `You clean messy copied recipe text for PM Workspace Meal Planner.
 
-Return only the cleaned recipe in this exact format:
+Return only the cleaned recipe. Do not add commentary, markdown tables, or code fences.
+
+Use this exact top-level order:
 Recipe name:
 Meal slot:
 Suggested day:
@@ -81,19 +93,28 @@ Ingredients:
 Method:
 
 Rules:
-- Do not add commentary or markdown fences.
 - Meal slot must be one of: breakfast, lunch, dinner, snack.
+- The app expects exactly 5 pipe-separated ingredient fields in this order:
+  ingredient name | quantity | unit | kcal | notes
+- Correct ingredient examples:
+  - ghee | 20 | g | 175 | for sauteing
+  - leek | 100 | g | 61 | chopped
+  - onion | 100 | g | 40 | chopped
+- Do not write kcal: in the ingredient kcal field.
+- The 4th field must contain only the ingredient kcal number for the full amount used in the whole recipe.
+- The 5th field is only for preparation notes such as chopped, drained, skinless, boneless, or for sauteing.
+- Do not put ingredient kcal in notes.
+- Do not add a 6th field.
 - If calories/protein/carbs/fibre are not provided by the source, estimate them per serving from the ingredient quantities using standard nutrition references.
 - Only write unknown for a nutrition field when ingredient quantities are too incomplete to make a reasonable estimate.
 - Return nutrition values as numbers with units, for example 520 kcal, 34 g, 48 g, 7 g.
 - Use one ingredient per line.
-- Use simple units only: g, ml, tsp, tbsp, cup, pcs, slice, slices, clove, cloves, block, tin, can, bunch, head, small, medium, large.
-- Put each ingredient's estimated kcal in the fourth field as a plain number, for example 175.
+- Use simple units only: pcs, g, ml, tsp, tbsp, cup.
 - Put alternatives in notes, not as a second grocery row.
-- Put preparation words in notes, for example skinless, boneless, chopped, leaves separated, from a tin.
-- If a quantity is not clear, leave quantity and unit blank rather than inventing.
+- If a quantity is not clear, leave quantity, unit, and kcal blank rather than inventing.
 - Keep the method short and practical.
-- If you estimate nutrition, mention the main assumptions briefly in Method after the cooking steps.`;
+- If you estimate nutrition, mention the main assumptions briefly in Method after the cooking steps.
+- Do not add Suggested day, Ingredients, or any other labels inside Method.`;
 
 const buildRecipeAiCleanupUserMessage = (rawRecipeText = '') => (
   `Clean this recipe for PM Workspace Meal Planner:\n\n${rawRecipeText}`
