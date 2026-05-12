@@ -47,7 +47,7 @@ Protein per serving:
 Carbs per serving:
 Fibre per serving:
 Ingredients:
-- ingredient name | quantity | unit | notes
+- ingredient name | quantity | unit | kcal | notes
 Method:
 
 Rules:
@@ -56,6 +56,7 @@ Rules:
 - Return nutrition values as numbers with units, for example 520 kcal, 34 g, 48 g, 7 g.
 - Use one ingredient per line.
 - Use simple units only: g, ml, tsp, tbsp, cup, pcs, slice, slices, clove, cloves, block, tin, can, bunch, head, small, medium, large.
+- Put each ingredient's estimated kcal in the fourth field as a plain number, for example 175.
 - Put alternatives in notes, not as a second grocery row.
 - Put preparation words in notes, for example skinless, boneless, chopped, leaves separated, from a tin.
 - If a quantity is not clear, leave quantity and unit blank rather than inventing.
@@ -76,7 +77,7 @@ Protein per serving:
 Carbs per serving:
 Fibre per serving:
 Ingredients:
-- ingredient name | quantity | unit | notes
+- ingredient name | quantity | unit | kcal | notes
 Method:
 
 Rules:
@@ -87,6 +88,7 @@ Rules:
 - Return nutrition values as numbers with units, for example 520 kcal, 34 g, 48 g, 7 g.
 - Use one ingredient per line.
 - Use simple units only: g, ml, tsp, tbsp, cup, pcs, slice, slices, clove, cloves, block, tin, can, bunch, head, small, medium, large.
+- Put each ingredient's estimated kcal in the fourth field as a plain number, for example 175.
 - Put alternatives in notes, not as a second grocery row.
 - Put preparation words in notes, for example skinless, boneless, chopped, leaves separated, from a tin.
 - If a quantity is not clear, leave quantity and unit blank rather than inventing.

@@ -184,6 +184,17 @@ test('parseIngredientText accepts AI-cleaned structured ingredient rows', () => 
   assert.equal(unknownQuantity.quantityValue, null);
   assert.equal(unknownQuantity.notes, 'quantity not clear');
   assert.ok(unknownQuantity.parseConfidence < 0.5);
+
+  assert.deepEqual(parseIngredientText('ghee | 20 | g | 175 | for sauteing'), {
+    rawText: 'ghee | 20 | g | 175 | for sauteing',
+    ingredientName: 'ghee',
+    quantityValue: 20,
+    quantityUnit: 'g',
+    notes: 'for sauteing',
+    parseConfidence: 0.99,
+    manualKcal: 175,
+    kcalSource: 'manual',
+  });
 });
 
 test('parsePastedRecipeText accepts strict AI cleanup output', () => {
@@ -196,11 +207,11 @@ Protein per serving: 34 g
 Carbs per serving: 48 g
 Fibre per serving: 7.5 g
 Ingredients:
-- ciabatta loaf | 1 | medium | or 4 thick slices crusty white bread
-- olive oil | 3 | tbsp |
-- chicken breasts | 2 | pcs | skinless, boneless
-- cos or romaine lettuce | 1 | large | leaves separated
-- parmesan | | | quantity not clear
+- ciabatta loaf | 1 | medium | 280 | or 4 thick slices crusty white bread
+- olive oil | 3 | tbsp | 360 |
+- chicken breasts | 2 | pcs | 330 | skinless, boneless
+- cos or romaine lettuce | 1 | large | 35 | leaves separated
+- parmesan | | | | quantity not clear
 Method:
 Grill the chicken, toast the bread, mix the dressing, and serve with lettuce.`, 'dinner');
 
@@ -216,7 +227,9 @@ Grill the chicken, toast the bread, mix the dressing, and serve with lettuce.`, 
   assert.equal(parsed.ingredientLines.length, 5);
   assert.equal(parsed.ingredientLines[0].ingredientName, 'ciabatta loaf');
   assert.equal(parsed.ingredientLines[0].quantityValue, 1);
+  assert.equal(parsed.ingredientLines[0].manualKcal, 280);
   assert.equal(parsed.ingredientLines[2].ingredientName, 'chicken breasts');
+  assert.equal(parsed.ingredientLines[2].manualKcal, 330);
   assert.equal(parsed.ingredientLines[2].notes, 'skinless, boneless');
   assert.equal(parsed.ingredientLines[4].ingredientName, 'parmesan');
   assert.equal(parsed.ingredientLines[4].quantityValue, null);
