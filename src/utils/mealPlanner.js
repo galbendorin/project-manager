@@ -202,11 +202,16 @@ const parseStructuredIngredientText = (rawText) => {
   const parts = rawText.split('|').map((part) => normalizeSpace(part));
   if (parts.length < 3) return null;
 
-  const [ingredientName, quantityRaw, quantityUnit, ...noteParts] = parts;
+  const [ingredientName, quantityRaw, quantityUnit, fourthPart = '', ...remainingParts] = parts;
   const quantityValue = quantityRaw === '' ? null : toNumber(quantityRaw);
   if (!ingredientName || (quantityRaw !== '' && quantityValue === null)) return null;
 
-  return {
+  const kcalValue = parts.length >= 5 && fourthPart !== '' ? toNullableFiniteNumber(fourthPart) : null;
+  const noteParts = parts.length >= 5 && kcalValue !== null
+    ? remainingParts
+    : [fourthPart, ...remainingParts];
+
+  const parsed = {
     rawText,
     ingredientName,
     quantityValue,
@@ -214,6 +219,13 @@ const parseStructuredIngredientText = (rawText) => {
     notes: appendNotes(...noteParts),
     parseConfidence: quantityValue === null ? 0.42 : 0.99,
   };
+
+  if (kcalValue !== null) {
+    parsed.manualKcal = kcalValue;
+    parsed.kcalSource = 'manual';
+  }
+
+  return parsed;
 };
 
 const parseImplicitSingleUnitIngredient = (rawText) => {
