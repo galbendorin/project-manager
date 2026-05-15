@@ -3,10 +3,15 @@ import { supabase } from '../lib/supabase';
 import { createEmptyProjectSnapshot } from './projectData/defaults';
 import {
   generateProjectId,
+  buildMealPlanShoppingSyncPreview,
   isProjectRelationMissingError,
   loadShoppingOfflineStateAsync,
   pickPreferredShoppingProject,
 } from '../utils/shoppingListViewState';
+import {
+  SHOPPING_MANUAL_TODO_SELECT,
+  mapManualTodoRow,
+} from './projectData/manualTodoUtils';
 import {
   applyGroceryDraftExclusions,
   buildMealPlanPreview,
@@ -1629,6 +1634,26 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     }
   }, [excludedDraftSourceSignatures, persistExcludedDraftSourceSignatures]);
 
+  const loadGrocerySyncPreview = useCallback(async ({
+    draft = groceryDraft,
+    hiddenDraft = hiddenGroceryDraft,
+  } = {}) => {
+    const shoppingProject = await resolvePlannerProject();
+    const { data, error: todosError } = await supabase
+      .from('manual_todos')
+      .select(SHOPPING_MANUAL_TODO_SELECT)
+      .eq('project_id', shoppingProject.id);
+
+    if (todosError) throw todosError;
+
+    return buildMealPlanShoppingSyncPreview({
+      draftItems: draft,
+      hiddenDraftItems: hiddenDraft,
+      existingTodos: (data || []).map(mapManualTodoRow),
+      batchId: groceryBatch?.id || '',
+    });
+  }, [groceryBatch?.id, groceryDraft, hiddenGroceryDraft, resolvePlannerProject]);
+
   const confirmGroceryDraft = useCallback(async (draftOverride = null) => {
     if (!week?.id) return null;
     const draftRows = Array.isArray(draftOverride) ? draftOverride : groceryDraft;
@@ -1793,6 +1818,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     importRowsIntoLibrary,
     lastApprovedCount,
     lastImportedCount,
+    loadGrocerySyncPreview,
     loading,
     plannerProject,
     recipes,

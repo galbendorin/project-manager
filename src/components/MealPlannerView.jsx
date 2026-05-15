@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { usePlan } from '../contexts/PlanContext';
 import { useMealPlannerData } from '../hooks/useMealPlannerData';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -2203,6 +2203,210 @@ function RecipeDetailModal({
   );
 }
 
+const formatGroceryPreviewQuantity = (item = {}) => {
+  if (item.quantityValue === null || item.quantityValue === undefined || item.quantityValue === '') {
+    return 'no quantity';
+  }
+  return `${formatIngredientQuantity(item.quantityValue)} ${item.quantityUnit || ''}`.trim();
+};
+
+function GroceryPreviewSummaryPill({ label, value, tone = 'slate' }) {
+  const toneClass = {
+    amber: 'border-amber-200 bg-amber-50 text-amber-800',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    rose: 'border-rose-200 bg-rose-50 text-rose-800',
+    sky: 'border-sky-200 bg-sky-50 text-sky-800',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
+  }[tone] || 'border-slate-200 bg-slate-50 text-slate-700';
+
+  return (
+    <div className={`rounded-2xl border px-3 py-2 ${toneClass}`}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-75">{label}</div>
+      <div className="mt-1 text-lg font-bold">{value}</div>
+    </div>
+  );
+}
+
+function GroceryPreviewMiniList({ title, items = [], tone = 'slate', emptyText = '' }) {
+  if (items.length === 0) {
+    if (!emptyText) return null;
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+        {emptyText}
+      </div>
+    );
+  }
+
+  const toneClass = {
+    amber: 'border-amber-200 bg-amber-50 text-amber-800',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    rose: 'border-rose-200 bg-rose-50 text-rose-800',
+    sky: 'border-sky-200 bg-sky-50 text-sky-800',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
+  }[tone] || 'border-slate-200 bg-slate-50 text-slate-700';
+
+  return (
+    <div className={`rounded-2xl border px-3 py-3 ${toneClass}`}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-75">{title}</div>
+      <ul className="mt-2 space-y-1.5 text-xs">
+        {items.slice(0, 4).map(({ item }, index) => (
+          <li key={`${title}-${item.key || item.title}-${index}`} className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate font-semibold">{item.title}</span>
+            <span className="shrink-0 opacity-80">{formatGroceryPreviewQuantity(item)}</span>
+          </li>
+        ))}
+      </ul>
+      {items.length > 4 ? (
+        <p className="mt-2 text-xs font-semibold opacity-75">+{items.length - 4} more</p>
+      ) : null}
+    </div>
+  );
+}
+
+function getManualMatchQuantityHint(match = {}) {
+  const plannedQuantity = formatGroceryPreviewQuantity(match.item);
+  const manualQuantity = formatGroceryPreviewQuantity(match.primaryTodo || {});
+  const difference = match.quantityComparison?.differenceValue;
+  const differenceLabel = Number.isFinite(Number(difference))
+    ? formatGroceryPreviewQuantity({ quantityValue: Math.abs(Number(difference)), quantityUnit: match.item?.quantityUnit || '' })
+    : '';
+
+  switch (match.quantityComparison?.status) {
+    case 'manual-covers':
+      return `Manual has ${manualQuantity}; planned need is ${plannedQuantity}.`;
+    case 'manual-short':
+      return `Manual has ${manualQuantity}; planned need is ${plannedQuantity}, about ${differenceLabel} more.`;
+    case 'manual-missing-quantity':
+      return `Manual item has no quantity; planned need is ${plannedQuantity}.`;
+    case 'unit-mismatch':
+      return `Manual has ${manualQuantity}; planned need is ${plannedQuantity}. Units differ.`;
+    case 'draft-missing-quantity':
+      return `Manual has ${manualQuantity}; Meal Planner has no quantity.`;
+    default:
+      return `Manual item exists; planned need is ${plannedQuantity}.`;
+  }
+}
+
+function GrocerySyncPreviewPanel({
+  error,
+  loading,
+  onRefresh,
+  preview,
+  refreshDisabled,
+}) {
+  if (loading && !preview) {
+    return (
+      <div className="mt-5 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+        Checking Shopping List before sync...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mt-5 rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="font-semibold">Could not compare Shopping List right now.</p>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshDisabled}
+            className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
+          >
+            Try again
+          </button>
+        </div>
+        <p className="mt-1 text-xs">{error}</p>
+      </div>
+    );
+  }
+
+  if (!preview) return null;
+
+  const hasManualMatches = preview.manualMatches.length > 0;
+  const hasBoughtMatches = preview.boughtMatches.length > 0;
+  const hasCompletedGeneratedItems = preview.completedGeneratedItems?.length > 0;
+  const hasGeneratedChanges = (
+    preview.addItems.length > 0
+    || preview.updateItems.length > 0
+    || preview.removeItems.length > 0
+    || preview.hiddenItems.length > 0
+  );
+
+  return (
+    <div className="mt-5 rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="pm-kicker">Shopping List comparison</p>
+          <h4 className="mt-1 text-base font-semibold text-slate-950">What will happen on update</h4>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshDisabled}
+          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+        >
+          {loading ? 'Checking...' : 'Refresh'}
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <GroceryPreviewSummaryPill label="Add" value={preview.counts.add} tone="emerald" />
+        <GroceryPreviewSummaryPill label="Refresh" value={preview.counts.update} tone="sky" />
+        <GroceryPreviewSummaryPill label="Remove" value={preview.counts.remove} tone="rose" />
+        <GroceryPreviewSummaryPill label="Manual matches" value={preview.counts.manualMatches} tone={hasManualMatches ? 'amber' : 'slate'} />
+      </div>
+
+      {hasManualMatches ? (
+        <div className="mt-4 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">Already on your manual Shopping List</p>
+          <p className="mt-1 text-xs leading-5">
+            Manual rows stay as they are. Meal Planner will still create or refresh its generated row unless you hide that ingredient for this week.
+          </p>
+          <div className="mt-3 space-y-2">
+            {preview.manualMatches.slice(0, 4).map((match) => (
+              <div key={`manual-match-${match.item.key || match.item.title}`} className="rounded-2xl bg-white/80 px-3 py-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold">{match.item.title}</span>
+                  <span className="text-amber-800/80">{getManualMatchQuantityHint(match)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {preview.manualMatches.length > 4 ? (
+            <p className="mt-2 text-xs font-semibold">+{preview.manualMatches.length - 4} more manual matches</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {hasBoughtMatches ? (
+        <div className="mt-4 rounded-[20px] border border-sky-200 bg-sky-50 px-4 py-3 text-xs leading-5 text-sky-800">
+          {preview.boughtMatches.length} planned ingredient{preview.boughtMatches.length === 1 ? '' : 's'} also appear in bought history. They stay in history; this update only controls this week&apos;s generated Meal plan batch.
+        </div>
+      ) : null}
+
+      {hasCompletedGeneratedItems ? (
+        <div className="mt-4 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+          {preview.completedGeneratedItems.length} already-bought generated item{preview.completedGeneratedItems.length === 1 ? '' : 's'} belong to this Meal plan batch. Updating refreshes the generated batch, so check these before confirming.
+        </div>
+      ) : null}
+
+      {hasGeneratedChanges ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <GroceryPreviewMiniList title="Will add generated" items={preview.addItems} tone="emerald" />
+          <GroceryPreviewMiniList title="Will refresh generated" items={preview.updateItems} tone="sky" />
+          <GroceryPreviewMiniList title="Will remove generated" items={preview.removeItems} tone="rose" />
+          <GroceryPreviewMiniList title="Hidden, not sent" items={preview.hiddenItems.map((item) => ({ item }))} tone="amber" />
+        </div>
+      ) : (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+          No generated grocery changes found for this review.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GroceryReviewModal({
   draft,
   canClearApprovedBatch,
@@ -2210,13 +2414,21 @@ function GroceryReviewModal({
   onApprove,
   onClose,
   onExclude,
+  onRefreshSyncPreview,
   onRestore,
   onRestoreAll,
+  reviewPending = false,
   saving,
+  syncPreview,
+  syncPreviewError,
+  syncPreviewLoading,
   weekLabel,
 }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [showHiddenDraft, setShowHiddenDraft] = useState(false);
+  const manualMatchByDraftKey = useMemo(() => (
+    new Map((syncPreview?.manualMatches || []).map((match) => [match.item.key, match]))
+  ), [syncPreview?.manualMatches]);
 
   return (
     <ModalShell onClose={onClose} wide>
@@ -2229,7 +2441,10 @@ function GroceryReviewModal({
               Review totals for {weekLabel} before they sync into Shopping List.
             </p>
             <p className="mt-2 text-sm text-slate-500">
-              This replaces the existing Meal plan batch for this week. Manual Shopping List items are left untouched.
+              This replaces the generated Meal plan batch for this week. Hidden ingredients are not sent; manual Shopping List items are left untouched.
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              If a planned ingredient already exists manually, the comparison below flags it before you confirm.
             </p>
             <p className="mt-2 text-sm text-slate-500">
               Batch recipes reuse carryover first, so only newly needed ingredients appear in this draft.
@@ -2263,10 +2478,10 @@ function GroceryReviewModal({
                 onClick={() => {
                   void onRestoreAll().catch(() => {});
                 }}
-                disabled={saving}
+                disabled={saving || reviewPending}
                 className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
               >
-                Restore all groceries
+                {reviewPending ? 'Saving draft...' : 'Restore all groceries'}
               </button>
             </div>
             {showHiddenDraft ? (
@@ -2296,10 +2511,10 @@ function GroceryReviewModal({
                         onClick={() => {
                           void onRestore(item).catch(() => {});
                         }}
-                        disabled={saving}
+                        disabled={saving || reviewPending}
                         className="rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
                       >
-                        Restore to draft
+                        {reviewPending ? 'Saving...' : 'Restore to draft'}
                       </button>
                     </div>
                   </div>
@@ -2308,6 +2523,14 @@ function GroceryReviewModal({
             ) : null}
           </div>
         ) : null}
+
+        <GrocerySyncPreviewPanel
+          error={syncPreviewError}
+          loading={syncPreviewLoading}
+          onRefresh={onRefreshSyncPreview}
+          preview={syncPreview}
+          refreshDisabled={saving || reviewPending || syncPreviewLoading}
+        />
 
         <div className={`mt-5 grid gap-3 ${isMobile ? 'grid-cols-1' : 'sm:grid-cols-2 xl:grid-cols-3'}`}>
           {draft.map((item) => (
@@ -2329,16 +2552,21 @@ function GroceryReviewModal({
                 {item.sourceMeals.slice(0, 3).map((meal) => meal.recipeName).join(', ')}
                 {item.sourceMeals.length > 3 ? ` +${item.sourceMeals.length - 3} more` : ''}
               </div>
+              {manualMatchByDraftKey.has(item.key) ? (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                  Already on manual Shopping List. Hide this ingredient if that manual item already covers it.
+                </div>
+              ) : null}
               <div className="mt-4 flex justify-end">
                 <button
                   type="button"
                   onClick={() => {
                     void onExclude(item).catch(() => {});
                   }}
-                  disabled={saving}
+                  disabled={saving || reviewPending}
                   className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
                 >
-                  Hide for this week
+                  {reviewPending ? 'Saving...' : 'Hide for this week'}
                 </button>
               </div>
             </div>
@@ -2357,8 +2585,8 @@ function GroceryReviewModal({
           <button type="button" onClick={onClose} className={`pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold ${isMobile ? 'w-full' : ''}`}>
             Close
           </button>
-          <button type="button" onClick={() => onApprove(draft)} disabled={saving || (draft.length === 0 && !canClearApprovedBatch)} className={`pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 ${isMobile ? 'w-full' : ''}`}>
-            {saving ? 'Updating groceries…' : (canClearApprovedBatch ? 'Update Shopping List' : 'Add to Shopping List')}
+          <button type="button" onClick={() => onApprove(draft)} disabled={saving || reviewPending || (draft.length === 0 && !canClearApprovedBatch)} className={`pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 ${isMobile ? 'w-full' : ''}`}>
+            {saving ? 'Updating groceries...' : (reviewPending ? 'Saving draft...' : (canClearApprovedBatch ? 'Update Shopping List' : 'Add to Shopping List'))}
           </button>
         </div>
       </div>
@@ -2494,6 +2722,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     importRowsIntoLibrary,
     lastApprovedCount,
     lastImportedCount,
+    loadGrocerySyncPreview,
     loading,
     plannerProject,
     recipes,
@@ -2525,6 +2754,10 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const [copyPrompt, setCopyPrompt] = useState(null);
   const [multiDayPrompt, setMultiDayPrompt] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
+  const [groceryReviewPending, setGroceryReviewPending] = useState(false);
+  const [grocerySyncPreview, setGrocerySyncPreview] = useState(null);
+  const [grocerySyncPreviewError, setGrocerySyncPreviewError] = useState('');
+  const [grocerySyncPreviewLoading, setGrocerySyncPreviewLoading] = useState(false);
   const [showMobilePlannerDetails, setShowMobilePlannerDetails] = useState(false);
   const [activeMobileDayKey, setActiveMobileDayKey] = useState('');
   const [mobileActivePanel, setMobileActivePanel] = useState('planner');
@@ -2620,6 +2853,35 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const planViewDescription = isCombinedPlanView
     ? 'Both merges every visible household week for this date range. Shared calendar slots stay read-only, but shared recipes can still be opened and edited.'
     : 'Mine shows only the meals saved in your own weekly plan.';
+  const refreshGrocerySyncPreview = useCallback(async () => {
+    if (!showReviewModal) return;
+    setGrocerySyncPreviewLoading(true);
+    setGrocerySyncPreviewError('');
+
+    try {
+      const nextPreview = await loadGrocerySyncPreview({
+        draft: plannerGroceryDraft,
+        hiddenDraft: plannerHiddenGroceryDraft,
+      });
+      setGrocerySyncPreview(nextPreview);
+    } catch (nextError) {
+      setGrocerySyncPreviewError(nextError?.message || 'Unable to compare Shopping List right now.');
+    } finally {
+      setGrocerySyncPreviewLoading(false);
+    }
+  }, [loadGrocerySyncPreview, plannerGroceryDraft, plannerHiddenGroceryDraft, showReviewModal]);
+
+  useEffect(() => {
+    if (!showReviewModal) {
+      setGrocerySyncPreview(null);
+      setGrocerySyncPreviewError('');
+      setGrocerySyncPreviewLoading(false);
+      return;
+    }
+
+    void refreshGrocerySyncPreview();
+  }, [refreshGrocerySyncPreview, showReviewModal]);
+
   const entryMap = useMemo(() => new Map(visibleEntries.map((entry) => [entry.id, entry])), [visibleEntries]);
   const resolvedRecipeByEntryId = useMemo(() => (
     visibleEntries.reduce((accumulator, entry) => {
@@ -2960,6 +3222,39 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       }
     } catch {
       // Error is surfaced through the shared banner state.
+    }
+  };
+
+  const handleExcludeGroceryDraftItem = async (item) => {
+    setGroceryReviewPending(true);
+    try {
+      await excludeGroceryDraftItem(item);
+    } catch {
+      // Error is surfaced through the shared banner state.
+    } finally {
+      setGroceryReviewPending(false);
+    }
+  };
+
+  const handleRestoreExcludedGroceryDraftItem = async (item) => {
+    setGroceryReviewPending(true);
+    try {
+      await restoreExcludedGroceryDraftItem(item);
+    } catch {
+      // Error is surfaced through the shared banner state.
+    } finally {
+      setGroceryReviewPending(false);
+    }
+  };
+
+  const handleRestoreAllExcludedGroceryDraftItems = async () => {
+    setGroceryReviewPending(true);
+    try {
+      await restoreAllExcludedGroceryDraftItems();
+    } catch {
+      // Error is surfaced through the shared banner state.
+    } finally {
+      setGroceryReviewPending(false);
     }
   };
 
@@ -3940,10 +4235,15 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           hiddenDraft={plannerHiddenGroceryDraft}
           onApprove={(draftOverride) => void handleApproveGroceries(draftOverride)}
           onClose={() => setShowReviewModal(false)}
-          onExclude={(item) => excludeGroceryDraftItem(item)}
-          onRestore={(item) => restoreExcludedGroceryDraftItem(item)}
-          onRestoreAll={() => restoreAllExcludedGroceryDraftItems()}
+          onExclude={(item) => handleExcludeGroceryDraftItem(item)}
+          onRefreshSyncPreview={() => void refreshGrocerySyncPreview()}
+          onRestore={(item) => handleRestoreExcludedGroceryDraftItem(item)}
+          onRestoreAll={() => handleRestoreAllExcludedGroceryDraftItems()}
+          reviewPending={groceryReviewPending}
           saving={saving}
+          syncPreview={grocerySyncPreview}
+          syncPreviewError={grocerySyncPreviewError}
+          syncPreviewLoading={grocerySyncPreviewLoading}
           weekLabel={weekLabel}
         />
       ) : null}

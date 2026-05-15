@@ -62,6 +62,157 @@ const getTodoActivityTime = (todo = {}) => (
   new Date(todo.completedAt || todo.updatedAt || todo.createdAt || 0).getTime()
 );
 
+const normalizePreviewItem = (item = {}) => {
+  const title = String(item?.title || '').trim();
+  const titleKey = normalizeShoppingTodoTitle(title);
+  if (!titleKey) return null;
+
+  return {
+    ...item,
+    key: item.key || titleKey,
+    title,
+    titleKey,
+    quantityValue: toShoppingQuantity(item?.quantityValue),
+    quantityUnit: String(item?.quantityUnit || '').trim(),
+  };
+};
+
+const compareShoppingQuantities = (draftItem = {}, matchingTodo = {}) => {
+  const draftQuantity = toShoppingQuantity(draftItem.quantityValue);
+  const manualQuantity = toShoppingQuantity(matchingTodo.quantityValue);
+  const draftUnit = normalizeShoppingUnit(draftItem.quantityUnit);
+  const manualUnit = normalizeShoppingUnit(matchingTodo.quantityUnit);
+
+  if (draftQuantity === null && manualQuantity === null) {
+    return { status: 'both-missing', differenceValue: null };
+  }
+  if (draftQuantity === null) {
+    return { status: 'draft-missing-quantity', differenceValue: null };
+  }
+  if (manualQuantity === null) {
+    return { status: 'manual-missing-quantity', differenceValue: draftQuantity };
+  }
+  if (draftUnit && manualUnit && draftUnit !== manualUnit) {
+    return { status: 'unit-mismatch', differenceValue: null };
+  }
+
+  const differenceValue = roundShoppingQuantity(draftQuantity - manualQuantity);
+  if (differenceValue <= 0) {
+    return { status: 'manual-covers', differenceValue };
+  }
+  return { status: 'manual-short', differenceValue };
+};
+
+export const buildMealPlanShoppingSyncPreview = ({
+  draftItems = [],
+  hiddenDraftItems = [],
+  existingTodos = [],
+  batchId = '',
+} = {}) => {
+  const normalizedDraftItems = (Array.isArray(draftItems) ? draftItems : [])
+    .map(normalizePreviewItem)
+    .filter(Boolean);
+  const normalizedHiddenItems = (Array.isArray(hiddenDraftItems) ? hiddenDraftItems : [])
+    .map(normalizePreviewItem)
+    .filter(Boolean);
+  const todos = Array.isArray(existingTodos) ? existingTodos : [];
+  const normalizedBatchId = String(batchId || '').trim();
+  const draftTitleKeys = new Set(normalizedDraftItems.map((item) => item.titleKey));
+
+  const currentGeneratedItems = todos
+    .filter((todo) => (
+      todo?.sourceType === 'meal_plan'
+      && normalizedBatchId
+      && String(todo.sourceBatchId || '') === normalizedBatchId
+    ))
+    .map((todo) => ({
+      ...todo,
+      titleKey: normalizeShoppingTodoTitle(todo.title),
+      quantityValue: toShoppingQuantity(todo.quantityValue),
+      quantityUnit: String(todo.quantityUnit || '').trim(),
+    }))
+    .filter((todo) => todo.titleKey);
+  const completedGeneratedItems = currentGeneratedItems.filter((todo) => todo.status === 'Done');
+
+  const generatedByTitle = new Map();
+  for (const item of currentGeneratedItems) {
+    if (!generatedByTitle.has(item.titleKey)) {
+      generatedByTitle.set(item.titleKey, item);
+    }
+  }
+
+  const addItems = [];
+  const updateItems = [];
+  const manualMatches = [];
+  const boughtMatches = [];
+
+  for (const item of normalizedDraftItems) {
+    const existingGeneratedItem = generatedByTitle.get(item.titleKey) || null;
+    if (existingGeneratedItem) {
+      updateItems.push({ item, existingItem: existingGeneratedItem });
+    } else {
+      addItems.push({ item });
+    }
+
+    const matchingManualTodos = todos.filter((todo) => (
+      normalizeShoppingTodoTitle(todo?.title) === item.titleKey
+      && todo?.sourceType !== 'meal_plan'
+    ));
+    const openManualTodos = matchingManualTodos.filter((todo) => todo.status !== 'Done');
+    const completedTodos = todos.filter((todo) => (
+      normalizeShoppingTodoTitle(todo?.title) === item.titleKey
+      && todo?.status === 'Done'
+      && !(
+        todo?.sourceType === 'meal_plan'
+        && normalizedBatchId
+        && String(todo.sourceBatchId || '') === normalizedBatchId
+      )
+    ));
+
+    if (openManualTodos.length > 0) {
+      manualMatches.push({
+        item,
+        todos: openManualTodos,
+        primaryTodo: openManualTodos[0],
+        quantityComparison: compareShoppingQuantities(item, openManualTodos[0]),
+      });
+    }
+
+    if (completedTodos.length > 0) {
+      boughtMatches.push({
+        item,
+        todos: completedTodos,
+        primaryTodo: completedTodos[0],
+      });
+    }
+  }
+
+  const removeItems = currentGeneratedItems
+    .filter((item) => !draftTitleKeys.has(item.titleKey))
+    .map((item) => ({ item }));
+
+  return {
+    addItems,
+    boughtMatches,
+    completedGeneratedItems,
+    currentGeneratedItems,
+    hiddenItems: normalizedHiddenItems,
+    manualMatches,
+    removeItems,
+    updateItems,
+    counts: {
+      add: addItems.length,
+      boughtMatches: boughtMatches.length,
+      completedGenerated: completedGeneratedItems.length,
+      generatedCurrent: currentGeneratedItems.length,
+      hidden: normalizedHiddenItems.length,
+      manualMatches: manualMatches.length,
+      remove: removeItems.length,
+      update: updateItems.length,
+    },
+  };
+};
+
 export const mergeShoppingItemQuantity = (existingItem = {}, incomingItem = {}) => {
   const existingQuantity = toShoppingQuantity(existingItem.quantityValue);
   const incomingQuantity = toShoppingQuantity(incomingItem.quantityValue);

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildMealPlanShoppingSyncPreview,
   createEmptyShoppingOfflineState,
   formatShoppingAddSummary,
   groupCompletedShoppingTodos,
@@ -201,4 +202,109 @@ test('formatShoppingAddSummary reports mixed add and merge outcomes clearly', ()
     formatShoppingAddSummary({ addedCount: 0, mergedCount: 1 }),
     'Merged 1 grocery into the open list.'
   );
+});
+
+test('buildMealPlanShoppingSyncPreview flags manual matches without treating them as generated updates', () => {
+  const preview = buildMealPlanShoppingSyncPreview({
+    batchId: 'batch-1',
+    draftItems: [
+      { key: 'oats::g', title: 'Oats', quantityValue: 500, quantityUnit: 'g' },
+    ],
+    existingTodos: [
+      {
+        _id: 'todo-oats-manual',
+        title: 'oats',
+        status: 'Open',
+        quantityValue: null,
+        quantityUnit: '',
+        sourceType: '',
+        sourceBatchId: null,
+      },
+    ],
+  });
+
+  assert.equal(preview.counts.add, 1);
+  assert.equal(preview.counts.update, 0);
+  assert.equal(preview.counts.manualMatches, 1);
+  assert.equal(preview.manualMatches[0].item.title, 'Oats');
+  assert.equal(preview.manualMatches[0].primaryTodo._id, 'todo-oats-manual');
+  assert.equal(preview.manualMatches[0].quantityComparison.status, 'manual-missing-quantity');
+});
+
+test('buildMealPlanShoppingSyncPreview separates generated updates, removals, hidden items, and bought matches', () => {
+  const preview = buildMealPlanShoppingSyncPreview({
+    batchId: 'batch-1',
+    draftItems: [
+      { key: 'eggs::pcs', title: 'Eggs', quantityValue: 6, quantityUnit: 'pcs' },
+      { key: 'milk::ml', title: 'Milk', quantityValue: 500, quantityUnit: 'ml' },
+    ],
+    hiddenDraftItems: [
+      { key: 'quorn::g', title: 'Quorn pieces', quantityValue: 300, quantityUnit: 'g' },
+    ],
+    existingTodos: [
+      {
+        _id: 'todo-eggs-generated',
+        title: 'eggs',
+        status: 'Open',
+        quantityValue: 4,
+        quantityUnit: 'pcs',
+        sourceType: 'meal_plan',
+        sourceBatchId: 'batch-1',
+      },
+      {
+        _id: 'todo-quorn-generated',
+        title: 'Quorn pieces',
+        status: 'Open',
+        quantityValue: 300,
+        quantityUnit: 'g',
+        sourceType: 'meal_plan',
+        sourceBatchId: 'batch-1',
+      },
+      {
+        _id: 'todo-milk-bought',
+        title: 'milk',
+        status: 'Done',
+        quantityValue: 500,
+        quantityUnit: 'ml',
+        sourceType: '',
+        sourceBatchId: null,
+      },
+    ],
+  });
+
+  assert.equal(preview.counts.add, 1);
+  assert.equal(preview.addItems[0].item.title, 'Milk');
+  assert.equal(preview.counts.update, 1);
+  assert.equal(preview.updateItems[0].item.title, 'Eggs');
+  assert.equal(preview.counts.remove, 1);
+  assert.equal(preview.removeItems[0].item.title, 'Quorn pieces');
+  assert.equal(preview.counts.hidden, 1);
+  assert.equal(preview.hiddenItems[0].title, 'Quorn pieces');
+  assert.equal(preview.counts.boughtMatches, 1);
+  assert.equal(preview.boughtMatches[0].primaryTodo._id, 'todo-milk-bought');
+  assert.equal(preview.counts.completedGenerated, 0);
+});
+
+test('buildMealPlanShoppingSyncPreview reports bought generated rows separately from shopping history', () => {
+  const preview = buildMealPlanShoppingSyncPreview({
+    batchId: 'batch-1',
+    draftItems: [
+      { key: 'eggs::pcs', title: 'Eggs', quantityValue: 6, quantityUnit: 'pcs' },
+    ],
+    existingTodos: [
+      {
+        _id: 'todo-eggs-generated-done',
+        title: 'Eggs',
+        status: 'Done',
+        quantityValue: 6,
+        quantityUnit: 'pcs',
+        sourceType: 'meal_plan',
+        sourceBatchId: 'batch-1',
+      },
+    ],
+  });
+
+  assert.equal(preview.counts.update, 1);
+  assert.equal(preview.counts.completedGenerated, 1);
+  assert.equal(preview.counts.boughtMatches, 0);
 });
