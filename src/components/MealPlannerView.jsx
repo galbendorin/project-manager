@@ -2750,6 +2750,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const [formState, setFormState] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showRecipeActions, setShowRecipeActions] = useState(false);
   const [quickPlanContext, setQuickPlanContext] = useState(null);
   const [copyPrompt, setCopyPrompt] = useState(null);
   const [multiDayPrompt, setMultiDayPrompt] = useState(null);
@@ -2759,6 +2760,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const [grocerySyncPreviewError, setGrocerySyncPreviewError] = useState('');
   const [grocerySyncPreviewLoading, setGrocerySyncPreviewLoading] = useState(false);
   const [showMobilePlannerDetails, setShowMobilePlannerDetails] = useState(false);
+  const [showMobileSetup, setShowMobileSetup] = useState(false);
   const [activeMobileDayKey, setActiveMobileDayKey] = useState('');
   const [mobileActivePanel, setMobileActivePanel] = useState('planner');
   const [planViewMode, setPlanViewMode] = useState('mine');
@@ -2850,9 +2852,6 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
   const plannerGroceryDraft = isCombinedPlanView ? householdGroceryDraft : groceryDraft;
   const plannerHiddenGroceryDraft = isCombinedPlanView ? hiddenHouseholdGroceryDraft : hiddenGroceryDraft;
   const planViewHeadline = isCombinedPlanView ? 'Family total' : 'Your total';
-  const planViewDescription = isCombinedPlanView
-    ? 'Both merges every visible household week for this date range. Shared calendar slots stay read-only, but shared recipes can still be opened and edited.'
-    : 'Mine shows only the meals saved in your own weekly plan.';
   const refreshGrocerySyncPreview = useCallback(async () => {
     if (!showReviewModal) return;
     setGrocerySyncPreviewLoading(true);
@@ -3360,43 +3359,95 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     <div className="pm-shell-bg min-h-full w-full overflow-x-hidden px-3 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto w-full max-w-7xl space-y-5">
         <section className="pm-home-panel pm-meal-planner-shell w-full min-w-0 overflow-hidden rounded-[24px] p-3.5 sm:rounded-[30px] sm:p-6">
-          <div className="flex w-full min-w-0 flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0">
-              <p className="pm-kicker">Meal Planner</p>
-              <h2 className="mt-2 max-w-3xl text-[1.85rem] font-bold leading-[0.98] tracking-[-0.05em] text-slate-950 sm:text-3xl sm:leading-none">
-                Plan the week and build shopping automatically
-              </h2>
-              <p className="mt-2 max-w-3xl text-[13px] leading-5 text-slate-500 sm:text-sm sm:leading-6">
-                Pick meals by day, reuse breakfasts, lunches, and dinners across the week, then review one aggregated grocery draft before it hits your shared Shopping List.
-              </p>
+          <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               {plannerIsShared ? (
-                <p className="mt-2 max-w-3xl text-[13px] font-medium leading-5 text-sky-700 sm:text-sm sm:leading-6">
-                  This household shares one recipe library and can review weekly plans together. Switch between your plan and the combined family view whenever you need.
-                </p>
-              ) : null}
-              {!canUseStarterLibrary ? (
-                <p className="mt-2 max-w-3xl text-[13px] leading-5 text-slate-500 sm:text-sm sm:leading-6">
-                  This account starts with an empty recipe library so you can add or import your own meals.
-                </p>
-              ) : null}
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+                  {[
+                    { id: 'mine', label: 'Mine', meta: `${entries.length}` },
+                    { id: 'both', label: 'Both', meta: householdSharedWeeks.length > 0 ? `${visibleEntries.length}` : 'You' },
+                  ].map((option) => {
+                    const isActive = planViewMode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setPlanViewMode(option.id)}
+                        className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                          isActive
+                            ? 'bg-[var(--pm-accent)] text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-white'
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span className={`ml-1 ${isActive ? 'text-white/75' : 'text-slate-400'}`}>{option.meta}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                  My plan
+                </span>
+              )}
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500">
+                {recipes.length} recipes
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500">
+                {plannerGroceryDraft.length} groceries
+              </span>
             </div>
-            <div className="flex w-full max-w-full flex-col gap-2 xl:w-auto xl:min-w-[220px] xl:items-end">
-              {canUseStarterLibrary ? (
-                <button type="button" onClick={() => void seedStarterLibrary()} className="pm-subtle-button w-full rounded-full px-4 py-2.5 text-sm font-semibold xl:w-auto">
-                  Load starter menu library
-                </button>
-              ) : null}
-              <button type="button" onClick={() => setShowImportModal(true)} className="pm-subtle-button w-full rounded-full px-4 py-2.5 text-sm font-semibold xl:w-auto">
-                Import rows
-              </button>
-              <button type="button" onClick={() => setFormState(DEFAULT_FORM_STATE)} className="pm-toolbar-primary w-full rounded-full px-4 py-2.5 text-sm font-semibold text-white xl:w-auto">
-                <span className="inline-flex items-center gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRecipeActions(false);
+                  setFormState(DEFAULT_FORM_STATE);
+                }}
+                className="pm-toolbar-primary w-full rounded-full px-4 py-2.5 text-sm font-semibold text-white sm:w-auto"
+              >
+                <span className="inline-flex items-center justify-center gap-2">
                   <Plus className="h-4 w-4" />
                   New recipe
                 </span>
               </button>
+              <button
+                type="button"
+                onClick={() => setShowRecipeActions((value) => !value)}
+                aria-expanded={showRecipeActions}
+                className="pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold"
+              >
+                More
+              </button>
             </div>
           </div>
+
+          {showRecipeActions ? (
+            <div className="mt-3 grid gap-2 rounded-[22px] border border-slate-200 bg-white/90 p-2 shadow-sm sm:grid-cols-2 lg:max-w-xl">
+              {canUseStarterLibrary ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRecipeActions(false);
+                    void seedStarterLibrary();
+                  }}
+                  className="pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold"
+                >
+                  Starter meals
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRecipeActions(false);
+                  setShowImportModal(true);
+                }}
+                className="pm-subtle-button rounded-full px-4 py-2.5 text-sm font-semibold"
+              >
+                Import recipes
+              </button>
+            </div>
+          ) : null}
 
           {error ? (
             <div className="mt-5 rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -3410,50 +3461,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
             </div>
           ) : null}
 
-          {plannerIsShared ? (
-            <div className="mt-5 rounded-[24px] border border-sky-100 bg-sky-50 px-4 py-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-700">Plan view</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">
-                    {isCombinedPlanView ? 'Seeing the combined family plan' : 'Seeing only your saved week'}
-                  </p>
-                  <p className="mt-1 text-[13px] leading-5 text-sky-800">
-                    {planViewDescription}
-                  </p>
-                </div>
-                <div className="inline-flex w-full rounded-full border border-sky-200 bg-white p-1 shadow-sm lg:w-auto">
-                  {[
-                    { id: 'mine', label: 'Mine', meta: `${entries.length}` },
-                    { id: 'both', label: 'Both', meta: householdSharedWeeks.length > 0 ? `${plannerEntries.length}` : 'Just you' },
-                  ].map((option) => {
-                    const isActive = planViewMode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setPlanViewMode(option.id)}
-                        className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold transition lg:flex-none lg:min-w-[108px] ${
-                          isActive
-                            ? 'bg-[var(--pm-accent)] text-white'
-                            : 'text-slate-600'
-                        }`}
-                      >
-                        <span className="block">{option.label}</span>
-                        <span className={`mt-1 block text-[10px] font-medium uppercase tracking-[0.16em] ${isActive ? 'text-white/80' : 'text-slate-400'}`}>
-                          {option.meta}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          ) : null}
-
           {isMobile ? (
-            <div className="mt-4 rounded-[20px] border border-slate-200 bg-white/90 p-2 shadow-sm">
-              <div className="grid grid-cols-3 gap-2">
+            <div className="mt-3 rounded-[18px] border border-slate-200 bg-white/90 p-1.5 shadow-sm">
+              <div className="grid grid-cols-3 gap-1.5">
                 {[
                   { id: 'planner', label: 'Plan', meta: activeMobileDay?.shortLabel || 'Week' },
                   { id: 'recipes', label: 'Recipes', meta: `${mobileRecipeLibraryCount}` },
@@ -3465,7 +3475,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                       key={panel.id}
                       type="button"
                       onClick={() => setMobileActivePanel(panel.id)}
-                      className={`rounded-[16px] border px-3 py-2.5 text-left transition ${
+                      className={`rounded-[15px] border px-2.5 py-2 text-left transition ${
                         isActive
                           ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)] shadow-sm'
                           : 'border-slate-200 bg-slate-50 text-slate-600'
@@ -3482,8 +3492,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
             </div>
           ) : null}
 
-          <div className="mt-5 grid w-full min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.65fr)_360px]">
-            <div className="pm-scroll-optimize-section pm-meal-planner-panel w-full min-w-0 rounded-[24px] border border-slate-200 bg-white p-3.5 shadow-sm sm:rounded-[28px] sm:p-5">
+          <div className="mt-3 grid w-full min-w-0 gap-3 sm:mt-5 sm:gap-4 2xl:grid-cols-[minmax(0,1.65fr)_360px]">
+            <div className="pm-scroll-optimize-section pm-meal-planner-panel w-full min-w-0 rounded-[22px] border border-slate-200 bg-white p-3 shadow-sm sm:rounded-[28px] sm:p-5">
               <div className="grid min-w-0 gap-3 2xl:grid-cols-[auto_minmax(0,1fr)] 2xl:items-start">
                 <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                   <button type="button" onClick={() => handleMoveWeek(-1)} className="pm-subtle-button shrink-0 rounded-full p-2.5">
@@ -3497,7 +3507,76 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                   </button>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-3 2xl:justify-self-end">
+                <div className="sm:hidden">
+                  <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Portions</p>
+                        <p className="mt-0.5 truncate text-xs font-semibold text-slate-900">
+                          You 1.0 · Partner {partnerInput || '0'} · Kids {kidsInput || '0'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileSetup((previous) => !previous)}
+                        aria-expanded={showMobileSetup}
+                        className="pm-subtle-button shrink-0 rounded-full px-3 py-2 text-xs font-semibold"
+                      >
+                        {showMobileSetup ? 'Done' : 'Setup'}
+                      </button>
+                    </div>
+
+                    {showMobileSetup ? (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <div className="rounded-2xl bg-white px-3 py-2 shadow-sm">
+                          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">You</span>
+                          <span className="mt-1 block text-sm font-semibold text-slate-900">1.0</span>
+                        </div>
+                        <label className="rounded-2xl bg-white px-3 py-2 shadow-sm">
+                          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Partner</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.05"
+                            value={partnerInput}
+                            onChange={(event) => setPartnerInput(event.target.value)}
+                            className="mt-1 w-full min-w-0 bg-transparent text-sm font-semibold text-slate-900 outline-none"
+                          />
+                        </label>
+                        <label className="rounded-2xl bg-white px-3 py-2 shadow-sm">
+                          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Kids</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={kidsInput}
+                            onChange={(event) => setKidsInput(event.target.value)}
+                            className="mt-1 w-full min-w-0 bg-transparent text-sm font-semibold text-slate-900 outline-none"
+                          />
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={resetHouseholdInputs}
+                            disabled={!householdDirty || householdSaving}
+                            className="pm-subtle-button flex-1 rounded-full px-3 py-2 text-[11px] font-semibold disabled:opacity-50"
+                          >
+                            Reset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void persistHouseholdInputs()}
+                            disabled={!householdCanSave || !householdDirty || householdSaving}
+                            className="pm-toolbar-primary flex-1 rounded-full px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-50"
+                          >
+                            {householdSaving ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="hidden gap-2 sm:grid sm:grid-cols-3 2xl:justify-self-end">
                   <div className="min-w-0 rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-2.5">
                     <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">You</span>
                     <span className="mt-1 block text-sm font-semibold text-slate-900 sm:text-[15px]">1.0</span>
@@ -3551,52 +3630,39 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                 </div>
               </div>
 
-              <div className="mt-4 sm:hidden">
-                <div className="space-y-2.5">
-                  <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Planner summary</p>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <div className="rounded-2xl bg-white px-3 py-2 shadow-sm">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Household</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-950">{defaultServingMultiplier}x total</p>
-                      </div>
-                      <div className="rounded-2xl bg-white px-3 py-2 shadow-sm">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Your kcal</p>
-                        <p className="mt-1 text-sm font-semibold text-amber-700">{PERSONAL_DAILY_TARGETS.caloriesFor64KgKcal}</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowMobilePlannerDetails((previous) => !previous)}
-                      className="pm-subtle-button mt-3 w-full rounded-full px-4 py-2.5 text-xs font-semibold"
-                    >
-                      {showMobilePlannerDetails ? 'Hide planner details' : 'Show planner details'}
-                    </button>
-                  </div>
-
-                  {showMobilePlannerDetails ? (
-                    <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-3">
-                      <div className="grid grid-cols-2 gap-2 text-[11px] font-semibold">
-                        <span className="rounded-2xl bg-white px-3 py-2 text-sky-700 shadow-sm">Protein {PERSONAL_DAILY_TARGETS.proteinG}g</span>
-                        <span className="rounded-2xl bg-white px-3 py-2 text-rose-700 shadow-sm">Fat {PERSONAL_DAILY_TARGETS.fatG}g</span>
-                        <span className="rounded-2xl bg-white px-3 py-2 text-indigo-700 shadow-sm">Carbs {PERSONAL_DAILY_TARGETS.carbsG}g</span>
-                        <span className="rounded-2xl bg-white px-3 py-2 text-emerald-700 shadow-sm">Fibre {PERSONAL_DAILY_TARGETS.fiberG}g</span>
-                      </div>
-                      <div className="mt-3 space-y-2 text-[11px] leading-5 text-slate-500">
-                        <p>Your calories use only your 1.0 serving reference.</p>
-                        <p>Partner and kids still scale groceries, with kids counted as 0.5 portion.</p>
-                        <p>Breakfast, lunch, and dinner can copy forward to later days.</p>
-                      </div>
-                    </div>
-                  ) : null}
+              <div className="mt-3 sm:hidden">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowMobilePlannerDetails((previous) => !previous)}
+                    className="pm-subtle-button min-w-0 truncate rounded-full px-3 py-2 text-xs font-semibold"
+                  >
+                    {showMobilePlannerDetails
+                      ? 'Hide details'
+                      : `Details · ${defaultServingMultiplier}x · ${PERSONAL_DAILY_TARGETS.caloriesFor64KgKcal} kcal`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobileActivePanel('groceries')}
+                    className="pm-toolbar-primary rounded-full px-3 py-2 text-xs font-semibold text-white"
+                  >
+                    Groceries
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setMobileActivePanel('groceries')}
-                  className="pm-toolbar-primary mt-3 w-full rounded-full px-4 py-3 text-sm font-semibold text-white"
-                >
-                  Open {isCombinedPlanView ? 'family' : 'your'} grocery summary
-                </button>
+
+                {showMobilePlannerDetails ? (
+                  <div className="mt-2 rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-3">
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-semibold">
+                      <span className="rounded-2xl bg-white px-3 py-2 text-sky-700 shadow-sm">Protein {PERSONAL_DAILY_TARGETS.proteinG}g</span>
+                      <span className="rounded-2xl bg-white px-3 py-2 text-rose-700 shadow-sm">Fat {PERSONAL_DAILY_TARGETS.fatG}g</span>
+                      <span className="rounded-2xl bg-white px-3 py-2 text-indigo-700 shadow-sm">Carbs {PERSONAL_DAILY_TARGETS.carbsG}g</span>
+                      <span className="rounded-2xl bg-white px-3 py-2 text-emerald-700 shadow-sm">Fibre {PERSONAL_DAILY_TARGETS.fiberG}g</span>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-5 text-slate-500">
+                      Groceries use the household portions. Your calories use the 1.0 serving reference.
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="mt-4 hidden flex-col gap-3 sm:flex xl:flex-row xl:items-center xl:justify-between">
@@ -3627,19 +3693,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
               </div>
 
               {isMobile && isPlannerVisible ? (
-                <div className="mt-5 rounded-[20px] border border-slate-200 bg-slate-50/70 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Plan the week</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-900">Focus on one day at a time</p>
-                    </div>
-                    {activeMobileDay ? (
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
-                        {activeMobileDay.shortLabel}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1 no-scrollbar">
+                <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1 no-scrollbar">
                     {weekDays.map((day) => {
                       const isActive = day.key === activeMobileDayKey;
                       return (
@@ -3647,7 +3701,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                           key={`mobile-day-${day.key}`}
                           type="button"
                           onClick={() => setActiveMobileDayKey(day.key)}
-                          className={`min-w-[84px] shrink-0 rounded-[16px] border px-3 py-2.5 text-left transition ${
+                          className={`min-w-[74px] shrink-0 rounded-[15px] border px-2.5 py-2 text-left transition ${
                             isActive
                               ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)] shadow-sm'
                               : 'border-slate-200 bg-white text-slate-600'
@@ -3662,12 +3716,11 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         </button>
                       );
                     })}
-                  </div>
                 </div>
               ) : null}
 
               {isPlannerVisible ? (
-              <div className={`mt-5 ${isMobile ? 'space-y-3' : 'space-y-4'}`}>
+              <div className={`${isMobile ? 'mt-3 space-y-3' : 'mt-5 space-y-4'}`}>
                 {visibleWeekDays.map((day) => {
                   const currentDayIndex = weekDays.findIndex((candidate) => candidate.key === day.key);
                   const hasNextDayInWeek = currentDayIndex >= 0 && currentDayIndex < weekDays.length - 1;
