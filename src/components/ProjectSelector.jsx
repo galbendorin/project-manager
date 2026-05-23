@@ -5,6 +5,7 @@ import { usePlan } from '../contexts/PlanContext';
 import { buildDemoProjectPayload } from '../utils/demoProjectBuilder';
 import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
 import AuthenticatedFooter from './AuthenticatedFooter';
+import AdminHealthPanel from './AdminHealthPanel';
 import ProjectShareModal from './ProjectShareModal';
 import PmWorkspaceLogo from './PmWorkspaceLogo';
 import AccentThemePicker from './AccentThemePicker';
@@ -16,6 +17,7 @@ import {
 import { createProjectWithLimits, getProjectCreationErrorMessage } from '../utils/projectCreation';
 import { loadLastProject } from '../utils/navigationState';
 import { getStoredProjectTab } from '../utils/projectTabMemory';
+import { getProjectHomeLaunchFeatures } from '../utils/featureRegistry';
 
 const PROJECT_TAB_LABEL_BY_ID = new Map(TABS.map((tab) => [tab.id, tab.label]));
 
@@ -69,6 +71,16 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
     [projects]
   );
   const showInternalLaunchCards = householdToolsEnabled;
+  const projectHomeLaunchFeatures = useMemo(() => (
+    getProjectHomeLaunchFeatures({ includeHouseholdTools: showInternalLaunchCards })
+  ), [showInternalLaunchCards]);
+  const launchActionById = useMemo(() => ({
+    'meal-planner': onOpenMeals,
+    'shopping-list': onOpenShopping,
+    baby: onOpenBaby,
+    habits: onOpenHabits,
+    timesheets: onOpenTrack,
+  }), [onOpenBaby, onOpenHabits, onOpenMeals, onOpenShopping, onOpenTrack]);
   const shareProject = useMemo(
     () => projects.find((project) => project.id === shareProjectId) || null,
     [projects, shareProjectId]
@@ -323,6 +335,29 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
     });
   };
 
+  const renderUtilityLaunchCard = (feature, className = '') => {
+    const handleOpen = launchActionById[feature.id];
+    if (!handleOpen) return null;
+
+    return (
+      <div key={`${feature.id}-${className}`} className={`pm-utility-card rounded-[22px] px-3.5 py-3 ${className}`}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="pm-kicker mb-1">{feature.label}</p>
+            <h2 className="truncate text-base font-semibold text-slate-900">{feature.homeTitle}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={handleOpen}
+            className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
+          >
+            Open
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="pm-accent-scope min-h-screen pm-shell-bg flex flex-col">
       <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -374,93 +409,10 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
                   </div>
                 )}
 
-                {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="pm-kicker mb-1">Meal Planner</p>
-                        <h2 className="truncate text-base font-semibold text-slate-900">Plan meals</h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={onOpenMeals}
-                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="pm-kicker mb-1">Shopping List</p>
-                        <h2 className="truncate text-base font-semibold text-slate-900">Share groceries</h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={onOpenShopping}
-                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="pm-kicker mb-1">Baby</p>
-                        <h2 className="truncate text-base font-semibold text-slate-900">Track care</h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={onOpenBaby}
-                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="pm-kicker mb-1">Habits</p>
-                        <h2 className="truncate text-base font-semibold text-slate-900">Track habits</h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={onOpenHabits}
-                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="pm-utility-card mt-3 hidden rounded-[22px] px-3.5 py-3 lg:block">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="pm-kicker mb-1">Timesheets</p>
-                      <h2 className="truncate text-base font-semibold text-slate-900">Log hours</h2>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={onOpenTrack}
-                      className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                    >
-                      Open
-                    </button>
-                  </div>
-                </div>
+                {projectHomeLaunchFeatures.map((feature) => renderUtilityLaunchCard(
+                  feature,
+                  'mt-3 hidden lg:block'
+                ))}
               </div>
             </aside>
 
@@ -519,93 +471,12 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
                   </div>
                 )}
 
-                {showInternalLaunchCards && (
-                  <div className="pm-utility-card rounded-[22px] px-3.5 py-3 lg:hidden">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="pm-kicker mb-1">Meal Planner</p>
-                        <h2 className="truncate text-base font-semibold text-slate-900">Plan meals</h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={onOpenMeals}
-                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <AdminHealthPanel />
 
-                {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-3 rounded-[22px] px-3.5 py-3 lg:hidden">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="pm-kicker mb-1">Shopping List</p>
-                        <h2 className="truncate text-base font-semibold text-slate-900">Share groceries</h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={onOpenShopping}
-                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-3 rounded-[22px] px-3.5 py-3 lg:hidden">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="pm-kicker mb-1">Baby</p>
-                        <h2 className="truncate text-base font-semibold text-slate-900">Track care</h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={onOpenBaby}
-                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {showInternalLaunchCards && (
-                  <div className="pm-utility-card mt-3 rounded-[22px] px-3.5 py-3 lg:hidden">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="pm-kicker mb-1">Habits</p>
-                        <h2 className="truncate text-base font-semibold text-slate-900">Track habits</h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={onOpenHabits}
-                        className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="pm-utility-card mt-3 rounded-[22px] px-3.5 py-3 lg:hidden">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="pm-kicker mb-1">Timesheets</p>
-                      <h2 className="truncate text-base font-semibold text-slate-900">Log hours</h2>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={onOpenTrack}
-                      className="pm-subtle-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
-                    >
-                      Open
-                    </button>
-                  </div>
-                </div>
+                {projectHomeLaunchFeatures.map((feature) => renderUtilityLaunchCard(
+                  feature,
+                  'mt-3 lg:hidden'
+                ))}
 
                 {continueProject ? (
                   <button

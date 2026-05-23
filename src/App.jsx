@@ -13,6 +13,7 @@ import {
   saveLastAppPath,
   saveLastProject,
 } from './utils/navigationState';
+import { getFeatureByRoute } from './utils/featureRegistry';
 import { readAppShortcutIntent } from './utils/appShortcutIntent';
 import { activatePendingServiceWorker } from './utils/registerServiceWorker';
 
@@ -106,6 +107,7 @@ function App() {
   ));
   const [updateReady, setUpdateReady] = useState(false);
   const [applyingUpdate, setApplyingUpdate] = useState(false);
+  const currentFeature = getFeatureByRoute(currentPath);
 
   useEffect(() => {
     applyAccentTheme(accentTheme);
@@ -225,7 +227,7 @@ function App() {
     );
   }
 
-  if (planLoading && (currentPath === '/shopping' || currentPath === '/meals' || currentPath === '/baby' || currentPath === '/habits')) {
+  if (planLoading && isHouseholdToolPath(currentPath)) {
     return (
       <>
         <OfflineBanner isOnline={isOnline} />
@@ -299,8 +301,8 @@ function App() {
                       />,
                       'Loading Habits...'
                     )
-                  : currentPath === '/baby' || currentPath === '/habits'
-                    ? <HouseholdToolUnavailable onGoToProjects={openProjectSelector} toolName={currentPath === '/habits' ? 'Habits' : 'Baby'} />
+                  : isHouseholdToolPath(currentPath)
+                    ? <HouseholdToolUnavailable onGoToProjects={openProjectSelector} toolName={currentFeature?.label || 'This tool'} />
             : renderLazyPage(
                 <ProjectSelector
                   onSelectProject={(project) => {
