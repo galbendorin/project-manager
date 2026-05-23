@@ -1,12 +1,11 @@
 import { readLocalJson, removeLocalJson, writeLocalJson } from './offlineState.js';
+import { isHouseholdFeaturePath } from './featureRegistry.js';
 
 const LAST_PATH_KEY = 'pmworkspace:last-path:v1';
 const LAST_PROJECT_KEY = 'pmworkspace:last-project:v1';
-const HOUSEHOLD_TOOL_PATHS = new Set(['/shopping', '/meals', '/baby', '/habits']);
 
 export const isHouseholdToolPath = (path = '') => {
-  const normalized = String(path || '/').replace(/\/+$/, '') || '/';
-  return HOUSEHOLD_TOOL_PATHS.has(normalized);
+  return isHouseholdFeaturePath(path);
 };
 
 export const loadLastAppPath = () => readLocalJson(LAST_PATH_KEY, '/');
