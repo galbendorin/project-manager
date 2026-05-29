@@ -210,12 +210,45 @@ const mapEntryRow = (row = {}, fallback = {}) => ({
   carryoverSourceEntryId: row.carryover_source_entry_id || '',
 });
 
+const shouldReuseMealEntry = (payload = {}) => (
+  normalizeMealEntryKind(payload.entry_kind) === 'planned'
+  && !payload.carryover_source_entry_id
+);
+
+const getMealEntryRequestKey = (payload = {}) => ([
+  payload.week_id || '',
+  payload.date || '',
+  payload.meal_slot || '',
+  payload.meal_id || '',
+  normalizeMealAudience(payload.audience),
+  normalizeMealEntryKind(payload.entry_kind),
+  payload.carryover_source_entry_id || '',
+].join('|'));
+
+const isSameReusableMealEntry = (entry = {}, payload = {}) => (
+  entry.weekId === payload.week_id
+  && entry.date === payload.date
+  && entry.mealSlot === payload.meal_slot
+  && entry.mealId === payload.meal_id
+  && normalizeMealAudience(entry.audience) === normalizeMealAudience(payload.audience)
+  && normalizeMealEntryKind(entry.entryKind) === normalizeMealEntryKind(payload.entry_kind)
+  && !entry.carryoverSourceEntryId
+);
+
 const sortEntries = (entries = []) => (
   [...entries].sort((left, right) => (
     `${left.date}-${left.mealSlot}`.localeCompare(`${right.date}-${right.mealSlot}`)
     || ((left.entryPosition ?? 0) - (right.entryPosition ?? 0))
     || `${left.id}`.localeCompare(`${right.id}`)
   ))
+);
+
+const mergeMealEntry = (entryList = [], nextEntry) => (
+  sortEntries(
+    entryList.some((entry) => entry.id === nextEntry.id)
+      ? entryList.map((entry) => entry.id === nextEntry.id ? nextEntry : entry)
+      : [...entryList, nextEntry]
+  )
 );
 
 const sortRecipes = (recipes = []) => (
@@ -300,6 +333,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
   const [lastImportedCount, setLastImportedCount] = useState(0);
   const [lastApprovedCount, setLastApprovedCount] = useState(0);
   const starterSeedAttemptedRef = useRef(false);
+  const mealEntryRequestRef = useRef(new Map());
 
   const weekDays = useMemo(() => getWeekDayEntries(selectedWeekStart), [selectedWeekStart]);
   const canUseStarterLibrary = useMemo(
@@ -1155,42 +1189,114 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         return nextEntry;
       }
 
-      let insertResult = await supabase
-        .from('meal_plan_entries')
-        .insert(payload)
-        .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position, entry_kind, carryover_source_entry_id')
-        .single();
-
-      if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['entry_kind', 'carryover_source_entry_id'])) {
-        if (normalizedEntryKind === 'carryover' || payload.carryover_source_entry_id) {
-          throw new Error('Meal Planner needs the latest SQL migration before carryover cards can be saved.');
+      if (shouldReuseMealEntry(payload)) {
+        const matchingLocalEntry = [...visibleEntries, ...entries].find((entry) => isSameReusableMealEntry(entry, payload));
+        if (matchingLocalEntry) {
+          return matchingLocalEntry;
         }
-        insertResult = await supabase
-          .from('meal_plan_entries')
-          .insert({
-            week_id: payload.week_id,
-            date: payload.date,
-            meal_slot: payload.meal_slot,
-            meal_id: payload.meal_id,
-            serving_multiplier: payload.serving_multiplier,
-            audience: payload.audience,
-            entry_position: payload.entry_position,
-          })
-          .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position')
-          .single();
       }
 
-      const { data, error: insertError } = insertResult;
-      if (insertError || !data) throw insertError || new Error('Unable to save planned meal.');
+      const requestKey = getMealEntryRequestKey(payload);
+      const pendingRequest = mealEntryRequestRef.current.get(requestKey);
+      if (pendingRequest) {
+        return pendingRequest;
+      }
 
-      const nextEntry = mapEntryRow(data, {
-        weekId: targetWeekId,
-        weekOwnerUserId: targetWeekOwnerUserId,
-      });
-      const nextOwnEntries = sortEntries([...entries, nextEntry]);
-      setEntries(nextOwnEntries);
-      setVisibleEntries((previous) => mergeVisibleEntriesWithOwnEntries(previous, nextOwnEntries, currentUserId));
-      return nextEntry;
+      const insertRequest = (async () => {
+        if (shouldReuseMealEntry(payload)) {
+          const { data: matchingRows, error: matchingError } = await supabase
+            .from('meal_plan_entries')
+            .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position, entry_kind, carryover_source_entry_id')
+            .eq('week_id', targetWeekId)
+            .eq('date', payload.date)
+            .eq('meal_slot', payload.meal_slot)
+            .eq('meal_id', payload.meal_id)
+            .eq('audience', payload.audience)
+            .eq('entry_kind', 'planned')
+            .is('carryover_source_entry_id', null)
+            .order('entry_position', { ascending: true })
+            .limit(1);
+
+          if (matchingError && isMissingMealPlannerFieldError(matchingError, ['entry_kind', 'carryover_source_entry_id'])) {
+            const { data: fallbackRows } = await supabase
+              .from('meal_plan_entries')
+              .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position')
+              .eq('week_id', targetWeekId)
+              .eq('date', payload.date)
+              .eq('meal_slot', payload.meal_slot)
+              .eq('meal_id', payload.meal_id)
+              .eq('audience', payload.audience)
+              .order('entry_position', { ascending: true })
+              .limit(1);
+
+            if (fallbackRows?.[0]) {
+              const existingServerEntry = mapEntryRow(fallbackRows[0], {
+                weekId: targetWeekId,
+                weekOwnerUserId: targetWeekOwnerUserId,
+              });
+              const nextOwnEntries = mergeMealEntry(entries, existingServerEntry);
+              setEntries(nextOwnEntries);
+              setVisibleEntries((previous) => mergeVisibleEntriesWithOwnEntries(previous, nextOwnEntries, currentUserId));
+              return existingServerEntry;
+            }
+          } else if (matchingRows?.[0]) {
+            const existingServerEntry = mapEntryRow(matchingRows[0], {
+              weekId: targetWeekId,
+              weekOwnerUserId: targetWeekOwnerUserId,
+            });
+            const nextOwnEntries = mergeMealEntry(entries, existingServerEntry);
+            setEntries(nextOwnEntries);
+            setVisibleEntries((previous) => mergeVisibleEntriesWithOwnEntries(previous, nextOwnEntries, currentUserId));
+            return existingServerEntry;
+          }
+        }
+
+        let insertResult = await supabase
+          .from('meal_plan_entries')
+          .insert(payload)
+          .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position, entry_kind, carryover_source_entry_id')
+          .single();
+
+        if (insertResult.error && isMissingMealPlannerFieldError(insertResult.error, ['entry_kind', 'carryover_source_entry_id'])) {
+          if (normalizedEntryKind === 'carryover' || payload.carryover_source_entry_id) {
+            throw new Error('Meal Planner needs the latest SQL migration before carryover cards can be saved.');
+          }
+          insertResult = await supabase
+            .from('meal_plan_entries')
+            .insert({
+              week_id: payload.week_id,
+              date: payload.date,
+              meal_slot: payload.meal_slot,
+              meal_id: payload.meal_id,
+              serving_multiplier: payload.serving_multiplier,
+              audience: payload.audience,
+              entry_position: payload.entry_position,
+            })
+            .select('id, date, meal_slot, meal_id, serving_multiplier, audience, entry_position')
+            .single();
+        }
+
+        const { data, error: insertError } = insertResult;
+        if (insertError || !data) throw insertError || new Error('Unable to save planned meal.');
+
+        const nextEntry = mapEntryRow(data, {
+          weekId: targetWeekId,
+          weekOwnerUserId: targetWeekOwnerUserId,
+        });
+        const nextOwnEntries = mergeMealEntry(entries, nextEntry);
+        setEntries(nextOwnEntries);
+        setVisibleEntries((previous) => mergeVisibleEntriesWithOwnEntries(previous, nextOwnEntries, currentUserId));
+        return nextEntry;
+      })();
+
+      mealEntryRequestRef.current.set(requestKey, insertRequest);
+      try {
+        return await insertRequest;
+      } finally {
+        if (mealEntryRequestRef.current.get(requestKey) === insertRequest) {
+          mealEntryRequestRef.current.delete(requestKey);
+        }
+      }
     } catch (nextError) {
       if (isOutdatedMealPlannerSlotConstraintError(nextError)) {
         setError('Meal Planner needs the latest SQL migration before multiple meals can be saved in the same slot.');
