@@ -1623,9 +1623,11 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
   const [selectedDateKeys, setSelectedDateKeys] = useState(() => [initialDateKey || weekDays?.[0]?.key || ''].filter(Boolean));
   const [mealSlot, setMealSlot] = useState(initialSlot || recipe?.mealSlot || 'breakfast');
   const [audience, setAudience] = useState(initialAudience);
+  const [isAdding, setIsAdding] = useState(false);
 
   useEffect(() => {
     setSelectedDateKeys([initialDateKey || weekDays?.[0]?.key || ''].filter(Boolean));
+    setIsAdding(false);
   }, [initialDateKey, weekDays]);
 
   useEffect(() => {
@@ -1659,6 +1661,17 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
   const actionLabel = selectedDateKeys.length === 1
     ? 'Add to planner'
     : `Add to ${selectedDateKeys.length} days`;
+  const canAdd = selectedDateKeys.length > 0 && !isAdding;
+
+  const handleAdd = async () => {
+    if (!canAdd) return;
+    setIsAdding(true);
+    try {
+      await onAdd({ dateKeys: selectedDateKeys, mealSlot, audience });
+    } finally {
+      setIsAdding(false);
+    }
+  };
 
   return (
     <ModalShell onClose={onClose}>
@@ -1771,10 +1784,11 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
           </button>
           <button
             type="button"
-            onClick={() => onAdd({ dateKeys: selectedDateKeys, mealSlot, audience })}
-            className="pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white"
+            onClick={() => void handleAdd()}
+            disabled={!canAdd}
+            className={`pm-toolbar-primary rounded-full px-4 py-2.5 text-sm font-semibold text-white ${!canAdd ? 'cursor-not-allowed opacity-60' : ''}`}
           >
-            {actionLabel}
+            {isAdding ? 'Adding...' : actionLabel}
           </button>
         </div>
       </div>
@@ -1786,6 +1800,7 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
   const [search, setSearch] = useState('');
   const [selectedMealFilters, setSelectedMealFilters] = useState([slot]);
   const [visibleCount, setVisibleCount] = useState(PICKER_INITIAL_COUNT);
+  const [pendingRecipeId, setPendingRecipeId] = useState('');
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -1823,6 +1838,16 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
   const visibleRecipes = useMemo(() => (
     filteredRecipes.slice(0, visibleCount)
   ), [filteredRecipes, visibleCount]);
+
+  const handlePick = async (recipe) => {
+    if (!recipe?.id || pendingRecipeId) return;
+    setPendingRecipeId(recipe.id);
+    try {
+      await onPick(recipe);
+    } finally {
+      setPendingRecipeId('');
+    }
+  };
 
   return (
     <ModalShell onClose={onClose} wide>
@@ -1912,43 +1937,53 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
 
         {filteredRecipes.length > 0 ? (
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {visibleRecipes.map((recipe) => (
-              <button
-                key={recipe.id}
-                type="button"
-                onClick={() => onPick(recipe)}
-                className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--pm-accent)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.12)]"
-              >
-                <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
-                    {getMealSlotLabel(recipe.mealSlot)}
-                  </span>
-                  {recipe.sourcePdf ? (
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{recipe.sourcePdf}</span>
-                  ) : null}
-                  {recipe.suggestedDay ? (
-                    <span className="rounded-full border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-2.5 py-1 text-[var(--pm-accent-strong)]">
-                      Suggested {recipe.suggestedDay.toUpperCase()}
+            {visibleRecipes.map((recipe) => {
+              const isPicking = pendingRecipeId === recipe.id;
+              const isLocked = Boolean(pendingRecipeId);
+              return (
+                <button
+                  key={recipe.id}
+                  type="button"
+                  onClick={() => void handlePick(recipe)}
+                  disabled={isLocked}
+                  className={`rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--pm-accent)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.12)] disabled:cursor-not-allowed disabled:opacity-60 ${isPicking ? 'border-[var(--pm-accent)] ring-2 ring-[var(--pm-accent)]/15' : ''}`}
+                >
+                  <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+                      {getMealSlotLabel(recipe.mealSlot)}
                     </span>
-                  ) : null}
-                </div>
-                <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
-                <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 4)}</p>
-                <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                  {recipe.estimatedKcal ? (
-                    <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{recipe.estimatedKcal} kcal</span>
-                  ) : null}
-                  {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
-                    <span className="rounded-full bg-sky-50 px-2.5 py-1 font-semibold text-sky-700">
-                      Batch {recipe.batchYieldPortions} portions
+                    {recipe.sourcePdf ? (
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{recipe.sourcePdf}</span>
+                    ) : null}
+                    {recipe.suggestedDay ? (
+                      <span className="rounded-full border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-soft)] px-2.5 py-1 text-[var(--pm-accent-strong)]">
+                        Suggested {recipe.suggestedDay.toUpperCase()}
+                      </span>
+                    ) : null}
+                  </div>
+                  <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
+                  <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 4)}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                    {recipe.estimatedKcal ? (
+                      <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{recipe.estimatedKcal} kcal</span>
+                    ) : null}
+                    {recipe.yieldMode === 'batch' && recipe.batchYieldPortions ? (
+                      <span className="rounded-full bg-sky-50 px-2.5 py-1 font-semibold text-sky-700">
+                        Batch {recipe.batchYieldPortions} portions
+                      </span>
+                    ) : null}
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">
+                      {(recipe.ingredients || []).length} ingredients
                     </span>
-                  ) : null}
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">
-                    {(recipe.ingredients || []).length} ingredients
-                  </span>
-                </div>
-              </button>
-            ))}
+                    {isPicking ? (
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+                        Adding...
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
             {filteredRecipes.length > visibleRecipes.length ? (
               <button
                 type="button"
@@ -3150,6 +3185,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       });
 
       setPickerContext(null);
+      setStatusMessage(`${recipe.name} added to ${getMealSlotLabel(selectionContext.mealSlot).toLowerCase()}.`);
 
       if (nextCopyPrompt) {
         setCopyPrompt(nextCopyPrompt);
@@ -3272,6 +3308,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
         });
         setQuickPlanContext(null);
         setCopyPrompt(null);
+        setStatusMessage(`${recipe.name} added to ${normalizedDateKeys.length} day${normalizedDateKeys.length === 1 ? '' : 's'}.`);
         if (isMobile) {
           setMobileActivePanel('planner');
         }
@@ -3297,6 +3334,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       });
 
       setQuickPlanContext(null);
+      setStatusMessage(`${recipe.name} added to ${getMealSlotLabel(mealSlot).toLowerCase()}.`);
 
       if (nextCopyPrompt) {
         setCopyPrompt(nextCopyPrompt);
@@ -4146,7 +4184,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
             previous ? { ...previous, audience } : previous
           ))}
           onClose={() => setPickerContext(null)}
-          onPick={(recipe) => void handleRecipePicked(recipe)}
+          onPick={handleRecipePicked}
         />
       ) : null}
 
@@ -4158,9 +4196,9 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           initialSlot={quickPlanContext.initialSlot}
           initialAudience={quickPlanContext.initialAudience}
           onClose={() => setQuickPlanContext(null)}
-          onAdd={({ dateKey, mealSlot, audience }) => void handleQuickPlanRecipe({
+          onAdd={({ dateKeys, mealSlot, audience }) => handleQuickPlanRecipe({
             recipe: quickPlanContext.recipe,
-            dateKey,
+            dateKeys,
             mealSlot,
             audience,
           })}
