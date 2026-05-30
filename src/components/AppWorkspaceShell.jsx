@@ -37,6 +37,7 @@ const ShoppingListView = lazy(() => import('./ShoppingListView'));
 const MealPlannerView = lazy(() => import('./MealPlannerView'));
 const BabyView = lazy(() => import('./BabyView'));
 const HabitsView = lazy(() => import('./HabitsView'));
+const WeightTrackerView = lazy(() => import('./WeightTrackerView'));
 
 export function AuthenticatedTrackShell({
   currentUserId,
@@ -149,6 +150,29 @@ export function AuthenticatedHabitsShell({
       userEmail={userEmail}
     >
       <HabitsView currentUserId={currentUserId} />
+    </AuthenticatedMiniToolShell>
+  );
+}
+
+export function AuthenticatedWeightShell({
+  currentUserId,
+  userEmail,
+  onGoToProjects,
+  onSignOut,
+  accentTheme,
+  onAccentThemeChange,
+}) {
+  return (
+    <AuthenticatedMiniToolShell
+      accentTheme={accentTheme}
+      fallbackLabel="Loading Weight Tracker..."
+      onAccentThemeChange={onAccentThemeChange}
+      onGoToProjects={onGoToProjects}
+      onSignOut={onSignOut}
+      title="Weight Tracker"
+      userEmail={userEmail}
+    >
+      <WeightTrackerView currentUserId={currentUserId} />
     </AuthenticatedMiniToolShell>
   );
 }
