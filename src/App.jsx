@@ -27,6 +27,7 @@ const AuthenticatedShoppingShell = lazy(() => import('./components/AppWorkspaceS
 const AuthenticatedMealPlannerShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedMealPlannerShell })));
 const AuthenticatedBabyShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedBabyShell })));
 const AuthenticatedHabitsShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedHabitsShell })));
+const AuthenticatedWeightShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedWeightShell })));
 
 const normalizeAppPath = (value = '/') => {
   const normalized = String(value || '/').replace(/\/+$/, '');
@@ -301,8 +302,20 @@ function App() {
                       />,
                       'Loading Habits...'
                     )
-                  : isHouseholdToolPath(currentPath)
-                    ? <HouseholdToolUnavailable onGoToProjects={openProjectSelector} toolName={currentFeature?.label || 'This tool'} />
+                  : currentPath === '/weight' && householdToolsEnabled
+                    ? renderLazyPage(
+                        <AuthenticatedWeightShell
+                          currentUserId={user.id}
+                          userEmail={user.email}
+                          onGoToProjects={openProjectSelector}
+                          onSignOut={signOut}
+                          accentTheme={accentTheme}
+                          onAccentThemeChange={setAccentTheme}
+                        />,
+                        'Loading Weight Tracker...'
+                      )
+                    : isHouseholdToolPath(currentPath)
+                      ? <HouseholdToolUnavailable onGoToProjects={openProjectSelector} toolName={currentFeature?.label || 'This tool'} />
             : renderLazyPage(
                 <ProjectSelector
                   onSelectProject={(project) => {
@@ -315,6 +328,7 @@ function App() {
                   onOpenMeals={() => householdToolsEnabled && navigateToPath('/meals')}
                   onOpenBaby={() => householdToolsEnabled && navigateToPath('/baby')}
                   onOpenHabits={() => householdToolsEnabled && navigateToPath('/habits')}
+                  onOpenWeight={() => householdToolsEnabled && navigateToPath('/weight')}
                   accentTheme={accentTheme}
                   onAccentThemeChange={setAccentTheme}
                 />,

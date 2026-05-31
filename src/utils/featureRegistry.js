@@ -54,6 +54,14 @@ export const APP_FEATURES = [
     surface: 'household',
     homeTitle: 'Track habits',
   },
+  {
+    id: 'weight',
+    label: 'Weight',
+    route: '/weight',
+    access: FEATURE_ACCESS.household,
+    surface: 'household',
+    homeTitle: 'Track weight',
+  },
 ];
 
 export const PROJECT_HOME_LAUNCH_FEATURE_IDS = [
@@ -61,6 +69,7 @@ export const PROJECT_HOME_LAUNCH_FEATURE_IDS = [
   'shopping-list',
   'baby',
   'habits',
+  'weight',
   'timesheets',
 ];
 

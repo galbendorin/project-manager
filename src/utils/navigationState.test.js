@@ -11,6 +11,7 @@ test('isHouseholdToolPath recognizes gated household routes', () => {
   assert.equal(isHouseholdToolPath('/meals'), true);
   assert.equal(isHouseholdToolPath('/baby'), true);
   assert.equal(isHouseholdToolPath('/habits'), true);
+  assert.equal(isHouseholdToolPath('/weight'), true);
 });
 
 test('isHouseholdToolPath ignores public and project workspace routes', () => {

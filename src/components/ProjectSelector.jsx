@@ -46,7 +46,7 @@ const getFriendlyProjectCreateErrorMessage = (error) => {
   return getProjectCreationErrorMessage(error);
 };
 
-const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeals, onOpenTrack, onOpenShopping, accentTheme, onAccentThemeChange }) => {
+const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeals, onOpenTrack, onOpenShopping, onOpenWeight, accentTheme, onAccentThemeChange }) => {
   const { user, signOut } = useAuth();
   const { canCreateProject, limits, householdToolsEnabled, isReadOnly, refreshProjectCount } = usePlan();
   const [projects, setProjects] = useState([]);
@@ -79,8 +79,9 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
     'shopping-list': onOpenShopping,
     baby: onOpenBaby,
     habits: onOpenHabits,
+    weight: onOpenWeight,
     timesheets: onOpenTrack,
-  }), [onOpenBaby, onOpenHabits, onOpenMeals, onOpenShopping, onOpenTrack]);
+  }), [onOpenBaby, onOpenHabits, onOpenMeals, onOpenShopping, onOpenTrack, onOpenWeight]);
   const shareProject = useMemo(
     () => projects.find((project) => project.id === shareProjectId) || null,
     [projects, shareProjectId]

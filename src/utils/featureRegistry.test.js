@@ -14,6 +14,7 @@ test('feature registry keeps household tools gated by route', () => {
   assert.equal(isHouseholdFeaturePath('/meals/'), true);
   assert.equal(isHouseholdFeaturePath('/baby'), true);
   assert.equal(isHouseholdFeaturePath('/habits'), true);
+  assert.equal(isHouseholdFeaturePath('/weight'), true);
   assert.equal(isHouseholdFeaturePath('/track'), false);
 });
 
@@ -30,6 +31,7 @@ test('feature registry resolves launch metadata without exposing household tools
     'shopping-list',
     'baby',
     'habits',
+    'weight',
     'timesheets',
   ]);
 });
