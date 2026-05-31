@@ -24,3 +24,26 @@ export const IconTrash = ({ className = 'h-3.5 w-3.5' }) => (
     <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
   </svg>
 );
+
+export const IconGrip = ({ className = 'h-3.5 w-3.5' }) => (
+  <svg className={className} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <circle cx="5" cy="4" r="1.1" />
+    <circle cx="11" cy="4" r="1.1" />
+    <circle cx="5" cy="8" r="1.1" />
+    <circle cx="11" cy="8" r="1.1" />
+    <circle cx="5" cy="12" r="1.1" />
+    <circle cx="11" cy="12" r="1.1" />
+  </svg>
+);
+
+export const IconArrowUp = ({ className = 'h-3.5 w-3.5' }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-6 6m6-6l6 6" />
+  </svg>
+);
+
+export const IconArrowDown = ({ className = 'h-3.5 w-3.5' }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m0 0l6-6m-6 6l-6-6" />
+  </svg>
+);

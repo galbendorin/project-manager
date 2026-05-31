@@ -36,7 +36,7 @@ const buildFallbackColumns = () => (
   }))
 );
 
-const buildCardKey = (todo = {}) => {
+export const buildTodoCardKey = (todo = {}) => {
   if (!todo?.isDerived) {
     return `manual:${todo?._id || todo?.id || ''}`;
   }
@@ -225,7 +225,7 @@ export function useTodoKanbanBoard({
 
     const firstColumnId = normalizedColumns[0]?.id || null;
     const todosWithBoardMeta = projectKanbanTodos.map((todo, index) => {
-      const cardKey = buildCardKey(todo);
+      const cardKey = buildTodoCardKey(todo);
       const override = cardOverrides[cardKey];
       const fallbackPosition = (index + 1) * 1024;
       const hasManualColumn = !todo.isDerived && Boolean(todo.kanbanColumnId);
@@ -315,7 +315,7 @@ export function useTodoKanbanBoard({
       return;
     }
 
-    const cardKey = buildCardKey(todo);
+    const cardKey = buildTodoCardKey(todo);
     setCardOverrides((prev) => ({
       ...prev,
       [cardKey]: {
@@ -349,6 +349,54 @@ export function useTodoKanbanBoard({
       void loadCardOverrides();
     }
   }, [columnsWithCards, currentUserId, isExternalView, loadCardOverrides, onUpdateTodo, projectId]);
+
+  const moveCardToPosition = useCallback(async (todo, nextPosition) => {
+    if (!todo?._id) return;
+
+    if (!todo.isDerived) {
+      if (!onUpdateTodo) return;
+      await onUpdateTodo(todo._id, 'kanbanPosition', nextPosition);
+      return;
+    }
+
+    const firstColumnId = normalizedColumns[0]?.id || null;
+    const cardKey = buildTodoCardKey(todo);
+    const existingOverride = cardOverrides[cardKey];
+    const columnId = existingOverride?.columnId || firstColumnId;
+
+    setCardOverrides((prev) => ({
+      ...prev,
+      [cardKey]: {
+        columnId,
+        position: nextPosition,
+      }
+    }));
+
+    if (!supportsPersistentCardsRef.current || !currentUserId || isExternalView || !projectId) return;
+
+    const { error } = await supabase
+      .from('task_board_cards')
+      .upsert({
+        user_id: currentUserId,
+        project_id: projectId,
+        card_key: cardKey,
+        column_id: columnId,
+        position: nextPosition,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'project_id,card_key' });
+
+    if (error) {
+      if (isMissingRelationError(error, 'task_board_cards')) {
+        supportsPersistentCardsRef.current = false;
+        setKanbanMessage((prev) => prev || 'Task card positions are using a local fallback until the board migration is applied.');
+        return;
+      }
+
+      console.error('Failed to persist task card position:', error);
+      setKanbanMessage('Unable to save this task order right now.');
+      void loadCardOverrides();
+    }
+  }, [cardOverrides, currentUserId, isExternalView, loadCardOverrides, normalizedColumns, onUpdateTodo, projectId]);
 
   const renameColumn = useCallback(async (columnId, title) => {
     const trimmedTitle = String(title || '').trim();
@@ -411,14 +459,25 @@ export function useTodoKanbanBoard({
     setColumns((prev) => sortColumns([...prev, data]));
   }, [currentUserId, isExternalView, normalizedColumns, projectId]);
 
+  const cardOrderOverrides = useMemo(() => (
+    Object.fromEntries(
+      Object.entries(cardOverrides).map(([cardKey, override]) => [
+        cardKey,
+        Number.isFinite(Number(override?.position)) ? Number(override.position) : null,
+      ])
+    )
+  ), [cardOverrides]);
+
   return {
     addColumn,
+    cardOrderOverrides,
     columns: columnsWithCards,
     columnsLoading,
     createCardInColumn,
     kanbanAvailable: scope === 'project' && Boolean(projectId),
     kanbanMessage,
     moveCardToColumn,
+    moveCardToPosition,
     renameColumn,
   };
 }

@@ -1,4 +1,5 @@
 import { bucketByDeadline, getTodoBucketDefaultDueDate } from './helpers.js';
+import { sortTodosForManualOrder } from './todoManualOrdering.js';
 
 const MONTH_SECTION_PREFIX = 'month:';
 const CORE_SECTION_KEYS = ['overdue', 'this_week', 'next_week', 'later'];
@@ -34,6 +35,8 @@ const compareTodos = (a, b) => {
   if (b.dueDate) return 1;
   return String(a.title || '').localeCompare(String(b.title || ''));
 };
+
+const sortSectionItems = (items = []) => sortTodosForManualOrder([...items].sort(compareTodos));
 
 export const isMonthSectionKey = (key = '') => String(key).startsWith(MONTH_SECTION_PREFIX);
 
@@ -104,16 +107,21 @@ export const buildTodoCalendarSections = (items = [], options = {}) => {
     .map(([monthToken, monthItems]) => ({
       key: `${MONTH_SECTION_PREFIX}${monthToken}`,
       label: formatTodoMonthLabel(monthToken),
-      items: [...monthItems].sort(compareTodos),
+      items: sortSectionItems(monthItems),
     }));
 
   const sections = [
-    ...(baseBuckets.filter((bucket) => CORE_SECTION_KEYS.includes(bucket.key) && bucket.key !== 'later')),
+    ...(baseBuckets
+      .filter((bucket) => CORE_SECTION_KEYS.includes(bucket.key) && bucket.key !== 'later')
+      .map((bucket) => ({
+        ...bucket,
+        items: sortSectionItems(bucket.items || []),
+      }))),
     ...(showFutureMonths ? futureMonthSections : []),
     {
       key: 'later',
       label: 'Later / no deadline',
-      items: laterItems.sort(compareTodos),
+      items: sortSectionItems(laterItems),
     },
   ];
 

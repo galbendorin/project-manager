@@ -1,6 +1,6 @@
 import React from 'react';
 import { formatDate } from '../utils/helpers';
-import { IconTrash } from './Icons';
+import { IconArrowDown, IconArrowUp, IconGrip, IconTrash } from './Icons';
 
 const CompletionTickButton = ({ checked, disabled, onClick, label }) => (
   <button
@@ -22,9 +22,57 @@ const CompletionTickButton = ({ checked, disabled, onClick, label }) => (
   </button>
 );
 
+const ReorderHandle = ({ canDrag, onDragStart, onDragEnd }) => {
+  if (!canDrag) return null;
+  return (
+    <button
+      type="button"
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-full text-slate-300 transition hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing"
+      title="Drag to reorder"
+      aria-label="Drag to reorder task"
+    >
+      <IconGrip />
+    </button>
+  );
+};
+
+const ReorderDropMarker = ({ active, onDragOver, onDrop }) => (
+  <div
+    onDragOver={onDragOver}
+    onDrop={onDrop}
+    className={`rounded-full transition-all ${
+      active
+        ? 'my-1.5 h-2 bg-[var(--pm-accent)]/25 ring-2 ring-[var(--pm-accent)]/25'
+        : 'h-1 bg-transparent'
+    }`}
+  />
+);
+
+const MobileMoveButton = ({ children, disabled, icon, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-semibold transition ${
+      disabled
+        ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
+        : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'
+    }`}
+  >
+    {icon}
+    {children}
+  </button>
+);
+
 export default function TodoBucketSection({
   bucket,
+  canReorderTodo,
+  canMoveTodo,
   displayItems,
+  draggedTodoId,
   getDraftValue,
   handleCompleteTodo,
   handleQuickAddSubmit,
@@ -32,8 +80,14 @@ export default function TodoBucketSection({
   isMobile,
   mobileEditingTitleTodoId,
   onDeleteTodo,
+  onReorderDragEnd,
+  onReorderDragOver,
+  onReorderDragStart,
+  onReorderDrop,
+  onReorderMove,
   onUpdateTodo,
   pendingCompletedTodos,
+  dropTarget,
   projectOptions,
   quickAddValues,
   recurrenceLabel,
@@ -51,6 +105,29 @@ export default function TodoBucketSection({
   commitDraftValue,
   formatQuickAddDueHint,
 }) {
+  const showReorderControls = !isExternalView && typeof canReorderTodo === 'function';
+  const tableColumnCount = (showCompletionTick ? 1 : 0) + (showReorderControls ? 1 : 0) + 8;
+
+  const isActiveDropTarget = (index) => (
+    Boolean(draggedTodoId)
+    && dropTarget?.bucketKey === bucket.key
+    && dropTarget?.index === index
+  );
+
+  const handleItemDragOver = (event, displayIndex) => {
+    if (!draggedTodoId || !onReorderDragOver) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const midpoint = rect.top + (rect.height / 2);
+    const nextIndex = event.clientY >= midpoint ? displayIndex + 1 : displayIndex;
+    onReorderDragOver(event, bucket.key, nextIndex);
+  };
+
+  const handleItemDrop = (event, displayIndex) => {
+    if (!draggedTodoId || !onReorderDrop) return;
+    const resolvedIndex = dropTarget?.bucketKey === bucket.key ? dropTarget.index : displayIndex;
+    onReorderDrop(event, bucket.key, resolvedIndex);
+  };
+
   return (
     <section className="border border-slate-200 rounded-lg overflow-hidden">
       <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
@@ -65,17 +142,38 @@ export default function TodoBucketSection({
           {displayItems.map((todo, displayIndex) => {
             const isCompleted = todo.status === 'Done';
             const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id);
+            const canDragTodo = showReorderControls && canReorderTodo(todo);
+            const canMoveUp = canDragTodo && canMoveTodo?.(todo, -1);
+            const canMoveDown = canDragTodo && canMoveTodo?.(todo, 1);
 
             return (
-              <article
-                key={todo._id || todo.id || `${bucket.key}-${displayIndex}`}
+              <React.Fragment key={todo._id || todo.id || `${bucket.key}-${displayIndex}`}>
+                {showReorderControls ? (
+                  <ReorderDropMarker
+                    active={isActiveDropTarget(displayIndex) && draggedTodoId !== todo._id}
+                    onDragOver={(event) => onReorderDragOver?.(event, bucket.key, displayIndex)}
+                    onDrop={(event) => onReorderDrop?.(event, bucket.key, displayIndex)}
+                  />
+                ) : null}
+
+                <article
+                onDragOver={(event) => handleItemDragOver(event, displayIndex)}
+                onDrop={(event) => handleItemDrop(event, displayIndex)}
                 className={`rounded-2xl border px-3.5 py-3 shadow-sm transition-all ${
                   isCompleted
                     ? 'border-emerald-200 bg-emerald-50/80'
-                    : 'border-slate-200 bg-white'
+                    : draggedTodoId === todo._id
+                      ? 'border-[var(--pm-accent)]/40 bg-white opacity-80 ring-2 ring-[var(--pm-accent)]/20'
+                      : 'border-slate-200 bg-white'
                 }`}
               >
                 <div className="flex items-start gap-3">
+                  <ReorderHandle
+                    canDrag={canDragTodo}
+                    onDragStart={(event) => onReorderDragStart?.(event, todo, bucket.key)}
+                    onDragEnd={onReorderDragEnd}
+                  />
+
                   {showCompletionTick ? (
                     <div className="pt-0.5">
                       <CompletionTickButton
@@ -140,15 +238,45 @@ export default function TodoBucketSection({
                     ) : null}
                   </button>
                 </div>
+
+                {canDragTodo ? (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <MobileMoveButton
+                      disabled={!canMoveUp}
+                      icon={<IconArrowUp />}
+                      onClick={() => onReorderMove?.(todo, bucket.key, displayIndex, -1)}
+                    >
+                      Move up
+                    </MobileMoveButton>
+                    <MobileMoveButton
+                      disabled={!canMoveDown}
+                      icon={<IconArrowDown />}
+                      onClick={() => onReorderMove?.(todo, bucket.key, displayIndex, 1)}
+                    >
+                      Move down
+                    </MobileMoveButton>
+                  </div>
+                ) : null}
               </article>
+              </React.Fragment>
             );
           })}
+          {showReorderControls ? (
+            <ReorderDropMarker
+              active={isActiveDropTarget(displayItems.length)}
+              onDragOver={(event) => onReorderDragOver?.(event, bucket.key, displayItems.length)}
+              onDrop={(event) => onReorderDrop?.(event, bucket.key, displayItems.length)}
+            />
+          ) : null}
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-white text-[10px] uppercase font-bold text-slate-400 border-b">
               <tr>
+                {showReorderControls && (
+                  <th className="px-3 py-3 border-b w-[4%] text-center" aria-label="Reorder" />
+                )}
                 {showCompletionTick && (
                   <th className="px-4 py-3 border-b w-[5%] text-center">Done</th>
                 )}
@@ -169,11 +297,33 @@ export default function TodoBucketSection({
                 const isMobileTitleEditing = isMobile && mobileEditingTitleTodoId === todo._id && canEditManualRow;
                 const isCompleted = todo.status === 'Done';
                 const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id);
+                const canDragTodo = showReorderControls && canReorderTodo(todo);
+                const dropStyle = dropTarget?.bucketKey === bucket.key && draggedTodoId && draggedTodoId !== todo._id
+                  ? (
+                      dropTarget.index === displayIndex
+                        ? { boxShadow: 'inset 0 3px 0 var(--pm-accent)' }
+                        : dropTarget.index === displayIndex + 1
+                          ? { boxShadow: 'inset 0 -3px 0 var(--pm-accent)' }
+                          : undefined
+                    )
+                  : undefined;
                 return (
                   <tr
                     key={todo._id}
+                    onDragOver={(event) => handleItemDragOver(event, displayIndex)}
+                    onDrop={(event) => handleItemDrop(event, displayIndex)}
                     className={`border-b border-slate-100 transition-all ${isCompleted ? 'bg-emerald-50/70' : 'hover:bg-slate-50'}`}
+                    style={dropStyle}
                   >
+                    {showReorderControls && (
+                      <td className="px-3 py-2.5 align-top text-center">
+                        <ReorderHandle
+                          canDrag={canDragTodo}
+                          onDragStart={(event) => onReorderDragStart?.(event, todo, bucket.key)}
+                          onDragEnd={onReorderDragEnd}
+                        />
+                      </td>
+                    )}
                     {showCompletionTick && (
                       <td className="px-4 py-2.5 align-top text-center">
                         <CompletionTickButton
@@ -332,6 +482,16 @@ export default function TodoBucketSection({
                   </tr>
                 );
               })}
+              {showReorderControls && draggedTodoId ? (
+                <tr
+                  onDragOver={(event) => onReorderDragOver?.(event, bucket.key, displayItems.length)}
+                  onDrop={(event) => onReorderDrop?.(event, bucket.key, displayItems.length)}
+                >
+                  <td colSpan={tableColumnCount} className="p-0">
+                    <div className={`mx-3 rounded-full transition-all ${isActiveDropTarget(displayItems.length) ? 'my-1.5 h-2 bg-[var(--pm-accent)]/25 ring-2 ring-[var(--pm-accent)]/25' : 'h-1 bg-transparent'}`} />
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>

@@ -21,16 +21,27 @@ export default function WorkspaceProjectStatusBar({
   setSimulatedPlan,
 }) {
   return (
-    <div className="bg-gray-800 border-b border-gray-700 px-3 sm:px-4 py-1.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 text-xs">
-      <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2.5 gap-y-1 min-w-0">
+    <div className="bg-gray-800 border-b border-gray-700 px-3 sm:px-4 py-2 sm:py-1.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 text-xs">
+      <div className="flex w-full items-center gap-2 min-w-0 lg:w-auto">
         <button
+          type="button"
           onClick={onBackToProjects}
-          className="text-gray-400 hover:text-white transition-colors flex items-center gap-1"
+          className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-700 px-3 text-sm font-semibold text-white transition-colors hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-white/25 sm:min-h-0 sm:rounded-none sm:border-0 sm:bg-transparent sm:px-0 sm:text-xs sm:text-gray-400 sm:hover:bg-transparent sm:hover:text-white"
+          aria-label="Back to projects"
         >
-          ← Projects
+          <span aria-hidden="true">←</span>
+          <span>Projects</span>
         </button>
-        <span className="hidden sm:inline text-gray-600">|</span>
-        <span className="text-white font-medium truncate">{projectName}</span>
+        <span className="hidden lg:inline text-gray-600">|</span>
+        <span className="min-w-0 flex-1 truncate text-white font-medium lg:flex-none">{projectName}</span>
+        <button
+          type="button"
+          onClick={handleOpenFeedback}
+          className="inline-flex min-h-10 shrink-0 items-center rounded-lg border border-slate-600 bg-slate-700 px-3 text-sm font-semibold text-white transition-colors hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-white/25 lg:hidden"
+          title="Report a bug, request an improvement, or send feedback by email"
+        >
+          Feedback
+        </button>
       </div>
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 -mb-1 lg:flex-wrap">
         {isAdmin && simulatorOptions.length > 0 && (
@@ -51,8 +62,9 @@ export default function WorkspaceProjectStatusBar({
           </span>
         )}
         <button
+          type="button"
           onClick={handleOpenFeedback}
-          className="shrink-0 text-xs px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded transition-colors"
+          className="hidden shrink-0 rounded bg-slate-700 px-2.5 py-1 text-xs text-white transition-colors hover:bg-slate-600 lg:inline-flex"
           title="Report a bug, request an improvement, or send feedback by email"
         >
           Send Feedback

@@ -1,6 +1,6 @@
 import React from 'react';
 import { formatDate } from '../utils/helpers';
-import { IconTrash } from './Icons';
+import { IconArrowDown, IconArrowUp, IconGrip, IconTrash } from './Icons';
 
 const CompletionTickButton = ({ checked, onClick, label }) => (
   <button
@@ -25,11 +25,64 @@ const CompletionTickButton = ({ checked, onClick, label }) => (
   </button>
 );
 
+const ReorderHandle = ({ canDrag, onDragStart, onDragEnd }) => {
+  if (!canDrag) return null;
+  return (
+    <button
+      type="button"
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-full text-slate-300 transition hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing"
+      title="Drag to reorder"
+      aria-label="Drag to reorder task"
+    >
+      <IconGrip />
+    </button>
+  );
+};
+
+const ReorderDropSlot = ({ active, onDragOver, onDrop }) => (
+  <div
+    onDragOver={onDragOver}
+    onDrop={onDrop}
+    className={`rounded-full transition-all ${
+      active
+        ? 'my-1.5 h-2 bg-[var(--pm-accent)]/25 ring-2 ring-[var(--pm-accent)]/25'
+        : 'h-1 bg-transparent'
+    }`}
+  />
+);
+
+const MobileMoveButton = ({ children, disabled, icon, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-semibold transition ${
+      disabled
+        ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
+        : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'
+    }`}
+  >
+    {icon}
+    {children}
+  </button>
+);
+
 const TodoBoardCard = ({
   bucketKey,
+  canMoveTodo,
+  canReorderTodo,
   displayIndex,
+  draggedTodoId,
   onDeleteTodo,
+  onDragEnd,
+  onDragStart,
   onOpenTodo,
+  onDragOverTodo,
+  onDropTodo,
+  onMoveTodo,
   pendingCompletedTodos,
   showCompletionTick,
   statusClass,
@@ -40,16 +93,29 @@ const TodoBoardCard = ({
   const isCompleted = todo.status === 'Done';
   const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id);
   const canDelete = !isExternalView && !todo.isDerived && todo.status !== 'Done';
+  const canDragTodo = typeof canReorderTodo === 'function' && canReorderTodo(todo);
+  const canMoveUp = canDragTodo && canMoveTodo?.(todo, -1);
+  const canMoveDown = canDragTodo && canMoveTodo?.(todo, 1);
 
   return (
     <article
+      onDragOver={onDragOverTodo}
+      onDrop={onDropTodo}
       className={`rounded-2xl border px-3.5 py-3 shadow-sm transition-all ${
         isCompleted
           ? 'border-emerald-200 bg-emerald-50/80'
-          : 'border-slate-200 bg-white'
+          : draggedTodoId === todo._id
+            ? 'border-[var(--pm-accent)]/40 bg-white opacity-80 ring-2 ring-[var(--pm-accent)]/20'
+            : 'border-slate-200 bg-white'
       }`}
     >
       <div className="flex items-start gap-3">
+        <ReorderHandle
+          canDrag={canDragTodo}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+        />
+
         {showCompletionTick ? (
           <div className="pt-0.5">
             <CompletionTickButton
@@ -113,6 +179,25 @@ const TodoBoardCard = ({
               Tap the tick again to undo before completion is applied.
             </div>
           ) : null}
+
+          {canDragTodo ? (
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:hidden">
+              <MobileMoveButton
+                disabled={!canMoveUp}
+                icon={<IconArrowUp />}
+                onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, -1)}
+              >
+                Move up
+              </MobileMoveButton>
+              <MobileMoveButton
+                disabled={!canMoveDown}
+                icon={<IconArrowDown />}
+                onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, 1)}
+              >
+                Move down
+              </MobileMoveButton>
+            </div>
+          ) : null}
         </div>
 
         {canDelete ? (
@@ -132,11 +217,20 @@ const TodoBoardCard = ({
 
 export default function TodoBoardView({
   bucketSections,
+  canMoveTodo,
+  canReorderTodo,
+  draggedTodoId,
+  dropTarget,
   formatQuickAddDueHint,
   handleCompleteTodo,
   handleQuickAddSubmit,
   isExternalView,
   onDeleteTodo,
+  onReorderDragEnd,
+  onReorderDragOver,
+  onReorderDragStart,
+  onReorderDrop,
+  onReorderMove,
   onOpenTodo,
   pendingCompletedTodos,
   quickAddValues,
@@ -146,6 +240,28 @@ export default function TodoBoardView({
   showQuickAdd,
   statusClass,
 }) {
+  const showReorderControls = !isExternalView && typeof canReorderTodo === 'function';
+
+  const isActiveDropTarget = (bucketKey, index) => (
+    Boolean(draggedTodoId)
+    && dropTarget?.bucketKey === bucketKey
+    && dropTarget?.index === index
+  );
+
+  const handleItemDragOver = (event, bucketKey, displayIndex) => {
+    if (!draggedTodoId || !onReorderDragOver) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const midpoint = rect.top + (rect.height / 2);
+    const nextIndex = event.clientY >= midpoint ? displayIndex + 1 : displayIndex;
+    onReorderDragOver(event, bucketKey, nextIndex);
+  };
+
+  const handleItemDrop = (event, bucketKey, displayIndex) => {
+    if (!draggedTodoId || !onReorderDrop) return;
+    const resolvedIndex = dropTarget?.bucketKey === bucketKey ? dropTarget.index : displayIndex;
+    onReorderDrop(event, bucketKey, resolvedIndex);
+  };
+
   return (
     <div className="overflow-x-auto px-5 py-4">
       <div className="grid min-w-max grid-flow-col auto-cols-[minmax(280px,320px)] gap-4 pb-2">
@@ -161,26 +277,69 @@ export default function TodoBoardView({
               </span>
             </div>
 
-            <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+            <div
+              className="flex-1 space-y-3 overflow-y-auto px-3 py-3"
+              onDragOver={(event) => {
+                if (event.target === event.currentTarget) {
+                  onReorderDragOver?.(event, bucket.key, bucket.displayItems.length);
+                }
+              }}
+              onDrop={(event) => {
+                if (event.target === event.currentTarget) {
+                  onReorderDrop?.(event, bucket.key, bucket.displayItems.length);
+                }
+              }}
+            >
               {bucket.displayItems.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-400">
-                  No items yet
+                <div
+                  onDragOver={(event) => onReorderDragOver?.(event, bucket.key, 0)}
+                  onDrop={(event) => onReorderDrop?.(event, bucket.key, 0)}
+                  className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-400"
+                >
+                  {draggedTodoId ? 'Drop task here' : 'No items yet'}
                 </div>
-              ) : bucket.displayItems.map((todo, displayIndex) => (
-                <TodoBoardCard
-                  key={todo._id || todo.id || `${bucket.key}-${displayIndex}`}
-                  bucketKey={bucket.key}
-                  displayIndex={displayIndex}
-                  handleCompleteTodo={handleCompleteTodo}
-                  isExternalView={isExternalView}
-                  onDeleteTodo={onDeleteTodo}
-                  onOpenTodo={onOpenTodo}
-                  pendingCompletedTodos={pendingCompletedTodos}
-                  showCompletionTick={showCompletionTick}
-                  statusClass={statusClass}
-                  todo={todo}
-                />
-              ))}
+              ) : (
+                <>
+                  {bucket.displayItems.map((todo, displayIndex) => (
+                    <React.Fragment key={todo._id || todo.id || `${bucket.key}-${displayIndex}`}>
+                      {showReorderControls ? (
+                        <ReorderDropSlot
+                          active={isActiveDropTarget(bucket.key, displayIndex) && draggedTodoId !== todo._id}
+                          onDragOver={(event) => onReorderDragOver?.(event, bucket.key, displayIndex)}
+                          onDrop={(event) => onReorderDrop?.(event, bucket.key, displayIndex)}
+                        />
+                      ) : null}
+                      <TodoBoardCard
+                        bucketKey={bucket.key}
+                        canMoveTodo={canMoveTodo}
+                        canReorderTodo={canReorderTodo}
+                        displayIndex={displayIndex}
+                        draggedTodoId={draggedTodoId}
+                        handleCompleteTodo={handleCompleteTodo}
+                        isExternalView={isExternalView}
+                        onDeleteTodo={onDeleteTodo}
+                        onDragEnd={onReorderDragEnd}
+                        onDragOverTodo={(event) => handleItemDragOver(event, bucket.key, displayIndex)}
+                        onDragStart={(event) => onReorderDragStart?.(event, todo, bucket.key)}
+                        onDropTodo={(event) => handleItemDrop(event, bucket.key, displayIndex)}
+                        onMoveTodo={onReorderMove}
+                        onOpenTodo={onOpenTodo}
+                        pendingCompletedTodos={pendingCompletedTodos}
+                        showCompletionTick={showCompletionTick}
+                        statusClass={statusClass}
+                        todo={todo}
+                      />
+                    </React.Fragment>
+                  ))}
+                  {showReorderControls ? (
+                    <ReorderDropSlot
+                      active={isActiveDropTarget(bucket.key, bucket.displayItems.length)}
+                      onDragOver={(event) => onReorderDragOver?.(event, bucket.key, bucket.displayItems.length)}
+                      onDrop={(event) => onReorderDrop?.(event, bucket.key, bucket.displayItems.length)}
+                    />
+                  ) : null}
+                </>
+              )}
             </div>
 
             {showQuickAdd ? (

@@ -47,6 +47,19 @@ test('buildTodoCalendarSections can hide future month sections while keeping cou
   assert.equal(result.futureItemCount, 2);
 });
 
+test('buildTodoCalendarSections respects saved manual task ordering inside a bucket', () => {
+  const items = [
+    { _id: 'a', title: 'Third', dueDate: '2026-04-09', status: 'Open', kanbanPosition: 3072 },
+    { _id: 'b', title: 'First', dueDate: '2026-04-09', status: 'Open', kanbanPosition: 1024 },
+    { _id: 'c', title: 'Second', dueDate: '2026-04-09', status: 'Open', kanbanPosition: 2048 },
+  ];
+
+  const result = buildTodoCalendarSections(items, { today: '2026-04-06', showFutureMonths: true });
+  const thisWeek = result.sections.find((section) => section.key === 'this_week');
+
+  assert.deepEqual(thisWeek.items.map((item) => item._id), ['b', 'c', 'a']);
+});
+
 test('getTodoSectionDefaultDueDate returns month-end for month sections', () => {
   assert.equal(getTodoSectionDefaultDueDate('month:2026-05'), '2026-05-31');
 });
