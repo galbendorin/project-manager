@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { formatDate } from '../utils/helpers';
+import { IconArrowDown, IconArrowUp } from './Icons';
 
 const sourceAccentClass = (source) => {
   if (source === 'Manual') return 'bg-sky-400';
@@ -54,7 +55,25 @@ const KanbanDropSlot = ({ active, onDragOver, onDrop }) => (
   />
 );
 
+const MobileMoveButton = ({ children, disabled, icon, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[10px] border px-2.5 py-1.5 text-[11px] font-semibold transition ${
+      disabled
+        ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
+        : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'
+    }`}
+  >
+    {icon}
+    {children}
+  </button>
+);
+
 const KanbanCard = ({
+  canMoveDown,
+  canMoveUp,
   columnId,
   displayIndex,
   draggedTodoId,
@@ -63,6 +82,7 @@ const KanbanCard = ({
   onDeleteTodo,
   onDragEnd,
   onDragStart,
+  onMoveCard,
   onOpenTodo,
   pendingCompletedTodos,
   showCompletionTick,
@@ -71,6 +91,7 @@ const KanbanCard = ({
 }) => {
   const isCompleted = todo.status === 'Done';
   const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id);
+  const canMove = !isExternalView && todo.status !== 'Done';
 
   return (
     <article
@@ -163,6 +184,25 @@ const KanbanCard = ({
               ) : null}
             </div>
           </button>
+
+          {canMove ? (
+            <div className="mt-2 grid grid-cols-2 gap-1.5 sm:hidden">
+              <MobileMoveButton
+                disabled={!canMoveUp}
+                icon={<IconArrowUp className="h-3 w-3" />}
+                onClick={() => onMoveCard?.(todo, columnId, displayIndex, -1)}
+              >
+                Up
+              </MobileMoveButton>
+              <MobileMoveButton
+                disabled={!canMoveDown}
+                icon={<IconArrowDown className="h-3 w-3" />}
+                onClick={() => onMoveCard?.(todo, columnId, displayIndex, 1)}
+              >
+                Down
+              </MobileMoveButton>
+            </div>
+          ) : null}
         </div>
 
         {!todo.isDerived && todo.status !== 'Done' ? (
@@ -294,6 +334,20 @@ export default function TodoKanbanBoard({
     setDropTarget(null);
   };
 
+  const canMoveCardWithinColumn = (columnId, displayIndex, direction) => {
+    const column = activeColumns.find((item) => item.id === columnId);
+    if (!column) return false;
+    const targetIndex = displayIndex + direction;
+    return targetIndex >= 0 && targetIndex < column.cards.length;
+  };
+
+  const handleMoveCardWithinColumn = async (todo, columnId, displayIndex, direction) => {
+    if (!todo || isExternalView) return;
+    if (!canMoveCardWithinColumn(columnId, displayIndex, direction)) return;
+    const targetIndex = direction < 0 ? displayIndex - 1 : displayIndex + 2;
+    await moveCardToColumn(todo, columnId, targetIndex);
+  };
+
   if (!kanbanAvailable) {
     return (
       <div className="px-5 py-8">
@@ -415,6 +469,8 @@ export default function TodoKanbanBoard({
                           : undefined}
                       >
                         <KanbanCard
+                          canMoveDown={canMoveCardWithinColumn(column.id, displayIndex, 1)}
+                          canMoveUp={canMoveCardWithinColumn(column.id, displayIndex, -1)}
                           columnId={column.id}
                           displayIndex={displayIndex}
                           draggedTodoId={draggedTodoId}
@@ -423,6 +479,7 @@ export default function TodoKanbanBoard({
                           onDeleteTodo={onDeleteTodo}
                           onDragEnd={handleDragEnd}
                           onDragStart={handleDragStart}
+                          onMoveCard={handleMoveCardWithinColumn}
                           onOpenTodo={onOpenTodo}
                           pendingCompletedTodos={pendingCompletedTodos}
                           showCompletionTick={showCompletionTick}

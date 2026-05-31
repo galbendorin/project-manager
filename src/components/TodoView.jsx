@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { getCurrentDate } from '../utils/helpers';
@@ -9,6 +9,10 @@ import {
   buildTodoCalendarSections,
   getTodoSectionDefaultDueDate,
 } from '../utils/todoCalendarSections';
+import {
+  calculateTodoReorderPosition,
+  canReorderTodo as canReorderTodoItem,
+} from '../utils/todoManualOrdering';
 import { buildCrossProjectTodoUpdateData } from '../utils/crossProjectTodoCompletion';
 import TodoBoardView from './TodoBoardView';
 import TodoBucketSection from './TodoBucketSection';
@@ -16,7 +20,7 @@ import TodoKanbanBoard from './TodoKanbanBoard';
 import DesktopTodoDetailModal from './DesktopTodoDetailModal';
 import MobileTodoDetailSheet from './MobileTodoDetailSheet';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
-import { useTodoKanbanBoard } from '../hooks/useTodoKanbanBoard';
+import { buildTodoCardKey, useTodoKanbanBoard } from '../hooks/useTodoKanbanBoard';
 
 const SOURCE_FILTER_OPTIONS = [
   { value: 'all', label: 'All Sources' },
@@ -113,6 +117,7 @@ const TodoView = ({
   });
   const [quickAddValues, setQuickAddValues] = useState({});
   const [pendingCompletedTodos, setPendingCompletedTodos] = useState({});
+  const [todoDragState, setTodoDragState] = useState({ todo: null, sourceBucketKey: '', target: null });
   const draftEditsRef = useRef({});
   const titleInputRefs = useRef(new Map());
   const quickAddInputRefs = useRef(new Map());
@@ -529,10 +534,40 @@ const TodoView = ({
   const showQuickAdd = !isExternalView;
 
   const {
+    addColumn,
+    cardOrderOverrides,
+    columns,
+    columnsLoading,
+    createCardInColumn,
+    kanbanAvailable,
+    kanbanMessage,
+    moveCardToColumn,
+    moveCardToPosition,
+    renameColumn,
+  } = useTodoKanbanBoard({
+    currentProject,
+    currentUserId,
+    isExternalView,
+    onAddTodo,
+    onUpdateTodo,
+    scope,
+    visibleOpenTodos,
+  });
+
+  const visibleOpenTodosWithCardOrder = useMemo(() => (
+    visibleOpenTodos.map((todo) => {
+      const savedPosition = cardOrderOverrides[buildTodoCardKey(todo)];
+      return Number.isFinite(Number(savedPosition))
+        ? { ...todo, boardPosition: Number(savedPosition) }
+        : todo;
+    })
+  ), [cardOrderOverrides, visibleOpenTodos]);
+
+  const {
     sections: allBucketSections,
     futureMonthSections,
     futureItemCount,
-  } = buildTodoCalendarSections(visibleOpenTodos, {
+  } = buildTodoCalendarSections(visibleOpenTodosWithCardOrder, {
     showFutureMonths,
   });
 
@@ -560,6 +595,114 @@ const TodoView = ({
     };
   });
 
+  const canDragReorderTodo = useCallback((todo) => (
+    Boolean(onUpdateTodo)
+    && canReorderTodoItem(todo, { isExternalView })
+    && (!todo?.isDerived || scope === 'project')
+  ), [isExternalView, onUpdateTodo, scope]);
+
+  const persistTodoReorder = useCallback(async (todo, sourceBucketKey, targetBucketKey, targetIndex) => {
+    if (!canDragReorderTodo(todo)) return;
+    if (todo.isDerived && sourceBucketKey !== targetBucketKey) return;
+
+    const targetBucket = bucketSections.find((bucket) => bucket.key === targetBucketKey);
+    if (!targetBucket) return;
+
+    const sourceBucket = bucketSections.find((bucket) => bucket.key === sourceBucketKey);
+    const sourceIndex = sourceBucket
+      ? sourceBucket.displayItems.findIndex((item) => item._id === todo._id)
+      : -1;
+    const itemsWithoutDragged = targetBucket.displayItems.filter((item) => item._id !== todo._id);
+    const adjustedTargetIndex = sourceBucketKey === targetBucketKey && sourceIndex >= 0 && sourceIndex < targetIndex
+      ? Math.max(0, targetIndex - 1)
+      : targetIndex;
+    const nextPosition = calculateTodoReorderPosition(itemsWithoutDragged, adjustedTargetIndex);
+    const nextDueDate = getTodoSectionDefaultDueDate(targetBucketKey);
+
+    if (!todo.isDerived && (todo.dueDate || '') !== nextDueDate) {
+      await onUpdateTodo(todo._id, 'dueDate', nextDueDate);
+    }
+    await moveCardToPosition(todo, nextPosition);
+  }, [bucketSections, canDragReorderTodo, moveCardToPosition, onUpdateTodo]);
+
+  const getFlattenedReorderItems = useCallback(() => (
+    bucketSections.flatMap((bucket) => (
+      bucket.displayItems.map((item, index) => ({
+        bucketKey: bucket.key,
+        index,
+        item,
+      }))
+    ))
+  ), [bucketSections]);
+
+  const canMoveTodoByOffset = useCallback((todo, direction) => {
+    if (!canDragReorderTodo(todo)) return false;
+    const items = getFlattenedReorderItems();
+    const currentIndex = items.findIndex((entry) => entry.item._id === todo._id);
+    if (currentIndex < 0) return false;
+    const targetIndex = currentIndex + direction;
+    if (targetIndex < 0 || targetIndex >= items.length) return false;
+    if (todo.isDerived && items[targetIndex]?.bucketKey !== items[currentIndex]?.bucketKey) return false;
+    return true;
+  }, [canDragReorderTodo, getFlattenedReorderItems]);
+
+  const handleTodoReorderMove = useCallback(async (todo, sourceBucketKey, displayIndex, direction) => {
+    if (!canDragReorderTodo(todo)) return;
+
+    const items = getFlattenedReorderItems();
+    const currentIndex = items.findIndex((entry) => entry.item._id === todo._id);
+    const resolvedCurrentIndex = currentIndex >= 0
+      ? currentIndex
+      : items.findIndex((entry) => (
+          entry.bucketKey === sourceBucketKey
+          && entry.index === displayIndex
+          && entry.item._id === todo._id
+        ));
+    const targetFlatIndex = resolvedCurrentIndex + direction;
+    if (resolvedCurrentIndex < 0 || targetFlatIndex < 0 || targetFlatIndex >= items.length) return;
+
+    const targetEntry = items[targetFlatIndex];
+    if (todo.isDerived && targetEntry.bucketKey !== items[resolvedCurrentIndex]?.bucketKey) return;
+    const targetIndex = direction < 0 ? targetEntry.index : targetEntry.index + 1;
+    await persistTodoReorder(todo, sourceBucketKey, targetEntry.bucketKey, targetIndex);
+  }, [canDragReorderTodo, getFlattenedReorderItems, persistTodoReorder]);
+
+  const handleTodoReorderDragStart = useCallback((event, todo, sourceBucketKey) => {
+    if (!canDragReorderTodo(todo)) return;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', todo._id);
+    setTodoDragState({ todo, sourceBucketKey, target: null });
+  }, [canDragReorderTodo]);
+
+  const handleTodoReorderDragOver = useCallback((event, bucketKey, index) => {
+    if (!todoDragState.todo) return;
+    if (todoDragState.todo.isDerived && bucketKey !== todoDragState.sourceBucketKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    setTodoDragState((prev) => {
+      if (!prev.todo) return prev;
+      if (prev.target?.bucketKey === bucketKey && prev.target?.index === index) return prev;
+      return {
+        ...prev,
+        target: { bucketKey, index },
+      };
+    });
+  }, [todoDragState.sourceBucketKey, todoDragState.todo]);
+
+  const handleTodoReorderDrop = useCallback(async (event, bucketKey, index) => {
+    if (!todoDragState.todo) return;
+    if (todoDragState.todo.isDerived && bucketKey !== todoDragState.sourceBucketKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    await persistTodoReorder(todoDragState.todo, todoDragState.sourceBucketKey, bucketKey, index);
+    setTodoDragState({ todo: null, sourceBucketKey: '', target: null });
+  }, [persistTodoReorder, todoDragState.sourceBucketKey, todoDragState.todo]);
+
+  const handleTodoReorderDragEnd = useCallback(() => {
+    setTodoDragState({ todo: null, sourceBucketKey: '', target: null });
+  }, []);
+
   const clearAllFilters = useCallback(() => {
     setProjectFilter([]);
     setSourceFilter([]);
@@ -567,25 +710,6 @@ const TodoView = ({
     setRecurrenceFilter([]);
     setBucketFilter([]);
   }, []);
-
-  const {
-    addColumn,
-    columns,
-    columnsLoading,
-    createCardInColumn,
-    kanbanAvailable,
-    kanbanMessage,
-    moveCardToColumn,
-    renameColumn,
-  } = useTodoKanbanBoard({
-    currentProject,
-    currentUserId,
-    isExternalView,
-    onAddTodo,
-    onUpdateTodo,
-    scope,
-    visibleOpenTodos,
-  });
 
   const selectedTodoCanEdit = !isExternalView && !selectedTodo?.isDerived && selectedTodo?.status !== 'Done';
 
@@ -630,11 +754,20 @@ const TodoView = ({
         {viewMode === 'timeline' ? (
           <TodoBoardView
             bucketSections={bucketSections}
+            canReorderTodo={canDragReorderTodo}
+            canMoveTodo={canMoveTodoByOffset}
+            draggedTodoId={todoDragState.todo?._id || ''}
+            dropTarget={todoDragState.target}
             formatQuickAddDueHint={formatQuickAddDueHint}
             handleCompleteTodo={handleCompleteTodo}
             handleQuickAddSubmit={handleQuickAddSubmit}
             isExternalView={isExternalView}
             onDeleteTodo={onDeleteTodo}
+            onReorderDragEnd={handleTodoReorderDragEnd}
+            onReorderDragOver={handleTodoReorderDragOver}
+            onReorderDragStart={handleTodoReorderDragStart}
+            onReorderDrop={handleTodoReorderDrop}
+            onReorderMove={handleTodoReorderMove}
             onOpenTodo={setSelectedTodo}
             pendingCompletedTodos={pendingCompletedTodos}
             quickAddValues={quickAddValues}
@@ -668,8 +801,12 @@ const TodoView = ({
               <TodoBucketSection
                 key={bucket.key}
                 bucket={bucket}
+                canReorderTodo={canDragReorderTodo}
+                canMoveTodo={canMoveTodoByOffset}
                 commitDraftValue={commitDraftValue}
                 displayItems={bucket.displayItems}
+                draggedTodoId={todoDragState.todo?._id || ''}
+                dropTarget={todoDragState.target}
                 formatQuickAddDueHint={formatQuickAddDueHint}
                 getDraftValue={getDraftValue}
                 handleCompleteTodo={handleCompleteTodo}
@@ -678,6 +815,11 @@ const TodoView = ({
                 isMobile={isMobile}
                 mobileEditingTitleTodoId={mobileEditingTitleTodoId}
                 onDeleteTodo={onDeleteTodo}
+                onReorderDragEnd={handleTodoReorderDragEnd}
+                onReorderDragOver={handleTodoReorderDragOver}
+                onReorderDragStart={handleTodoReorderDragStart}
+                onReorderDrop={handleTodoReorderDrop}
+                onReorderMove={handleTodoReorderMove}
                 onUpdateTodo={onUpdateTodo}
                 pendingCompletedTodos={pendingCompletedTodos}
                 projectOptions={projectOptions}
