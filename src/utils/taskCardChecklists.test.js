@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildTaskChecklistScopeKey,
   calculateTaskChecklistPosition,
+  parseChecklistItemDrafts,
   parseChecklistItemLines,
   sortTaskChecklistItems,
   summarizeTaskChecklists,
@@ -17,6 +18,20 @@ test('parseChecklistItemLines accepts plain, bullet, numbered, and checkbox past
   assert.deepEqual(
     parseChecklistItemLines('First\n- Second\n2. Third\n[x] Fourth\n\n'),
     ['First', 'Second', 'Third', 'Fourth']
+  );
+});
+
+test('parseChecklistItemDrafts preserves checked rows from Trello-style paste', () => {
+  assert.deepEqual(
+    parseChecklistItemDrafts('- [x] Done item\n- [ ] Open item\n1. ☑ Reviewed\n2. ☐ Waiting\n✓ Signed off\nPlain note'),
+    [
+      { checked: true, title: 'Done item' },
+      { checked: false, title: 'Open item' },
+      { checked: true, title: 'Reviewed' },
+      { checked: false, title: 'Waiting' },
+      { checked: true, title: 'Signed off' },
+      { checked: false, title: 'Plain note' },
+    ]
   );
 });
 

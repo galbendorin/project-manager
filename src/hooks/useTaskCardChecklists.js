@@ -4,7 +4,7 @@ import { buildTodoCardKey } from './useTodoKanbanBoard';
 import {
   buildTaskChecklistScopeKey,
   calculateTaskChecklistPosition,
-  parseChecklistItemLines,
+  parseChecklistItemDrafts,
   sortTaskChecklistItems,
   sortTaskChecklists,
   summarizeTaskChecklists,
@@ -364,22 +364,22 @@ export function useTaskCardChecklists({
 
   const addChecklistItems = useCallback(async (checklistId, rawValue) => {
     if (!checklistId || isExternalView || !currentUserId || !checklistsAvailable) return;
-    const lines = parseChecklistItemLines(rawValue);
-    if (lines.length === 0) return;
+    const itemDrafts = parseChecklistItemDrafts(rawValue);
+    if (itemDrafts.length === 0) return;
 
     const { checklist, scopeKey } = findChecklist(checklistId);
     if (!checklist) return;
 
     let positionBaseItems = checklist.items || [];
-    const rows = lines.map((title) => {
+    const rows = itemDrafts.map((itemDraft) => {
       const position = calculateTaskChecklistPosition(positionBaseItems, positionBaseItems.length);
       positionBaseItems = [...positionBaseItems, { position }];
       return {
         checklist_id: checklistId,
         user_id: currentUserId,
         project_id: checklist.projectId || null,
-        title,
-        checked: false,
+        title: itemDraft.title,
+        checked: itemDraft.checked === true,
         position,
       };
     });

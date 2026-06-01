@@ -4,14 +4,36 @@ export const buildTaskChecklistScopeKey = (projectId, cardKey) => (
   `${projectId || 'personal'}::${cardKey || ''}`
 );
 
-export const parseChecklistItemLines = (value) => (
+const CHECKED_PREFIX_PATTERN = /^(?:\[[xX]\]|☑|✅|✓|✔)\s+/;
+const UNCHECKED_PREFIX_PATTERN = /^(?:\[\s\]|☐|□|⬜)\s+/;
+
+export const parseChecklistItemDrafts = (value) => (
   String(value || '')
     .split(/\r?\n/)
-    .map((line) => line
-      .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '')
-      .replace(/^\s*\[[ xX]\]\s+/, '')
-      .trim())
-    .filter(Boolean)
+    .map((line) => {
+      const withoutListMarker = line
+        .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '')
+        .trim();
+
+      if (!withoutListMarker) return null;
+
+      if (CHECKED_PREFIX_PATTERN.test(withoutListMarker)) {
+        return {
+          checked: true,
+          title: withoutListMarker.replace(CHECKED_PREFIX_PATTERN, '').trim(),
+        };
+      }
+
+      return {
+        checked: false,
+        title: withoutListMarker.replace(UNCHECKED_PREFIX_PATTERN, '').trim(),
+      };
+    })
+    .filter((item) => item?.title)
+);
+
+export const parseChecklistItemLines = (value) => (
+  parseChecklistItemDrafts(value).map((item) => item.title)
 );
 
 const numericPosition = (item) => (
