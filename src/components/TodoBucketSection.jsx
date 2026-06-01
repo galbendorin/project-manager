@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatDate } from '../utils/helpers';
 import { IconArrowDown, IconArrowUp, IconGrip, IconTrash } from './Icons';
+import TaskChecklistBadge from './TaskChecklistBadge';
 
 const CompletionTickButton = ({ checked, disabled, onClick, label }) => (
   <button
@@ -104,6 +105,7 @@ export default function TodoBucketSection({
   statusOptions,
   commitDraftValue,
   formatQuickAddDueHint,
+  getChecklistSummary,
 }) {
   const showReorderControls = !isExternalView && typeof canReorderTodo === 'function';
   const tableColumnCount = (showCompletionTick ? 1 : 0) + (showReorderControls ? 1 : 0) + 8;
@@ -209,6 +211,7 @@ export default function TodoBucketSection({
                           <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass(todo.status)}`}>
                             {isPendingCompletion ? 'Completing...' : (todo.status || 'Open')}
                           </span>
+                          <TaskChecklistBadge summary={getChecklistSummary?.(todo)} />
                         </div>
 
                         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -443,6 +446,9 @@ export default function TodoBucketSection({
                       <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
                         {todo.source || 'Manual'}
                       </span>
+                      <div className="mt-1">
+                        <TaskChecklistBadge summary={getChecklistSummary?.(todo)} />
+                      </div>
                     </td>
                     <td className="px-4 py-2.5 align-top">
                       {isManualEditable ? (

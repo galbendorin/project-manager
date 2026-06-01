@@ -21,6 +21,7 @@ import DesktopTodoDetailModal from './DesktopTodoDetailModal';
 import MobileTodoDetailSheet from './MobileTodoDetailSheet';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
 import { buildTodoCardKey, useTodoKanbanBoard } from '../hooks/useTodoKanbanBoard';
+import { useTaskCardChecklists } from '../hooks/useTaskCardChecklists';
 
 const SOURCE_FILTER_OPTIONS = [
   { value: 'all', label: 'All Sources' },
@@ -712,6 +713,38 @@ const TodoView = ({
   }, []);
 
   const selectedTodoCanEdit = !isExternalView && !selectedTodo?.isDerived && selectedTodo?.status !== 'Done';
+  const checklistSourceTodos = useMemo(() => {
+    const todoMap = new Map();
+    visibleOpenTodos.forEach((todo) => {
+      if (todo?._id) todoMap.set(todo._id, todo);
+    });
+    if (selectedTodo?._id) {
+      todoMap.set(selectedTodo._id, selectedTodo);
+    }
+    return [...todoMap.values()];
+  }, [selectedTodo, visibleOpenTodos]);
+
+  const {
+    addChecklist,
+    addChecklistItems,
+    checklistMessage,
+    checklistsAvailable,
+    checklistsLoading,
+    deleteChecklist,
+    deleteChecklistItem,
+    getChecklistSummaryForTodo,
+    getChecklistsForTodo,
+    moveChecklistItem,
+    renameChecklist,
+    renameChecklistItem,
+    toggleChecklistItem,
+  } = useTaskCardChecklists({
+    currentUserId,
+    isExternalView,
+    todos: checklistSourceTodos,
+  });
+  const selectedTodoChecklists = selectedTodo ? getChecklistsForTodo(selectedTodo) : [];
+  const selectedTodoCanEditChecklist = !isExternalView && selectedTodo?.status !== 'Done';
 
   return (
     <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
@@ -776,6 +809,7 @@ const TodoView = ({
             showCompletionTick={showCompletionTick}
             showQuickAdd={showQuickAdd}
             statusClass={statusClass}
+            getChecklistSummary={getChecklistSummaryForTodo}
           />
         ) : viewMode === 'kanban' ? (
           <TodoKanbanBoard
@@ -794,6 +828,7 @@ const TodoView = ({
             renameColumn={renameColumn}
             showCompletionTick={showCompletionTick}
             statusClass={statusClass}
+            getChecklistSummary={getChecklistSummaryForTodo}
           />
         ) : (
           <div className="px-5 py-4 space-y-4">
@@ -808,6 +843,7 @@ const TodoView = ({
                 draggedTodoId={todoDragState.todo?._id || ''}
                 dropTarget={todoDragState.target}
                 formatQuickAddDueHint={formatQuickAddDueHint}
+                getChecklistSummary={getChecklistSummaryForTodo}
                 getDraftValue={getDraftValue}
                 handleCompleteTodo={handleCompleteTodo}
                 handleQuickAddSubmit={handleQuickAddSubmit}
@@ -853,6 +889,19 @@ const TodoView = ({
           recurrenceOptions={RECURRENCE_OPTIONS}
           recurrenceLabel={recurrenceLabel}
           statusClass={statusClass}
+          checklists={selectedTodoChecklists}
+          checklistCanEdit={selectedTodoCanEditChecklist}
+          checklistsAvailable={checklistsAvailable}
+          checklistsLoading={checklistsLoading}
+          checklistMessage={checklistMessage}
+          onAddChecklist={() => addChecklist(selectedTodo)}
+          onAddChecklistItems={addChecklistItems}
+          onDeleteChecklist={deleteChecklist}
+          onDeleteChecklistItem={deleteChecklistItem}
+          onMoveChecklistItem={moveChecklistItem}
+          onRenameChecklist={renameChecklist}
+          onRenameChecklistItem={renameChecklistItem}
+          onToggleChecklistItem={toggleChecklistItem}
         />
       ) : null}
 
@@ -867,6 +916,19 @@ const TodoView = ({
           recurrenceLabel={recurrenceLabel}
           recurrenceOptions={RECURRENCE_OPTIONS}
           statusClass={statusClass}
+          checklists={selectedTodoChecklists}
+          checklistCanEdit={selectedTodoCanEditChecklist}
+          checklistsAvailable={checklistsAvailable}
+          checklistsLoading={checklistsLoading}
+          checklistMessage={checklistMessage}
+          onAddChecklist={() => addChecklist(selectedTodo)}
+          onAddChecklistItems={addChecklistItems}
+          onDeleteChecklist={deleteChecklist}
+          onDeleteChecklistItem={deleteChecklistItem}
+          onMoveChecklistItem={moveChecklistItem}
+          onRenameChecklist={renameChecklist}
+          onRenameChecklistItem={renameChecklistItem}
+          onToggleChecklistItem={toggleChecklistItem}
         />
       ) : null}
     </div>
