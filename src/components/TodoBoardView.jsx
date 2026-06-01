@@ -55,18 +55,37 @@ const ReorderDropSlot = ({ active, onDragOver, onDrop }) => (
   />
 );
 
-const MobileMoveButton = ({ children, disabled, icon, onClick }) => (
+const sourceAccentClass = (source) => {
+  if (source === 'Manual') return 'bg-sky-400';
+  if (source === 'Action Log') return 'bg-amber-400';
+  if (source === 'Issue Log') return 'bg-rose-400';
+  if (source === 'Change Log') return 'bg-violet-400';
+  if (source === 'Master Tracker') return 'bg-emerald-400';
+  if (source === 'Project Plan') return 'bg-slate-400';
+  return 'bg-slate-300';
+};
+
+const ownerBadgeLabel = (owner) => {
+  const text = String(owner || '').trim();
+  if (!text) return '';
+  const parts = text.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return parts.slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase();
+};
+
+const MobileMoveIconButton = ({ children, disabled, label, onClick }) => (
   <button
     type="button"
+    aria-label={label}
+    title={label}
     onClick={onClick}
     disabled={disabled}
-    className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-semibold transition ${
+    className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition ${
       disabled
         ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
         : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'
     }`}
   >
-    {icon}
     {children}
   </button>
 );
@@ -103,15 +122,15 @@ const TodoBoardCard = ({
     <article
       onDragOver={onDragOverTodo}
       onDrop={onDropTodo}
-      className={`rounded-2xl border px-3.5 py-3 shadow-sm transition-all ${
+      className={`rounded-[14px] border px-2.5 py-2.5 shadow-[0_1px_0_rgba(9,30,66,0.08),0_1px_3px_rgba(9,30,66,0.14)] transition-all ${
         isCompleted
-          ? 'border-emerald-200 bg-emerald-50/80'
+          ? 'border-emerald-200 bg-emerald-50/90'
           : draggedTodoId === todo._id
-            ? 'border-[var(--pm-accent)]/40 bg-white opacity-80 ring-2 ring-[var(--pm-accent)]/20'
-            : 'border-slate-200 bg-white'
+            ? 'border-[var(--pm-accent)]/35 bg-white opacity-80 ring-2 ring-[var(--pm-accent)]/35'
+            : 'border-white bg-white'
       }`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2">
         <ReorderHandle
           canDrag={canDragTodo}
           onDragStart={onDragStart}
@@ -140,40 +159,40 @@ const TodoBoardCard = ({
             onClick={() => onOpenTodo(todo)}
             className="min-w-0 text-left"
           >
-            <div className={`text-[15px] font-semibold leading-5 ${isCompleted ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <span className={`inline-flex h-1.5 min-w-8 rounded-full ${sourceAccentClass(todo.source)}`} />
+            </div>
+
+            <div className={`text-[12px] font-medium leading-[1.28] ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
               {todo.title || 'Untitled'}
             </div>
 
             {todo.description ? (
-              <div className="mt-2 line-clamp-3 text-[12px] leading-5 text-slate-500">
+              <div className="mt-1 line-clamp-2 text-[10px] leading-[1.3] text-slate-500">
                 {todo.description}
               </div>
             ) : null}
 
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600">
-                {todo.source || 'Manual'}
-              </span>
-              <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass(todo.status)}`}>
-                {isPendingCompletion ? 'Completing...' : (todo.status || 'Open')}
-              </span>
-              <TaskChecklistBadge summary={getChecklistSummary?.(todo)} />
-            </div>
-
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
-                {todo.projectName || 'Other'}
-              </span>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {isPendingCompletion || (todo.status && todo.status !== 'Open') ? (
+                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[8px] font-semibold ${statusClass(todo.status)}`}>
+                  {isPendingCompletion ? 'Completing...' : todo.status}
+                </span>
+              ) : null}
               {todo.owner ? (
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
-                  {todo.owner}
+                <span
+                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-200 px-1.5 text-[8px] font-semibold text-slate-600"
+                  title={todo.owner}
+                >
+                  {ownerBadgeLabel(todo.owner)}
                 </span>
               ) : null}
               {todo.dueDate ? (
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
+                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[8px] font-medium text-slate-500">
                   {formatDate(todo.dueDate)}
                 </span>
               ) : null}
+              <TaskChecklistBadge compact summary={getChecklistSummary?.(todo)} />
             </div>
           </button>
 
@@ -183,25 +202,26 @@ const TodoBoardCard = ({
             </div>
           ) : null}
 
-          {canDragTodo ? (
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:hidden">
-              <MobileMoveButton
-                disabled={!canMoveUp}
-                icon={<IconArrowUp />}
-                onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, -1)}
-              >
-                Move up
-              </MobileMoveButton>
-              <MobileMoveButton
-                disabled={!canMoveDown}
-                icon={<IconArrowDown />}
-                onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, 1)}
-              >
-                Move down
-              </MobileMoveButton>
-            </div>
-          ) : null}
         </div>
+
+        {canDragTodo ? (
+          <div className="flex flex-shrink-0 flex-col gap-1 pt-0.5 sm:hidden">
+            <MobileMoveIconButton
+              disabled={!canMoveUp}
+              label="Move task up"
+              onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, -1)}
+            >
+              <IconArrowUp className="h-3 w-3" />
+            </MobileMoveIconButton>
+            <MobileMoveIconButton
+              disabled={!canMoveDown}
+              label="Move task down"
+              onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, 1)}
+            >
+              <IconArrowDown className="h-3 w-3" />
+            </MobileMoveIconButton>
+          </div>
+        ) : null}
 
         {canDelete ? (
           <button
