@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatDate } from '../utils/helpers';
 import { IconArrowDown, IconArrowUp, IconGrip, IconTrash } from './Icons';
+import TaskChecklistBadge from './TaskChecklistBadge';
 
 const CompletionTickButton = ({ checked, onClick, label }) => (
   <button
@@ -88,6 +89,7 @@ const TodoBoardCard = ({
   statusClass,
   todo,
   handleCompleteTodo,
+  getChecklistSummary,
   isExternalView,
 }) => {
   const isCompleted = todo.status === 'Done';
@@ -155,6 +157,7 @@ const TodoBoardCard = ({
               <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass(todo.status)}`}>
                 {isPendingCompletion ? 'Completing...' : (todo.status || 'Open')}
               </span>
+              <TaskChecklistBadge summary={getChecklistSummary?.(todo)} />
             </div>
 
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -223,6 +226,7 @@ export default function TodoBoardView({
   dropTarget,
   formatQuickAddDueHint,
   handleCompleteTodo,
+  getChecklistSummary,
   handleQuickAddSubmit,
   isExternalView,
   onDeleteTodo,
@@ -316,6 +320,7 @@ export default function TodoBoardView({
                         displayIndex={displayIndex}
                         draggedTodoId={draggedTodoId}
                         handleCompleteTodo={handleCompleteTodo}
+                        getChecklistSummary={getChecklistSummary}
                         isExternalView={isExternalView}
                         onDeleteTodo={onDeleteTodo}
                         onDragEnd={onReorderDragEnd}

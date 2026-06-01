@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { formatDate } from '../utils/helpers';
 import { IconArrowDown, IconArrowUp } from './Icons';
+import TaskChecklistBadge from './TaskChecklistBadge';
 
 const sourceAccentClass = (source) => {
   if (source === 'Manual') return 'bg-sky-400';
@@ -78,6 +79,7 @@ const KanbanCard = ({
   displayIndex,
   draggedTodoId,
   handleCompleteTodo,
+  getChecklistSummary,
   isExternalView,
   onDeleteTodo,
   onDragEnd,
@@ -182,6 +184,7 @@ const KanbanCard = ({
                   {formatDate(todo.dueDate)}
                 </span>
               ) : null}
+              <TaskChecklistBadge compact summary={getChecklistSummary?.(todo)} />
             </div>
           </button>
 
@@ -226,6 +229,7 @@ export default function TodoKanbanBoard({
   columnsLoading,
   createCardInColumn,
   handleCompleteTodo,
+  getChecklistSummary,
   isExternalView,
   kanbanAvailable,
   kanbanMessage,
@@ -475,6 +479,7 @@ export default function TodoKanbanBoard({
                           displayIndex={displayIndex}
                           draggedTodoId={draggedTodoId}
                           handleCompleteTodo={handleCompleteTodo}
+                          getChecklistSummary={getChecklistSummary}
                           isExternalView={isExternalView}
                           onDeleteTodo={onDeleteTodo}
                           onDragEnd={handleDragEnd}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatDate } from '../utils/helpers';
+import TaskCardChecklistPanel from './TaskCardChecklistPanel';
 
 const STATUS_OPTIONS = ['Open', 'Done'];
 
@@ -28,6 +29,19 @@ export default function MobileTodoDetailSheet({
   recurrenceOptions,
   recurrenceLabel,
   statusClass,
+  checklists = [],
+  checklistCanEdit = false,
+  checklistsAvailable = true,
+  checklistsLoading = false,
+  checklistMessage = '',
+  onAddChecklist,
+  onAddChecklistItems,
+  onDeleteChecklist,
+  onDeleteChecklistItem,
+  onMoveChecklistItem,
+  onRenameChecklist,
+  onRenameChecklistItem,
+  onToggleChecklistItem,
 }) {
   if (!todo) return null;
 
@@ -203,6 +217,22 @@ export default function MobileTodoDetailSheet({
                 </MobileField>
               </div>
             </div>
+
+            <TaskCardChecklistPanel
+              canEdit={checklistCanEdit}
+              checklists={checklists}
+              checklistsAvailable={checklistsAvailable}
+              checklistsLoading={checklistsLoading}
+              checklistMessage={checklistMessage}
+              onAddChecklist={onAddChecklist}
+              onAddChecklistItems={onAddChecklistItems}
+              onDeleteChecklist={onDeleteChecklist}
+              onDeleteChecklistItem={onDeleteChecklistItem}
+              onMoveChecklistItem={onMoveChecklistItem}
+              onRenameChecklist={onRenameChecklist}
+              onRenameChecklistItem={onRenameChecklistItem}
+              onToggleChecklistItem={onToggleChecklistItem}
+            />
           </div>
         </div>
       </div>
