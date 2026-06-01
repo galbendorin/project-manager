@@ -72,7 +72,6 @@ const formatQuickAddDueHint = (bucketKey) => {
 const DESKTOP_COMPLETE_DELAY_MS = 1600;
 const MOBILE_COMPLETE_DELAY_MS = 3200;
 
-const STATUS_OPTIONS = ['Open', 'Done'];
 const TODO_VIEW_MODE_KEY = 'pmworkspace:todo-view-mode:v1';
 const TODO_FUTURE_MONTHS_KEY = 'pmworkspace:todo-future-months:v1';
 
@@ -102,8 +101,6 @@ const TodoView = ({
   const [projectOptions, setProjectOptions] = useState([]);
   const [allProjectsData, setAllProjectsData] = useState([]);
   const [loadingAllProjects, setLoadingAllProjects] = useState(false);
-  const [draftEdits, setDraftEdits] = useState({});
-  const [mobileEditingTitleTodoId, setMobileEditingTitleTodoId] = useState(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [selectedTodo, setSelectedTodo] = useState(null);
   const [viewMode, setViewMode] = useState(() => {
@@ -119,22 +116,9 @@ const TodoView = ({
   const [quickAddValues, setQuickAddValues] = useState({});
   const [pendingCompletedTodos, setPendingCompletedTodos] = useState({});
   const [todoDragState, setTodoDragState] = useState({ todo: null, sourceBucketKey: '', target: null });
-  const draftEditsRef = useRef({});
-  const titleInputRefs = useRef(new Map());
   const quickAddInputRefs = useRef(new Map());
   const completionTimeoutsRef = useRef(new Map());
   const isMobile = useMediaQuery('(max-width: 768px)');
-
-  const makeDraftKey = (todoId, field) => `${todoId}::${field}`;
-
-  const setTitleInputRef = (todoId, element) => {
-    if (!todoId) return;
-    if (element) {
-      titleInputRefs.current.set(todoId, element);
-      return;
-    }
-    titleInputRefs.current.delete(todoId);
-  };
 
   const setQuickAddInputRef = (bucketKey, element) => {
     if (!bucketKey) return;
@@ -151,10 +135,6 @@ const TodoView = ({
       [bucketKey]: value
     }));
   };
-
-  useEffect(() => {
-    draftEditsRef.current = draftEdits;
-  }, [draftEdits]);
 
   useEffect(() => {
     writeLocalJson(TODO_VIEW_MODE_KEY, { mode: viewMode });
@@ -184,74 +164,6 @@ const TodoView = ({
     });
     completionTimeoutsRef.current.clear();
   }, []);
-
-  useEffect(() => {
-    if (!mobileEditingTitleTodoId) return undefined;
-
-    const frameId = window.requestAnimationFrame(() => {
-      const input = titleInputRefs.current.get(mobileEditingTitleTodoId);
-      if (input) {
-        input.focus();
-        input.select();
-      }
-    });
-
-    return () => window.cancelAnimationFrame(frameId);
-  }, [mobileEditingTitleTodoId]);
-
-  useEffect(() => {
-    const activeIds = new Set((todos || []).map((item) => item._id));
-    setDraftEdits((prev) => {
-      let changed = false;
-      const next = {};
-      Object.entries(prev).forEach(([key, value]) => {
-        const separatorIdx = key.indexOf('::');
-        const todoId = separatorIdx >= 0 ? key.slice(0, separatorIdx) : '';
-        if (activeIds.has(todoId)) {
-          next[key] = value;
-        } else {
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
-    });
-  }, [todos]);
-
-  const getDraftValue = (todo, field) => {
-    const key = makeDraftKey(todo._id, field);
-    if (Object.prototype.hasOwnProperty.call(draftEdits, key)) {
-      return draftEdits[key];
-    }
-    return todo[field] || '';
-  };
-
-  const setDraftValue = (todoId, field, value) => {
-    const key = makeDraftKey(todoId, field);
-    setDraftEdits((prev) => ({
-      ...prev,
-      [key]: value
-    }));
-  };
-
-  const commitDraftValue = (todo, field) => {
-    const key = makeDraftKey(todo._id, field);
-    if (!Object.prototype.hasOwnProperty.call(draftEditsRef.current, key)) {
-      return;
-    }
-
-    const nextValue = draftEditsRef.current[key];
-    const currentValue = todo[field] || '';
-    if (nextValue !== currentValue) {
-      onUpdateTodo(todo._id, field, nextValue);
-    }
-
-    setDraftEdits((prev) => {
-      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-  };
 
   useEffect(() => {
     setProjectFilter([]);
@@ -346,23 +258,10 @@ const TodoView = ({
     const matchingTodo = mergedOpenTodos.find((item) => item._id === pendingFocusTodoId);
     if (!matchingTodo) return undefined;
 
-    if (isMobile) {
-      setSelectedTodo(matchingTodo);
-      onTodoFocusHandled?.();
-      return undefined;
-    }
-
-    const frameId = window.requestAnimationFrame(() => {
-      const input = titleInputRefs.current.get(pendingFocusTodoId);
-      if (input) {
-        input.focus();
-        input.select();
-      }
-      onTodoFocusHandled?.();
-    });
-
-    return () => window.cancelAnimationFrame(frameId);
-  }, [isMobile, mergedOpenTodos, onTodoFocusHandled, pendingFocusTodoId]);
+    setSelectedTodo(matchingTodo);
+    onTodoFocusHandled?.();
+    return undefined;
+  }, [mergedOpenTodos, onTodoFocusHandled, pendingFocusTodoId]);
 
   useEffect(() => {
     if (!selectedTodo) return;
@@ -831,47 +730,36 @@ const TodoView = ({
             getChecklistSummary={getChecklistSummaryForTodo}
           />
         ) : (
-          <div className="px-5 py-4 space-y-4">
+          <div className="space-y-3 px-3 py-3 sm:px-4">
             {bucketSections.map((bucket) => (
               <TodoBucketSection
                 key={bucket.key}
                 bucket={bucket}
                 canReorderTodo={canDragReorderTodo}
                 canMoveTodo={canMoveTodoByOffset}
-                commitDraftValue={commitDraftValue}
                 displayItems={bucket.displayItems}
                 draggedTodoId={todoDragState.todo?._id || ''}
                 dropTarget={todoDragState.target}
                 formatQuickAddDueHint={formatQuickAddDueHint}
                 getChecklistSummary={getChecklistSummaryForTodo}
-                getDraftValue={getDraftValue}
                 handleCompleteTodo={handleCompleteTodo}
                 handleQuickAddSubmit={handleQuickAddSubmit}
                 isExternalView={isExternalView}
                 isMobile={isMobile}
-                mobileEditingTitleTodoId={mobileEditingTitleTodoId}
                 onDeleteTodo={onDeleteTodo}
                 onReorderDragEnd={handleTodoReorderDragEnd}
                 onReorderDragOver={handleTodoReorderDragOver}
                 onReorderDragStart={handleTodoReorderDragStart}
                 onReorderDrop={handleTodoReorderDrop}
                 onReorderMove={handleTodoReorderMove}
-                onUpdateTodo={onUpdateTodo}
                 pendingCompletedTodos={pendingCompletedTodos}
-                projectOptions={projectOptions}
                 quickAddValues={quickAddValues}
-                recurrenceLabel={recurrenceLabel}
-                recurrenceOptions={RECURRENCE_OPTIONS}
-                setDraftValue={setDraftValue}
-                setMobileEditingTitleTodoId={setMobileEditingTitleTodoId}
                 setSelectedMobileTodo={setSelectedTodo}
                 setQuickAddInputRef={setQuickAddInputRef}
                 setQuickAddValue={setQuickAddValue}
-                setTitleInputRef={setTitleInputRef}
                 showCompletionTick={showCompletionTick}
                 showQuickAdd={showQuickAdd}
                 statusClass={statusClass}
-                statusOptions={STATUS_OPTIONS}
               />
             ))}
           </div>
