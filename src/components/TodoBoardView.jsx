@@ -1,6 +1,6 @@
 import React from 'react';
 import { formatDate } from '../utils/helpers';
-import { IconArrowDown, IconArrowUp, IconGrip, IconTrash } from './Icons';
+import { IconArrowDown, IconArrowUp } from './Icons';
 import TaskChecklistBadge from './TaskChecklistBadge';
 
 const CompletionTickButton = ({ checked, onClick, label }) => (
@@ -8,40 +8,23 @@ const CompletionTickButton = ({ checked, onClick, label }) => (
     type="button"
     onClick={onClick}
     aria-label={label}
-    className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition-all ${
+    className={`inline-flex h-6 w-6 items-center justify-center rounded-full border transition-all ${
       checked
         ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-        : 'border-slate-300 bg-white text-transparent hover:border-indigo-400 hover:bg-indigo-50'
+        : 'border-slate-300 bg-white text-transparent hover:border-slate-400 hover:bg-slate-50'
     } focus:outline-none focus:ring-2 focus:ring-indigo-400/30`}
   >
     {checked ? (
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
       </svg>
     ) : (
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
       </svg>
     )}
   </button>
 );
-
-const ReorderHandle = ({ canDrag, onDragStart, onDragEnd }) => {
-  if (!canDrag) return null;
-  return (
-    <button
-      type="button"
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      className="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-full text-slate-300 transition hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing"
-      title="Drag to reorder"
-      aria-label="Drag to reorder task"
-    >
-      <IconGrip />
-    </button>
-  );
-};
 
 const ReorderDropSlot = ({ active, onDragOver, onDrop }) => (
   <div
@@ -73,19 +56,18 @@ const ownerBadgeLabel = (owner) => {
   return parts.slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase();
 };
 
-const MobileMoveIconButton = ({ children, disabled, label, onClick }) => (
+const MobileMoveButton = ({ children, disabled, icon, onClick }) => (
   <button
     type="button"
-    aria-label={label}
-    title={label}
     onClick={onClick}
     disabled={disabled}
-    className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition ${
+    className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[10px] border px-2.5 py-1.5 text-[11px] font-semibold transition ${
       disabled
         ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
         : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'
     }`}
   >
+    {icon}
     {children}
   </button>
 );
@@ -115,27 +97,43 @@ const TodoBoardCard = ({
   const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id);
   const canDelete = !isExternalView && !todo.isDerived && todo.status !== 'Done';
   const canDragTodo = typeof canReorderTodo === 'function' && canReorderTodo(todo);
+  const canMove = !isExternalView && todo.status !== 'Done';
   const canMoveUp = canDragTodo && canMoveTodo?.(todo, -1);
   const canMoveDown = canDragTodo && canMoveTodo?.(todo, 1);
 
   return (
     <article
+      draggable={canDragTodo}
+      onDragStart={canDragTodo ? onDragStart : undefined}
+      onDragEnd={canDragTodo ? onDragEnd : undefined}
       onDragOver={onDragOverTodo}
       onDrop={onDropTodo}
-      className={`rounded-[14px] border px-2.5 py-2.5 shadow-[0_1px_0_rgba(9,30,66,0.08),0_1px_3px_rgba(9,30,66,0.14)] transition-all ${
+      className={`group rounded-[14px] border px-2.5 py-2.5 shadow-[0_1px_0_rgba(9,30,66,0.08),0_1px_3px_rgba(9,30,66,0.14)] transition-all duration-150 ${
         isCompleted
           ? 'border-emerald-200 bg-emerald-50/90'
           : draggedTodoId === todo._id
-            ? 'border-[var(--pm-accent)]/35 bg-white opacity-80 ring-2 ring-[var(--pm-accent)]/35'
-            : 'border-white bg-white'
+            ? 'border-[var(--pm-accent)]/35 bg-white ring-2 ring-[var(--pm-accent)]/35'
+            : 'border-white bg-white hover:bg-slate-50/60'
       }`}
+      style={{ cursor: canDragTodo ? 'grab' : 'default' }}
     >
       <div className="flex items-start gap-2">
-        <ReorderHandle
-          canDrag={canDragTodo}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-        />
+        {canDragTodo ? (
+          <div
+            className="select-none pt-1 text-slate-300 transition group-hover:text-slate-400"
+            title="Drag task"
+            aria-hidden="true"
+          >
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+              <circle cx="5" cy="4" r="1.1" />
+              <circle cx="11" cy="4" r="1.1" />
+              <circle cx="5" cy="8" r="1.1" />
+              <circle cx="11" cy="8" r="1.1" />
+              <circle cx="5" cy="12" r="1.1" />
+              <circle cx="11" cy="12" r="1.1" />
+            </svg>
+          </div>
+        ) : null}
 
         {showCompletionTick ? (
           <div className="pt-0.5">
@@ -157,7 +155,7 @@ const TodoBoardCard = ({
           <button
             type="button"
             onClick={() => onOpenTodo(todo)}
-            className="min-w-0 text-left"
+            className="w-full min-w-0 text-left"
           >
             <div className="mb-1.5 flex items-center gap-1.5">
               <span className={`inline-flex h-1.5 min-w-8 rounded-full ${sourceAccentClass(todo.source)}`} />
@@ -197,40 +195,39 @@ const TodoBoardCard = ({
           </button>
 
           {isPendingCompletion ? (
-            <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700">
+            <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700">
               Tap the tick again to undo before completion is applied.
             </div>
           ) : null}
 
+          {canMove ? (
+            <div className="mt-2 grid grid-cols-2 gap-1.5 sm:hidden">
+              <MobileMoveButton
+                disabled={!canMoveUp}
+                icon={<IconArrowUp className="h-3 w-3" />}
+                onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, -1)}
+              >
+                Up
+              </MobileMoveButton>
+              <MobileMoveButton
+                disabled={!canMoveDown}
+                icon={<IconArrowDown className="h-3 w-3" />}
+                onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, 1)}
+              >
+                Down
+              </MobileMoveButton>
+            </div>
+          ) : null}
         </div>
-
-        {canDragTodo ? (
-          <div className="flex flex-shrink-0 flex-col gap-1 pt-0.5 sm:hidden">
-            <MobileMoveIconButton
-              disabled={!canMoveUp}
-              label="Move task up"
-              onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, -1)}
-            >
-              <IconArrowUp className="h-3 w-3" />
-            </MobileMoveIconButton>
-            <MobileMoveIconButton
-              disabled={!canMoveDown}
-              label="Move task down"
-              onClick={() => onMoveTodo?.(todo, bucketKey, displayIndex, 1)}
-            >
-              <IconArrowDown className="h-3 w-3" />
-            </MobileMoveIconButton>
-          </div>
-        ) : null}
 
         {canDelete ? (
           <button
             type="button"
             onClick={() => onDeleteTodo(todo._id)}
-            className="text-slate-300 transition hover:text-rose-500"
+            className="rounded-md p-0.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
             title="Delete Task"
           >
-            <IconTrash />
+            x
           </button>
         ) : null}
       </div>
