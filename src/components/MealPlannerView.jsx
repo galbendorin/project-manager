@@ -3771,12 +3771,12 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                     forceRender={isMobile || currentDayIndex < 2 || copyPrompt?.dateKey === day.key}
                     planViewHeadline={planViewHeadline}
                     renderDetails={() => (
-                    <div className="mt-3 grid gap-2.5 lg:grid-cols-2 2xl:grid-cols-4">
+                    <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,13.5rem),1fr))] gap-2.5">
                       {SLOT_ORDER.map((slot) => {
                         const slotEntries = slotEntriesByKey[`${day.key}:${slot}`] || [];
 
                         return (
-                          <div key={`${day.key}-${slot}`} className="pm-scroll-optimize-card pm-meal-planner-repeated-card rounded-[18px] border border-slate-200 bg-white p-2.5 sm:rounded-[24px] sm:p-3">
+                          <div key={`${day.key}-${slot}`} className="pm-scroll-optimize-card pm-meal-planner-repeated-card min-w-0 rounded-[18px] border border-slate-200 bg-white p-2.5 sm:rounded-[24px] sm:p-3">
                             <div className="flex items-center justify-between gap-3">
                               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{getMealSlotLabel(slot)}</p>
                               <div className="flex items-center gap-2">
@@ -3879,7 +3879,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                   </>
                                 );
                                 return (
-                                  <div key={entry.id} className={`pm-scroll-optimize-card pm-meal-planner-repeated-card rounded-[16px] border px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3 ${isCarryoverEntry ? 'border-sky-100 bg-white' : 'border-slate-200 bg-slate-50/60'}`}>
+                                  <div key={entry.id} className={`pm-scroll-optimize-card pm-meal-planner-repeated-card min-w-0 rounded-[16px] border px-2.5 py-2.5 sm:rounded-[22px] sm:px-3 sm:py-3 ${isCarryoverEntry ? 'border-sky-100 bg-white' : 'border-slate-200 bg-slate-50/60'}`}>
                                     {isCarryoverEntry ? (
                                       <div className="block w-full text-left">
                                         {cardBody}
@@ -3951,13 +3951,13 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                               <button
                                                 type="button"
                                                 onClick={() => void handleCreateCarryover(entry.id)}
-                                                className="rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700 transition hover:bg-sky-100 sm:text-xs"
+                                                className="col-span-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700 transition hover:bg-sky-100 sm:text-xs"
                                               >
                                                 Carry over to next day
                                               </button>
                                             ) : null}
                                             {entryUsage?.hasCarryoverChild && entryUsage?.carryoverChildDate ? (
-                                              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-700 sm:text-xs">
+                                              <span className="col-span-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-center text-[11px] font-semibold text-sky-700 sm:text-xs">
                                                 Carried to {formatCarryoverTargetDayLabel(entryUsage.carryoverChildDate)}
                                               </span>
                                             ) : null}
