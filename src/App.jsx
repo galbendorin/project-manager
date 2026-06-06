@@ -16,6 +16,7 @@ import {
 import { getFeatureByRoute } from './utils/featureRegistry';
 import { readAppShortcutIntent } from './utils/appShortcutIntent';
 import { activatePendingServiceWorker } from './utils/registerServiceWorker';
+import { canAccessItilQuiz } from './utils/itilQuizAccess';
 
 const AuthPage = lazy(() => import('./components/AuthPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -28,6 +29,7 @@ const AuthenticatedMealPlannerShell = lazy(() => import('./components/AppWorkspa
 const AuthenticatedBabyShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedBabyShell })));
 const AuthenticatedHabitsShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedHabitsShell })));
 const AuthenticatedWeightShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedWeightShell })));
+const AuthenticatedItilQuizShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedItilQuizShell })));
 
 const normalizeAppPath = (value = '/') => {
   const normalized = String(value || '/').replace(/\/+$/, '');
@@ -81,6 +83,29 @@ const HouseholdToolUnavailable = ({ onGoToProjects, toolName = 'This tool' }) =>
   </div>
 );
 
+const PrivateToolUnavailable = ({ onGoToProjects, toolName = 'This tool' }) => (
+  <div className="min-h-screen bg-[var(--pm-page-bg,#f8fafc)] px-4 py-10">
+    <div className="mx-auto flex min-h-[70vh] max-w-xl items-center">
+      <div className="w-full rounded-[32px] border border-slate-200 bg-white p-6 text-center shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+        <p className="pm-kicker">Private tool</p>
+        <h1 className="mt-3 text-3xl font-black tracking-[-0.05em] text-slate-950">
+          {toolName} is not available on this account
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-slate-500">
+          {toolName} is currently limited to Dorin's PM Workspace account.
+        </p>
+        <button
+          type="button"
+          onClick={onGoToProjects}
+          className="pm-toolbar-primary mt-6 rounded-2xl px-5 py-3 text-sm font-bold text-white"
+        >
+          Back to projects
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
 const getUserDisplayName = (user) => {
   const fullName = String(user?.user_metadata?.full_name || '').trim();
   if (fullName) return fullName;
@@ -109,6 +134,7 @@ function App() {
   const [updateReady, setUpdateReady] = useState(false);
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const currentFeature = getFeatureByRoute(currentPath);
+  const canUseItilQuiz = canAccessItilQuiz(user?.email);
 
   useEffect(() => {
     applyAccentTheme(accentTheme);
@@ -254,6 +280,20 @@ function App() {
               />,
               'Loading Timesheet...'
             )
+          : currentPath === '/itil-quiz'
+            ? canUseItilQuiz
+              ? renderLazyPage(
+                  <AuthenticatedItilQuizShell
+                    currentUserId={user.id}
+                    userEmail={user.email}
+                    onGoToProjects={openProjectSelector}
+                    onSignOut={signOut}
+                    accentTheme={accentTheme}
+                    onAccentThemeChange={setAccentTheme}
+                  />,
+                  'Loading ITIL Quiz...'
+                )
+              : <PrivateToolUnavailable onGoToProjects={openProjectSelector} toolName={currentFeature?.label || 'This tool'} />
           : currentPath === '/shopping' && householdToolsEnabled
             ? renderLazyPage(
                 <AuthenticatedShoppingShell
@@ -329,6 +369,7 @@ function App() {
                   onOpenBaby={() => householdToolsEnabled && navigateToPath('/baby')}
                   onOpenHabits={() => householdToolsEnabled && navigateToPath('/habits')}
                   onOpenWeight={() => householdToolsEnabled && navigateToPath('/weight')}
+                  onOpenItilQuiz={() => canUseItilQuiz && navigateToPath('/itil-quiz')}
                   accentTheme={accentTheme}
                   onAccentThemeChange={setAccentTheme}
                 />,

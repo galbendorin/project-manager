@@ -38,6 +38,7 @@ const MealPlannerView = lazy(() => import('./MealPlannerView'));
 const BabyView = lazy(() => import('./BabyView'));
 const HabitsView = lazy(() => import('./HabitsView'));
 const WeightTrackerView = lazy(() => import('./WeightTrackerView'));
+const ItilQuizView = lazy(() => import('./ItilQuizView'));
 
 export function AuthenticatedTrackShell({
   currentUserId,
@@ -173,6 +174,29 @@ export function AuthenticatedWeightShell({
       userEmail={userEmail}
     >
       <WeightTrackerView currentUserId={currentUserId} />
+    </AuthenticatedMiniToolShell>
+  );
+}
+
+export function AuthenticatedItilQuizShell({
+  currentUserId,
+  userEmail,
+  onGoToProjects,
+  onSignOut,
+  accentTheme,
+  onAccentThemeChange,
+}) {
+  return (
+    <AuthenticatedMiniToolShell
+      accentTheme={accentTheme}
+      fallbackLabel="Loading ITIL Quiz..."
+      onAccentThemeChange={onAccentThemeChange}
+      onGoToProjects={onGoToProjects}
+      onSignOut={onSignOut}
+      title="ITIL Foundation Quiz"
+      userEmail={userEmail}
+    >
+      <ItilQuizView currentUserId={currentUserId} />
     </AuthenticatedMiniToolShell>
   );
 }

@@ -18,6 +18,7 @@ import { createProjectWithLimits, getProjectCreationErrorMessage } from '../util
 import { loadLastProject } from '../utils/navigationState';
 import { getStoredProjectTab } from '../utils/projectTabMemory';
 import { getProjectHomeLaunchFeatures } from '../utils/featureRegistry';
+import { canAccessItilQuiz } from '../utils/itilQuizAccess';
 
 const PROJECT_TAB_LABEL_BY_ID = new Map(TABS.map((tab) => [tab.id, tab.label]));
 
@@ -46,7 +47,7 @@ const getFriendlyProjectCreateErrorMessage = (error) => {
   return getProjectCreationErrorMessage(error);
 };
 
-const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeals, onOpenTrack, onOpenShopping, onOpenWeight, accentTheme, onAccentThemeChange }) => {
+const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenItilQuiz, onOpenMeals, onOpenTrack, onOpenShopping, onOpenWeight, accentTheme, onAccentThemeChange }) => {
   const { user, signOut } = useAuth();
   const { canCreateProject, limits, householdToolsEnabled, isReadOnly, refreshProjectCount } = usePlan();
   const [projects, setProjects] = useState([]);
@@ -71,17 +72,22 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenMeal
     [projects]
   );
   const showInternalLaunchCards = householdToolsEnabled;
+  const canUseItilQuiz = useMemo(() => canAccessItilQuiz(user?.email), [user?.email]);
   const projectHomeLaunchFeatures = useMemo(() => (
-    getProjectHomeLaunchFeatures({ includeHouseholdTools: showInternalLaunchCards })
-  ), [showInternalLaunchCards]);
+    getProjectHomeLaunchFeatures({
+      includeHouseholdTools: showInternalLaunchCards,
+      includeItilQuiz: canUseItilQuiz,
+    })
+  ), [canUseItilQuiz, showInternalLaunchCards]);
   const launchActionById = useMemo(() => ({
     'meal-planner': onOpenMeals,
     'shopping-list': onOpenShopping,
     baby: onOpenBaby,
     habits: onOpenHabits,
     weight: onOpenWeight,
+    'itil-quiz': onOpenItilQuiz,
     timesheets: onOpenTrack,
-  }), [onOpenBaby, onOpenHabits, onOpenMeals, onOpenShopping, onOpenTrack, onOpenWeight]);
+  }), [onOpenBaby, onOpenHabits, onOpenItilQuiz, onOpenMeals, onOpenShopping, onOpenTrack, onOpenWeight]);
   const shareProject = useMemo(
     () => projects.find((project) => project.id === shareProjectId) || null,
     [projects, shareProjectId]

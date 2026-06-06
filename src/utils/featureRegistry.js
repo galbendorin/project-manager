@@ -23,6 +23,14 @@ export const APP_FEATURES = [
     homeTitle: 'Log hours',
   },
   {
+    id: 'itil-quiz',
+    label: 'ITIL Quiz',
+    route: '/itil-quiz',
+    access: FEATURE_ACCESS.authenticated,
+    surface: 'workspace',
+    homeTitle: 'Practise mock tests',
+  },
+  {
     id: 'meal-planner',
     label: 'Meal Planner',
     route: '/meals',
@@ -70,6 +78,7 @@ export const PROJECT_HOME_LAUNCH_FEATURE_IDS = [
   'baby',
   'habits',
   'weight',
+  'itil-quiz',
   'timesheets',
 ];
 
@@ -100,12 +109,18 @@ export const isHouseholdFeaturePath = (path = '') => (
   HOUSEHOLD_TOOL_PATHS.has(normalizeFeatureRoute(path))
 );
 
-export const getProjectHomeLaunchFeatures = ({ includeHouseholdTools = false } = {}) => (
+export const getProjectHomeLaunchFeatures = ({
+  includeHouseholdTools = false,
+  includeItilQuiz = false,
+} = {}) => (
   PROJECT_HOME_LAUNCH_FEATURE_IDS
     .map(getFeatureById)
     .filter(Boolean)
     .filter((feature) => (
       feature.access !== FEATURE_ACCESS.household || includeHouseholdTools
+    ))
+    .filter((feature) => (
+      feature.id !== 'itil-quiz' || includeItilQuiz
     ))
 );
 
