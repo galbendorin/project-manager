@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAPERS } from '../data/itilFoundationPapers';
 import { readLocalJson, writeLocalJson } from '../utils/offlineState';
 import {
+  buildShortAssessmentSets,
+  SHORT_ASSESSMENT_SIZE,
   createEmptyItilQuizProgress,
   formatRationaleSections,
   getNextQuestionIndex,
@@ -13,6 +15,8 @@ import {
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 const MOCK_DURATION_MS = 60 * 60 * 1000;
+const SHORT_ASSESSMENTS = buildShortAssessmentSets(PAPERS);
+const ALL_QUIZ_SETS = [...PAPERS, ...SHORT_ASSESSMENTS];
 
 const CheckIcon = ({ className = 'h-4 w-4' }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
@@ -105,7 +109,15 @@ const ModeBadge = ({ mode = 'practice' }) => (
   </span>
 );
 
-const PaperCard = ({ paper, paperProgress, onContinue, onStart, onReset }) => {
+const PaperCard = ({
+  allowMock = true,
+  paper,
+  paperProgress,
+  onContinue,
+  onStart,
+  onReset,
+  startPracticeLabel = 'Start practice',
+}) => {
   const summary = summarizePaperProgress(paper, paperProgress);
   const hasProgress = Boolean(
     paperProgress.startedAt
@@ -118,7 +130,7 @@ const PaperCard = ({ paper, paperProgress, onContinue, onStart, onReset }) => {
     <article className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="pm-kicker">Official sample</p>
+          <p className="pm-kicker">{paper.kicker || 'Official sample'}</p>
           <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">{paper.title}</h2>
           <p className="mt-1 text-xs font-semibold text-slate-500">
             {paper.questionCount} questions · {paper.recommendedMinutes} minutes · pass at {paper.passMark}
@@ -130,7 +142,7 @@ const PaperCard = ({ paper, paperProgress, onContinue, onStart, onReset }) => {
       <div className="mt-5 grid grid-cols-3 gap-2">
         <div className="rounded-2xl bg-slate-50 px-3 py-3">
           <div className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Answered</div>
-          <div className="mt-1 text-xl font-black text-slate-950">{summary.answered}/40</div>
+          <div className="mt-1 text-xl font-black text-slate-950">{summary.answered}/{paper.questionCount}</div>
         </div>
         <div className="rounded-2xl bg-emerald-50 px-3 py-3">
           <div className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-600">Unassisted</div>
@@ -160,13 +172,15 @@ const PaperCard = ({ paper, paperProgress, onContinue, onStart, onReset }) => {
           </button>
         </div>
       ) : (
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+        <div className={`mt-5 grid gap-2 ${allowMock ? 'sm:grid-cols-2' : ''}`}>
           <button type="button" onClick={() => onStart('practice')} className="pm-toolbar-primary rounded-2xl px-4 py-3 text-sm font-black text-white">
-            Start practice
+            {startPracticeLabel}
           </button>
-          <button type="button" onClick={() => onStart('mock')} className="pm-subtle-button rounded-2xl px-4 py-3 text-sm font-bold">
-            Start 60-min mock
-          </button>
+          {allowMock ? (
+            <button type="button" onClick={() => onStart('mock')} className="pm-subtle-button rounded-2xl px-4 py-3 text-sm font-bold">
+              Start 60-min mock
+            </button>
+          ) : null}
         </div>
       )}
     </article>
@@ -175,9 +189,14 @@ const PaperCard = ({ paper, paperProgress, onContinue, onStart, onReset }) => {
 
 const QuizHome = ({ progress, onContinue, onStart, onReset }) => {
   const paperSummaries = PAPERS.map((paper) => summarizePaperProgress(paper, getPaperProgress(progress, paper.id)));
+  const assessmentSummaries = SHORT_ASSESSMENTS.map((assessment) => (
+    summarizePaperProgress(assessment, getPaperProgress(progress, assessment.id))
+  ));
   const totalAnswered = paperSummaries.reduce((sum, summary) => sum + summary.answered, 0);
   const totalUnassisted = paperSummaries.reduce((sum, summary) => sum + summary.unassistedCorrect, 0);
   const papersPassed = paperSummaries.filter((summary) => summary.passed).length;
+  const assessmentAnswered = assessmentSummaries.reduce((sum, summary) => sum + summary.answered, 0);
+  const completedAssessments = assessmentSummaries.filter((summary) => summary.answered === SHORT_ASSESSMENT_SIZE).length;
 
   return (
     <div className="pm-shell-bg min-h-full px-3 py-4 sm:px-6 sm:py-6">
@@ -216,6 +235,35 @@ const QuizHome = ({ progress, onContinue, onStart, onReset }) => {
         <section>
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div>
+              <p className="pm-kicker">Short exam prep</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">10-question assessment cycle</h2>
+            </div>
+            <div className="max-w-md text-xs font-semibold leading-5 text-slate-500">
+              Eight short assessments cover all 80 sample questions once. Use these when you want focused exam prep without sitting a full paper.
+              <span className="mt-1 block font-black text-slate-700">
+                {assessmentAnswered} / 80 answered · {completedAssessments} / {SHORT_ASSESSMENTS.length} completed
+              </span>
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {SHORT_ASSESSMENTS.map((assessment, index) => (
+              <PaperCard
+                key={assessment.id}
+                allowMock={false}
+                paper={assessment}
+                paperProgress={getPaperProgress(progress, assessment.id)}
+                onContinue={() => onContinue(assessment)}
+                onReset={() => onReset(assessment)}
+                onStart={(mode) => onStart(assessment, mode)}
+                startPracticeLabel={`Start assessment ${index + 1}`}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
               <p className="pm-kicker">Mock tests</p>
               <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">Choose a paper</h2>
             </div>
@@ -232,6 +280,7 @@ const QuizHome = ({ progress, onContinue, onStart, onReset }) => {
                 onContinue={() => onContinue(paper)}
                 onReset={() => onReset(paper)}
                 onStart={(mode) => onStart(paper, mode)}
+                startPracticeLabel="Start practice"
               />
             ))}
           </div>
@@ -404,7 +453,10 @@ const QuizQuestion = ({
 
             <article className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
               <div className="flex items-center justify-between gap-3">
-                <p className="pm-kicker">Question {question.number}</p>
+                <p className="pm-kicker">
+                  Question {question.number}
+                  {question.sourceLabel ? ` · ${question.sourceLabel}` : ''}
+                </p>
                 <span className="text-xs font-black text-slate-400">{questionIndex + 1} / {paper.questionCount}</span>
               </div>
               <h1 className="mt-4 text-[1.45rem] font-black leading-tight tracking-[-0.035em] text-slate-950 sm:text-3xl">
@@ -558,10 +610,10 @@ const ResultsView = ({ onBack, onReset, onReviewQuestion, paper, paperProgress }
               </p>
               <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap">
                 <button type="button" onClick={onBack} className="pm-toolbar-primary rounded-2xl px-5 py-3 text-sm font-black text-white">
-                  Continue paper
+                  {paper.continueLabel || 'Continue paper'}
                 </button>
                 <button type="button" onClick={onReset} className="pm-subtle-button rounded-2xl px-5 py-3 text-sm font-bold">
-                  Reset paper
+                  {paper.resetLabel || 'Reset paper'}
                 </button>
               </div>
             </div>
@@ -569,7 +621,7 @@ const ResultsView = ({ onBack, onReset, onReviewQuestion, paper, paperProgress }
         </section>
 
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <ObjectiveCard label="Answered" value={`${summary.answered}/40`} detail={`${summary.remaining} remaining`} />
+          <ObjectiveCard label="Answered" value={`${summary.answered}/${paper.questionCount}`} detail={`${summary.remaining} remaining`} />
           <ObjectiveCard label="Correct" value={summary.correct} detail="Including assisted answers" tone="emerald" />
           <ObjectiveCard label="Unassisted" value={summary.unassistedCorrect} detail={`${Math.max(0, paper.passMark - summary.unassistedCorrect)} to pass target`} tone="accent" />
           <ObjectiveCard label="Assisted" value={summary.assisted} detail="Rationale opened before submit" />
@@ -629,7 +681,7 @@ export default function ItilQuizView({ currentUserId }) {
   const [now, setNow] = useState(() => Date.now());
 
   const activePaper = useMemo(
-    () => PAPERS.find((paper) => paper.id === activePaperId) || null,
+    () => ALL_QUIZ_SETS.find((paper) => paper.id === activePaperId) || null,
     [activePaperId]
   );
   const activePaperProgress = activePaper ? getPaperProgress(progress, activePaper.id) : null;

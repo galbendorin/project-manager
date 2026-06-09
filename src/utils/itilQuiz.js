@@ -1,5 +1,8 @@
 export const ITIL_QUIZ_STORAGE_VERSION = 1;
 export const ITIL_PASS_MARK = 26;
+export const SHORT_ASSESSMENT_COUNT = 8;
+export const SHORT_ASSESSMENT_SIZE = 10;
+export const SHORT_ASSESSMENT_PASS_MARK = 7;
 
 const createEmptyPaperProgress = () => ({
   answers: {},
@@ -104,4 +107,56 @@ export const formatRationaleSections = (rationale = '') => {
       isCorrect: marker[2] === 'Correct',
     };
   });
+};
+
+const buildStableQuestionRank = (index, total) => (
+  ((index * 37) + 17) % total
+);
+
+export const buildShortAssessmentSets = (papers = []) => {
+  const sourceQuestions = papers.flatMap((paper) => (
+    (Array.isArray(paper?.questions) ? paper.questions : []).map((question) => ({
+      paper,
+      question,
+      sourceKey: `${paper.id}:${question.number}`,
+    }))
+  ));
+
+  if (sourceQuestions.length === 0) return [];
+
+  const shuffledQuestions = sourceQuestions
+    .map((item, index) => ({
+      ...item,
+      index,
+      rank: buildStableQuestionRank(index, sourceQuestions.length),
+    }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index);
+
+  return Array.from({ length: SHORT_ASSESSMENT_COUNT }, (_, setIndex) => {
+    const start = setIndex * SHORT_ASSESSMENT_SIZE;
+    const questions = shuffledQuestions
+      .slice(start, start + SHORT_ASSESSMENT_SIZE)
+      .map(({ paper, question, sourceKey }, questionIndex) => ({
+        ...question,
+        number: questionIndex + 1,
+        sourceKey,
+        sourceNumber: question.number,
+        sourcePaperId: paper.id,
+        sourcePaperTitle: paper.title,
+        sourceLabel: `${paper.title} Q${question.number}`,
+      }));
+
+    return {
+      id: `assessment-${setIndex + 1}`,
+      title: `Short Assessment ${setIndex + 1}`,
+      subtitle: 'ITIL 4 Foundation',
+      kicker: '10-question prep',
+      continueLabel: 'Continue assessment',
+      resetLabel: 'Reset assessment',
+      questionCount: questions.length,
+      passMark: SHORT_ASSESSMENT_PASS_MARK,
+      recommendedMinutes: 15,
+      questions,
+    };
+  }).filter((assessment) => assessment.questions.length > 0);
 };
