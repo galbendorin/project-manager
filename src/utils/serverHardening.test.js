@@ -5,6 +5,10 @@ process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_placeh
 
 const { resolveCheckoutStartFailure } = await import('../../api/create-checkout-session.js');
 const { resolveProjectInviteRpcResponse } = await import('../../api/project-members-invite.js');
+const {
+  PENDING_INVITE_ACCEPT_RATE_LIMIT,
+  buildPendingInviteAcceptRateLimitKey,
+} = await import('../../api/project-members-accept-pending.js');
 const { resolveAiAllowanceFailure } = await import('../../api/ai-generate.js');
 
 test('resolveCheckoutStartFailure blocks duplicate subscription starts', () => {
@@ -44,6 +48,18 @@ test('resolveProjectInviteRpcResponse maps seat-cap failures to a conflict respo
     body: {
       error: 'This project supports up to 7 collaborators at once.',
     },
+  });
+});
+
+test('pending invite acceptance uses a strict user and IP scoped rate limit', () => {
+  assert.equal(
+    buildPendingInviteAcceptRateLimitKey('user-123', '203.0.113.10'),
+    'project-invite-accept:user-123:203.0.113.10',
+  );
+  assert.deepEqual(PENDING_INVITE_ACCEPT_RATE_LIMIT, {
+    max: 30,
+    windowMs: 5 * 60_000,
+    strictShared: true,
   });
 });
 

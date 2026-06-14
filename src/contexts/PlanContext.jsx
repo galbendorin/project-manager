@@ -15,9 +15,11 @@ import {
   canUsePlatformAi as canUsePlatformAiFromProfile,
   resolveRealPlan,
 } from '../utils/planAccess';
+import { shouldRefreshAfterFocus } from '../utils/refreshThrottle';
 
 const PlanContext = createContext({});
 const HOUSEHOLD_PROJECT_NAME = 'Shopping List';
+const PROFILE_REFRESH_FRESHNESS_MS = 30_000;
 
 export const usePlan = () => useContext(PlanContext);
 
@@ -128,11 +130,11 @@ export const PlanProvider = ({ children }) => {
     void loadHouseholdProjectAccess();
   }, [loadHouseholdProjectAccess, loadProfile, loadProjectCount, user]);
 
-  const refreshProfileFromExternalChange = useCallback(() => {
+  const refreshProfileFromExternalChange = useCallback(({ force = false } = {}) => {
     if (!user) return;
 
     const now = Date.now();
-    if (now - lastExternalRefreshAtRef.current < 1500) return;
+    if (!force && !shouldRefreshAfterFocus(lastExternalRefreshAtRef.current, now, PROFILE_REFRESH_FRESHNESS_MS)) return;
 
     lastExternalRefreshAtRef.current = now;
     void loadProfile();
@@ -160,10 +162,10 @@ export const PlanProvider = ({ children }) => {
 
     if (hasBillingSyncPending()) {
       clearBillingSyncPending();
-      refreshProfileFromExternalChange();
+      refreshProfileFromExternalChange({ force: true });
 
       intervalId = window.setInterval(() => {
-        refreshProfileFromExternalChange();
+        refreshProfileFromExternalChange({ force: true });
       }, BILLING_SYNC_POLL_MS);
 
       timeoutId = window.setTimeout(() => {
