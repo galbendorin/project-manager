@@ -69,7 +69,7 @@ const formatGuidanceDateRange = (guidance = null) => {
 
 const getSleepBlockClassName = ({ asleep = false, guideStatus = 'awake', compact = false } = {}) => {
   const sizeClass = compact
-    ? 'flex h-5 items-center justify-center overflow-hidden text-[8px] font-black leading-none'
+    ? 'flex h-4 items-center justify-center overflow-hidden text-[7px] font-black leading-none'
     : 'h-4 sm:h-5';
 
   if (asleep && guideStatus === 'awake') {
@@ -371,6 +371,50 @@ const BabySetupCard = ({ onCreate, saving }) => {
   );
 };
 
+const DateControls = ({
+  selectedDate,
+  setSelectedDate,
+  goToPreviousDay,
+  goToNextDay,
+  goToToday,
+  today,
+  compact = false,
+}) => (
+  <div className={`flex items-center gap-1.5 rounded-[20px] border border-slate-200 bg-slate-50 ${compact ? 'p-1' : 'p-2'}`}>
+    <button
+      type="button"
+      onClick={goToPreviousDay}
+      className={`pm-subtle-button shrink-0 rounded-2xl font-bold ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'}`}
+      aria-label="Previous day"
+    >
+      ‹
+    </button>
+    <input
+      type="date"
+      value={selectedDate}
+      onChange={(event) => setSelectedDate(event.target.value || formatBabyDateKey())}
+      className={`pm-input min-w-0 flex-1 rounded-2xl font-bold ${compact ? 'px-2 py-1.5 text-xs' : 'min-w-[150px] px-3 py-2 text-sm'}`}
+      aria-label="Selected baby tracker date"
+    />
+    <button
+      type="button"
+      onClick={goToNextDay}
+      className={`pm-subtle-button shrink-0 rounded-2xl font-bold ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'}`}
+      aria-label="Next day"
+    >
+      ›
+    </button>
+    <button
+      type="button"
+      onClick={goToToday}
+      className={`pm-toolbar-primary shrink-0 rounded-2xl font-bold text-white disabled:opacity-50 ${compact ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'}`}
+      disabled={selectedDate === today}
+    >
+      Today
+    </button>
+  </div>
+);
+
 const FeedModal = ({ dateKey, feed = null, onClose, onSave, saving }) => {
   const isEditing = Boolean(feed?.id);
   const date = feed?.occurredAt ? new Date(feed.occurredAt) : new Date();
@@ -530,11 +574,11 @@ const SleepHourColumn = ({
 }) => {
   const isBedtime = hour < 7 || hour >= 22;
   return (
-    <div data-sleep-hour={hour} className={`min-w-0 rounded-xl border p-1 ${isBedtime ? 'border-indigo-100 bg-indigo-50' : hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'}`}>
+    <div data-sleep-hour={hour} className={`min-w-0 rounded-xl border ${compact ? 'p-0.5' : 'p-1'} ${isBedtime ? 'border-indigo-100 bg-indigo-50' : hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'}`}>
       <div className={`mb-1 text-center font-black tabular-nums ${isBedtime ? 'text-indigo-700' : hour % 6 === 0 ? 'text-slate-700' : 'text-slate-400'} ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
         {compact || hour % 3 === 0 ? `${String(hour).padStart(2, '0')}:00` : ''}
       </div>
-      <div className={compact ? 'grid grid-cols-4 gap-[3px]' : 'grid gap-[3px]'}>
+      <div className={compact ? 'grid grid-cols-4 gap-[2px]' : 'grid gap-[3px]'}>
         {[0, 1, 2, 3].map((quarter) => {
           const index = (hour * 4) + quarter;
           const asleep = asleepSet.has(index);
@@ -844,6 +888,7 @@ const SleepGrid = ({
   sleepBlocks,
   sleepGuidance = null,
   nextSleepGuidance = null,
+  mobileContext = null,
   onSave,
   saving,
 }) => {
@@ -933,18 +978,21 @@ const SleepGrid = ({
   const hourLabels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`);
 
   return (
-    <section className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm sm:rounded-[30px] sm:p-5">
+    <section className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-sm sm:rounded-[30px] sm:p-5">
+      {mobileContext ? (
+        <div className="mb-2 sm:hidden">{mobileContext}</div>
+      ) : null}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="pm-kicker">Sleep pattern</p>
-          <h2 className="mt-1 text-lg font-black tracking-[-0.04em] text-slate-950 sm:text-xl">Log sleep now</h2>
+          <p className="pm-kicker hidden sm:block">Sleep pattern</p>
+          <h2 className="text-base font-black tracking-[-0.04em] text-slate-950 sm:mt-1 sm:text-xl">Sleep grid</h2>
           <p className="mt-1 hidden text-xs text-slate-500 sm:block">Tap or drag 15-minute blocks. Compare expected sleep with actual sleep.</p>
         </div>
         <button
           type="button"
           onClick={() => onSave(draftSet)}
           disabled={saving}
-          className="pm-toolbar-primary shrink-0 rounded-2xl px-3 py-2 text-xs font-bold text-white disabled:opacity-60 sm:px-4 sm:py-2.5"
+          className="pm-toolbar-primary shrink-0 rounded-2xl px-2.5 py-1.5 text-[11px] font-bold text-white disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-xs"
         >
           {saving ? 'Saving...' : 'Save sleep'}
         </button>
@@ -952,20 +1000,13 @@ const SleepGrid = ({
 
       {sleepGuidance ? (
         <>
-        <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:hidden">
-          <div className="rounded-[18px] border border-sky-100 bg-sky-50 px-3 py-2">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-700">{sleepGuidance.monthLabel}</p>
-            <p className="mt-0.5 text-[11px] font-bold text-slate-700">{formatGuidanceDateRange(sleepGuidance)}</p>
-            <p className="mt-1 text-[11px] font-black text-sky-800">
-              {sleepGuidance.totalSleep || '-'} total · {sleepGuidance.naps || '-'} naps
-            </p>
-          </div>
-          <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2 text-right">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Today</p>
-            <p className="mt-0.5 text-sm font-black text-slate-950">{formatDuration(guidanceComparison.actualMinutes)}</p>
-            <p className="mt-1 text-[11px] font-black text-violet-700">
-              Outside {formatDuration(guidanceComparison.actualOutsideGuideMinutes)}
-            </p>
+        <div className="mt-2 rounded-[16px] border border-sky-100 bg-sky-50 px-2.5 py-1.5 sm:hidden">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-black text-slate-600">
+            <span className="uppercase tracking-[0.16em] text-sky-700">{sleepGuidance.monthLabel}</span>
+            <span>{formatGuidanceDateRange(sleepGuidance)}</span>
+            <span className="text-sky-800">{sleepGuidance.totalSleep || '-'} total</span>
+            <span className="text-slate-900">Today {formatDuration(guidanceComparison.actualMinutes)}</span>
+            <span className="text-violet-700">Outside {formatDuration(guidanceComparison.actualOutsideGuideMinutes)}</span>
           </div>
         </div>
         <div className="mt-4 hidden gap-2 sm:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
@@ -1014,7 +1055,7 @@ const SleepGrid = ({
       ) : null}
 
       <div
-        className="mt-3 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none"
+        className="mt-2 select-none rounded-[18px] border border-slate-100 bg-slate-50 p-1.5 sm:hidden touch-none"
         onPointerCancel={stopPointerToggle}
         onPointerLeave={stopPointerToggle}
         onPointerMove={continuePointerToggle}
@@ -1041,11 +1082,7 @@ const SleepGrid = ({
           <div className="mt-2 rounded-2xl bg-sky-50 px-3 py-1.5 text-[11px] font-bold text-sky-700">
             Range start: {getSleepBlockTimeLabel(pendingRangeStart)}. Tap another slot to fill everything between.
           </div>
-        ) : (
-          <div className="mt-2 rounded-2xl bg-white px-3 py-1.5 text-[11px] font-bold text-slate-500">
-            Tap start, then end to fill a sleep.
-          </div>
-        )}
+        ) : null}
       </div>
 
       <div className="mt-4 hidden select-none rounded-[24px] border border-slate-100 bg-slate-50 p-3 sm:block" onPointerCancel={stopToggle} onPointerLeave={stopToggle} onPointerMove={continueToggle} onPointerUp={stopToggle}>
@@ -1096,11 +1133,11 @@ const SleepGrid = ({
           })}
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-bold text-slate-500 sm:hidden">
-        <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-800">Expected</span>
-        <span className="rounded-full bg-orange-100 px-2 py-1 text-orange-800">Flexible</span>
-        <span className="rounded-full bg-sky-600 px-2 py-1 text-white">Actual</span>
-        <span className="rounded-full bg-violet-500 px-2 py-1 text-white">Outside</span>
+      <div className="mt-1.5 flex flex-wrap gap-1 text-[9px] font-bold text-slate-500 sm:hidden">
+        <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-sky-800">Expected</span>
+        <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-orange-800">Flexible</span>
+        <span className="rounded-full bg-sky-600 px-1.5 py-0.5 text-white">Actual</span>
+        <span className="rounded-full bg-violet-500 px-1.5 py-0.5 text-white">Outside</span>
       </div>
       <div className="mt-3 hidden flex-wrap gap-2 text-[11px] font-bold text-slate-500 sm:flex">
         <span className="rounded-full bg-slate-100 px-2 py-1">Desktop shows one 24h row</span>
@@ -1296,9 +1333,9 @@ export default function BabyView({ currentUserId }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-5 sm:py-6 2xl:px-8">
-      <div className="rounded-[28px] border border-white/70 bg-white/90 p-3 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:rounded-[34px] sm:p-6 2xl:p-7">
-        <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="mx-auto w-full max-w-[1800px] px-2 py-2 sm:px-5 sm:py-6 2xl:px-8">
+      <div className="rounded-[24px] border border-white/70 bg-white/90 p-2 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:rounded-[34px] sm:p-6 2xl:p-7">
+        <div className="hidden flex-col gap-3 sm:flex sm:gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="pm-kicker">Baby</p>
             <h1 className="mt-1 text-2xl font-black tracking-[-0.06em] text-slate-950 sm:mt-2 sm:text-5xl">
@@ -1308,12 +1345,14 @@ export default function BabyView({ currentUserId }) {
               Track sleep, feeds, and weight in one gentle daily view.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-[22px] border border-slate-200 bg-slate-50 p-2">
-            <button type="button" onClick={goToPreviousDay} className="pm-subtle-button rounded-2xl px-3 py-2 text-sm font-bold">‹</button>
-            <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value || formatBabyDateKey())} className="pm-input min-w-[150px] rounded-2xl px-3 py-2 text-sm" />
-            <button type="button" onClick={goToNextDay} className="pm-subtle-button rounded-2xl px-3 py-2 text-sm font-bold">›</button>
-            <button type="button" onClick={goToToday} className="pm-toolbar-primary rounded-2xl px-3 py-2 text-xs font-bold text-white disabled:opacity-50" disabled={selectedDate === today}>Today</button>
-          </div>
+          <DateControls
+            selectedDate={selectedDate}
+            setSelectedDate={setSelectedDate}
+            goToPreviousDay={goToPreviousDay}
+            goToNextDay={goToNextDay}
+            goToToday={goToToday}
+            today={today}
+          />
         </div>
 
         {error ? (
@@ -1324,7 +1363,7 @@ export default function BabyView({ currentUserId }) {
           <BabySetupCard onCreate={createBabyProfile} saving={saving} />
         ) : (
           <>
-            <div className="mt-4 flex items-center justify-between gap-3 sm:mt-6">
+            <div className="hidden items-center justify-between gap-3 sm:mt-6 sm:flex">
               <div className="min-w-0">
                 <h2 className="truncate text-lg font-black tracking-[-0.04em] text-slate-950 sm:text-xl">{babyProfile.name}</h2>
                 <p className="truncate text-xs text-slate-500 sm:text-sm">
@@ -1345,13 +1384,37 @@ export default function BabyView({ currentUserId }) {
               </button>
             </div>
 
-            <div className="mt-3 sm:mt-5">
+            <div className="mt-0 sm:mt-5">
               <SleepGrid
                 feeds={feeds}
                 nappies={nappies}
                 sleepBlocks={sleepBlocks}
                 sleepGuidance={sleepGuidance}
                 nextSleepGuidance={nextSleepGuidance}
+                mobileContext={(
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black leading-tight text-slate-950">{babyProfile.name}</p>
+                        <p className="truncate text-[11px] font-semibold text-slate-500">
+                          {formatBabyDisplayDate(selectedDate)} · {sleepGuidance.monthLabel} guide
+                        </p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${householdIsShared ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {householdIsShared ? `Shared ${householdMembers.length}` : 'Private'}
+                      </span>
+                    </div>
+                    <DateControls
+                      compact
+                      selectedDate={selectedDate}
+                      setSelectedDate={setSelectedDate}
+                      goToPreviousDay={goToPreviousDay}
+                      goToNextDay={goToNextDay}
+                      goToToday={goToToday}
+                      today={today}
+                    />
+                  </div>
+                )}
                 onSave={saveSleepBlocks}
                 saving={saving}
               />
@@ -1375,6 +1438,14 @@ export default function BabyView({ currentUserId }) {
                   <button type="button" onClick={() => setFeedModal({ feedType: 'breastfeeding', breastSide: 'left', durationMinutes: 20 })} className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700">Left breast</button>
                   <button type="button" onClick={() => setFeedModal({ feedType: 'breastfeeding', breastSide: 'right', durationMinutes: 20 })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Right breast</button>
                   <button type="button" onClick={() => setWeightModalOpen(true)} className="pm-subtle-button rounded-2xl px-4 py-2.5 text-xs font-bold">Add weight</button>
+                  <button
+                    type="button"
+                    onClick={() => setShareOpen(true)}
+                    disabled={!householdProject}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:hidden"
+                  >
+                    Sharing
+                  </button>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
