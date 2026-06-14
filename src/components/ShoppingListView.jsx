@@ -334,8 +334,15 @@ export default function ShoppingListView({ currentUserId }) {
     event.preventDefault();
     const items = splitTypedGroceries(draftTitle);
     if (items.length === 0) return;
-    const summary = await addItems(items);
+    const submittedTitle = draftTitle;
     setDraftTitle('');
+    setVoiceMessage(items.length === 1 ? `Adding ${items[0].title || items[0]}...` : `Adding ${items.length} groceries...`);
+    const summary = await addItems(items);
+    if (!summary) {
+      setDraftTitle(submittedTitle);
+      setVoiceMessage('Unable to add right now. Please try again.');
+      return;
+    }
     setVoiceMessage(formatShoppingAddSummary(summary));
   }, [addItems, draftTitle, setVoiceMessage]);
 
