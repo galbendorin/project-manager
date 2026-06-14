@@ -767,7 +767,7 @@ const MobilePatternTimeline = ({ days, selectedDate }) => (
   <div className="space-y-3">
     {days.map((day) => {
       const sleepSummary = summarizeSleepBlocks(day.sleepBlocks);
-      const markers = buildMobilePatternMarkers({ feeds: day.feeds, nappies: day.nappies });
+      const markers = buildMobilePatternMarkers({ feeds: day.feeds, nappies: [] });
       const isSelected = day.dateKey === selectedDate;
       const guideSegments = buildSleepGuidanceSegments(day.sleepGuidance);
       const comparison = summarizeSleepGuidanceComparison({ sleepBlocks: day.sleepBlocks, guidance: day.sleepGuidance });
@@ -778,7 +778,7 @@ const MobilePatternTimeline = ({ days, selectedDate }) => (
             <div>
               <p className="text-base font-black leading-tight text-slate-950">{formatBabyDisplayDate(day.dateKey)}</p>
               <p className="mt-1 text-[11px] font-bold text-slate-500">
-                {day.summary.feedCount} feeds · {day.summary.wetNappies} wet · {day.summary.pooNappies} solid · {formatDuration(day.summary.sleep.totalMinutes)} sleep
+                {formatDuration(day.summary.sleep.totalMinutes)} sleep · {day.summary.feedCount} feeds
               </p>
               {day.sleepGuidance ? (
                 <p className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
@@ -829,13 +829,6 @@ const MobilePatternTimeline = ({ days, selectedDate }) => (
                 markers.feeds.map((cluster) => <TimelineMarker key={cluster.id} cluster={cluster} />)
               ) : (
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">No feeds</span>
-              )}
-            </TimelineLane>
-            <TimelineLane label="Nappy" tone="nappy">
-              {markers.nappies.length ? (
-                markers.nappies.map((cluster) => <TimelineMarker key={cluster.id} cluster={cluster} />)
-              ) : (
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">No nappies</span>
               )}
             </TimelineLane>
           </div>
@@ -940,25 +933,42 @@ const SleepGrid = ({
   const hourLabels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`);
 
   return (
-    <section className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm sm:rounded-[30px] sm:p-5">
+      <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="pm-kicker">Sleep grid</p>
-          <h2 className="mt-1 text-xl font-black tracking-[-0.04em] text-slate-950">24-hour pattern</h2>
-          <p className="mt-1 text-xs text-slate-500">Tap or drag 15-minute blocks. Compare expected sleep with actual sleep.</p>
+          <p className="pm-kicker">Sleep pattern</p>
+          <h2 className="mt-1 text-lg font-black tracking-[-0.04em] text-slate-950 sm:text-xl">Log sleep now</h2>
+          <p className="mt-1 hidden text-xs text-slate-500 sm:block">Tap or drag 15-minute blocks. Compare expected sleep with actual sleep.</p>
         </div>
         <button
           type="button"
           onClick={() => onSave(draftSet)}
           disabled={saving}
-          className="pm-toolbar-primary rounded-2xl px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60"
+          className="pm-toolbar-primary shrink-0 rounded-2xl px-3 py-2 text-xs font-bold text-white disabled:opacity-60 sm:px-4 sm:py-2.5"
         >
           {saving ? 'Saving...' : 'Save sleep'}
         </button>
       </div>
 
       {sleepGuidance ? (
-        <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <>
+        <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:hidden">
+          <div className="rounded-[18px] border border-sky-100 bg-sky-50 px-3 py-2">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-700">{sleepGuidance.monthLabel}</p>
+            <p className="mt-0.5 text-[11px] font-bold text-slate-700">{formatGuidanceDateRange(sleepGuidance)}</p>
+            <p className="mt-1 text-[11px] font-black text-sky-800">
+              {sleepGuidance.totalSleep || '-'} total · {sleepGuidance.naps || '-'} naps
+            </p>
+          </div>
+          <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2 text-right">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Today</p>
+            <p className="mt-0.5 text-sm font-black text-slate-950">{formatDuration(guidanceComparison.actualMinutes)}</p>
+            <p className="mt-1 text-[11px] font-black text-violet-700">
+              Outside {formatDuration(guidanceComparison.actualOutsideGuideMinutes)}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 hidden gap-2 sm:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           <div className="rounded-[22px] border border-sky-100 bg-sky-50 px-4 py-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1000,16 +1010,17 @@ const SleepGrid = ({
             </div>
           </div>
         </div>
+        </>
       ) : null}
 
       <div
-        className="mt-4 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none"
+        className="mt-3 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none"
         onPointerCancel={stopPointerToggle}
         onPointerLeave={stopPointerToggle}
         onPointerMove={continuePointerToggle}
         onPointerUp={stopPointerToggle}
       >
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-4 gap-1.5">
           {Array.from({ length: 24 }, (_, hour) => (
             <SleepHourColumn
               key={hour}
@@ -1027,12 +1038,12 @@ const SleepGrid = ({
           ))}
         </div>
         {pendingRangeStart !== null ? (
-          <div className="mt-2 rounded-2xl bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700">
+          <div className="mt-2 rounded-2xl bg-sky-50 px-3 py-1.5 text-[11px] font-bold text-sky-700">
             Range start: {getSleepBlockTimeLabel(pendingRangeStart)}. Tap another slot to fill everything between.
           </div>
         ) : (
-          <div className="mt-2 rounded-2xl bg-white px-3 py-2 text-[11px] font-bold text-slate-500">
-            Tip: tap a start slot, then tap an end slot to mark a longer sleep.
+          <div className="mt-2 rounded-2xl bg-white px-3 py-1.5 text-[11px] font-bold text-slate-500">
+            Tap start, then end to fill a sleep.
           </div>
         )}
       </div>
@@ -1085,18 +1096,20 @@ const SleepGrid = ({
           })}
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
+      <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-bold text-slate-500 sm:hidden">
+        <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-800">Expected</span>
+        <span className="rounded-full bg-orange-100 px-2 py-1 text-orange-800">Flexible</span>
+        <span className="rounded-full bg-sky-600 px-2 py-1 text-white">Actual</span>
+        <span className="rounded-full bg-violet-500 px-2 py-1 text-white">Outside</span>
+      </div>
+      <div className="mt-3 hidden flex-wrap gap-2 text-[11px] font-bold text-slate-500 sm:flex">
         <span className="rounded-full bg-slate-100 px-2 py-1">Desktop shows one 24h row</span>
-        <span className="rounded-full bg-slate-100 px-2 py-1">Phone wraps hours</span>
         <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-800">Pale blue = expected sleep</span>
         <span className="rounded-full bg-orange-100 px-2 py-1 text-orange-800">Orange = flexible sleep</span>
         <span className="rounded-full bg-sky-600 px-2 py-1 text-white">Solid blue = actual asleep</span>
         <span className="rounded-full bg-violet-500 px-2 py-1 text-white">Violet = actual outside guide</span>
         <span className="rounded-full bg-white px-2 py-1">White = awake</span>
         <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.chip}`}>F = feed</span>
-        <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.W.chip}`}>W = wet</span>
-        <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.S.chip}`}>S = solid</span>
-        <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.WS.chip}`}>WS = mixed</span>
       </div>
     </section>
   );
@@ -1136,16 +1149,15 @@ const PatternPanel = ({
   const rangeTotals = useMemo(() => patternDays.reduce((totals, day) => ({
     feeds: totals.feeds + day.summary.feedCount,
     feedMinutes: totals.feedMinutes + day.summary.totalFeedMinutes,
-    nappies: totals.nappies + day.summary.totalNappies,
     sleepMinutes: totals.sleepMinutes + day.summary.sleep.totalMinutes,
-  }), { feeds: 0, feedMinutes: 0, nappies: 0, sleepMinutes: 0 }), [patternDays]);
+  }), { feeds: 0, feedMinutes: 0, sleepMinutes: 0 }), [patternDays]);
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="pm-kicker">Pattern</p>
-          <h2 className="mt-1 text-xl font-black tracking-[-0.04em] text-slate-950">Sleep, feeds, nappies</h2>
+          <h2 className="mt-1 text-xl font-black tracking-[-0.04em] text-slate-950">Sleep history</h2>
           <p className="mt-1 text-xs text-slate-500">{rangeLabel}</p>
         </div>
         <div className="grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1 sm:flex sm:flex-wrap">
@@ -1166,11 +1178,10 @@ const PatternPanel = ({
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">{formatDuration(rangeTotals.sleepMinutes)} sleep</div>
         <div className="rounded-2xl bg-sky-50 px-3 py-2 text-xs font-bold text-sky-800">{rangeTotals.feeds} feeds</div>
         <div className="rounded-2xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800">{formatDuration(rangeTotals.feedMinutes)} feeding</div>
-        <div className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{rangeTotals.nappies} nappies</div>
-        <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">{formatDuration(rangeTotals.sleepMinutes)} sleep</div>
       </div>
 
       {rangeLoading ? (
@@ -1191,9 +1202,6 @@ const PatternPanel = ({
             <span className="rounded-full bg-sky-600 px-2 py-1 text-white">Solid blue = actual asleep</span>
             <span className="rounded-full bg-violet-500 px-2 py-1 text-white">Violet = actual outside guide</span>
             <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.chip}`}>F = feed</span>
-            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.W.chip}`}>W = wet nappy</span>
-            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.S.chip}`}>S = solid / poo nappy</span>
-            <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.WS.chip}`}>WS = mixed nappy</span>
           </div>
         </div>
       )}
@@ -1288,16 +1296,16 @@ export default function BabyView({ currentUserId }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1800px] px-3 py-4 sm:px-5 sm:py-6 2xl:px-8">
-      <div className="rounded-[34px] border border-white/70 bg-white/90 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-6 2xl:p-7">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-5 sm:py-6 2xl:px-8">
+      <div className="rounded-[28px] border border-white/70 bg-white/90 p-3 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:rounded-[34px] sm:p-6 2xl:p-7">
+        <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="pm-kicker">Baby</p>
-            <h1 className="mt-2 text-3xl font-black tracking-[-0.06em] text-slate-950 sm:text-5xl">
-              Daily care dashboard
+            <h1 className="mt-1 text-2xl font-black tracking-[-0.06em] text-slate-950 sm:mt-2 sm:text-5xl">
+              Sleep pattern
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-              Track feeds, nappies, sleep, and weight in one gentle daily view.
+            <p className="mt-3 hidden max-w-2xl text-sm leading-6 text-slate-500 sm:block">
+              Track sleep, feeds, and weight in one gentle daily view.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 rounded-[22px] border border-slate-200 bg-slate-50 p-2">
@@ -1316,68 +1324,28 @@ export default function BabyView({ currentUserId }) {
           <BabySetupCard onCreate={createBabyProfile} saving={saving} />
         ) : (
           <>
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-black tracking-[-0.04em] text-slate-950">{babyProfile.name}</h2>
-                <p className="text-sm text-slate-500">
+            <div className="mt-4 flex items-center justify-between gap-3 sm:mt-6">
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-black tracking-[-0.04em] text-slate-950 sm:text-xl">{babyProfile.name}</h2>
+                <p className="truncate text-xs text-slate-500 sm:text-sm">
                   {formatBabyDisplayDate(selectedDate)} · {sleepGuidance.monthLabel} sleep guide
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setShareOpen(true)}
-                  disabled={!householdProject}
-                  className="mt-3 inline-flex max-w-full flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-bold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span className={`rounded-full px-2 py-1 ${householdIsShared ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                    {sharingStatusLabel}
-                  </span>
-                  <span className="text-slate-400">Shared access</span>
-                  <span className="text-indigo-600">{householdProject ? sharingActionLabel : 'Open groceries to share'}</span>
-                </button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => setFeedModal({})} className="pm-toolbar-primary rounded-2xl px-4 py-2.5 text-xs font-bold text-white">Add feed</button>
-                <button type="button" onClick={() => setFeedModal({ feedType: 'breastfeeding', breastSide: 'left', durationMinutes: 20 })} className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700">Left breast</button>
-                <button type="button" onClick={() => setFeedModal({ feedType: 'breastfeeding', breastSide: 'right', durationMinutes: 20 })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Right breast</button>
-                <button type="button" onClick={() => setNappyModal({ nappyType: 'wet' })} className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-bold text-sky-700">Wet nappy</button>
-                <button type="button" onClick={() => setNappyModal({ nappyType: 'poo' })} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-700">Poo nappy</button>
-                <button type="button" onClick={() => setNappyModal({ nappyType: 'mixed' })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Mixed nappy</button>
-                <button type="button" onClick={() => setWeightModalOpen(true)} className="pm-subtle-button rounded-2xl px-4 py-2.5 text-xs font-bold">Add weight</button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShareOpen(true)}
+                disabled={!householdProject}
+                className="inline-flex max-w-[45%] shrink-0 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-2.5 py-2 text-left text-[11px] font-bold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-full sm:gap-2 sm:px-3 sm:text-xs"
+              >
+                <span className={`rounded-full px-2 py-1 ${householdIsShared ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                  {sharingStatusLabel}
+                </span>
+                <span className="hidden text-slate-400 sm:inline">Shared access</span>
+                <span className="hidden text-indigo-600 sm:inline">{householdProject ? sharingActionLabel : 'Open groceries to share'}</span>
+              </button>
             </div>
 
-            <div className="mt-4 rounded-[26px] border border-slate-200 bg-gradient-to-r from-slate-950 to-slate-800 px-4 py-3 text-white shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-4">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/55">Last entry</p>
-                {latestActivity ? (
-                  <p className="mt-1 text-lg font-black tracking-[-0.04em]">
-                    {latestActivityTime} · {latestActivity.label}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-lg font-black tracking-[-0.04em]">No entries yet</p>
-                )}
-              </div>
-              {latestActivity ? (
-                <div className="mt-2 rounded-2xl bg-white/10 px-3 py-2 text-xs font-bold text-white/80 sm:mt-0">
-                  {latestActivityExtra || 'Logged today'}
-                </div>
-              ) : (
-                <div className="mt-2 rounded-2xl bg-white/10 px-3 py-2 text-xs font-bold text-white/75 sm:mt-0">
-                  Add a feed or nappy to start
-                </div>
-              )}
-            </div>
-
-            <div className="mt-5 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-6">
-              <SummaryCard label="Feeds" value={daySummary.feedCount} detail={`${formatDuration(daySummary.totalFeedMinutes)} total`} tone="sky" />
-              <SummaryCard label="Avg feed" value={`${daySummary.averageFeedMinutes}m`} detail="per feed" tone="slate" />
-              <SummaryCard label="Wet" value={daySummary.wetNappies} detail="nappies" tone="emerald" />
-              <SummaryCard label="Poo" value={daySummary.pooNappies} detail="nappies" tone="amber" />
-              <SummaryCard label="Sleep" value={formatDuration(daySummary.sleep.totalMinutes)} detail={`${daySummary.sleep.sessionCount} sessions`} tone="indigo" />
-              <SummaryCard label="Weight" value={latestWeight?.weightValue ? `${latestWeight.weightValue}${latestWeight.weightUnit}` : '—'} detail={latestWeight?.measuredAt || 'optional'} tone="rose" />
-            </div>
-
-            <div className="mt-6 space-y-5">
+            <div className="mt-3 sm:mt-5">
               <SleepGrid
                 feeds={feeds}
                 nappies={nappies}
@@ -1387,6 +1355,37 @@ export default function BabyView({ currentUserId }) {
                 onSave={saveSleepBlocks}
                 saving={saving}
               />
+            </div>
+
+            <div className="mt-5 rounded-[26px] border border-slate-200 bg-slate-50 p-3 shadow-sm sm:p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="pm-kicker">Dashboard</p>
+                  <h2 className="mt-1 text-lg font-black tracking-[-0.04em] text-slate-950 sm:text-xl">Quick logs</h2>
+                  {latestActivity ? (
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      Last: {latestActivityTime} · {latestActivity.label}{latestActivityExtra ? ` · ${latestActivityExtra}` : ''}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs font-semibold text-slate-500">No entries yet.</p>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setFeedModal({})} className="pm-toolbar-primary rounded-2xl px-4 py-2.5 text-xs font-bold text-white">Add feed</button>
+                  <button type="button" onClick={() => setFeedModal({ feedType: 'breastfeeding', breastSide: 'left', durationMinutes: 20 })} className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700">Left breast</button>
+                  <button type="button" onClick={() => setFeedModal({ feedType: 'breastfeeding', breastSide: 'right', durationMinutes: 20 })} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700">Right breast</button>
+                  <button type="button" onClick={() => setWeightModalOpen(true)} className="pm-subtle-button rounded-2xl px-4 py-2.5 text-xs font-bold">Add weight</button>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+                <SummaryCard label="Feeds" value={daySummary.feedCount} detail={`${formatDuration(daySummary.totalFeedMinutes)} total`} tone="sky" />
+                <SummaryCard label="Avg feed" value={`${daySummary.averageFeedMinutes}m`} detail="per feed" tone="slate" />
+                <SummaryCard label="Sleep" value={formatDuration(daySummary.sleep.totalMinutes)} detail={`${daySummary.sleep.sessionCount} sessions`} tone="indigo" />
+                <SummaryCard label="Weight" value={latestWeight?.weightValue ? `${latestWeight.weightValue}${latestWeight.weightUnit}` : '—'} detail={latestWeight?.measuredAt || 'optional'} tone="rose" />
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-5">
               <PatternPanel
                 birthDate={guidanceBirthDate}
                 dateKeys={patternDateKeys}
