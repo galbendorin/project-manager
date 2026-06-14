@@ -8,6 +8,7 @@ import {
 } from '../utils/babyTracker';
 import { pickPreferredShoppingProject } from '../utils/shoppingListViewState';
 import { normalizeProjectRecord } from '../utils/projectSharing';
+import { shouldRefreshAfterFocus } from '../utils/refreshThrottle';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const BABY_PROFILE_SELECT = 'id, user_id, household_project_id, name, birth_date, archived_at, created_at, updated_at';
@@ -96,6 +97,7 @@ export function useBabyData({ currentUserId } = {}) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const hasLoadedRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
   const supportsMembersRef = useRef(true);
 
   const latestWeight = useMemo(() => (
@@ -245,6 +247,7 @@ export function useBabyData({ currentUserId } = {}) {
       setError(nextError?.message || 'Unable to load Baby tracker.');
     } finally {
       hasLoadedRef.current = true;
+      lastLoadedAtRef.current = Date.now();
       setLoading(false);
     }
   }, [currentUserId, loadDay, loadHouseholdProject, loadProfile, selectedDate]);
@@ -255,16 +258,19 @@ export function useBabyData({ currentUserId } = {}) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-    const refresh = () => void loadAll();
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') refresh();
+    const refreshIfStale = () => {
+      if (!shouldRefreshAfterFocus(lastLoadedAtRef.current)) return;
+      void loadAll();
     };
-    window.addEventListener('focus', refresh);
-    window.addEventListener('pageshow', refresh);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshIfStale();
+    };
+    window.addEventListener('focus', refreshIfStale);
+    window.addEventListener('pageshow', refreshIfStale);
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('pageshow', refresh);
+      window.removeEventListener('focus', refreshIfStale);
+      window.removeEventListener('pageshow', refreshIfStale);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [loadAll]);

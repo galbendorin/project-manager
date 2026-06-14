@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   addHabitDays,
@@ -7,6 +7,7 @@ import {
   normalizeHabitReminderTime,
   normalizeHabitReminderWeekdays,
 } from '../utils/habitTracker';
+import { shouldRefreshAfterFocus } from '../utils/refreshThrottle';
 
 const HABIT_SELECT = 'id, user_id, household_project_id, name, direction, color, sort_order, archived_at, created_at, updated_at';
 const ENTRY_SELECT = 'id, habit_id, user_id, household_project_id, entry_date, status, note, created_at, updated_at';
@@ -75,6 +76,8 @@ export function useHabitsData({ currentUserId } = {}) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [reminderError, setReminderError] = useState('');
+  const hasLoadedRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
 
   const range = useMemo(() => ({
     startDate: getRangeStart(selectedDate),
@@ -130,7 +133,7 @@ export function useHabitsData({ currentUserId } = {}) {
 
   const loadAll = useCallback(async () => {
     if (!currentUserId) return;
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     setError('');
     try {
       await Promise.all([
@@ -153,6 +156,8 @@ export function useHabitsData({ currentUserId } = {}) {
         ? 'Habits needs the latest SQL migration before it can load.'
         : (nextError?.message || 'Unable to load Habits right now.'));
     } finally {
+      hasLoadedRef.current = true;
+      lastLoadedAtRef.current = Date.now();
       setLoading(false);
     }
   }, [currentUserId, loadEntries, loadHabits, loadReminders]);
@@ -163,16 +168,19 @@ export function useHabitsData({ currentUserId } = {}) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-    const refresh = () => void loadAll();
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') refresh();
+    const refreshIfStale = () => {
+      if (!shouldRefreshAfterFocus(lastLoadedAtRef.current)) return;
+      void loadAll();
     };
-    window.addEventListener('focus', refresh);
-    window.addEventListener('pageshow', refresh);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshIfStale();
+    };
+    window.addEventListener('focus', refreshIfStale);
+    window.addEventListener('pageshow', refreshIfStale);
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('pageshow', refresh);
+      window.removeEventListener('focus', refreshIfStale);
+      window.removeEventListener('pageshow', refreshIfStale);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [loadAll]);

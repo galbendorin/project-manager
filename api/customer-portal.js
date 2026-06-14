@@ -1,5 +1,7 @@
 import Stripe from 'stripe';
 import { applyApiCors, getAdminSupabase, requireAuthenticatedUser } from './_auth.js';
+import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
+import { CUSTOMER_PORTAL_RATE_LIMIT, buildCustomerPortalRateLimitKey } from './billingRateLimit.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://pmworkspace.com';
@@ -19,6 +21,19 @@ export default async function handler(req, res) {
   try {
     const user = await requireAuthenticatedUser(req, res);
     if (!user) return;
+
+    const rateLimitResult = await checkRateLimit({
+      key: buildCustomerPortalRateLimitKey(user.id, getClientIp(req)),
+      ...CUSTOMER_PORTAL_RATE_LIMIT,
+    });
+
+    if (!rateLimitResult.ok) {
+      return sendRateLimitResponse(
+        res,
+        rateLimitResult,
+        'Too many billing portal requests. Please wait a moment and try again.',
+      );
+    }
 
     const { data: profile, error: profileError } = await supabase
       .from('user_profiles')

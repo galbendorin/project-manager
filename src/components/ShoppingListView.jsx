@@ -313,6 +313,7 @@ export default function ShoppingListView({ currentUserId }) {
     createOfflineShoppingTodo,
     isMissingSchemaFieldError,
     legacyManualTodoSelect: MANUAL_TODO_SELECT,
+    lastSyncedAt,
     mapManualTodoRow,
     manualTodoSelect: SHOPPING_MANUAL_TODO_SELECT,
     shoppingExtraFields: SHOPPING_MANUAL_TODO_EXTRA_FIELDS,
