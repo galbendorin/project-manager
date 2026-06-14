@@ -3,9 +3,19 @@ import {
   getAdminSupabase,
   requireAuthenticatedUser,
 } from './_auth.js';
+import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
 
 const supabase = getAdminSupabase();
 const MAX_PROJECT_EDITORS = 5;
+export const PENDING_INVITE_ACCEPT_RATE_LIMIT = Object.freeze({
+  max: 30,
+  windowMs: 5 * 60_000,
+  strictShared: true,
+});
+
+export const buildPendingInviteAcceptRateLimitKey = (userId, ip) => (
+  `project-invite-accept:${String(userId || '').trim()}:${String(ip || 'unknown').trim() || 'unknown'}`
+);
 
 const isMissingInviteTableError = (error) => {
   const code = String(error?.code || '').toLowerCase();
@@ -33,6 +43,14 @@ export default async function handler(req, res) {
   try {
     const user = await requireAuthenticatedUser(req, res);
     if (!user) return;
+
+    const limitResult = await checkRateLimit({
+      key: buildPendingInviteAcceptRateLimitKey(user.id, getClientIp(req)),
+      ...PENDING_INVITE_ACCEPT_RATE_LIMIT,
+    });
+    if (!limitResult.ok) {
+      return sendRateLimitResponse(res, limitResult, 'Too many invite checks. Please wait a moment and try again.');
+    }
 
     const email = normalizeInviteEmail(user.email);
     if (!email) {
