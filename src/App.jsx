@@ -23,13 +23,13 @@ const LegalPage = lazy(() => import('./components/LegalPage'));
 const PublicPricingPage = lazy(() => import('./components/PublicPricingPage'));
 const ProjectSelector = lazy(() => import('./components/ProjectSelector'));
 const MainApp = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.MainApp })));
-const AuthenticatedTrackShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedTrackShell })));
-const AuthenticatedShoppingShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedShoppingShell })));
-const AuthenticatedMealPlannerShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedMealPlannerShell })));
-const AuthenticatedBabyShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedBabyShell })));
-const AuthenticatedHabitsShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedHabitsShell })));
-const AuthenticatedWeightShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedWeightShell })));
-const AuthenticatedItilQuizShell = lazy(() => import('./components/AppWorkspaceShell').then((module) => ({ default: module.AuthenticatedItilQuizShell })));
+const AuthenticatedTrackShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedTrackShell })));
+const AuthenticatedShoppingShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedShoppingShell })));
+const AuthenticatedMealPlannerShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedMealPlannerShell })));
+const AuthenticatedBabyShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedBabyShell })));
+const AuthenticatedHabitsShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedHabitsShell })));
+const AuthenticatedWeightShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedWeightShell })));
+const AuthenticatedItilQuizShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedItilQuizShell })));
 
 const normalizeAppPath = (value = '/') => {
   const normalized = String(value || '/').replace(/\/+$/, '');
