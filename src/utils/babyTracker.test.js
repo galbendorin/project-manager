@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 
 import {
   buildBabyActivityLog,
+  getBabyAgeMonth,
+  getBabySleepGuidanceForDate,
+  getSleepGuidanceBlockStatus,
   summarizeBabyDay,
+  summarizeSleepGuidanceComparison,
   summarizeSleepBlocks,
 } from './babyTracker.js';
 
@@ -81,4 +85,41 @@ test('buildBabyActivityLog includes breastfeeding side details', () => {
 
   assert.equal(events[0].label, 'Breastfeed');
   assert.equal(events[0].detail, '10 min · left');
+});
+
+test('getBabyAgeMonth switches on the baby birth day each month', () => {
+  assert.equal(getBabyAgeMonth({ birthDate: '2026-04-22', dateKey: '2026-04-22' }), 1);
+  assert.equal(getBabyAgeMonth({ birthDate: '2026-04-22', dateKey: '2026-05-21' }), 1);
+  assert.equal(getBabyAgeMonth({ birthDate: '2026-04-22', dateKey: '2026-05-22' }), 2);
+  assert.equal(getBabyAgeMonth({ birthDate: '2026-04-22', dateKey: '2027-04-22' }), 12);
+});
+
+test('getBabySleepGuidanceForDate maps Month 2 expected and flexible sleep windows', () => {
+  const guidance = getBabySleepGuidanceForDate({ birthDate: '2026-04-22', dateKey: '2026-06-14' });
+
+  assert.equal(guidance.month, 2);
+  assert.equal(guidance.startDate, '2026-05-22');
+  assert.equal(guidance.endDate, '2026-06-21');
+  assert.equal(guidance.totalSleep, '14-18 h');
+  assert.equal(getSleepGuidanceBlockStatus(80, guidance), 'expected'); // 20:00
+  assert.equal(getSleepGuidanceBlockStatus(20, guidance), 'flexible'); // 05:00
+  assert.equal(getSleepGuidanceBlockStatus(24, guidance), 'awake'); // 06:00
+});
+
+test('summarizeSleepGuidanceComparison separates expected, flexible, and outside sleep', () => {
+  const guidance = getBabySleepGuidanceForDate({ birthDate: '2026-04-22', dateKey: '2026-06-14' });
+  const comparison = summarizeSleepGuidanceComparison({
+    guidance,
+    sleepBlocks: [
+      { blockIndex: 80, status: 'asleep' },
+      { blockIndex: 81, status: 'asleep' },
+      { blockIndex: 20, status: 'asleep' },
+      { blockIndex: 24, status: 'asleep' },
+    ],
+  });
+
+  assert.equal(comparison.actualMinutes, 60);
+  assert.equal(comparison.actualInExpectedMinutes, 30);
+  assert.equal(comparison.actualInFlexibleMinutes, 15);
+  assert.equal(comparison.actualOutsideGuideMinutes, 15);
 });

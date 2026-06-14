@@ -7,9 +7,14 @@ import {
   formatBabyDateKey,
   formatBabyDisplayDate,
   formatBabyTime,
+  getBabySleepGuidanceForDate,
+  getNextBabySleepGuidanceForDate,
   getSleepBlockTimeLabel,
+  getSleepGuidanceBlockStatus,
+  getSleepGuidanceStatusLabel,
   normalizeSleepBlocks,
   summarizeBabyDay,
+  summarizeSleepGuidanceComparison,
   summarizeSleepBlocks,
 } from '../utils/babyTracker';
 
@@ -55,6 +60,31 @@ const formatDateTime = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return formatBabyTime(date);
+};
+
+const formatGuidanceDateRange = (guidance = null) => {
+  if (!guidance?.startDate || !guidance?.endDate) return '';
+  return `${formatBabyDisplayDate(guidance.startDate)} to ${formatBabyDisplayDate(guidance.endDate)}`;
+};
+
+const getSleepBlockClassName = ({ asleep = false, guideStatus = 'awake', compact = false } = {}) => {
+  const sizeClass = compact
+    ? 'flex h-5 items-center justify-center overflow-hidden text-[8px] font-black leading-none'
+    : 'h-4 sm:h-5';
+
+  if (asleep && guideStatus === 'awake') {
+    return `${sizeClass} rounded-md border border-violet-500 bg-violet-500 text-white shadow-sm transition`;
+  }
+  if (asleep) {
+    return `${sizeClass} rounded-md border border-sky-600 bg-sky-600 text-white shadow-sm transition`;
+  }
+  if (guideStatus === 'expected') {
+    return `${sizeClass} rounded-md border border-sky-200 bg-sky-100 text-sky-800 transition hover:bg-sky-200`;
+  }
+  if (guideStatus === 'flexible') {
+    return `${sizeClass} rounded-md border border-orange-200 bg-orange-100 text-orange-800 transition hover:bg-orange-200`;
+  }
+  return `${sizeClass} rounded-md border border-white bg-white text-slate-800 transition hover:bg-sky-50`;
 };
 
 const formatBreastSide = (side = '') => {
@@ -488,7 +518,16 @@ const NappyModal = ({ dateKey, nappy, onClose, onSave, saving }) => {
   );
 };
 
-const SleepHourColumn = ({ hour, asleepSet, careMarkers = new Map(), onBlockPointerDown = null, onBlockPointerEnter = null, onBlockTap = null, compact = false }) => {
+const SleepHourColumn = ({
+  hour,
+  asleepSet,
+  careMarkers = new Map(),
+  sleepGuidance = null,
+  onBlockPointerDown = null,
+  onBlockPointerEnter = null,
+  onBlockTap = null,
+  compact = false,
+}) => {
   const isBedtime = hour < 7 || hour >= 22;
   return (
     <div data-sleep-hour={hour} className={`min-w-0 rounded-xl border p-1 ${isBedtime ? 'border-indigo-100 bg-indigo-50' : hour % 6 === 0 ? 'border-slate-300 bg-white' : 'border-slate-100 bg-slate-50'}`}>
@@ -499,12 +538,9 @@ const SleepHourColumn = ({ hour, asleepSet, careMarkers = new Map(), onBlockPoin
         {[0, 1, 2, 3].map((quarter) => {
           const index = (hour * 4) + quarter;
           const asleep = asleepSet.has(index);
+          const guideStatus = getSleepGuidanceBlockStatus(index, sleepGuidance);
           const markers = careMarkers.get(index) || [];
-          const className = `${compact ? 'flex h-5 items-center justify-center overflow-hidden text-[8px] font-black leading-none' : 'h-4 sm:h-5'} rounded-md border transition ${
-            asleep
-              ? 'border-sky-500 bg-sky-500 shadow-sm'
-              : 'border-white bg-white hover:bg-sky-50'
-          }`;
+          const className = getSleepBlockClassName({ asleep, guideStatus, compact });
           const markerContent = compact && markers.length ? (
             <span className={asleep ? 'flex items-center gap-px rounded bg-white/95 px-0.5' : 'flex items-center gap-px'}>
               {markers.map((marker) => (
@@ -523,7 +559,7 @@ const SleepHourColumn = ({ hour, asleepSet, careMarkers = new Map(), onBlockPoin
 
           if (!onBlockPointerDown) {
             return (
-              <div key={index} title={`${getSleepBlockTimeLabel(index)}${markers.length ? ` · ${markers.join('')}` : ''}`} className={className}>
+              <div key={index} title={`${getSleepBlockTimeLabel(index)} · ${getSleepGuidanceStatusLabel(guideStatus)}${markers.length ? ` · ${markers.join('')}` : ''}`} className={className}>
                 {markerContent}
               </div>
             );
@@ -534,7 +570,7 @@ const SleepHourColumn = ({ hour, asleepSet, careMarkers = new Map(), onBlockPoin
               key={index}
               type="button"
               data-sleep-block-index={index}
-              title={`${getSleepBlockTimeLabel(index)}${markers.length ? ` · ${markers.join('')}` : ''}`}
+              title={`${getSleepBlockTimeLabel(index)} · ${getSleepGuidanceStatusLabel(guideStatus)}${markers.length ? ` · ${markers.join('')}` : ''}`}
               onPointerDown={(event) => {
                 if (compact && event.pointerType === 'touch') return;
                 event.preventDefault();
@@ -578,6 +614,7 @@ const SleepMatrix = ({ days, selectedDate }) => (
           const asleepSet = normalizeSleepBlocks(day.sleepBlocks);
           const careMarkers = buildCareMarkersByBlock({ feeds: day.feeds, nappies: day.nappies });
           const hasAnySleep = asleepSet.size > 0;
+          const comparison = summarizeSleepGuidanceComparison({ sleepBlocks: day.sleepBlocks, guidance: day.sleepGuidance });
           return (
             <div key={day.dateKey} className={`grid grid-cols-[76px_minmax(0,1fr)] border-b border-slate-100 last:border-b-0 sm:grid-cols-[92px_minmax(0,1fr)] ${day.dateKey === selectedDate ? 'bg-sky-50/50' : 'bg-white'}`}>
               <div className="border-r border-slate-200 px-2 py-2">
@@ -586,6 +623,8 @@ const SleepMatrix = ({ days, selectedDate }) => (
                   {day.summary.feedCount ? <span>F{day.summary.feedCount}</span> : null}
                   {day.summary.totalNappies ? <span>N{day.summary.totalNappies}</span> : null}
                   {hasAnySleep ? <span>{formatDuration(day.summary.sleep.totalMinutes)}</span> : <span>No sleep</span>}
+                  {day.sleepGuidance ? <span>{day.sleepGuidance.monthLabel}</span> : null}
+                  {comparison.actualOutsideGuideMinutes > 0 ? <span className="text-violet-700">+{formatDuration(comparison.actualOutsideGuideMinutes)}</span> : null}
                 </div>
               </div>
               <div className="grid gap-px bg-slate-200 p-px" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
@@ -593,17 +632,23 @@ const SleepMatrix = ({ days, selectedDate }) => (
                   (() => {
                     const markers = careMarkers.get(index) || [];
                     const asleep = asleepSet.has(index);
+                    const guideStatus = getSleepGuidanceBlockStatus(index, day.sleepGuidance);
+                    const guideClass = asleep && guideStatus === 'awake'
+                      ? 'bg-violet-500 text-white'
+                      : asleep
+                        ? 'bg-sky-600 text-white'
+                        : guideStatus === 'expected'
+                          ? 'bg-sky-100 text-sky-900'
+                          : guideStatus === 'flexible'
+                            ? 'bg-orange-100 text-orange-900'
+                            : index % 4 === 0
+                              ? 'bg-slate-50 text-slate-800'
+                              : 'bg-white text-slate-800';
                     return (
                       <div
                         key={index}
-                        title={`${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)}${markers.length ? ` · ${markers.join('')}` : ''}`}
-                        className={`flex h-5 min-w-0 items-center justify-center overflow-hidden text-[8px] font-black leading-none ${
-                          asleep
-                            ? 'bg-sky-500 text-white'
-                          : index % 4 === 0
-                            ? 'bg-slate-50 text-slate-800'
-                            : 'bg-white text-slate-800'
-                        } ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
+                        title={`${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)} · ${getSleepGuidanceStatusLabel(guideStatus)}${markers.length ? ` · ${markers.join('')}` : ''}`}
+                        className={`flex h-5 min-w-0 items-center justify-center overflow-hidden text-[8px] font-black leading-none ${guideClass} ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
                       >
                         {markers.map((marker) => (
                           <span
@@ -692,12 +737,40 @@ const TimelineMarker = ({ cluster }) => (
   </span>
 );
 
+const buildSleepGuidanceSegments = (guidance = null) => {
+  const segments = [];
+  let current = null;
+
+  for (let index = 0; index < 96; index += 1) {
+    const status = getSleepGuidanceBlockStatus(index, guidance);
+    if (status === 'awake') {
+      if (current) {
+        segments.push(current);
+        current = null;
+      }
+      continue;
+    }
+
+    if (!current || current.status !== status || index !== current.endBlock + 1) {
+      if (current) segments.push(current);
+      current = { status, startBlock: index, endBlock: index };
+    } else {
+      current.endBlock = index;
+    }
+  }
+
+  if (current) segments.push(current);
+  return segments;
+};
+
 const MobilePatternTimeline = ({ days, selectedDate }) => (
   <div className="space-y-3">
     {days.map((day) => {
       const sleepSummary = summarizeSleepBlocks(day.sleepBlocks);
       const markers = buildMobilePatternMarkers({ feeds: day.feeds, nappies: day.nappies });
       const isSelected = day.dateKey === selectedDate;
+      const guideSegments = buildSleepGuidanceSegments(day.sleepGuidance);
+      const comparison = summarizeSleepGuidanceComparison({ sleepBlocks: day.sleepBlocks, guidance: day.sleepGuidance });
 
       return (
         <article key={day.dateKey} className={`rounded-[24px] border p-3 shadow-sm ${isSelected ? 'border-sky-200 bg-sky-50/50' : 'border-slate-200 bg-white'}`}>
@@ -707,6 +780,12 @@ const MobilePatternTimeline = ({ days, selectedDate }) => (
               <p className="mt-1 text-[11px] font-bold text-slate-500">
                 {day.summary.feedCount} feeds · {day.summary.wetNappies} wet · {day.summary.pooNappies} solid · {formatDuration(day.summary.sleep.totalMinutes)} sleep
               </p>
+              {day.sleepGuidance ? (
+                <p className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+                  {day.sleepGuidance.monthLabel} guide
+                  {comparison.actualOutsideGuideMinutes > 0 ? ` · ${formatDuration(comparison.actualOutsideGuideMinutes)} outside` : ''}
+                </p>
+              ) : null}
             </div>
             {isSelected ? (
               <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-black text-sky-700">Selected</span>
@@ -717,13 +796,28 @@ const MobilePatternTimeline = ({ days, selectedDate }) => (
             <TimelineAxis />
             <TimelineLane label="Sleep" tone="sleep">
               <span className="absolute inset-x-1 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-100" />
+              {guideSegments.map((segment) => {
+                const left = getTimelinePercent(segment.startBlock);
+                const width = ((segment.endBlock - segment.startBlock + 1) / 96) * 100;
+                return (
+                  <span
+                    key={`${segment.status}-${segment.startBlock}-${segment.endBlock}`}
+                    className={`absolute top-1/2 h-5 -translate-y-1/2 rounded-full ${
+                      segment.status === 'expected' ? 'bg-sky-100' : 'bg-orange-100'
+                    }`}
+                    style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
+                    title={getSleepGuidanceStatusLabel(segment.status)}
+                  />
+                );
+              })}
               {sleepSummary.sessions.map((session) => {
                 const left = getTimelinePercent(session.startBlock);
                 const width = ((session.endBlock - session.startBlock + 1) / 96) * 100;
+                const outsideGuide = getSleepGuidanceBlockStatus(session.startBlock, day.sleepGuidance) === 'awake';
                 return (
                   <span
                     key={`${session.startBlock}-${session.endBlock}`}
-                    className="absolute top-1/2 z-10 h-4 -translate-y-1/2 rounded-full bg-sky-500 shadow-sm"
+                    className={`absolute top-1/2 z-10 h-4 -translate-y-1/2 rounded-full shadow-sm ${outsideGuide ? 'bg-violet-500' : 'bg-sky-600'}`}
                     style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
                     title={`${session.startTime}-${session.endTime}`}
                   />
@@ -751,9 +845,20 @@ const MobilePatternTimeline = ({ days, selectedDate }) => (
   </div>
 );
 
-const SleepGrid = ({ feeds = [], nappies = [], sleepBlocks, onSave, saving }) => {
+const SleepGrid = ({
+  feeds = [],
+  nappies = [],
+  sleepBlocks,
+  sleepGuidance = null,
+  nextSleepGuidance = null,
+  onSave,
+  saving,
+}) => {
   const initialSet = useMemo(() => normalizeSleepBlocks(sleepBlocks), [sleepBlocks]);
   const careMarkers = useMemo(() => buildCareMarkersByBlock({ feeds, nappies }), [feeds, nappies]);
+  const guidanceComparison = useMemo(() => (
+    summarizeSleepGuidanceComparison({ sleepBlocks, guidance: sleepGuidance })
+  ), [sleepBlocks, sleepGuidance]);
   const [draftSet, setDraftSet] = useState(initialSet);
   const [pendingRangeStart, setPendingRangeStart] = useState(null);
   const dragModeRef = useRef(null);
@@ -840,7 +945,7 @@ const SleepGrid = ({ feeds = [], nappies = [], sleepBlocks, onSave, saving }) =>
         <div>
           <p className="pm-kicker">Sleep grid</p>
           <h2 className="mt-1 text-xl font-black tracking-[-0.04em] text-slate-950">24-hour pattern</h2>
-          <p className="mt-1 text-xs text-slate-500">Tap or drag 15-minute blocks. Blue means asleep.</p>
+          <p className="mt-1 text-xs text-slate-500">Tap or drag 15-minute blocks. Compare expected sleep with actual sleep.</p>
         </div>
         <button
           type="button"
@@ -851,6 +956,51 @@ const SleepGrid = ({ feeds = [], nappies = [], sleepBlocks, onSave, saving }) =>
           {saving ? 'Saving...' : 'Save sleep'}
         </button>
       </div>
+
+      {sleepGuidance ? (
+        <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <div className="rounded-[22px] border border-sky-100 bg-sky-50 px-4 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-700">{sleepGuidance.monthLabel} guidance</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{formatGuidanceDateRange(sleepGuidance)}</p>
+              </div>
+              {nextSleepGuidance && nextSleepGuidance.month !== sleepGuidance.month ? (
+                <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-slate-500 shadow-sm">
+                  Next: {nextSleepGuidance.monthLabel} from {formatBabyDisplayDate(nextSleepGuidance.startDate)}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-2xl bg-white px-3 py-2 text-xs font-bold text-slate-700">Total {sleepGuidance.totalSleep || '-'}</div>
+              <div className="rounded-2xl bg-white px-3 py-2 text-xs font-bold text-slate-700">Night {sleepGuidance.nightSleep || '-'}</div>
+              <div className="rounded-2xl bg-white px-3 py-2 text-xs font-bold text-slate-700">Day {sleepGuidance.daySleep || '-'}</div>
+              <div className="rounded-2xl bg-white px-3 py-2 text-xs font-bold text-slate-700">Naps {sleepGuidance.naps || '-'}</div>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-sky-800">
+              {sleepGuidance.sourceNote}
+              {sleepGuidance.regression ? ` · ${sleepGuidance.regression}` : ''}
+            </p>
+          </div>
+          <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Today vs guide</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="rounded-2xl bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                Actual <span className="block text-base text-slate-950">{formatDuration(guidanceComparison.actualMinutes)}</span>
+              </div>
+              <div className="rounded-2xl bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                Expected guide <span className="block text-base text-slate-950">{formatDuration(guidanceComparison.expectedMinutes)}</span>
+              </div>
+              <div className="rounded-2xl bg-sky-100 px-3 py-2 text-xs font-bold text-sky-800">
+                In guide <span className="block text-base">{formatDuration(guidanceComparison.actualInExpectedMinutes + guidanceComparison.actualInFlexibleMinutes)}</span>
+              </div>
+              <div className="rounded-2xl bg-violet-100 px-3 py-2 text-xs font-bold text-violet-800">
+                Outside <span className="block text-base">{formatDuration(guidanceComparison.actualOutsideGuideMinutes)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div
         className="mt-4 select-none rounded-[22px] border border-slate-100 bg-slate-50 p-2 sm:hidden touch-none"
@@ -866,6 +1016,7 @@ const SleepGrid = ({ feeds = [], nappies = [], sleepBlocks, onSave, saving }) =>
               hour={hour}
               asleepSet={draftSet}
               careMarkers={careMarkers}
+              sleepGuidance={sleepGuidance}
               compact
               onBlockPointerDown={startToggle}
               onBlockPointerEnter={(index) => {
@@ -902,12 +1053,24 @@ const SleepGrid = ({ feeds = [], nappies = [], sleepBlocks, onSave, saving }) =>
           {Array.from({ length: 96 }, (_, index) => {
             const asleep = draftSet.has(index);
             const hour = Math.floor(index / 4);
+            const guideStatus = getSleepGuidanceBlockStatus(index, sleepGuidance);
+            const guideClass = asleep && guideStatus === 'awake'
+              ? 'bg-violet-500 hover:bg-violet-600'
+              : asleep
+                ? 'bg-sky-600 hover:bg-sky-700'
+                : guideStatus === 'expected'
+                  ? 'bg-sky-100 hover:bg-sky-200'
+                  : guideStatus === 'flexible'
+                    ? 'bg-orange-100 hover:bg-orange-200'
+                    : hour < 7 || hour >= 22
+                      ? 'bg-indigo-50 hover:bg-sky-50'
+                      : 'bg-white hover:bg-sky-50';
             return (
               <button
                 key={index}
                 type="button"
                 data-sleep-block-index={index}
-                title={getSleepBlockTimeLabel(index)}
+                title={`${getSleepBlockTimeLabel(index)} · ${getSleepGuidanceStatusLabel(guideStatus)}`}
                 onPointerDown={(event) => {
                   event.preventDefault();
                   event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -916,13 +1079,7 @@ const SleepGrid = ({ feeds = [], nappies = [], sleepBlocks, onSave, saving }) =>
                 onPointerEnter={() => {
                   if (dragModeRef.current) applyBlock(index, dragModeRef.current);
                 }}
-                className={`h-8 transition ${
-                  asleep
-                    ? 'bg-sky-500 hover:bg-sky-600'
-                    : hour < 7 || hour >= 22
-                      ? 'bg-indigo-50 hover:bg-sky-50'
-                      : 'bg-white hover:bg-sky-50'
-                } ${index % 4 === 0 ? 'shadow-[inset_2px_0_0_rgba(15,23,42,0.34)]' : ''}`}
+                className={`h-8 transition ${guideClass} ${index % 4 === 0 ? 'shadow-[inset_2px_0_0_rgba(15,23,42,0.34)]' : ''}`}
               />
             );
           })}
@@ -931,8 +1088,10 @@ const SleepGrid = ({ feeds = [], nappies = [], sleepBlocks, onSave, saving }) =>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
         <span className="rounded-full bg-slate-100 px-2 py-1">Desktop shows one 24h row</span>
         <span className="rounded-full bg-slate-100 px-2 py-1">Phone wraps hours</span>
-        <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">Bedtime guide 22:00-07:00</span>
-        <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue = asleep</span>
+        <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-800">Pale blue = expected sleep</span>
+        <span className="rounded-full bg-orange-100 px-2 py-1 text-orange-800">Orange = flexible sleep</span>
+        <span className="rounded-full bg-sky-600 px-2 py-1 text-white">Solid blue = actual asleep</span>
+        <span className="rounded-full bg-violet-500 px-2 py-1 text-white">Violet = actual outside guide</span>
         <span className="rounded-full bg-white px-2 py-1">White = awake</span>
         <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.chip}`}>F = feed</span>
         <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.W.chip}`}>W = wet</span>
@@ -944,6 +1103,7 @@ const SleepGrid = ({ feeds = [], nappies = [], sleepBlocks, onSave, saving }) =>
 };
 
 const PatternPanel = ({
+  birthDate,
   dateKeys,
   feeds,
   nappies,
@@ -962,14 +1122,16 @@ const PatternPanel = ({
     const dayFeeds = feedsByDate[dateKey] || [];
     const dayNappies = nappiesByDate[dateKey] || [];
     const daySleep = sleepByDate[dateKey] || [];
+    const sleepGuidance = getBabySleepGuidanceForDate({ birthDate, dateKey });
     return {
       dateKey,
       summary: summarizeBabyDay({ feeds: dayFeeds, nappies: dayNappies, sleepBlocks: daySleep }),
       feeds: dayFeeds,
       nappies: dayNappies,
       sleepBlocks: daySleep,
+      sleepGuidance,
     };
-  }), [dateKeys, feedsByDate, nappiesByDate, sleepByDate]);
+  }), [birthDate, dateKeys, feedsByDate, nappiesByDate, sleepByDate]);
 
   const rangeTotals = useMemo(() => patternDays.reduce((totals, day) => ({
     feeds: totals.feeds + day.summary.feedCount,
@@ -1024,8 +1186,10 @@ const PatternPanel = ({
             <SleepMatrix days={patternDays} selectedDate={selectedDate} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
-            <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">Blue = asleep</span>
-            <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">Pale = bedtime</span>
+            <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-800">Pale blue = expected sleep</span>
+            <span className="rounded-full bg-orange-100 px-2 py-1 text-orange-800">Orange = flexible sleep</span>
+            <span className="rounded-full bg-sky-600 px-2 py-1 text-white">Solid blue = actual asleep</span>
+            <span className="rounded-full bg-violet-500 px-2 py-1 text-white">Violet = actual outside guide</span>
             <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.chip}`}>F = feed</span>
             <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.W.chip}`}>W = wet nappy</span>
             <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.S.chip}`}>S = solid / poo nappy</span>
@@ -1080,6 +1244,13 @@ export default function BabyView({ currentUserId }) {
   const [weightModalOpen, setWeightModalOpen] = useState(false);
 
   const daySummary = useMemo(() => summarizeBabyDay({ feeds, nappies, sleepBlocks, latestWeight }), [feeds, latestWeight, nappies, sleepBlocks]);
+  const guidanceBirthDate = babyProfile?.birthDate || '';
+  const sleepGuidance = useMemo(() => (
+    getBabySleepGuidanceForDate({ birthDate: guidanceBirthDate, dateKey: selectedDate })
+  ), [guidanceBirthDate, selectedDate]);
+  const nextSleepGuidance = useMemo(() => (
+    getNextBabySleepGuidanceForDate({ birthDate: guidanceBirthDate, dateKey: selectedDate })
+  ), [guidanceBirthDate, selectedDate]);
   const householdMembers = useMemo(() => (
     Array.isArray(householdProject?.project_members) ? householdProject.project_members : []
   ), [householdProject?.project_members]);
@@ -1148,7 +1319,9 @@ export default function BabyView({ currentUserId }) {
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-black tracking-[-0.04em] text-slate-950">{babyProfile.name}</h2>
-                <p className="text-sm text-slate-500">{formatBabyDisplayDate(selectedDate)}</p>
+                <p className="text-sm text-slate-500">
+                  {formatBabyDisplayDate(selectedDate)} · {sleepGuidance.monthLabel} sleep guide
+                </p>
                 <button
                   type="button"
                   onClick={() => setShareOpen(true)}
@@ -1205,8 +1378,17 @@ export default function BabyView({ currentUserId }) {
             </div>
 
             <div className="mt-6 space-y-5">
-              <SleepGrid feeds={feeds} nappies={nappies} sleepBlocks={sleepBlocks} onSave={saveSleepBlocks} saving={saving} />
+              <SleepGrid
+                feeds={feeds}
+                nappies={nappies}
+                sleepBlocks={sleepBlocks}
+                sleepGuidance={sleepGuidance}
+                nextSleepGuidance={nextSleepGuidance}
+                onSave={saveSleepBlocks}
+                saving={saving}
+              />
               <PatternPanel
+                birthDate={guidanceBirthDate}
                 dateKeys={patternDateKeys}
                 feeds={rangeFeeds}
                 nappies={rangeNappies}
