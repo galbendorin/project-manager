@@ -47,6 +47,8 @@ const PATTERN_RANGES = [
   { value: 'last30', label: 'Last 30 days' },
 ];
 
+const SLEEP_GUIDE_CHART_SRC = '/baby-sleep-pattern-plan.png';
+
 const formatDuration = (minutes = 0) => {
   const total = Number(minutes) || 0;
   if (total < 60) return `${total} min`;
@@ -132,6 +134,49 @@ const CARE_MARKER_STYLES = {
     chip: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
   },
 };
+
+const SleepGuideChartModal = ({ onClose }) => (
+  <div
+    className="fixed inset-0 z-[80] flex items-end bg-slate-950/70 p-2 backdrop-blur-sm sm:items-center sm:justify-center sm:p-6"
+    role="presentation"
+    onClick={onClose}
+  >
+    <div
+      className="flex max-h-[92vh] w-full flex-col rounded-[26px] border border-white/20 bg-white shadow-2xl sm:max-w-6xl sm:rounded-[32px]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Baby sleep pattern guide"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
+        <div className="min-w-0">
+          <p className="pm-kicker">Sleep guide</p>
+          <h2 className="truncate text-lg font-black tracking-[-0.04em] text-slate-950">24-hour pattern reference</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+        >
+          Close
+        </button>
+      </div>
+      <div className="overflow-auto bg-slate-50 p-3 sm:p-5">
+        <img
+          src={SLEEP_GUIDE_CHART_SRC}
+          alt="Baby Sleep Pattern Plan showing expected and flexible sleep windows by month"
+          className="block w-[1120px] max-w-none rounded-2xl border border-slate-200 bg-white shadow-sm sm:w-full sm:max-w-full"
+        />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3 text-xs font-bold text-slate-500 sm:px-5">
+        <span>On phone, swipe sideways to review the full chart.</span>
+        <a className="text-indigo-600 hover:text-indigo-700" href={SLEEP_GUIDE_CHART_SRC} target="_blank" rel="noreferrer">
+          Open image
+        </a>
+      </div>
+    </div>
+  </div>
+);
 
 const buildCareMarkersByBlock = ({ feeds = [], nappies = [] } = {}) => {
   const markers = new Map();
@@ -902,6 +947,7 @@ const SleepGrid = ({
   const dragModeRef = useRef(null);
   const lastDragIndexRef = useRef(null);
   const rangeStartRef = useRef(null);
+  const [guideChartOpen, setGuideChartOpen] = useState(false);
 
   React.useEffect(() => {
     setDraftSet(initialSet);
@@ -910,6 +956,20 @@ const SleepGrid = ({
     lastDragIndexRef.current = null;
     dragModeRef.current = null;
   }, [initialSet]);
+
+  useEffect(() => {
+    if (!guideChartOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setGuideChartOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [guideChartOpen]);
 
   const applyBlock = (index, mode) => {
     setDraftSet((previous) => {
@@ -988,14 +1048,23 @@ const SleepGrid = ({
           <h2 className="text-base font-black tracking-[-0.04em] text-slate-950 sm:mt-1 sm:text-xl">Sleep grid</h2>
           <p className="mt-1 hidden text-xs text-slate-500 sm:block">Tap or drag 15-minute blocks. Compare expected sleep with actual sleep.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => onSave(draftSet)}
-          disabled={saving}
-          className="pm-toolbar-primary shrink-0 rounded-2xl px-2.5 py-1.5 text-[11px] font-bold text-white disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-xs"
-        >
-          {saving ? 'Saving...' : 'Save sleep'}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => setGuideChartOpen(true)}
+            className="rounded-2xl border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-black text-sky-800 shadow-sm transition hover:border-sky-300 hover:bg-sky-100 sm:px-4 sm:py-2.5 sm:text-xs"
+          >
+            Guide
+          </button>
+          <button
+            type="button"
+            onClick={() => onSave(draftSet)}
+            disabled={saving}
+            className="pm-toolbar-primary rounded-2xl px-2.5 py-1.5 text-[11px] font-bold text-white disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-xs"
+          >
+            {saving ? 'Saving...' : 'Save sleep'}
+          </button>
+        </div>
       </div>
 
       {sleepGuidance ? (
@@ -1148,6 +1217,9 @@ const SleepGrid = ({
         <span className="rounded-full bg-white px-2 py-1">White = awake</span>
         <span className={`rounded-full px-2 py-1 ${CARE_MARKER_STYLES.F.chip}`}>F = feed</span>
       </div>
+      {guideChartOpen ? (
+        <SleepGuideChartModal onClose={() => setGuideChartOpen(false)} />
+      ) : null}
     </section>
   );
 };
