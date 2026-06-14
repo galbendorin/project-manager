@@ -4,6 +4,9 @@ import { isOfflineTempId } from '../utils/offlineState';
 import { enqueueCreate, enqueueDelete, enqueueUpdate } from '../utils/offlineQueue';
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
 import { planShoppingListAdds } from '../utils/shoppingListViewState';
+import { isFreshTimestamp } from '../utils/refreshThrottle';
+
+const SHOPPING_ADD_FRESHNESS_MS = 30_000;
 
 const isOfflineBrowser = () => (
   typeof navigator !== 'undefined' && navigator.onLine === false
@@ -31,6 +34,7 @@ export function useShoppingListActions({
   createOfflineShoppingTodo,
   isMissingSchemaFieldError,
   legacyManualTodoSelect,
+  lastSyncedAt = '',
   mapManualTodoRow,
   manualTodoSelect,
   shoppingExtraFields = [],
@@ -213,16 +217,19 @@ export function useShoppingListActions({
       return initialPlan;
     }
 
+    const hasFreshLocalList = isFreshTimestamp(lastSyncedAt, Date.now(), SHOPPING_ADD_FRESHNESS_MS);
     let latestOpenTodos = [];
-    try {
-      latestOpenTodos = await loadLatestOpenTodos(selectedProject.id);
-    } catch (nextError) {
-      setTodoError(nextError?.message || 'Unable to confirm the latest groceries right now.');
-      setSavingItems(false);
-      return initialPlan;
+    if (!hasFreshLocalList) {
+      try {
+        latestOpenTodos = await loadLatestOpenTodos(selectedProject.id);
+      } catch (nextError) {
+        setTodoError(nextError?.message || 'Unable to confirm the latest groceries right now.');
+        setSavingItems(false);
+        return initialPlan;
+      }
     }
 
-    const effectiveExistingTodos = latestOpenTodos.length > 0
+    const effectiveExistingTodos = !hasFreshLocalList && latestOpenTodos.length > 0
       ? mergeTodosById(todos, latestOpenTodos)
       : todos;
     const addPlan = planShoppingListAdds({
@@ -235,55 +242,68 @@ export function useShoppingListActions({
       return addPlan;
     }
 
-    const savedRows = [];
-    for (const item of addPlan.preparedItems || []) {
-      const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
-        target_project_id: selectedProject.id,
-        target_title: item.title,
-        target_quantity_value: item.quantityValue,
-        target_quantity_unit: item.quantityUnit || '',
-        target_source_type: item.sourceType || '',
-        target_source_batch_id: item.sourceBatchId || null,
-        target_meta: item.meta || {},
-      });
+    let rpcResults = [];
+    try {
+      rpcResults = await Promise.all((addPlan.preparedItems || []).map(async (item) => {
+        const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
+          target_project_id: selectedProject.id,
+          target_title: item.title,
+          target_quantity_value: item.quantityValue,
+          target_quantity_unit: item.quantityUnit || '',
+          target_source_type: item.sourceType || '',
+          target_source_batch_id: item.sourceBatchId || null,
+          target_meta: item.meta || {},
+        });
 
-      const savedRow = Array.isArray(data) ? data[0] : data;
-      if (error || !savedRow) {
-        let serverTodos = [];
-        try {
-          serverTodos = await loadLatestOpenTodos(selectedProject.id);
-        } catch {
-          serverTodos = [];
-        }
+        return { data, error, item };
+      }));
+    } catch (nextError) {
+      rpcResults = [{ data: null, error: nextError, item: null }];
+    }
 
-        if (serverTodos.length > 0) {
-          setTodos((previous) => {
-            const nextTodos = mergeTodosById(previous, serverTodos);
-            const cachedState = loadShoppingOfflineState(currentUserId);
-            persistOfflineState({
-              ...cachedState,
-              selectedProjectId: selectedProject.id,
-              todosByProject: {
-                ...(cachedState.todosByProject || {}),
-                [selectedProject.id]: nextTodos,
-              },
-              lastSyncedAt: new Date().toISOString(),
-            });
-            return nextTodos;
-          });
-        }
+    const failedResult = rpcResults.find((result) => {
+      const savedRow = Array.isArray(result?.data) ? result.data[0] : result?.data;
+      return result?.error || !savedRow;
+    });
 
-        setTodoError(
-          isMissingShoppingUpsertRpcError(error)
-            ? 'Shopping List needs the latest SQL migration before groceries can be merged safely.'
-            : (error?.message || 'Unable to add groceries right now.')
-        );
-        setSavingItems(false);
-        return addPlan;
+    if (failedResult) {
+      let serverTodos = [];
+      try {
+        serverTodos = await loadLatestOpenTodos(selectedProject.id);
+      } catch {
+        serverTodos = [];
       }
 
-      savedRows.push(mapManualTodoRow(savedRow));
+      if (serverTodos.length > 0) {
+        setTodos((previous) => {
+          const nextTodos = mergeTodosById(previous, serverTodos);
+          const cachedState = loadShoppingOfflineState(currentUserId);
+          persistOfflineState({
+            ...cachedState,
+            selectedProjectId: selectedProject.id,
+            todosByProject: {
+              ...(cachedState.todosByProject || {}),
+              [selectedProject.id]: nextTodos,
+            },
+            lastSyncedAt: new Date().toISOString(),
+          });
+          return nextTodos;
+        });
+      }
+
+      setTodoError(
+        isMissingShoppingUpsertRpcError(failedResult.error)
+          ? 'Shopping List needs the latest SQL migration before groceries can be merged safely.'
+          : (failedResult.error?.message || 'Unable to add groceries right now.')
+      );
+      setSavingItems(false);
+      return addPlan;
     }
+
+    const savedRows = rpcResults.map((result) => {
+      const savedRow = Array.isArray(result.data) ? result.data[0] : result.data;
+      return mapManualTodoRow(savedRow);
+    });
 
     setTodos((previous) => {
       const nextTodos = mergeTodosById(previous, savedRows);
@@ -309,6 +329,7 @@ export function useShoppingListActions({
     currentUserId,
     createOfflineShoppingTodo,
     isOnline,
+    lastSyncedAt,
     loadLatestOpenTodos,
     loadShoppingOfflineState,
     mapManualTodoRow,

@@ -165,6 +165,31 @@ test('planShoppingListAdds collapses duplicate incoming groceries before insert'
   assert.equal(plan.preparedItems[0].quantityValue, 5);
 });
 
+test('planShoppingListAdds still merges repeated adds into one open grocery', () => {
+  const plan = planShoppingListAdds({
+    existingTodos: [
+      {
+        _id: 'todo-oats-open',
+        title: 'Oats',
+        status: 'Open',
+        quantityValue: 250,
+        quantityUnit: 'g',
+        updatedAt: '2026-06-14T08:00:00.000Z',
+      },
+    ],
+    incomingItems: [
+      { title: 'oats', quantityValue: 500, quantityUnit: 'g' },
+      { title: ' OATS ', quantityValue: 250, quantityUnit: 'g' },
+    ],
+  });
+
+  assert.equal(plan.addedCount, 0);
+  assert.equal(plan.mergedCount, 1);
+  assert.equal(plan.updates[0].todoId, 'todo-oats-open');
+  assert.equal(plan.updates[0].quantityValue, 1000);
+  assert.equal(plan.preparedItems.length, 1);
+});
+
 test('planShoppingListAdds keeps prepared items available for live upsert flow', () => {
   const plan = planShoppingListAdds({
     existingTodos: [
