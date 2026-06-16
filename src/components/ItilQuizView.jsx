@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAPERS } from '../data/itilFoundationPapers';
 import { readLocalJson, writeLocalJson } from '../utils/offlineState';
 import {
+  buildPaperScoreSnapshot,
   buildRemixedAssessmentSets,
   buildShortAssessmentSets,
   REMIXED_ASSESSMENT_SIZE,
@@ -70,6 +71,13 @@ const formatCountdown = (milliseconds) => {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
+const formatCompletedDate = (value = '') => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+};
+
 const getStorageKey = (currentUserId = '') => (
   `pmworkspace:itil-foundation-quiz:${currentUserId || 'local'}:v1`
 );
@@ -122,13 +130,17 @@ const PaperCard = ({
   startPracticeLabel = 'Start practice',
 }) => {
   const summary = summarizePaperProgress(paper, paperProgress);
+  const lastScore = paperProgress.lastScore;
+  const lastCompletedDate = formatCompletedDate(lastScore?.completedAt);
   const hasProgress = Boolean(
     paperProgress.startedAt
     || paperProgress.completedAt
+    || lastScore
     || summary.answered > 0
     || summary.assisted > 0
     || Object.keys(paperProgress.selections || {}).length > 0
   );
+  const isCompleted = Boolean(paperProgress.completedAt);
   return (
     <article className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="flex items-start justify-between gap-3">
@@ -165,11 +177,48 @@ const PaperCard = ({
         <ProgressBar value={summary.answered} max={paper.questionCount} />
       </div>
 
+      {lastScore ? (
+        <div className={`mt-4 rounded-[22px] border px-4 py-3 ${
+          lastScore.passed
+            ? 'border-emerald-200 bg-emerald-50'
+            : 'border-amber-200 bg-amber-50'
+        }`}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className={`text-[10px] font-black uppercase tracking-[0.14em] ${
+                lastScore.passed ? 'text-emerald-700' : 'text-amber-700'
+              }`}>
+                Last score
+              </div>
+              <div className="mt-1 text-2xl font-black tracking-[-0.04em] text-slate-950">
+                {lastScore.correct}/{lastScore.questionCount}
+              </div>
+            </div>
+            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${
+              lastScore.passed
+                ? 'border-emerald-200 bg-white text-emerald-700'
+                : 'border-amber-200 bg-white text-amber-700'
+            }`}>
+              {lastScore.passed ? 'Passed' : 'Below target'}
+            </span>
+          </div>
+          <div className="mt-2 text-[11px] font-bold leading-5 text-slate-600">
+            {lastScore.incorrect} incorrect · {lastScore.unassistedCorrect} unassisted
+            {lastCompletedDate ? ` · ${lastCompletedDate}` : ''}
+          </div>
+        </div>
+      ) : null}
+
       {hasProgress ? (
-        <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+        <div className={`mt-5 grid gap-2 ${isCompleted ? 'sm:grid-cols-[minmax(0,1fr)_auto_auto]' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
           <button type="button" onClick={onContinue} className="pm-toolbar-primary rounded-2xl px-4 py-3 text-sm font-black text-white">
-            Continue
+            {isCompleted ? 'Review result' : 'Continue'}
           </button>
+          {isCompleted ? (
+            <button type="button" onClick={() => onStart('practice')} className="pm-subtle-button rounded-2xl px-4 py-3 text-sm font-bold">
+              Retake
+            </button>
+          ) : null}
           <button type="button" onClick={onReset} className="pm-subtle-button rounded-2xl px-4 py-3 text-sm font-bold">
             Reset
           </button>
@@ -611,15 +660,110 @@ const QuizQuestion = ({
   );
 };
 
+const buildQuestionReviewRows = (paper, paperProgress = {}) => (
+  paper.questions.map((question, index) => {
+    const submittedAnswer = paperProgress.answers[question.number] || '';
+    const isAnswered = Boolean(submittedAnswer);
+    const isCorrect = submittedAnswer === question.answer;
+    const isAssisted = Boolean(paperProgress.assisted[question.number]);
+
+    return {
+      index,
+      isAnswered,
+      isAssisted,
+      isCorrect,
+      question,
+      submittedAnswer,
+    };
+  })
+);
+
+const ReviewRow = ({ row, onReviewQuestion }) => {
+  const { isAnswered, isAssisted, isCorrect, question, submittedAnswer } = row;
+  const toneClass = !isAnswered
+    ? 'border-slate-200 bg-white'
+    : isCorrect
+      ? 'border-emerald-200 bg-emerald-50'
+      : 'border-rose-200 bg-rose-50';
+  const badgeClass = !isAnswered
+    ? 'bg-slate-100 text-slate-600'
+    : isCorrect
+      ? 'bg-emerald-600 text-white'
+      : 'bg-rose-600 text-white';
+  const label = !isAnswered ? 'Unanswered' : isCorrect ? 'Correct' : 'Incorrect';
+
+  return (
+    <button
+      type="button"
+      onClick={() => onReviewQuestion(row.index)}
+      className={`grid w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-[20px] border px-3 py-3 text-left shadow-sm transition hover:border-[var(--pm-accent)] sm:px-4 ${toneClass}`}
+    >
+      <span className={`grid h-9 w-9 place-items-center rounded-xl text-xs font-black ${badgeClass}`}>
+        {question.number}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-black text-slate-950">{question.prompt}</span>
+        <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
+          {isAnswered
+            ? `Your answer ${submittedAnswer}: ${question.choices[submittedAnswer]}`
+            : 'No answer submitted'}
+          {' · '}
+          Correct {question.answer}: {question.choices[question.answer]}
+          {isAssisted ? ' · Assisted' : ''}
+        </span>
+      </span>
+      <span className={`rounded-xl border bg-white px-3 py-2 text-xs font-bold ${
+        !isAnswered
+          ? 'border-slate-200 text-slate-600'
+          : isCorrect
+            ? 'border-emerald-200 text-emerald-700'
+            : 'border-rose-200 text-rose-700'
+      }`}>
+        {label}
+      </span>
+    </button>
+  );
+};
+
+const ReviewSection = ({ emptyText, onReviewQuestion, rows, title, tone = 'slate' }) => {
+  const toneClass = {
+    emerald: 'text-emerald-700',
+    rose: 'text-rose-700',
+    amber: 'text-amber-700',
+    slate: 'text-slate-700',
+  }[tone] || 'text-slate-700';
+
+  return (
+    <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className={`text-lg font-black tracking-[-0.03em] ${toneClass}`}>{title}</h3>
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-black text-slate-500">
+          {rows.length}
+        </span>
+      </div>
+      {rows.length ? (
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <ReviewRow key={`${title}-${row.question.number}`} row={row} onReviewQuestion={onReviewQuestion} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-500">
+          {emptyText}
+        </div>
+      )}
+    </section>
+  );
+};
+
 const ResultsView = ({ onBack, onReset, onReviewQuestion, paper, paperProgress }) => {
   const summary = summarizePaperProgress(paper, paperProgress);
-  const reviewQuestions = paper.questions.filter((question) => (
-    paperProgress.answers[question.number]
-    && (
-      paperProgress.answers[question.number] !== question.answer
-      || paperProgress.assisted[question.number]
-    )
-  ));
+  const reviewRows = buildQuestionReviewRows(paper, paperProgress);
+  const correctRows = reviewRows.filter((row) => row.isAnswered && row.isCorrect);
+  const incorrectRows = reviewRows.filter((row) => row.isAnswered && !row.isCorrect);
+  const assistedRows = reviewRows.filter((row) => row.isAssisted);
+  const unansweredRows = reviewRows.filter((row) => !row.isAnswered);
+
   return (
     <div className="pm-shell-bg min-h-full px-3 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto w-full max-w-5xl space-y-5">
@@ -641,8 +785,8 @@ const ResultsView = ({ onBack, onReset, onReviewQuestion, paper, paperProgress }
                 {summary.passed ? 'Pass objective reached.' : 'Keep building your unassisted score.'}
               </h1>
               <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-slate-500">
-                You answered {summary.answered} questions, got {summary.correct} correct overall,
-                and scored {summary.unassistedCorrect} correct without revealing the rationale first.
+                You answered {summary.answered} questions, got {summary.correct} correct and {summary.incorrect} incorrect,
+                with {summary.remaining} still unanswered. Your unassisted score is {summary.unassistedCorrect}.
                 The pass target is {paper.passMark}.
               </p>
               <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap">
@@ -657,51 +801,49 @@ const ResultsView = ({ onBack, onReset, onReviewQuestion, paper, paperProgress }
           </div>
         </section>
 
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+          <ObjectiveCard label="Score" value={`${summary.correct}/${paper.questionCount}`} detail={`${summary.incorrect} incorrect`} tone={summary.passed ? 'emerald' : 'slate'} />
           <ObjectiveCard label="Answered" value={`${summary.answered}/${paper.questionCount}`} detail={`${summary.remaining} remaining`} />
           <ObjectiveCard label="Correct" value={summary.correct} detail="Including assisted answers" tone="emerald" />
+          <ObjectiveCard label="Incorrect" value={summary.incorrect} detail="Answers to review" />
           <ObjectiveCard label="Unassisted" value={summary.unassistedCorrect} detail={`${Math.max(0, paper.passMark - summary.unassistedCorrect)} to pass target`} tone="accent" />
           <ObjectiveCard label="Assisted" value={summary.assisted} detail="Rationale opened before submit" />
         </section>
 
         <section>
           <div className="mb-3">
-            <p className="pm-kicker">Review queue</p>
-            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">Questions worth revisiting</h2>
+            <p className="pm-kicker">Answer review</p>
+            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">Correct, incorrect, and unanswered questions</h2>
           </div>
-          {reviewQuestions.length ? (
-            <div className="space-y-2">
-              {reviewQuestions.map((question) => {
-                const submittedAnswer = paperProgress.answers[question.number] || '';
-                return (
-                  <button
-                    key={question.number}
-                    type="button"
-                    onClick={() => onReviewQuestion(paper.questions.indexOf(question))}
-                    className="grid w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-[20px] border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:border-[var(--pm-accent)] sm:px-4"
-                  >
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-xs font-black text-slate-600">
-                      {question.number}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-black text-slate-950">{question.prompt}</span>
-                      <span className="mt-1 block text-[11px] font-semibold text-slate-500">
-                        {submittedAnswer ? `Your answer ${submittedAnswer}` : 'Not answered'} · Correct {question.answer}
-                        {paperProgress.assisted[question.number] ? ' · Assisted' : ''}
-                      </span>
-                    </span>
-                    <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">Review</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-8 text-center text-sm font-black text-emerald-700">
-              {summary.remaining > 0
-                ? `No answered questions need review yet. Continue when you are ready for the remaining ${summary.remaining}.`
-                : 'Perfect unassisted paper. Nothing is waiting in your review queue.'}
-            </div>
-          )}
+          <div className="space-y-4">
+            <ReviewSection
+              emptyText="No incorrect answers yet."
+              onReviewQuestion={onReviewQuestion}
+              rows={incorrectRows}
+              title="Incorrect answers"
+              tone="rose"
+            />
+            <ReviewSection
+              emptyText="No correct answers yet."
+              onReviewQuestion={onReviewQuestion}
+              rows={correctRows}
+              title="Correct answers"
+              tone="emerald"
+            />
+            <ReviewSection
+              emptyText="No assisted questions yet."
+              onReviewQuestion={onReviewQuestion}
+              rows={assistedRows}
+              title="Assisted questions"
+              tone="amber"
+            />
+            <ReviewSection
+              emptyText="Every question has an answer."
+              onReviewQuestion={onReviewQuestion}
+              rows={unansweredRows}
+              title="Unanswered questions"
+            />
+          </div>
         </section>
       </div>
     </div>
@@ -761,6 +903,7 @@ export default function ItilQuizView({ currentUserId }) {
       assisted: {},
       completedAt: '',
       currentQuestionIndex: 0,
+      lastScore: current.lastScore || null,
       mode,
       selections: {},
       startedAt: new Date().toISOString(),
@@ -771,6 +914,7 @@ export default function ItilQuizView({ currentUserId }) {
   }, [updatePaperProgress]);
 
   const continuePaper = useCallback((paper) => {
+    const currentProgress = getPaperProgress(progress, paper.id);
     updatePaperProgress(paper.id, (current) => ({
       ...current,
       currentQuestionIndex: getNextQuestionIndex(paper, current),
@@ -778,8 +922,8 @@ export default function ItilQuizView({ currentUserId }) {
     }));
     setActivePaperId(paper.id);
     setNow(Date.now());
-    setScreen('question');
-  }, [updatePaperProgress]);
+    setScreen(currentProgress.completedAt ? 'results' : 'question');
+  }, [progress, updatePaperProgress]);
 
   const resetPaper = useCallback((paper) => {
     if (!window.confirm(`Reset all saved progress for ${paper.title}?`)) return;
@@ -834,9 +978,11 @@ export default function ItilQuizView({ currentUserId }) {
 
   const showResults = useCallback(() => {
     if (!activePaper) return;
+    const completedAt = new Date().toISOString();
     updatePaperProgress(activePaper.id, (current) => ({
       ...current,
-      completedAt: new Date().toISOString(),
+      completedAt,
+      lastScore: buildPaperScoreSnapshot(activePaper, current, completedAt),
     }));
     setScreen('results');
   }, [activePaper, updatePaperProgress]);

@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildPaperScoreSnapshot,
   buildRemixedQuestion,
   formatRationaleSections,
   getNextQuestionIndex,
   getQuestionStatus,
+  normalizePaperProgress,
   summarizePaperProgress,
 } from './itilQuiz.js';
 
@@ -28,6 +30,50 @@ test('quiz summary separates assisted answers from the unassisted pass score', (
   assert.equal(summary.unassistedCorrect, 1);
   assert.equal(summary.assisted, 1);
   assert.equal(summary.passed, false);
+});
+
+test('score snapshot stores the completed result for later display', () => {
+  const snapshot = buildPaperScoreSnapshot(paper, {
+    answers: { 1: 'A', 2: 'A', 3: 'C' },
+    assisted: { 3: true },
+    mode: 'mock',
+  }, '2026-06-16T08:00:00.000Z');
+
+  assert.deepEqual(snapshot, {
+    assisted: 1,
+    answered: 3,
+    completedAt: '2026-06-16T08:00:00.000Z',
+    correct: 2,
+    incorrect: 1,
+    mode: 'mock',
+    passed: false,
+    passMark: 2,
+    questionCount: 3,
+    remaining: 0,
+    unassistedCorrect: 1,
+  });
+});
+
+test('paper progress normalization keeps a safe last score snapshot', () => {
+  const normalized = normalizePaperProgress({
+    lastScore: {
+      assisted: '1',
+      answered: '3',
+      completedAt: '2026-06-16T08:00:00.000Z',
+      correct: '2',
+      incorrect: '1',
+      mode: 'mock',
+      passed: true,
+      passMark: '2',
+      questionCount: '3',
+      remaining: '0',
+      unassistedCorrect: '2',
+    },
+  });
+
+  assert.equal(normalized.lastScore.correct, 2);
+  assert.equal(normalized.lastScore.mode, 'mock');
+  assert.equal(normalized.lastScore.passed, true);
 });
 
 test('quiz resumes at the first unanswered question', () => {

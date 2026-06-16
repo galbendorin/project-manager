@@ -14,10 +14,29 @@ const createEmptyPaperProgress = () => ({
   assisted: {},
   completedAt: '',
   currentQuestionIndex: 0,
+  lastScore: null,
   mode: 'practice',
   selections: {},
   startedAt: '',
 });
+
+const normalizeScoreSnapshot = (score = null) => {
+  if (!score || typeof score !== 'object') return null;
+
+  return {
+    assisted: Math.max(0, Number(score.assisted) || 0),
+    answered: Math.max(0, Number(score.answered) || 0),
+    completedAt: typeof score.completedAt === 'string' ? score.completedAt : '',
+    correct: Math.max(0, Number(score.correct) || 0),
+    incorrect: Math.max(0, Number(score.incorrect) || 0),
+    mode: score.mode === 'mock' ? 'mock' : 'practice',
+    passed: Boolean(score.passed),
+    passMark: Math.max(0, Number(score.passMark) || 0),
+    questionCount: Math.max(0, Number(score.questionCount) || 0),
+    remaining: Math.max(0, Number(score.remaining) || 0),
+    unassistedCorrect: Math.max(0, Number(score.unassistedCorrect) || 0),
+  };
+};
 
 export const createEmptyItilQuizProgress = () => ({
   version: ITIL_QUIZ_STORAGE_VERSION,
@@ -33,6 +52,7 @@ export const normalizePaperProgress = (progress = {}) => ({
   currentQuestionIndex: Number.isFinite(Number(progress?.currentQuestionIndex))
     ? Math.max(0, Number(progress.currentQuestionIndex))
     : 0,
+  lastScore: normalizeScoreSnapshot(progress?.lastScore),
   mode: progress?.mode === 'mock' ? 'mock' : 'practice',
 });
 
@@ -70,6 +90,19 @@ export const summarizePaperProgress = (paper, paperProgress = {}) => {
     remaining: Math.max(0, questions.length - answeredQuestions.length),
     unassistedCorrect: unassistedCorrectQuestions.length,
   };
+};
+
+export const buildPaperScoreSnapshot = (paper, paperProgress = {}, completedAt = '') => {
+  const normalizedProgress = normalizePaperProgress(paperProgress);
+  const summary = summarizePaperProgress(paper, normalizedProgress);
+
+  return normalizeScoreSnapshot({
+    ...summary,
+    completedAt,
+    mode: normalizedProgress.mode,
+    passMark: paper?.passMark || ITIL_PASS_MARK,
+    questionCount: Array.isArray(paper?.questions) ? paper.questions.length : 0,
+  });
 };
 
 export const getNextQuestionIndex = (paper, paperProgress = {}) => {
