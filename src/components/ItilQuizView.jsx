@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAPERS } from '../data/itilFoundationPapers';
 import { readLocalJson, writeLocalJson } from '../utils/offlineState';
 import {
+  buildRemixedAssessmentSets,
   buildShortAssessmentSets,
+  REMIXED_ASSESSMENT_SIZE,
   SHORT_ASSESSMENT_SIZE,
   createEmptyItilQuizProgress,
   formatRationaleSections,
@@ -16,7 +18,8 @@ import {
 const LETTERS = ['A', 'B', 'C', 'D'];
 const MOCK_DURATION_MS = 60 * 60 * 1000;
 const SHORT_ASSESSMENTS = buildShortAssessmentSets(PAPERS);
-const ALL_QUIZ_SETS = [...PAPERS, ...SHORT_ASSESSMENTS];
+const REMIXED_ASSESSMENTS = buildRemixedAssessmentSets(PAPERS);
+const ALL_QUIZ_SETS = [...PAPERS, ...SHORT_ASSESSMENTS, ...REMIXED_ASSESSMENTS];
 
 const CheckIcon = ({ className = 'h-4 w-4' }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
@@ -192,11 +195,16 @@ const QuizHome = ({ progress, onContinue, onStart, onReset }) => {
   const assessmentSummaries = SHORT_ASSESSMENTS.map((assessment) => (
     summarizePaperProgress(assessment, getPaperProgress(progress, assessment.id))
   ));
+  const remixSummaries = REMIXED_ASSESSMENTS.map((assessment) => (
+    summarizePaperProgress(assessment, getPaperProgress(progress, assessment.id))
+  ));
   const totalAnswered = paperSummaries.reduce((sum, summary) => sum + summary.answered, 0);
   const totalUnassisted = paperSummaries.reduce((sum, summary) => sum + summary.unassistedCorrect, 0);
   const papersPassed = paperSummaries.filter((summary) => summary.passed).length;
   const assessmentAnswered = assessmentSummaries.reduce((sum, summary) => sum + summary.answered, 0);
   const completedAssessments = assessmentSummaries.filter((summary) => summary.answered === SHORT_ASSESSMENT_SIZE).length;
+  const remixAnswered = remixSummaries.reduce((sum, summary) => sum + summary.answered, 0);
+  const completedRemixes = remixSummaries.filter((summary) => summary.answered === REMIXED_ASSESSMENT_SIZE).length;
 
   return (
     <div className="pm-shell-bg min-h-full px-3 py-4 sm:px-6 sm:py-6">
@@ -256,6 +264,35 @@ const QuizHome = ({ progress, onContinue, onStart, onReset }) => {
                 onReset={() => onReset(assessment)}
                 onStart={(mode) => onStart(assessment, mode)}
                 startPracticeLabel={`Start assessment ${index + 1}`}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="pm-kicker">Rationale remix</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">Same concepts, shuffled answers</h2>
+            </div>
+            <div className="max-w-md text-xs font-semibold leading-5 text-slate-500">
+              These drills keep the same answer texts and rationale facts, but move the correct option to a different letter so you practise the logic, not the pattern.
+              <span className="mt-1 block font-black text-slate-700">
+                {remixAnswered} / 80 answered · {completedRemixes} / {REMIXED_ASSESSMENTS.length} completed
+              </span>
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {REMIXED_ASSESSMENTS.map((assessment, index) => (
+              <PaperCard
+                key={assessment.id}
+                allowMock={false}
+                paper={assessment}
+                paperProgress={getPaperProgress(progress, assessment.id)}
+                onContinue={() => onContinue(assessment)}
+                onReset={() => onReset(assessment)}
+                onStart={(mode) => onStart(assessment, mode)}
+                startPracticeLabel={`Start remix ${index + 1}`}
               />
             ))}
           </div>

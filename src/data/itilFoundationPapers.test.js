@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 
 import { PAPERS } from './itilFoundationPapers.js';
 import {
+  REMIXED_ASSESSMENT_COUNT,
+  REMIXED_ASSESSMENT_SIZE,
   SHORT_ASSESSMENT_COUNT,
   SHORT_ASSESSMENT_SIZE,
+  buildRemixedAssessmentSets,
   buildShortAssessmentSets,
+  formatRationaleSections,
 } from '../utils/itilQuiz.js';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
@@ -50,4 +54,38 @@ test('short assessments cover all questions once across eight iterations', () =>
   assert.equal(sourceKeys.length, 80);
   assert.equal(new Set(sourceKeys).size, 80);
   assert.deepEqual([...sourceKeys].sort(), expectedSourceKeys.sort());
+});
+
+test('remixed assessments move answer letters while preserving answer text and rationale logic', () => {
+  const assessments = buildRemixedAssessmentSets(PAPERS);
+  const sourceQuestionsByKey = new Map(
+    PAPERS.flatMap((paper) => (
+      paper.questions.map((question) => [`${paper.id}:${question.number}`, question])
+    ))
+  );
+
+  assert.equal(assessments.length, REMIXED_ASSESSMENT_COUNT);
+
+  const sourceKeys = assessments.flatMap((assessment) => {
+    assert.equal(assessment.questionCount, REMIXED_ASSESSMENT_SIZE);
+    assert.equal(assessment.questions.length, REMIXED_ASSESSMENT_SIZE);
+
+    return assessment.questions.map((question) => {
+      const sourceQuestion = sourceQuestionsByKey.get(question.sourceKey);
+      const rationaleSections = formatRationaleSections(question.rationale);
+      const correctSection = rationaleSections.find((section) => section.isCorrect);
+
+      assert.ok(sourceQuestion, `Missing source question for ${question.sourceKey}`);
+      assert.notEqual(question.answer, sourceQuestion.answer);
+      assert.equal(question.choices[question.answer], sourceQuestion.choices[sourceQuestion.answer]);
+      assert.deepEqual(Object.values(question.choices).sort(), Object.values(sourceQuestion.choices).sort());
+      assert.equal(rationaleSections.length, LETTERS.length);
+      assert.equal(correctSection?.letter, question.answer);
+
+      return question.sourceKey;
+    });
+  });
+
+  assert.equal(sourceKeys.length, 80);
+  assert.equal(new Set(sourceKeys).size, 80);
 });

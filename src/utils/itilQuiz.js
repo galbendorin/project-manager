@@ -3,6 +3,11 @@ export const ITIL_PASS_MARK = 26;
 export const SHORT_ASSESSMENT_COUNT = 8;
 export const SHORT_ASSESSMENT_SIZE = 10;
 export const SHORT_ASSESSMENT_PASS_MARK = 7;
+export const REMIXED_ASSESSMENT_COUNT = 8;
+export const REMIXED_ASSESSMENT_SIZE = 10;
+export const REMIXED_ASSESSMENT_PASS_MARK = 7;
+
+const LETTERS = ['A', 'B', 'C', 'D'];
 
 const createEmptyPaperProgress = () => ({
   answers: {},
@@ -101,10 +106,13 @@ export const formatRationaleSections = (rationale = '') => {
     const nextMarker = markers[index + 1];
     const textStart = marker.index + marker[0].length;
     const textEnd = nextMarker?.index ?? normalized.length;
+    const status = marker[2];
     return {
-      label: `${marker[1]}. ${marker[2]}`,
+      letter: marker[1],
+      status,
+      label: `${marker[1]}. ${status}`,
       text: normalized.slice(textStart, textEnd).trim(),
-      isCorrect: marker[2] === 'Correct',
+      isCorrect: status === 'Correct',
     };
   });
 };
@@ -113,24 +121,32 @@ const buildStableQuestionRank = (index, total) => (
   ((index * 37) + 17) % total
 );
 
-export const buildShortAssessmentSets = (papers = []) => {
-  const sourceQuestions = papers.flatMap((paper) => (
+const buildSourceQuestionList = (papers = []) => (
+  papers.flatMap((paper) => (
     (Array.isArray(paper?.questions) ? paper.questions : []).map((question) => ({
       paper,
       question,
       sourceKey: `${paper.id}:${question.number}`,
     }))
-  ));
+  ))
+);
 
+const buildShuffledSourceQuestions = (papers = []) => {
+  const sourceQuestions = buildSourceQuestionList(papers);
   if (sourceQuestions.length === 0) return [];
 
-  const shuffledQuestions = sourceQuestions
+  return sourceQuestions
     .map((item, index) => ({
       ...item,
       index,
       rank: buildStableQuestionRank(index, sourceQuestions.length),
     }))
     .sort((a, b) => a.rank - b.rank || a.index - b.index);
+};
+
+export const buildShortAssessmentSets = (papers = []) => {
+  const shuffledQuestions = buildShuffledSourceQuestions(papers);
+  if (shuffledQuestions.length === 0) return [];
 
   return Array.from({ length: SHORT_ASSESSMENT_COUNT }, (_, setIndex) => {
     const start = setIndex * SHORT_ASSESSMENT_SIZE;
@@ -155,6 +171,115 @@ export const buildShortAssessmentSets = (papers = []) => {
       resetLabel: 'Reset assessment',
       questionCount: questions.length,
       passMark: SHORT_ASSESSMENT_PASS_MARK,
+      recommendedMinutes: 15,
+      questions,
+    };
+  }).filter((assessment) => assessment.questions.length > 0);
+};
+
+const buildChoiceRemap = (question = {}, questionIndex = 0) => {
+  const seed = Number(question.sourceNumber || question.number || questionIndex + 1);
+  const shift = (Math.abs(seed + questionIndex) % (LETTERS.length - 1)) + 1;
+  const newToOld = Object.fromEntries(
+    LETTERS.map((newLetter, index) => [
+      newLetter,
+      LETTERS[(index + shift) % LETTERS.length],
+    ])
+  );
+  const oldToNew = Object.fromEntries(
+    Object.entries(newToOld).map(([newLetter, oldLetter]) => [oldLetter, newLetter])
+  );
+  return { newToOld, oldToNew };
+};
+
+const buildRationaleSectionsByLetter = (question = {}) => {
+  const sections = formatRationaleSections(question.rationale);
+  const byLetter = Object.fromEntries(
+    sections
+      .filter((section) => LETTERS.includes(section.letter))
+      .map((section) => [section.letter, section])
+  );
+
+  if (LETTERS.every((letter) => byLetter[letter])) return byLetter;
+
+  const correctSection = sections.find((section) => section.isCorrect);
+  const incorrectText = sections
+    .filter((section) => !section.isCorrect)
+    .map((section) => section.text)
+    .join(' ')
+    .trim();
+
+  if (!correctSection || !incorrectText || !LETTERS.includes(question.answer)) return null;
+
+  return Object.fromEntries(
+    LETTERS.map((letter) => [
+      letter,
+      letter === question.answer
+        ? { ...correctSection, letter, status: 'Correct', isCorrect: true }
+        : { letter, status: 'Incorrect', label: `${letter}. Incorrect`, text: incorrectText, isCorrect: false },
+    ])
+  );
+};
+
+const buildRemixedRationale = (question = {}, newToOld = {}) => {
+  const sectionsByLetter = buildRationaleSectionsByLetter(question);
+  if (!sectionsByLetter) return question.rationale;
+
+  return LETTERS.map((newLetter) => {
+    const sourceLetter = newToOld[newLetter];
+    const section = sectionsByLetter[sourceLetter];
+    if (!section) return '';
+    const status = section.isCorrect ? 'Correct' : 'Incorrect';
+    return `${newLetter}. ${status}. ${section.text}`;
+  }).filter(Boolean).join(' ');
+};
+
+export const buildRemixedQuestion = (question = {}, questionIndex = 0) => {
+  const { newToOld, oldToNew } = buildChoiceRemap(question, questionIndex);
+  const answer = oldToNew[question.answer] || question.answer;
+
+  return {
+    ...question,
+    answer,
+    choices: Object.fromEntries(
+      LETTERS.map((newLetter) => [
+        newLetter,
+        question.choices?.[newToOld[newLetter]] || '',
+      ])
+    ),
+    rationale: buildRemixedRationale(question, newToOld),
+    remixChoiceOrder: newToOld,
+    sourceAnswerLetter: question.answer,
+  };
+};
+
+export const buildRemixedAssessmentSets = (papers = []) => {
+  const shuffledQuestions = buildShuffledSourceQuestions(papers);
+  if (shuffledQuestions.length === 0) return [];
+
+  return Array.from({ length: REMIXED_ASSESSMENT_COUNT }, (_, setIndex) => {
+    const start = setIndex * REMIXED_ASSESSMENT_SIZE;
+    const questions = shuffledQuestions
+      .slice(start, start + REMIXED_ASSESSMENT_SIZE)
+      .map(({ paper, question, sourceKey }, questionIndex) => ({
+        ...buildRemixedQuestion(question, start + questionIndex),
+        number: questionIndex + 1,
+        sourceKey,
+        sourceNumber: question.number,
+        sourcePaperId: paper.id,
+        sourcePaperTitle: paper.title,
+        sourceLabel: `${paper.title} Q${question.number}`,
+      }));
+
+    return {
+      id: `remix-assessment-${setIndex + 1}`,
+      title: `Rationale Remix ${setIndex + 1}`,
+      subtitle: 'ITIL 4 Foundation',
+      kicker: 'Answer remix',
+      continueLabel: 'Continue remix',
+      resetLabel: 'Reset remix',
+      questionCount: questions.length,
+      passMark: REMIXED_ASSESSMENT_PASS_MARK,
       recommendedMinutes: 15,
       questions,
     };
