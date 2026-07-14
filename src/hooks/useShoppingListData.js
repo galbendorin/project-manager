@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { isLikelyNetworkError } from '../utils/connectivity';
 import { pickPreferredShoppingProject } from '../utils/shoppingListViewState';
 import { createProjectWithLimits, getProjectCreationErrorMessage } from '../utils/projectCreation';
 
@@ -131,6 +132,18 @@ export function useShoppingListData({
     }
 
     if (error) {
+      if (isLikelyNetworkError(error, { online: isOnline })) {
+        if (cachedState.projects?.length) {
+          setProjects(cachedState.projects);
+          if (cachedState.selectedProjectId) {
+            setSelectedProjectId(cachedState.selectedProjectId);
+          }
+        } else {
+          setProjectError('The connection is unavailable. Open Shopping List once online on this device to keep it available.');
+        }
+        setLoadingProjects(false);
+        return;
+      }
       setProjects([]);
       setProjectError(error.message || 'Unable to load Shopping List.');
       setLoadingProjects(false);
@@ -228,6 +241,15 @@ export function useShoppingListData({
     }
 
     if (error) {
+      if (isLikelyNetworkError(error, { online: isOnline })) {
+        if (cachedTodos.length > 0) {
+          setTodos(sortTodos(cachedTodos));
+        } else {
+          setTodoError('The connection is unavailable. Open this list once online on this device to cache it.');
+        }
+        setLoadingTodos(false);
+        return;
+      }
       if (isMissingTodoRelationError(error, 'manual_todos')) {
         setTodoError('Shopping items need the manual to-dos table enabled first.');
       } else {
@@ -247,6 +269,7 @@ export function useShoppingListData({
         ...(cachedState.todosByProject || {}),
         [selectedProject.id]: nextTodos,
       },
+      lastSyncedAt: new Date().toISOString(),
     });
     setLoadingTodos(false);
   }, [

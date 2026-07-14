@@ -1,4 +1,12 @@
 const PROJECT_SNAPSHOT_PREFIX = 'pmworkspace:offline:project:v1';
+const SHOPPING_OFFLINE_PREFIX = 'pmworkspace:shopping-offline:v1';
+const TIMESHEET_OFFLINE_PREFIX = 'pmworkspace:timesheet-offline:v1';
+const ITIL_QUIZ_PREFIX = 'pmworkspace:itil-foundation-quiz';
+const HOUSEHOLD_ACCESS_PREFIX = 'pmworkspace:household-access:v1';
+const NAVIGATION_CACHE_KEYS = new Set([
+  'pmworkspace:last-path:v1',
+  'pmworkspace:last-project:v1',
+]);
 const OFFLINE_DB_NAME = 'pmworkspace-offline';
 const OFFLINE_STORE_NAME = 'keyval';
 
@@ -155,3 +163,66 @@ export const isOfflineTempId = (value = '') => String(value || '').startsWith('o
 export const buildProjectSnapshotKey = (projectId, userId = 'anon') => (
   `${PROJECT_SNAPSHOT_PREFIX}:${userId}:${projectId}`
 );
+
+export const buildHouseholdAccessKey = (userId = 'anon') => (
+  `${HOUSEHOLD_ACCESS_PREFIX}:${userId}`
+);
+
+export const loadCachedHouseholdAccess = (userId) => (
+  readLocalJson(buildHouseholdAccessKey(userId), false) === true
+);
+
+export const saveCachedHouseholdAccess = (userId, enabled = true) => (
+  writeLocalJson(buildHouseholdAccessKey(userId), enabled === true)
+);
+
+export const shouldClearUserOfflineKey = (key, userId) => {
+  const normalizedKey = String(key || '');
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) return false;
+  if (NAVIGATION_CACHE_KEYS.has(normalizedKey)) return true;
+
+  return normalizedKey.startsWith(`${PROJECT_SNAPSHOT_PREFIX}:${normalizedUserId}:`)
+    || normalizedKey === `${SHOPPING_OFFLINE_PREFIX}:${normalizedUserId}`
+    || normalizedKey === `${TIMESHEET_OFFLINE_PREFIX}:${normalizedUserId}`
+    || normalizedKey.startsWith(`${ITIL_QUIZ_PREFIX}:${normalizedUserId}:`)
+    || normalizedKey === buildHouseholdAccessKey(normalizedUserId);
+};
+
+const listLocalStorageKeys = () => {
+  const storage = safeWindow()?.localStorage;
+  if (!storage) return [];
+
+  try {
+    return Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter(Boolean);
+  } catch {
+    return [];
+  }
+};
+
+const listIndexedDbKeys = async () => {
+  const db = await openOfflineDb();
+  if (!db) return [];
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(OFFLINE_STORE_NAME, 'readonly');
+    const request = transaction.objectStore(OFFLINE_STORE_NAME).getAllKeys();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error || new Error('Unable to inspect offline cache.'));
+  }).catch(() => []);
+};
+
+export const clearOfflineDataForUser = async (userId) => {
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) return [];
+
+  const indexedDbKeys = await listIndexedDbKeys();
+  const keysToRemove = [...new Set([
+    ...listLocalStorageKeys(),
+    ...indexedDbKeys.map(String),
+  ].filter((key) => shouldClearUserOfflineKey(key, normalizedUserId)))];
+
+  keysToRemove.forEach(removeLocalStorageOnly);
+  await Promise.all(keysToRemove.map(removeIndexedDbJson));
+  return keysToRemove;
+};

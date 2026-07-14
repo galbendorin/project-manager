@@ -16,6 +16,10 @@ import {
   resolveRealPlan,
 } from '../utils/planAccess';
 import { shouldRefreshAfterFocus } from '../utils/refreshThrottle';
+import {
+  loadCachedHouseholdAccess,
+  saveCachedHouseholdAccess,
+} from '../utils/offlineState';
 
 const PlanContext = createContext({});
 const HOUSEHOLD_PROJECT_NAME = 'Shopping List';
@@ -44,6 +48,8 @@ export const PlanProvider = ({ children }) => {
   const [projectCount, setProjectCount] = useState(0);
   const [hasSharedHouseholdProjectAccess, setHasSharedHouseholdProjectAccess] = useState(false);
   const lastExternalRefreshAtRef = useRef(0);
+  const profileAccessResolvedRef = useRef(false);
+  const householdAccessResolvedRef = useRef(false);
 
   // ── Plan simulator state (admin only) ───────────────────────
   const [simulatedPlan, setSimulatedPlan] = useState(null);
@@ -64,6 +70,7 @@ export const PlanProvider = ({ children }) => {
       if (error) {
         console.error('Failed to load profile:', error);
       } else {
+        profileAccessResolvedRef.current = true;
         setProfile(data);
       }
     } catch (err) {
@@ -88,13 +95,13 @@ export const PlanProvider = ({ children }) => {
 
       if (error) {
         console.error('Failed to load household project access:', error);
-        setHasSharedHouseholdProjectAccess(false);
       } else {
-        setHasSharedHouseholdProjectAccess((count || 0) > 0);
+        const hasAccess = (count || 0) > 0;
+        householdAccessResolvedRef.current = true;
+        setHasSharedHouseholdProjectAccess(hasAccess);
       }
     } catch (err) {
       console.error('Household project access load error:', err);
-      setHasSharedHouseholdProjectAccess(false);
     } finally {
       setHouseholdAccessLoading(false);
     }
@@ -123,6 +130,10 @@ export const PlanProvider = ({ children }) => {
       return;
     }
 
+    setProfile(null);
+    profileAccessResolvedRef.current = false;
+    householdAccessResolvedRef.current = false;
+    setHasSharedHouseholdProjectAccess(loadCachedHouseholdAccess(user.id));
     setProfileLoading(true);
     setHouseholdAccessLoading(true);
     void loadProfile();
@@ -196,6 +207,20 @@ export const PlanProvider = ({ children }) => {
     () => canAccessHouseholdToolsFromProfile(profile, { hasSharedHouseholdProjectAccess }),
     [hasSharedHouseholdProjectAccess, profile]
   );
+
+  useEffect(() => {
+    if (
+      !user
+      || profileLoading
+      || householdAccessLoading
+      || !profileAccessResolvedRef.current
+      || !householdAccessResolvedRef.current
+    ) {
+      return;
+    }
+
+    saveCachedHouseholdAccess(user.id, householdToolsEnabled);
+  }, [householdAccessLoading, householdToolsEnabled, profileLoading, user]);
 
   // ── Resolve REAL plan (before simulator override) ───────────
   const realPlan = useMemo(() => {
