@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { isLikelyNetworkError } from '../utils/connectivity';
 import { isOfflineTempId } from '../utils/offlineState';
 import { enqueueCreate, enqueueDelete, enqueueUpdate } from '../utils/offlineQueue';
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
@@ -107,6 +108,105 @@ export function useShoppingListActions({
     setPendingCompleteSeconds(1);
   }, []);
 
+  const queueShoppingPlan = useCallback((plan, baseTodos, { uncertainCommit = false } = {}) => {
+    if (!selectedProject?.id) return plan;
+
+    const timestamp = new Date().toISOString();
+    let nextTodos = [...(Array.isArray(baseTodos) ? baseTodos : [])];
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    let nextQueue = cachedState.queue || [];
+
+    for (const update of plan.updates || []) {
+      nextTodos = nextTodos.map((todo) => (
+        todo._id === update.todoId
+          ? {
+            ...todo,
+            quantityValue: update.quantityValue,
+            quantityUnit: update.quantityUnit,
+            updatedAt: timestamp,
+          }
+          : todo
+      ));
+      nextQueue = enqueueUpdate(nextQueue, update.todoId, {
+        quantityValue: update.quantityValue,
+        quantityUnit: update.quantityUnit,
+        updatedAt: timestamp,
+      });
+    }
+
+    const offlineItems = (plan.inserts || []).map((item) => createOfflineShoppingTodo({
+      title: item.title,
+      projectId: selectedProject.id,
+      userId: currentUserId,
+      quantityValue: item.quantityValue,
+      quantityUnit: item.quantityUnit,
+      sourceType: item.sourceType,
+      sourceBatchId: item.sourceBatchId,
+      meta: item.meta,
+    }));
+
+    nextTodos = sortTodos([...nextTodos, ...offlineItems]);
+    nextQueue = offlineItems.reduce((queue, todo) => enqueueCreate(queue, {
+      localId: todo._id,
+      projectId: todo.projectId,
+      userId: todo.assigneeUserId,
+      title: todo.title,
+      status: todo.status,
+      completedAt: todo.completedAt || null,
+      quantityValue: todo.quantityValue,
+      quantityUnit: todo.quantityUnit,
+      sourceType: todo.sourceType,
+      sourceBatchId: todo.sourceBatchId,
+      meta: todo.meta,
+      createdAt: todo.createdAt,
+      updatedAt: todo.updatedAt,
+      uncertainCommit: Boolean(uncertainCommit),
+    }), nextQueue);
+
+    setTodos(nextTodos);
+    persistOfflineState({
+      ...cachedState,
+      selectedProjectId: selectedProject.id,
+      todosByProject: {
+        ...(cachedState.todosByProject || {}),
+        [selectedProject.id]: nextTodos,
+      },
+      queue: nextQueue,
+    });
+
+    return {
+      ...plan,
+      queuedCount: (plan.updates?.length || 0) + offlineItems.length,
+    };
+  }, [
+    createOfflineShoppingTodo,
+    currentUserId,
+    loadShoppingOfflineState,
+    persistOfflineState,
+    selectedProject?.id,
+    setTodos,
+    sortTodos,
+  ]);
+
+  const queueTodoPatch = useCallback((todoId, nextTodos, patch) => {
+    if (!selectedProject?.id) return;
+    const cachedState = loadShoppingOfflineState(currentUserId);
+    persistOfflineState({
+      ...cachedState,
+      selectedProjectId: selectedProject.id,
+      todosByProject: {
+        ...(cachedState.todosByProject || {}),
+        [selectedProject.id]: nextTodos,
+      },
+      queue: enqueueUpdate(cachedState.queue || [], todoId, patch),
+    });
+  }, [
+    currentUserId,
+    loadShoppingOfflineState,
+    persistOfflineState,
+    selectedProject?.id,
+  ]);
+
   const addItems = useCallback(async (titles) => {
     const normalizedItems = (titles || [])
       .map((item) => {
@@ -151,70 +251,9 @@ export function useShoppingListActions({
     setTodoError('');
 
     if (!isOnline) {
-      const timestamp = new Date().toISOString();
-      let nextTodos = [...todos];
-      let nextQueue = loadShoppingOfflineState(currentUserId).queue || [];
-
-      for (const update of initialPlan.updates) {
-        nextTodos = nextTodos.map((todo) => (
-          todo._id === update.todoId
-            ? {
-              ...todo,
-              quantityValue: update.quantityValue,
-              quantityUnit: update.quantityUnit,
-              updatedAt: timestamp,
-            }
-            : todo
-        ));
-        nextQueue = enqueueUpdate(nextQueue, update.todoId, {
-          quantityValue: update.quantityValue,
-          quantityUnit: update.quantityUnit,
-          updatedAt: timestamp,
-        });
-      }
-
-      const offlineItems = initialPlan.inserts.map((item) => createOfflineShoppingTodo({
-        title: item.title,
-        projectId: selectedProject.id,
-        userId: currentUserId,
-        quantityValue: item.quantityValue,
-        quantityUnit: item.quantityUnit,
-        sourceType: item.sourceType,
-        sourceBatchId: item.sourceBatchId,
-        meta: item.meta,
-      }));
-
-      nextTodos = sortTodos([...nextTodos, ...offlineItems]);
-      nextQueue = offlineItems.reduce((queue, todo) => enqueueCreate(queue, {
-        localId: todo._id,
-        projectId: todo.projectId,
-        userId: todo.assigneeUserId,
-        title: todo.title,
-        status: todo.status,
-        completedAt: todo.completedAt || null,
-        quantityValue: todo.quantityValue,
-        quantityUnit: todo.quantityUnit,
-        sourceType: todo.sourceType,
-        sourceBatchId: todo.sourceBatchId,
-        meta: todo.meta,
-        createdAt: todo.createdAt,
-        updatedAt: todo.updatedAt,
-      }), nextQueue);
-
-      const cachedState = loadShoppingOfflineState(currentUserId);
-
-      setTodos(nextTodos);
-      persistOfflineState({
-        ...cachedState,
-        selectedProjectId: selectedProject.id,
-        todosByProject: {
-          ...(cachedState.todosByProject || {}),
-          [selectedProject.id]: nextTodos,
-        },
-        queue: nextQueue,
-      });
+      const queuedPlan = queueShoppingPlan(initialPlan, todos);
       setSavingItems(false);
-      return initialPlan;
+      return queuedPlan;
     }
 
     const hasFreshLocalList = isFreshTimestamp(lastSyncedAt, Date.now(), SHOPPING_ADD_FRESHNESS_MS);
@@ -223,9 +262,14 @@ export function useShoppingListActions({
       try {
         latestOpenTodos = await loadLatestOpenTodos(selectedProject.id);
       } catch (nextError) {
+        if (isLikelyNetworkError(nextError, { online: isOnline && !isOfflineBrowser() })) {
+          const queuedPlan = queueShoppingPlan(initialPlan, todos);
+          setSavingItems(false);
+          return queuedPlan;
+        }
         setTodoError(nextError?.message || 'Unable to confirm the latest groceries right now.');
         setSavingItems(false);
-        return initialPlan;
+        return null;
       }
     }
 
@@ -242,9 +286,8 @@ export function useShoppingListActions({
       return addPlan;
     }
 
-    let rpcResults = [];
-    try {
-      rpcResults = await Promise.all((addPlan.preparedItems || []).map(async (item) => {
+    const rpcResults = await Promise.all((addPlan.preparedItems || []).map(async (item) => {
+      try {
         const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
           target_project_id: selectedProject.id,
           target_title: item.title,
@@ -256,17 +299,48 @@ export function useShoppingListActions({
         });
 
         return { data, error, item };
-      }));
-    } catch (nextError) {
-      rpcResults = [{ data: null, error: nextError, item: null }];
-    }
+      } catch (error) {
+        return { data: null, error, item };
+      }
+    }));
 
-    const failedResult = rpcResults.find((result) => {
+    const failedResults = rpcResults.filter((result) => {
       const savedRow = Array.isArray(result?.data) ? result.data[0] : result?.data;
       return result?.error || !savedRow;
     });
+    const failedResult = failedResults[0] || null;
 
     if (failedResult) {
+      const savedRows = rpcResults
+        .filter((result) => !failedResults.includes(result))
+        .map((result) => {
+          const savedRow = Array.isArray(result.data) ? result.data[0] : result.data;
+          return mapManualTodoRow(savedRow);
+        });
+      const nextBaseTodos = mergeTodosById(effectiveExistingTodos, savedRows);
+      const networkFailure = failedResults.every((result) => (
+        isLikelyNetworkError(result.error, { online: isOnline && !isOfflineBrowser() })
+      ));
+
+      if (networkFailure) {
+        const failedPlan = planShoppingListAdds({
+          existingTodos: nextBaseTodos,
+          incomingItems: failedResults.map((result) => result.item).filter(Boolean),
+        });
+        const queuedPlan = queueShoppingPlan(failedPlan, nextBaseTodos, { uncertainCommit: true });
+        if (savedRows.length > 0) {
+          await notifyShoppingListSubscribers({
+            projectId: selectedProject.id,
+            itemTitles: savedRows.map((item) => item.title),
+          });
+        }
+        setSavingItems(false);
+        return {
+          ...addPlan,
+          queuedCount: queuedPlan?.queuedCount || 0,
+        };
+      }
+
       let serverTodos = [];
       try {
         serverTodos = await loadLatestOpenTodos(selectedProject.id);
@@ -297,7 +371,7 @@ export function useShoppingListActions({
           : (failedResult.error?.message || 'Unable to add groceries right now.')
       );
       setSavingItems(false);
-      return addPlan;
+      return savedRows.length > 0 ? addPlan : null;
     }
 
     const savedRows = rpcResults.map((result) => {
@@ -327,7 +401,6 @@ export function useShoppingListActions({
     return addPlan;
   }, [
     currentUserId,
-    createOfflineShoppingTodo,
     isOnline,
     lastSyncedAt,
     loadLatestOpenTodos,
@@ -335,16 +408,17 @@ export function useShoppingListActions({
     mapManualTodoRow,
     mergeTodosById,
     persistOfflineState,
+    queueShoppingPlan,
     selectedProject,
     setTodoError,
     setTodos,
-    sortTodos,
     todos,
   ]);
 
   const toggleTodoStatus = useCallback(async (todo) => {
     const nextStatus = todo.status === 'Done' ? 'Open' : 'Done';
     const completedAt = nextStatus === 'Done' ? new Date().toISOString() : null;
+    const updatedAt = new Date().toISOString();
     const actionLabel = nextStatus === 'Done' ? 'complete' : 'reopen';
 
     const previous = todos;
@@ -358,27 +432,17 @@ export function useShoppingListActions({
           ...item,
           status: nextStatus,
           completedAt,
-          updatedAt: new Date().toISOString(),
+          updatedAt,
         }
         : item
     )));
     setTodos(optimisticTodos);
 
     if (!isOnline || isOfflineTempId(todo._id)) {
-      const cachedState = loadShoppingOfflineState(currentUserId);
-      const nextQueue = enqueueUpdate(cachedState.queue || [], todo._id, {
+      queueTodoPatch(todo._id, optimisticTodos, {
         status: nextStatus,
         completedAt,
-        updatedAt: new Date().toISOString(),
-      });
-      persistOfflineState({
-        ...cachedState,
-        selectedProjectId: selectedProject?.id || cachedState.selectedProjectId,
-        todosByProject: {
-          ...(cachedState.todosByProject || {}),
-          [selectedProject.id]: optimisticTodos,
-        },
-        queue: nextQueue,
+        updatedAt,
       });
       setSavingTodoId('');
       setSavingTodoAction('');
@@ -391,7 +455,7 @@ export function useShoppingListActions({
       .update({
         status: nextStatus,
         completed_at: completedAt,
-        updated_at: new Date().toISOString(),
+        updated_at: updatedAt,
       })
       .eq('id', todo._id)
       .select(selectClause)
@@ -405,7 +469,7 @@ export function useShoppingListActions({
         .update({
           status: nextStatus,
           completed_at: completedAt,
-          updated_at: new Date().toISOString(),
+          updated_at: updatedAt,
         })
         .eq('id', todo._id)
         .select(selectClause)
@@ -413,6 +477,16 @@ export function useShoppingListActions({
     }
 
     if (error) {
+      if (isLikelyNetworkError(error, { online: isOnline && !isOfflineBrowser() })) {
+        queueTodoPatch(todo._id, optimisticTodos, {
+          status: nextStatus,
+          completedAt,
+          updatedAt,
+        });
+        setSavingTodoId('');
+        setSavingTodoAction('');
+        return;
+      }
       setTodos(previous);
       setFailedTodoId(todo._id);
       setFailedTodoMessage(
@@ -461,6 +535,7 @@ export function useShoppingListActions({
     loadShoppingOfflineState,
     mapManualTodoRow,
     persistOfflineState,
+    queueTodoPatch,
     selectedProject?.id,
     setTodos,
     shoppingExtraFields,
@@ -501,6 +576,19 @@ export function useShoppingListActions({
       .eq('id', todoId);
 
     if (error) {
+      if (isLikelyNetworkError(error, { online: isOnline && !isOfflineBrowser() })) {
+        const cachedState = loadShoppingOfflineState(currentUserId);
+        persistOfflineState({
+          ...cachedState,
+          selectedProjectId: selectedProject?.id || cachedState.selectedProjectId,
+          todosByProject: {
+            ...(cachedState.todosByProject || {}),
+            [selectedProject.id]: nextTodos,
+          },
+          queue: enqueueDelete(cachedState.queue || [], todoId),
+        });
+        return;
+      }
       setTodos(previous);
       setTodoError(error.message || 'Unable to remove this grocery right now.');
       return;
@@ -568,18 +656,9 @@ export function useShoppingListActions({
     setTodos(optimisticTodos);
 
     if (!isOnline || isOfflineTempId(todo._id)) {
-      const cachedState = loadShoppingOfflineState(currentUserId);
-      persistOfflineState({
-        ...cachedState,
-        selectedProjectId: selectedProject?.id || cachedState.selectedProjectId,
-        todosByProject: {
-          ...(cachedState.todosByProject || {}),
-          [selectedProject.id]: optimisticTodos,
-        },
-        queue: enqueueUpdate(cachedState.queue || [], todo._id, {
-          title,
-          updatedAt,
-        }),
+      queueTodoPatch(todo._id, optimisticTodos, {
+        title,
+        updatedAt,
       });
       setSavingTodoId('');
       setSavingTodoAction('');
@@ -612,6 +691,15 @@ export function useShoppingListActions({
     }
 
     if (error) {
+      if (isLikelyNetworkError(error, { online: isOnline && !isOfflineBrowser() })) {
+        queueTodoPatch(todo._id, optimisticTodos, {
+          title,
+          updatedAt,
+        });
+        setSavingTodoId('');
+        setSavingTodoAction('');
+        return { ok: true, queued: true };
+      }
       setTodos(previous);
       setSavingTodoId('');
       setSavingTodoAction('');
@@ -652,6 +740,7 @@ export function useShoppingListActions({
     loadShoppingOfflineState,
     mapManualTodoRow,
     persistOfflineState,
+    queueTodoPatch,
     selectedProject?.id,
     setTodos,
     shoppingExtraFields,

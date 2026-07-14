@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   buildMealPlanShoppingSyncPreview,
   createEmptyShoppingOfflineState,
+  findUncertainShoppingCreateMatch,
   formatShoppingAddSummary,
   groupCompletedShoppingTodos,
   mergeShoppingItemQuantity,
@@ -227,6 +228,42 @@ test('formatShoppingAddSummary reports mixed add and merge outcomes clearly', ()
     formatShoppingAddSummary({ addedCount: 0, mergedCount: 1 }),
     'Merged 1 grocery into the open list.'
   );
+  assert.equal(
+    formatShoppingAddSummary({ addedCount: 1, mergedCount: 0, queuedCount: 1 }),
+    'Saved 1 grocery change offline. It will sync automatically.'
+  );
+});
+
+test('findUncertainShoppingCreateMatch avoids repeating a confirmed quantity after a dropped response', () => {
+  const match = findUncertainShoppingCreateMatch({
+    title: 'Oats',
+    quantityValue: 500,
+    quantityUnit: 'g',
+    uncertainCommit: true,
+  }, [{
+    _id: 'todo-oats',
+    title: ' oats ',
+    status: 'Open',
+    quantityValue: 500,
+    quantityUnit: 'g',
+  }]);
+
+  assert.equal(match?._id, 'todo-oats');
+});
+
+test('findUncertainShoppingCreateMatch retries when the saved quantity cannot confirm the add', () => {
+  assert.equal(findUncertainShoppingCreateMatch({
+    title: 'Oats',
+    quantityValue: 500,
+    quantityUnit: 'g',
+    uncertainCommit: true,
+  }, [{
+    _id: 'todo-oats',
+    title: 'Oats',
+    status: 'Open',
+    quantityValue: 250,
+    quantityUnit: 'g',
+  }]), null);
 });
 
 test('buildMealPlanShoppingSyncPreview flags manual matches without treating them as generated updates', () => {

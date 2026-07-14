@@ -254,7 +254,7 @@ function App() {
     );
   }
 
-  if (planLoading && isHouseholdToolPath(currentPath)) {
+  if (planLoading && isHouseholdToolPath(currentPath) && !householdToolsEnabled) {
     return (
       <>
         <OfflineBanner isOnline={isOnline} />

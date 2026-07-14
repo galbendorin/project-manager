@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { clearAiSettings } from '../utils/aiSettings';
+import { clearOfflineDataForUser } from '../utils/offlineState';
 
 const AuthContext = createContext({});
 
@@ -61,10 +63,16 @@ const buildAuthRedirectUrl = () => (
     : undefined
 );
 
+const clearSignedOutDeviceState = async (userId) => {
+  clearAiSettings();
+  await clearOfflineDataForUser(userId);
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => isPasswordRecoveryUrl());
+  const activeUserIdRef = useRef(null);
 
   const normalizeFullName = (value) => {
     if (typeof value === 'string') return value.trim();
@@ -109,6 +117,7 @@ export const AuthProvider = ({ children }) => {
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
         if (!isActive) return;
+        activeUserIdRef.current = session?.user?.id || null;
         setUser(session?.user ?? null);
         setIsPasswordRecovery(isPasswordRecoveryUrl());
         void acceptPendingProjectInvites(session);
@@ -125,12 +134,15 @@ export const AuthProvider = ({ children }) => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isActive) return;
+      const previousUserId = activeUserIdRef.current;
+      activeUserIdRef.current = session?.user?.id || null;
       setUser(session?.user ?? null);
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
       } else if (event === 'SIGNED_OUT') {
         setIsPasswordRecovery(false);
         clearRecoveryUrl();
+        void clearSignedOutDeviceState(previousUserId);
       } else if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user?.email) {
         void acceptPendingProjectInvites(session);
       }
@@ -191,8 +203,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const signOut = async () => {
+    const signedOutUserId = activeUserIdRef.current || user?.id || null;
     const { error } = await supabase.auth.signOut();
     if (!error) {
+      activeUserIdRef.current = null;
+      await clearSignedOutDeviceState(signedOutUserId);
       setUser(null);
       setIsPasswordRecovery(false);
       clearRecoveryUrl();
@@ -208,8 +223,11 @@ export const AuthProvider = ({ children }) => {
       return { error: null };
     }
 
+    const signedOutUserId = activeUserIdRef.current || user?.id || null;
     const { error } = await supabase.auth.signOut();
     if (!error) {
+      activeUserIdRef.current = null;
+      await clearSignedOutDeviceState(signedOutUserId);
       setUser(null);
     }
     return { error };

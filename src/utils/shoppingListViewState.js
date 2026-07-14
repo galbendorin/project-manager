@@ -335,7 +335,12 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
   };
 };
 
-export const formatShoppingAddSummary = ({ addedCount = 0, mergedCount = 0 } = {}) => {
+export const formatShoppingAddSummary = ({ addedCount = 0, mergedCount = 0, queuedCount = 0 } = {}) => {
+  if (queuedCount > 0) {
+    return queuedCount === 1
+      ? 'Saved 1 grocery change offline. It will sync automatically.'
+      : `Saved ${queuedCount} grocery changes offline. They will sync automatically.`;
+  }
   if (addedCount > 0 && mergedCount > 0) {
     return `Added ${addedCount} new ${addedCount === 1 ? 'grocery' : 'groceries'} and merged ${mergedCount} into the open list.`;
   }
@@ -350,6 +355,29 @@ export const formatShoppingAddSummary = ({ addedCount = 0, mergedCount = 0 } = {
       : `Merged ${mergedCount} groceries into the open list.`;
   }
   return 'No groceries were added.';
+};
+
+export const findUncertainShoppingCreateMatch = (record = {}, todos = []) => {
+  if (record?.uncertainCommit !== true) return null;
+
+  const titleKey = normalizeShoppingTodoTitle(record.title);
+  if (!titleKey) return null;
+
+  const matchingTodo = (Array.isArray(todos) ? todos : []).find((todo) => (
+    todo?.status !== 'Done'
+    && normalizeShoppingTodoTitle(todo?.title) === titleKey
+  ));
+  if (!matchingTodo) return null;
+
+  const requestedQuantity = toShoppingQuantity(record.quantityValue);
+  if (requestedQuantity === null) return matchingTodo;
+
+  const savedQuantity = toShoppingQuantity(matchingTodo.quantityValue);
+  const requestedUnit = normalizeShoppingUnit(record.quantityUnit);
+  const savedUnit = normalizeShoppingUnit(matchingTodo.quantityUnit);
+
+  if (savedQuantity === null || requestedUnit !== savedUnit) return null;
+  return savedQuantity >= requestedQuantity ? matchingTodo : null;
 };
 
 export const groupCompletedShoppingTodos = (items = []) => {

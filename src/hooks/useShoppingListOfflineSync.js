@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { SHOPPING_MANUAL_TODO_SELECT, mapManualTodoRow } from './projectData/manualTodoUtils';
+import { isLikelyNetworkError } from '../utils/connectivity';
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
 import { replaceQueuedTargetId } from '../utils/offlineQueue';
+import { findUncertainShoppingCreateMatch } from '../utils/shoppingListViewState';
 
 const isMissingShoppingUpsertRpcError = (error) => {
   const code = String(error?.code || '').toLowerCase();
@@ -80,7 +82,19 @@ export function useShoppingListOfflineSync({
       const op = queue[0];
 
       if (op.kind === 'create') {
-        await refreshProjectTodos(op.record.projectId).catch(() => {});
+        const refreshedTodos = await refreshProjectTodos(op.record.projectId).catch(() => []);
+        const confirmedTodo = findUncertainShoppingCreateMatch(op.record, refreshedTodos);
+
+        if (confirmedTodo) {
+          const projectTodos = todosByProject[op.record.projectId] || [];
+          todosByProject[op.record.projectId] = sortTodos(
+            projectTodos
+              .filter((item) => item._id !== op.targetId && item._id !== confirmedTodo._id)
+              .concat(confirmedTodo)
+          );
+          queue = replaceQueuedTargetId(queue.slice(1), op.targetId, confirmedTodo._id);
+          continue;
+        }
 
         const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
           target_project_id: op.record.projectId,
@@ -94,12 +108,17 @@ export function useShoppingListOfflineSync({
 
         const savedRow = Array.isArray(data) ? data[0] : data;
         if (error || !savedRow) {
-          setFailedTodoId(op.targetId);
-          setFailedTodoMessage(
-            isMissingShoppingUpsertRpcError(error)
-              ? 'Shopping List needs the latest SQL migration before offline groceries can sync safely.'
-              : (error?.message || 'Unable to sync this grocery right now.')
-          );
+          if (isLikelyNetworkError(error, { online: isOnline })) {
+            setFailedTodoId('');
+            setFailedTodoMessage('');
+          } else {
+            setFailedTodoId(op.targetId);
+            setFailedTodoMessage(
+              isMissingShoppingUpsertRpcError(error)
+                ? 'Shopping List needs the latest SQL migration before offline groceries can sync safely.'
+                : (error?.message || 'Unable to sync this grocery right now.')
+            );
+          }
           await refreshProjectTodos(op.record.projectId).catch(() => {});
           break;
         }
@@ -132,8 +151,13 @@ export function useShoppingListOfflineSync({
           .eq('id', op.targetId);
 
         if (error) {
-          setFailedTodoId(op.targetId);
-          setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
+          if (isLikelyNetworkError(error, { online: isOnline })) {
+            setFailedTodoId('');
+            setFailedTodoMessage('');
+          } else {
+            setFailedTodoId(op.targetId);
+            setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
+          }
           await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
           break;
         }
@@ -148,8 +172,13 @@ export function useShoppingListOfflineSync({
           .eq('id', op.targetId);
 
         if (error) {
-          setFailedTodoId(op.targetId);
-          setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
+          if (isLikelyNetworkError(error, { online: isOnline })) {
+            setFailedTodoId('');
+            setFailedTodoMessage('');
+          } else {
+            setFailedTodoId(op.targetId);
+            setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
+          }
           await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
           break;
         }
@@ -193,6 +222,21 @@ export function useShoppingListOfflineSync({
 
   useEffect(() => {
     void syncOfflineQueue();
+  }, [syncOfflineQueue]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const retryQueuedChanges = () => {
+      void syncOfflineQueue();
+    };
+
+    window.addEventListener('online', retryQueuedChanges);
+    window.addEventListener('focus', retryQueuedChanges);
+    return () => {
+      window.removeEventListener('online', retryQueuedChanges);
+      window.removeEventListener('focus', retryQueuedChanges);
+    };
   }, [syncOfflineQueue]);
 
   const queuedTodoIds = useMemo(
