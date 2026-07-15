@@ -7,6 +7,7 @@ import {
   createEmptyShoppingOfflineState,
   findUncertainShoppingCreateMatch,
   formatShoppingAddSummary,
+  getShoppingOfflineReadinessState,
   getShoppingQuickAddSyncState,
   getShoppingQueueSyncDetail,
   groupCompletedShoppingTodos,
@@ -360,6 +361,54 @@ test('getShoppingQuickAddSyncState summarizes the phone-safe shopping state', ()
       status: 'ok',
       label: 'Shared list saved',
       detail: 'Last synced at 10:24.',
+    }
+  );
+});
+
+test('getShoppingOfflineReadinessState reports cached and queued shopping work', () => {
+  assert.deepEqual(
+    getShoppingOfflineReadinessState({
+      openCount: 12,
+      boughtCount: 4,
+      queueCount: 2,
+      isOnline: false,
+      lastSyncLabel: '10:24',
+    }),
+    {
+      status: 'offline',
+      label: 'Phone cache ready',
+      detail: '12 open and 4 bought cached here; 2 changes saved on this phone. Last sync 10:24.',
+      statusLabel: 'Offline ready',
+    }
+  );
+
+  assert.deepEqual(
+    getShoppingOfflineReadinessState({
+      openCount: 1,
+      boughtCount: 0,
+      queueCount: 1,
+      isOnline: true,
+    }),
+    {
+      status: 'queue',
+      label: 'Phone cache ready',
+      detail: '1 open and 0 bought cached here; 1 change saved on this phone.',
+      statusLabel: 'Cached',
+    }
+  );
+
+  assert.deepEqual(
+    getShoppingOfflineReadinessState({
+      openCount: 'bad',
+      boughtCount: -2,
+      queueCount: 0,
+      isOnline: true,
+    }),
+    {
+      status: 'ok',
+      label: 'Phone cache ready',
+      detail: '0 open and 0 bought cached here; no waiting changes.',
+      statusLabel: 'Cached',
     }
   );
 });

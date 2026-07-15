@@ -487,6 +487,31 @@ export const getShoppingQuickAddSyncState = ({
   };
 };
 
+export const getShoppingOfflineReadinessState = ({
+  openCount = 0,
+  boughtCount = 0,
+  queueCount = 0,
+  isOnline = true,
+  lastSyncLabel = '',
+} = {}) => {
+  const safeOpenCount = Math.max(0, Number.isFinite(Number(openCount)) ? Number(openCount) : 0);
+  const safeBoughtCount = Math.max(0, Number.isFinite(Number(boughtCount)) ? Number(boughtCount) : 0);
+  const safeQueueCount = Math.max(0, Number.isFinite(Number(queueCount)) ? Number(queueCount) : 0);
+  const openLabel = `${safeOpenCount} open`;
+  const boughtLabel = `${safeBoughtCount} bought`;
+  const queueLabel = safeQueueCount > 0
+    ? `${safeQueueCount} change${safeQueueCount === 1 ? '' : 's'} saved on this phone`
+    : 'no waiting changes';
+  const lastSyncText = lastSyncLabel ? ` Last sync ${lastSyncLabel}.` : '';
+
+  return {
+    status: !isOnline ? 'offline' : (safeQueueCount > 0 ? 'queue' : 'ok'),
+    label: 'Phone cache ready',
+    detail: `${openLabel} and ${boughtLabel} cached here; ${queueLabel}.${lastSyncText}`,
+    statusLabel: !isOnline ? 'Offline ready' : 'Cached',
+  };
+};
+
 export const groupCompletedShoppingTodos = (items = []) => {
   const groups = new Map();
 

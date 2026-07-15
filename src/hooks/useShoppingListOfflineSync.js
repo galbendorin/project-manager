@@ -7,6 +7,7 @@ import { replaceQueuedTargetId } from '../utils/offlineQueue';
 import {
   applyShoppingQueueToTodos,
   findUncertainShoppingCreateMatch,
+  getShoppingOfflineReadinessState,
   getShoppingQueueSyncDetail,
 } from '../utils/shoppingListViewState';
 import { isMissingShoppingUpsertRpcError, upsertShoppingListItem } from '../utils/shoppingListRpc';
@@ -278,6 +279,16 @@ export function useShoppingListOfflineSync({
   }, [formatSyncTimeLabel, isOnline, lastSyncedAt, offlineQueue.length, syncingQueue]);
 
   const syncCenterItems = useMemo(() => {
+    const lastSyncLabel = formatSyncTimeLabel(lastSyncedAt);
+    const openCount = todos.filter((todo) => todo?.status !== 'Done').length;
+    const boughtCount = todos.filter((todo) => todo?.status === 'Done').length;
+    const phoneCacheState = getShoppingOfflineReadinessState({
+      openCount,
+      boughtCount,
+      queueCount: offlineQueue.length,
+      isOnline,
+      lastSyncLabel,
+    });
     const items = [
       {
         id: 'connection',
@@ -287,6 +298,13 @@ export function useShoppingListOfflineSync({
           : 'You can keep adding and ticking off groceries from the cached list.',
         status: isOnline ? 'ok' : 'offline',
         statusLabel: isOnline ? 'Online' : 'Offline',
+      },
+      {
+        id: 'phone-cache',
+        label: phoneCacheState.label,
+        detail: phoneCacheState.detail,
+        status: phoneCacheState.status,
+        statusLabel: phoneCacheState.statusLabel,
       },
     ];
 
@@ -320,7 +338,7 @@ export function useShoppingListOfflineSync({
       items.push({
         id: 'last-sync',
         label: 'Last successful sync',
-        detail: formatSyncTimeLabel(lastSyncedAt),
+        detail: lastSyncLabel,
         status: 'ok',
         statusLabel: 'Saved',
       });
