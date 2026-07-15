@@ -167,6 +167,20 @@ test('planShoppingListAdds collapses duplicate incoming groceries before insert'
   assert.equal(plan.preparedItems[0].quantityValue, 5);
 });
 
+test('planShoppingListAdds keeps one operation id for consolidated groceries', () => {
+  const plan = planShoppingListAdds({
+    existingTodos: [],
+    incomingItems: [
+      { title: 'Tomatoes', operationId: 'operation-1', quantityValue: 2, quantityUnit: 'pcs' },
+      { title: ' tomatoes ', operationId: 'operation-2', quantityValue: 3, quantityUnit: 'pcs' },
+    ],
+  });
+
+  assert.equal(plan.preparedItems.length, 1);
+  assert.equal(plan.preparedItems[0].operationId, 'operation-1');
+  assert.equal(plan.inserts[0].operationId, 'operation-1');
+});
+
 test('planShoppingListAdds still merges repeated adds into one open grocery', () => {
   const plan = planShoppingListAdds({
     existingTodos: [

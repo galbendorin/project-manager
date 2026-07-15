@@ -9,6 +9,8 @@ export const generateProjectId = () => {
   return '';
 };
 
+export const generateShoppingOperationId = () => generateProjectId();
+
 export const isProjectRelationMissingError = (error, relationName) => {
   const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
   return msg.includes(relationName.toLowerCase()) && (msg.includes('relation') || msg.includes('relationship'));
@@ -279,6 +281,7 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
     const normalizedItem = {
       ...item,
       title,
+      operationId: String(item?.operationId || '').trim(),
       quantityValue: toShoppingQuantity(item?.quantityValue),
       quantityUnit: String(item?.quantityUnit || '').trim(),
       sourceType: String(item?.sourceType || '').trim(),
@@ -298,6 +301,7 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
       ...normalizedItem,
       quantityValue: mergedQuantity.quantityValue,
       quantityUnit: mergedQuantity.quantityUnit,
+      operationId: current.operationId || normalizedItem.operationId,
       sourceType: current.sourceType || normalizedItem.sourceType,
       sourceBatchId: current.sourceBatchId || normalizedItem.sourceBatchId,
       meta: Object.keys(current.meta || {}).length > 0 ? current.meta : normalizedItem.meta,

@@ -5,14 +5,7 @@ import { isLikelyNetworkError } from '../utils/connectivity';
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
 import { replaceQueuedTargetId } from '../utils/offlineQueue';
 import { applyShoppingQueueToTodos, findUncertainShoppingCreateMatch } from '../utils/shoppingListViewState';
-
-const isMissingShoppingUpsertRpcError = (error) => {
-  const code = String(error?.code || '').toLowerCase();
-  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
-  return code === '42883'
-    || message.includes('upsert_shopping_list_item')
-    || message.includes('manual_todos');
-};
+import { isMissingShoppingUpsertRpcError, upsertShoppingListItem } from '../utils/shoppingListRpc';
 
 export function useShoppingListOfflineSync({
   currentUserId,
@@ -102,18 +95,14 @@ export function useShoppingListOfflineSync({
             continue;
           }
 
-          const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
-            target_project_id: op.record.projectId,
-            target_title: op.record.title,
-            target_quantity_value: op.record.quantityValue ?? null,
-            target_quantity_unit: op.record.quantityUnit || '',
-            target_source_type: op.record.sourceType || '',
-            target_source_batch_id: op.record.sourceBatchId || null,
-            target_meta: op.record.meta || {},
+          const { data, error } = await upsertShoppingListItem({
+            supabaseClient: supabase,
+            projectId: op.record.projectId,
+            item: op.record,
+            operationId: op.record.operationId,
           });
 
-          const savedRow = Array.isArray(data) ? data[0] : data;
-          if (error || !savedRow) {
+          if (error || !data) {
             if (isLikelyNetworkError(error, { online: isOnline })) {
               setFailedTodoId('');
               setFailedTodoMessage('');
@@ -129,7 +118,7 @@ export function useShoppingListOfflineSync({
             break;
           }
 
-          const savedTodo = mapManualTodoRow(savedRow);
+          const savedTodo = mapManualTodoRow(data);
           const projectTodos = todosByProject[op.record.projectId] || [];
           todosByProject[op.record.projectId] = sortTodos(
             projectTodos
