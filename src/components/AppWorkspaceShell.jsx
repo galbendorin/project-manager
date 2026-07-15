@@ -596,6 +596,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
                 tracker={tracker}
                 currentProject={project}
                 currentUserId={currentUserId}
+                currentUserName={currentUserName}
                 isExternalView={isExternalView}
                 pendingFocusTodoId={pendingTodoFocusId}
                 onTodoFocusHandled={() => setPendingTodoFocusId(null)}

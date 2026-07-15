@@ -2,7 +2,7 @@ import { bucketByDeadline, getTodoBucketDefaultDueDate } from './helpers.js';
 import { sortTodosForManualOrder } from './todoManualOrdering.js';
 
 const MONTH_SECTION_PREFIX = 'month:';
-const CORE_SECTION_KEYS = ['overdue', 'this_week', 'next_week', 'later'];
+const CORE_SECTION_KEYS = ['overdue', 'today', 'this_week', 'next_week', 'later'];
 
 const parseIsoDate = (value) => {
   if (!value || typeof value !== 'string') return null;

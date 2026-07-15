@@ -936,6 +936,7 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
 
 export const TODO_BUCKETS = [
   { key: 'overdue', label: 'Passed deadline' },
+  { key: 'today', label: 'Today' },
   { key: 'this_week', label: 'This week' },
   { key: 'next_week', label: 'Next week' },
   { key: 'in_2_weeks', label: 'In 2 weeks' },
@@ -955,6 +956,8 @@ export const getTodoBucketDefaultDueDate = (bucketKey, today = getCurrentDate())
   switch (bucketKey) {
     case 'overdue':
       return toISODateString(addCalendarDays(todayDate, -1));
+    case 'today':
+      return toISODateString(todayDate);
     case 'this_week':
       return toISODateString(thisWeekEnd);
     case 'next_week':
@@ -989,6 +992,7 @@ export const bucketByDeadline = (items = [], today = getCurrentDate()) => {
     const dueDate = startOfDay(dueDateValue);
     if (!dueDate) return 'later';
     if (dueDate < todayDate) return 'overdue';
+    if (dueDate.getTime() === todayDate.getTime()) return 'today';
     if (dueDate >= thisWeekStart && dueDate <= thisWeekEnd) return 'this_week';
     if (dueDate >= nextWeekStart && dueDate <= nextWeekEnd) return 'next_week';
     if (dueDate >= inTwoWeeksStart && dueDate <= inTwoWeeksEnd) return 'in_2_weeks';
