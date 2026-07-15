@@ -25,6 +25,8 @@ import {
   formatSyncTimeLabel,
   formatShoppingAddSummary,
   generateProjectId,
+  getShoppingEmptyState,
+  getShoppingQuickAddActionLabel,
   getShoppingQuickAddSyncState,
   groupCompletedShoppingTodos,
   isProjectRelationMissingError,
@@ -505,6 +507,42 @@ export default function ShoppingListView({ currentUserId }) {
     offlineQueue.length,
     syncingQueue,
   ]);
+  const quickAddActionLabel = useMemo(() => getShoppingQuickAddActionLabel({
+    isOnline,
+    queueCount: offlineQueue.length,
+    syncing: syncingQueue,
+    hasFailedItem: Boolean(failedTodoId),
+  }), [failedTodoId, isOnline, offlineQueue.length, syncingQueue]);
+  const quickAddSyncStateWithAction = useMemo(() => {
+    if (!quickAddActionLabel) return quickAddSyncState;
+
+    const failedTodo = failedTodoId ? todos.find((todo) => todo._id === failedTodoId) : null;
+    const action = offlineQueue.length > 0
+      ? retryShoppingSync
+      : (failedTodo ? () => retryTodoAction(failedTodo) : null);
+
+    return {
+      ...quickAddSyncState,
+      actionLabel: quickAddActionLabel,
+      onAction: action || undefined,
+      actionDisabled: syncingQueue || (!offlineQueue.length && !failedTodo),
+    };
+  }, [
+    failedTodoId,
+    offlineQueue.length,
+    quickAddActionLabel,
+    quickAddSyncState,
+    retryShoppingSync,
+    retryTodoAction,
+    syncingQueue,
+    todos,
+  ]);
+  const shoppingEmptyState = useMemo(() => getShoppingEmptyState({
+    isOnline,
+    hasSelectedProject: Boolean(selectedProject),
+    queueCount: offlineQueue.length,
+    lastSyncLabel: formatSyncTimeLabel(lastSyncedAt),
+  }), [isOnline, lastSyncedAt, offlineQueue.length, selectedProject]);
 
   if (loadingProjects) {
     return (
@@ -590,7 +628,7 @@ export default function ShoppingListView({ currentUserId }) {
                   setDraftTitle={setDraftTitle}
                   startListening={startListening}
                   stopListening={stopListening}
-                  syncState={quickAddSyncState}
+                  syncState={quickAddSyncStateWithAction}
                   voiceMessage={voiceMessage}
                   voiceSupported={voiceSupported}
                 />
@@ -622,6 +660,7 @@ export default function ShoppingListView({ currentUserId }) {
                     editingError={editingError}
                     editingTitle={editingTitle}
                     editingTodoId={editingTodoId}
+                    emptyState={shoppingEmptyState}
                     failedTodoId={failedTodoId}
                     failedTodoMessage={failedTodoMessage}
                     handleCancelEditingTodo={handleCancelEditingTodo}
