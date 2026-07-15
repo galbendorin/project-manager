@@ -12,6 +12,7 @@ import {
 
 const FOREGROUND_REFRESH_INTERVAL_MS = 60000;
 const HIDDEN_REFRESH_DELAY_MS = 30000;
+const SHOPPING_ROW_ANCHOR_SELECTOR = '[data-shopping-open-todo-id]';
 
 const canUseRealtimeUpdates = () => {
   if (typeof window === 'undefined') return false;
@@ -23,6 +24,52 @@ const canUseRealtimeUpdates = () => {
   );
 
   return isSecurePage && typeof window.WebSocket === 'function';
+};
+
+const captureShoppingScrollAnchor = () => {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return null;
+
+  const viewportHeight = window.visualViewport?.height || window.innerHeight || 0;
+  const elements = Array.from(document.querySelectorAll(SHOPPING_ROW_ANCHOR_SELECTOR));
+  const anchorElement = elements.find((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < viewportHeight;
+  });
+
+  if (!anchorElement) {
+    return {
+      id: '',
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      top: 0,
+    };
+  }
+
+  return {
+    id: anchorElement.getAttribute('data-shopping-open-todo-id') || '',
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+    top: anchorElement.getBoundingClientRect().top,
+  };
+};
+
+const findShoppingScrollAnchor = (id) => {
+  if (!id || typeof document === 'undefined') return null;
+  return Array.from(document.querySelectorAll(SHOPPING_ROW_ANCHOR_SELECTOR))
+    .find((element) => element.getAttribute('data-shopping-open-todo-id') === id) || null;
+};
+
+const restoreShoppingScrollAnchor = (snapshot) => {
+  if (!snapshot || typeof window === 'undefined') return;
+
+  const anchorElement = findShoppingScrollAnchor(snapshot.id);
+  if (!anchorElement) {
+    window.scrollTo(snapshot.scrollX, snapshot.scrollY);
+    return;
+  }
+
+  const nextTop = anchorElement.getBoundingClientRect().top;
+  window.scrollBy(0, nextTop - snapshot.top);
 };
 
 export function useShoppingListLiveUpdates({
@@ -123,12 +170,11 @@ export function useShoppingListLiveUpdates({
     if (!selectedProject?.id || typeof window === 'undefined') return undefined;
 
     const loadTodosPreservingScroll = () => {
-      const scrollX = window.scrollX;
-      const scrollY = window.scrollY;
+      const scrollSnapshot = captureShoppingScrollAnchor();
 
       void loadTodos().finally(() => {
         window.requestAnimationFrame(() => {
-          window.scrollTo(scrollX, scrollY);
+          restoreShoppingScrollAnchor(scrollSnapshot);
         });
       });
     };

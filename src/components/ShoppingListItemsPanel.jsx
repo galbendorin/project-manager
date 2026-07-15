@@ -216,6 +216,7 @@ export default function ShoppingListItemsPanel({
                 return (
                   <div
                     key={todo._id}
+                    data-shopping-open-todo-id={todo._id}
                     className={`border bg-white shadow-sm transition ${
                       isCompactDesktop ? 'rounded-[18px] px-3.5 py-3' : 'rounded-[22px] px-4 py-4'
                     } ${

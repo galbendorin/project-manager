@@ -17,7 +17,7 @@ import { useShoppingListLiveUpdates } from '../hooks/useShoppingListLiveUpdates'
 import { useShoppingListOfflineSync } from '../hooks/useShoppingListOfflineSync';
 import { useShoppingListVoiceCapture } from '../hooks/useShoppingListVoiceCapture';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { readLocalJson, writeLocalJson } from '../utils/offlineState';
+import { readLocalJson, removeLocalJson, writeLocalJson } from '../utils/offlineState';
 import { normalizeProjectRecord } from '../utils/projectSharing';
 import {
   createOfflineShoppingTodo,
@@ -46,7 +46,10 @@ import ShoppingListSidebar from './ShoppingListSidebar';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const SHOPPING_UI_PREFS_KEY = 'pmworkspace:shopping-ui:v1';
+const SHOPPING_DRAFT_KEY_PREFIX = 'pmworkspace:shopping-draft:v1';
 const MOBILE_COMPLETE_DELAY_MS = 1000;
+
+const buildShoppingDraftKey = (userId) => `${SHOPPING_DRAFT_KEY_PREFIX}:${userId || 'anonymous'}`;
 
 const IconBase = ({ children, className = '', viewBox = '0 0 24 24' }) => (
   <svg
@@ -155,7 +158,8 @@ export default function ShoppingListView({ currentUserId }) {
   const { canCreateProject, limits, refreshProjectCount } = usePlan();
   const isMobile = useMediaQuery('(max-width: 768px)');
   const isOnline = useOnlineStatus();
-  const [draftTitle, setDraftTitle] = useState('');
+  const draftStorageKey = useMemo(() => buildShoppingDraftKey(currentUserId), [currentUserId]);
+  const [draftTitle, setDraftTitle] = useState(() => readLocalJson(draftStorageKey, ''));
   const [shareOpen, setShareOpen] = useState(false);
   const [showBought, setShowBought] = useState(false);
   const [editingTodoId, setEditingTodoId] = useState('');
@@ -239,6 +243,20 @@ export default function ShoppingListView({ currentUserId }) {
   useEffect(() => {
     writeLocalJson(SHOPPING_UI_PREFS_KEY, { desktopCompact });
   }, [desktopCompact]);
+
+  useEffect(() => {
+    setDraftTitle(readLocalJson(draftStorageKey, ''));
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const nextDraft = String(draftTitle || '');
+    if (nextDraft.trim()) {
+      writeLocalJson(draftStorageKey, nextDraft);
+      return;
+    }
+    removeLocalJson(draftStorageKey);
+  }, [currentUserId, draftStorageKey, draftTitle]);
 
   const {
     liveUpdateMessage,
