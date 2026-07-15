@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { mapManualTodoRow } from './projectData/manualTodoUtils';
+import { applyShoppingQueueToTodos } from '../utils/shoppingListViewState';
 import {
   disablePushAlerts,
   enablePushAlerts,
@@ -50,15 +51,22 @@ export function useShoppingListLiveUpdates({
 
   const persistProjectTodos = useCallback((projectId, nextTodos) => {
     const cachedState = loadShoppingOfflineState(currentUserId);
+    const queue = cachedState.queue || [];
+    const visibleTodos = applyShoppingQueueToTodos({
+      todos: nextTodos,
+      queue,
+      projectId,
+    });
     persistOfflineState({
       ...cachedState,
       selectedProjectId: projectId,
       todosByProject: {
         ...(cachedState.todosByProject || {}),
-        [projectId]: nextTodos,
+        [projectId]: visibleTodos,
       },
-      lastSyncedAt: new Date().toISOString(),
+      lastSyncedAt: queue.length === 0 ? new Date().toISOString() : cachedState.lastSyncedAt,
     });
+    return visibleTodos;
   }, [currentUserId, loadShoppingOfflineState, persistOfflineState]);
 
   useEffect(() => {
@@ -207,8 +215,7 @@ export function useShoppingListLiveUpdates({
               }
 
               const nextTodos = mergeTodosById(previousItems, [incomingTodo]);
-              persistProjectTodos(selectedProject.id, nextTodos);
-              return nextTodos;
+              return persistProjectTodos(selectedProject.id, nextTodos);
             });
 
             if (isFromSomeoneElse) {
@@ -258,8 +265,7 @@ export function useShoppingListLiveUpdates({
               const nextTodos = sortTodos(previousItems.map((item) => (
                 item._id === incomingTodo._id ? incomingTodo : item
               )));
-              persistProjectTodos(selectedProject.id, nextTodos);
-              return nextTodos;
+              return persistProjectTodos(selectedProject.id, nextTodos);
             });
 
             if (isFromSomeoneElse && becameDone) {
@@ -284,8 +290,7 @@ export function useShoppingListLiveUpdates({
 
             setTodos((previousItems) => {
               const nextTodos = previousItems.filter((item) => item._id !== previousRow.id);
-              persistProjectTodos(selectedProject.id, nextTodos);
-              return nextTodos;
+              return persistProjectTodos(selectedProject.id, nextTodos);
             });
 
             if (isFromSomeoneElse) {

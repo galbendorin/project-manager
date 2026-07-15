@@ -436,6 +436,90 @@ export const mergeTodosById = (existingItems = [], incomingItems = []) => {
   return sortTodos(Array.from(merged.values()));
 };
 
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
+const todoFromQueuedShoppingCreate = (operation = {}, projectId = '') => {
+  const record = operation.record || {};
+  const localId = operation.targetId || record.localId || record._id || record.id || '';
+  const title = String(record.title || '').trim();
+  if (!localId || !title) return null;
+
+  const timestamp = record.updatedAt || record.createdAt || new Date().toISOString();
+  return {
+    _id: localId,
+    projectId: record.projectId || projectId || null,
+    title,
+    dueDate: record.dueDate || '',
+    owner: record.owner || '',
+    assigneeUserId: record.userId || record.assigneeUserId || null,
+    status: record.status === 'Done' ? 'Done' : 'Open',
+    recurrence: record.recurrence || null,
+    quantityValue: toShoppingQuantity(record.quantityValue),
+    quantityUnit: record.quantityUnit || '',
+    sourceType: record.sourceType || '',
+    sourceBatchId: record.sourceBatchId || null,
+    meta: record.meta && typeof record.meta === 'object' ? record.meta : {},
+    createdAt: record.createdAt || timestamp,
+    updatedAt: timestamp,
+    completedAt: record.completedAt || '',
+  };
+};
+
+export const applyShoppingQueueToTodos = ({ todos = [], queue = [], projectId = '' } = {}) => {
+  const visibleTodos = new Map();
+  const normalizedProjectId = String(projectId || '').trim();
+
+  for (const todo of Array.isArray(todos) ? todos : []) {
+    if (todo?._id) {
+      visibleTodos.set(todo._id, todo);
+    }
+  }
+
+  for (const operation of Array.isArray(queue) ? queue : []) {
+    if (!operation || typeof operation !== 'object') continue;
+
+    if (operation.kind === 'create') {
+      const recordProjectId = String(operation.record?.projectId || '').trim();
+      if (normalizedProjectId && recordProjectId && recordProjectId !== normalizedProjectId) {
+        continue;
+      }
+
+      const queuedTodo = todoFromQueuedShoppingCreate(operation, normalizedProjectId);
+      if (queuedTodo) {
+        visibleTodos.set(queuedTodo._id, {
+          ...(visibleTodos.get(queuedTodo._id) || {}),
+          ...queuedTodo,
+        });
+      }
+      continue;
+    }
+
+    const targetId = operation.targetId;
+    if (!targetId || !visibleTodos.has(targetId)) continue;
+
+    if (operation.kind === 'delete') {
+      visibleTodos.delete(targetId);
+      continue;
+    }
+
+    if (operation.kind === 'update') {
+      const currentTodo = visibleTodos.get(targetId);
+      const patch = operation.patch || {};
+      visibleTodos.set(targetId, {
+        ...currentTodo,
+        ...(hasOwn(patch, 'title') ? { title: patch.title } : {}),
+        ...(hasOwn(patch, 'status') ? { status: patch.status } : {}),
+        ...(hasOwn(patch, 'completedAt') ? { completedAt: patch.completedAt || '' } : {}),
+        ...(hasOwn(patch, 'quantityValue') ? { quantityValue: toShoppingQuantity(patch.quantityValue) } : {}),
+        ...(hasOwn(patch, 'quantityUnit') ? { quantityUnit: patch.quantityUnit || '' } : {}),
+        updatedAt: patch.updatedAt || currentTodo.updatedAt,
+      });
+    }
+  }
+
+  return sortTodos(Array.from(visibleTodos.values()));
+};
+
 export const formatSharedActorLabel = (value = '') => {
   const email = String(value || '').trim().toLowerCase();
   const localPart = email.split('@')[0] || '';

@@ -4,7 +4,7 @@ import { SHOPPING_MANUAL_TODO_SELECT, mapManualTodoRow } from './projectData/man
 import { isLikelyNetworkError } from '../utils/connectivity';
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
 import { replaceQueuedTargetId } from '../utils/offlineQueue';
-import { findUncertainShoppingCreateMatch } from '../utils/shoppingListViewState';
+import { applyShoppingQueueToTodos, findUncertainShoppingCreateMatch } from '../utils/shoppingListViewState';
 
 const isMissingShoppingUpsertRpcError = (error) => {
   const code = String(error?.code || '').toLowerCase();
@@ -58,12 +58,17 @@ export function useShoppingListOfflineSync({
 
       if (error) throw error;
 
-      const nextTodos = sortTodos((data || []).map(mapManualTodoRow));
-      todosByProject[projectId] = nextTodos;
+      const serverTodos = sortTodos((data || []).map(mapManualTodoRow));
+      const visibleTodos = applyShoppingQueueToTodos({
+        todos: serverTodos,
+        queue,
+        projectId,
+      });
+      todosByProject[projectId] = visibleTodos;
       if (selectedProjectId === projectId) {
-        setTodos(nextTodos);
+        setTodos(visibleTodos);
       }
-      return nextTodos;
+      return serverTodos;
     };
 
     const resolveProjectIdForTarget = (targetId) => {
@@ -78,136 +83,152 @@ export function useShoppingListOfflineSync({
       return selectedProjectId || '';
     };
 
-    while (queue.length > 0) {
-      const op = queue[0];
+    try {
+      while (queue.length > 0) {
+        const op = queue[0];
 
-      if (op.kind === 'create') {
-        const refreshedTodos = await refreshProjectTodos(op.record.projectId).catch(() => []);
-        const confirmedTodo = findUncertainShoppingCreateMatch(op.record, refreshedTodos);
+        if (op.kind === 'create') {
+          const refreshedTodos = await refreshProjectTodos(op.record.projectId).catch(() => []);
+          const confirmedTodo = findUncertainShoppingCreateMatch(op.record, refreshedTodos);
 
-        if (confirmedTodo) {
+          if (confirmedTodo) {
+            const projectTodos = todosByProject[op.record.projectId] || [];
+            todosByProject[op.record.projectId] = sortTodos(
+              projectTodos
+                .filter((item) => item._id !== op.targetId && item._id !== confirmedTodo._id)
+                .concat(confirmedTodo)
+            );
+            queue = replaceQueuedTargetId(queue.slice(1), op.targetId, confirmedTodo._id);
+            continue;
+          }
+
+          const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
+            target_project_id: op.record.projectId,
+            target_title: op.record.title,
+            target_quantity_value: op.record.quantityValue ?? null,
+            target_quantity_unit: op.record.quantityUnit || '',
+            target_source_type: op.record.sourceType || '',
+            target_source_batch_id: op.record.sourceBatchId || null,
+            target_meta: op.record.meta || {},
+          });
+
+          const savedRow = Array.isArray(data) ? data[0] : data;
+          if (error || !savedRow) {
+            if (isLikelyNetworkError(error, { online: isOnline })) {
+              setFailedTodoId('');
+              setFailedTodoMessage('');
+            } else {
+              setFailedTodoId(op.targetId);
+              setFailedTodoMessage(
+                isMissingShoppingUpsertRpcError(error)
+                  ? 'Shopping List needs the latest SQL migration before offline groceries can sync safely.'
+                  : (error?.message || 'Unable to sync this grocery right now.')
+              );
+            }
+            await refreshProjectTodos(op.record.projectId).catch(() => {});
+            break;
+          }
+
+          const savedTodo = mapManualTodoRow(savedRow);
           const projectTodos = todosByProject[op.record.projectId] || [];
           todosByProject[op.record.projectId] = sortTodos(
             projectTodos
-              .filter((item) => item._id !== op.targetId && item._id !== confirmedTodo._id)
-              .concat(confirmedTodo)
+              .filter((item) => item._id !== op.targetId && item._id !== savedTodo._id)
+              .concat(savedTodo)
           );
-          queue = replaceQueuedTargetId(queue.slice(1), op.targetId, confirmedTodo._id);
+
+          const existingTitles = createdTitlesByProject.get(op.record.projectId) || [];
+          createdTitlesByProject.set(op.record.projectId, [...existingTitles, savedTodo.title]);
+          queue = replaceQueuedTargetId(queue.slice(1), op.targetId, savedTodo._id);
           continue;
         }
 
-        const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
-          target_project_id: op.record.projectId,
-          target_title: op.record.title,
-          target_quantity_value: op.record.quantityValue ?? null,
-          target_quantity_unit: op.record.quantityUnit || '',
-          target_source_type: op.record.sourceType || '',
-          target_source_batch_id: op.record.sourceBatchId || null,
-          target_meta: op.record.meta || {},
-        });
+        if (op.kind === 'update') {
+          const { error } = await supabase
+            .from('manual_todos')
+            .update({
+              ...(Object.prototype.hasOwnProperty.call(op.patch, 'title') ? { title: op.patch.title } : {}),
+              ...(Object.prototype.hasOwnProperty.call(op.patch, 'status') ? { status: op.patch.status } : {}),
+              ...(Object.prototype.hasOwnProperty.call(op.patch, 'completedAt') ? { completed_at: op.patch.completedAt || null } : {}),
+              ...(Object.prototype.hasOwnProperty.call(op.patch, 'quantityValue') ? { quantity_value: op.patch.quantityValue } : {}),
+              ...(Object.prototype.hasOwnProperty.call(op.patch, 'quantityUnit') ? { quantity_unit: op.patch.quantityUnit || '' } : {}),
+              updated_at: op.patch.updatedAt || new Date().toISOString(),
+            })
+            .eq('id', op.targetId);
 
-        const savedRow = Array.isArray(data) ? data[0] : data;
-        if (error || !savedRow) {
-          if (isLikelyNetworkError(error, { online: isOnline })) {
-            setFailedTodoId('');
-            setFailedTodoMessage('');
-          } else {
-            setFailedTodoId(op.targetId);
-            setFailedTodoMessage(
-              isMissingShoppingUpsertRpcError(error)
-                ? 'Shopping List needs the latest SQL migration before offline groceries can sync safely.'
-                : (error?.message || 'Unable to sync this grocery right now.')
-            );
+          if (error) {
+            if (isLikelyNetworkError(error, { online: isOnline })) {
+              setFailedTodoId('');
+              setFailedTodoMessage('');
+            } else {
+              setFailedTodoId(op.targetId);
+              setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
+            }
+            await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
+            break;
           }
-          await refreshProjectTodos(op.record.projectId).catch(() => {});
-          break;
+          queue = queue.slice(1);
+          continue;
         }
 
-        const savedTodo = mapManualTodoRow(savedRow);
-        const projectTodos = todosByProject[op.record.projectId] || [];
-        todosByProject[op.record.projectId] = sortTodos(
-          projectTodos
-            .filter((item) => item._id !== op.targetId && item._id !== savedTodo._id)
-            .concat(savedTodo)
-        );
+        if (op.kind === 'delete') {
+          const { error } = await supabase
+            .from('manual_todos')
+            .delete()
+            .eq('id', op.targetId);
 
-        const existingTitles = createdTitlesByProject.get(op.record.projectId) || [];
-        createdTitlesByProject.set(op.record.projectId, [...existingTitles, savedTodo.title]);
-        queue = replaceQueuedTargetId(queue.slice(1), op.targetId, savedTodo._id);
-        continue;
-      }
-
-      if (op.kind === 'update') {
-        const { error } = await supabase
-          .from('manual_todos')
-          .update({
-            ...(Object.prototype.hasOwnProperty.call(op.patch, 'title') ? { title: op.patch.title } : {}),
-            ...(Object.prototype.hasOwnProperty.call(op.patch, 'status') ? { status: op.patch.status } : {}),
-            ...(Object.prototype.hasOwnProperty.call(op.patch, 'completedAt') ? { completed_at: op.patch.completedAt || null } : {}),
-            ...(Object.prototype.hasOwnProperty.call(op.patch, 'quantityValue') ? { quantity_value: op.patch.quantityValue } : {}),
-            ...(Object.prototype.hasOwnProperty.call(op.patch, 'quantityUnit') ? { quantity_unit: op.patch.quantityUnit || '' } : {}),
-            updated_at: op.patch.updatedAt || new Date().toISOString(),
-          })
-          .eq('id', op.targetId);
-
-        if (error) {
-          if (isLikelyNetworkError(error, { online: isOnline })) {
-            setFailedTodoId('');
-            setFailedTodoMessage('');
-          } else {
-            setFailedTodoId(op.targetId);
-            setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
+          if (error) {
+            if (isLikelyNetworkError(error, { online: isOnline })) {
+              setFailedTodoId('');
+              setFailedTodoMessage('');
+            } else {
+              setFailedTodoId(op.targetId);
+              setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
+            }
+            await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
+            break;
           }
-          await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
-          break;
+          queue = queue.slice(1);
+          continue;
         }
-        queue = queue.slice(1);
-        continue;
-      }
 
-      if (op.kind === 'delete') {
-        const { error } = await supabase
-          .from('manual_todos')
-          .delete()
-          .eq('id', op.targetId);
-
-        if (error) {
-          if (isLikelyNetworkError(error, { online: isOnline })) {
-            setFailedTodoId('');
-            setFailedTodoMessage('');
-          } else {
-            setFailedTodoId(op.targetId);
-            setFailedTodoMessage(error?.message || 'Unable to sync this grocery right now.');
-          }
-          await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
-          break;
-        }
         queue = queue.slice(1);
       }
+
+      const visibleTodosByProject = Object.fromEntries(
+        Object.entries(todosByProject).map(([projectId, projectTodos]) => [
+          projectId,
+          applyShoppingQueueToTodos({
+            todos: projectTodos,
+            queue,
+            projectId,
+          }),
+        ])
+      );
+
+      persistOfflineState({
+        ...cachedState,
+        todosByProject: visibleTodosByProject,
+        queue,
+        lastSyncedAt: queue.length === 0 ? new Date().toISOString() : cachedState.lastSyncedAt,
+      });
+
+      if (selectedProjectId) {
+        setTodos(sortTodos(visibleTodosByProject[selectedProjectId] || []));
+      }
+
+      for (const [projectId, itemTitles] of createdTitlesByProject.entries()) {
+        await notifyShoppingListSubscribers({ projectId, itemTitles });
+      }
+
+      if (queue.length === 0) {
+        setFailedTodoId('');
+        setFailedTodoMessage('');
+      }
+    } finally {
+      syncingQueueRef.current = false;
+      setSyncingQueue(false);
     }
-
-    persistOfflineState({
-      ...cachedState,
-      todosByProject,
-      queue,
-      lastSyncedAt: queue.length === 0 ? new Date().toISOString() : cachedState.lastSyncedAt,
-    });
-
-    if (selectedProjectId) {
-      setTodos(sortTodos(todosByProject[selectedProjectId] || []));
-    }
-
-    for (const [projectId, itemTitles] of createdTitlesByProject.entries()) {
-      await notifyShoppingListSubscribers({ projectId, itemTitles });
-    }
-
-    if (queue.length === 0) {
-      setFailedTodoId('');
-      setFailedTodoMessage('');
-    }
-
-    syncingQueueRef.current = false;
-    setSyncingQueue(false);
   }, [
     currentUserId,
     isOnline,
@@ -296,8 +317,8 @@ export function useShoppingListOfflineSync({
         detail: failedTodoMessage || 'Retry this change when the connection settles.',
         status: 'error',
         statusLabel: 'Needs retry',
-        actionLabel: failedTodo ? 'Retry item' : '',
-        onAction: failedTodo ? () => retryTodoAction(failedTodo) : undefined,
+        actionLabel: offlineQueue.length > 0 ? 'Retry sync' : (failedTodo ? 'Retry item' : ''),
+        onAction: offlineQueue.length > 0 ? () => void syncOfflineQueue() : (failedTodo ? () => retryTodoAction(failedTodo) : undefined),
       });
     }
 
@@ -320,6 +341,7 @@ export function useShoppingListOfflineSync({
     lastSyncedAt,
     offlineQueue.length,
     retryTodoAction,
+    syncOfflineQueue,
     syncingQueue,
     todos,
   ]);
@@ -327,6 +349,7 @@ export function useShoppingListOfflineSync({
   return {
     syncingQueue,
     queuedTodoIds,
+    retryShoppingSync: syncOfflineQueue,
     shoppingSyncSummary,
     syncCenterItems,
   };
