@@ -428,6 +428,90 @@ export const getShoppingQueueSyncDetail = (queue = [], { syncing = false } = {})
   return `${titlePrefix}These grocery changes are safe on this phone and will sync automatically.`;
 };
 
+export const getShoppingQuickAddSyncState = ({
+  isOnline = true,
+  queueCount = 0,
+  syncing = false,
+  hasFailedItem = false,
+  lastSyncLabel = '',
+} = {}) => {
+  const safeQueueCount = Math.max(0, Number.isFinite(Number(queueCount)) ? Number(queueCount) : 0);
+  const changeLabel = `${safeQueueCount} change${safeQueueCount === 1 ? '' : 's'}`;
+
+  if (hasFailedItem) {
+    return {
+      status: 'error',
+      label: 'Needs retry',
+      detail: 'One grocery did not save yet. It stays on this phone until you retry.',
+    };
+  }
+
+  if (syncing && safeQueueCount > 0) {
+    return {
+      status: 'syncing',
+      label: 'Syncing now',
+      detail: `${changeLabel} going to the shared list.`,
+    };
+  }
+
+  if (safeQueueCount > 0) {
+    return {
+      status: 'queue',
+      label: 'Saved on this phone',
+      detail: isOnline
+        ? `${changeLabel} ready to sync.`
+        : `${changeLabel} will sync when signal returns.`,
+    };
+  }
+
+  if (!isOnline) {
+    return {
+      status: 'offline',
+      label: 'Offline ready',
+      detail: 'Add and tick groceries from this phone.',
+    };
+  }
+
+  if (lastSyncLabel) {
+    return {
+      status: 'ok',
+      label: 'Shared list saved',
+      detail: `Last synced at ${lastSyncLabel}.`,
+    };
+  }
+
+  return {
+    status: 'ok',
+    label: 'Ready',
+    detail: 'This list stays available once it has loaded on this phone.',
+  };
+};
+
+export const getShoppingOfflineReadinessState = ({
+  openCount = 0,
+  boughtCount = 0,
+  queueCount = 0,
+  isOnline = true,
+  lastSyncLabel = '',
+} = {}) => {
+  const safeOpenCount = Math.max(0, Number.isFinite(Number(openCount)) ? Number(openCount) : 0);
+  const safeBoughtCount = Math.max(0, Number.isFinite(Number(boughtCount)) ? Number(boughtCount) : 0);
+  const safeQueueCount = Math.max(0, Number.isFinite(Number(queueCount)) ? Number(queueCount) : 0);
+  const openLabel = `${safeOpenCount} open`;
+  const boughtLabel = `${safeBoughtCount} bought`;
+  const queueLabel = safeQueueCount > 0
+    ? `${safeQueueCount} change${safeQueueCount === 1 ? '' : 's'} saved on this phone`
+    : 'no waiting changes';
+  const lastSyncText = lastSyncLabel ? ` Last sync ${lastSyncLabel}.` : '';
+
+  return {
+    status: !isOnline ? 'offline' : (safeQueueCount > 0 ? 'queue' : 'ok'),
+    label: 'Phone cache ready',
+    detail: `${openLabel} and ${boughtLabel} cached here; ${queueLabel}.${lastSyncText}`,
+    statusLabel: !isOnline ? 'Offline ready' : 'Cached',
+  };
+};
+
 export const groupCompletedShoppingTodos = (items = []) => {
   const groups = new Map();
 

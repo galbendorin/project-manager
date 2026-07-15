@@ -1,5 +1,15 @@
 import React from 'react';
 
+const SYNC_STATUS_CLASSES = {
+  offline: 'border-amber-200 bg-amber-50 text-amber-800',
+  queue: 'border-indigo-200 bg-indigo-50 text-indigo-800',
+  syncing: 'border-sky-200 bg-sky-50 text-sky-800',
+  error: 'border-rose-200 bg-rose-50 text-rose-800',
+  ok: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+};
+
+const syncStatusClassName = (status) => SYNC_STATUS_CLASSES[status] || SYNC_STATUS_CLASSES.ok;
+
 export default function ShoppingListQuickAdd({
   AddIcon,
   LoaderIcon,
@@ -15,6 +25,7 @@ export default function ShoppingListQuickAdd({
   setDraftTitle,
   startListening,
   stopListening,
+  syncState,
   voiceMessage,
   voiceSupported,
 }) {
@@ -70,6 +81,15 @@ export default function ShoppingListQuickAdd({
           </span>
         </button>
       </div>
+
+      {syncState ? (
+        <div className={`mt-3 rounded-2xl border px-3 py-2 text-xs ${syncStatusClassName(syncState.status)}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold">{syncState.label}</span>
+            <span className="text-[11px] font-medium opacity-80">{syncState.detail}</span>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-3 flex flex-col gap-1 text-xs text-slate-500">
         <span>{interimText ? `Hearing: ${interimText}` : voiceMessage || 'Say “milk, eggs, bread” for a quick grocery add.'}</span>

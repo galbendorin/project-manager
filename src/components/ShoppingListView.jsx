@@ -25,6 +25,7 @@ import {
   formatSyncTimeLabel,
   formatShoppingAddSummary,
   generateProjectId,
+  getShoppingQuickAddSyncState,
   groupCompletedShoppingTodos,
   isProjectRelationMissingError,
   isRowLevelSecurityError,
@@ -435,7 +436,7 @@ export default function ShoppingListView({ currentUserId }) {
     clearPendingCompletion();
     setPendingCompleteId(todo._id);
     setPendingCompleteSeconds(1);
-    setVoiceMessage(`Marking ${todo.title} as bought in 1 second. Tap again to cancel.`);
+    setVoiceMessage(`Moving ${todo.title} to bought. Tap again to keep it on the list.`);
 
     completionIntervalRef.current = window.setInterval(() => {
       setPendingCompleteSeconds((value) => (value > 1 ? value - 1 : 1));
@@ -491,6 +492,19 @@ export default function ShoppingListView({ currentUserId }) {
     retryTodoAction,
     formatSyncTimeLabel,
   });
+  const quickAddSyncState = useMemo(() => getShoppingQuickAddSyncState({
+    isOnline,
+    queueCount: offlineQueue.length,
+    syncing: syncingQueue,
+    hasFailedItem: Boolean(failedTodoId),
+    lastSyncLabel: formatSyncTimeLabel(lastSyncedAt),
+  }), [
+    failedTodoId,
+    isOnline,
+    lastSyncedAt,
+    offlineQueue.length,
+    syncingQueue,
+  ]);
 
   if (loadingProjects) {
     return (
@@ -576,6 +590,7 @@ export default function ShoppingListView({ currentUserId }) {
                   setDraftTitle={setDraftTitle}
                   startListening={startListening}
                   stopListening={stopListening}
+                  syncState={quickAddSyncState}
                   voiceMessage={voiceMessage}
                   voiceSupported={voiceSupported}
                 />

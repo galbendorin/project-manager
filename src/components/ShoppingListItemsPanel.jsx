@@ -221,7 +221,7 @@ export default function ShoppingListItemsPanel({
                       isCompactDesktop ? 'rounded-[18px] px-3.5 py-3' : 'rounded-[22px] px-4 py-4'
                     } ${
                       pendingCompleteId === todo._id
-                        ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-tint)]'
+                        ? 'border-emerald-200 bg-emerald-50/80'
                         : savingTodoId === todo._id
                           ? 'border-emerald-200 bg-emerald-50/70'
                           : 'border-slate-200'
@@ -232,7 +232,7 @@ export default function ShoppingListItemsPanel({
                         <span
                           className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${
                             pendingCompleteId === todo._id
-                              ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent)]'
+                              ? 'border-emerald-300 bg-white text-emerald-700'
                               : savingTodoId === todo._id
                                 ? 'border-emerald-300 bg-white text-emerald-600'
                                 : 'border-slate-200 bg-white text-slate-400'
@@ -327,7 +327,7 @@ export default function ShoppingListItemsPanel({
                         {showHelperText ? (
                           <p className={`mt-1 text-xs ${
                             pendingCompleteId === todo._id
-                              ? 'text-[var(--pm-accent-strong)]'
+                              ? 'text-emerald-700'
                               : savingTodoId === todo._id
                                 ? 'text-emerald-700'
                                 : 'text-slate-400'
@@ -335,7 +335,7 @@ export default function ShoppingListItemsPanel({
                             {savingTodoId === todo._id
                               ? (savingTodoAction === 'complete' ? `Saving ${todo.title} as bought...` : savingTodoAction === 'edit' ? `Saving ${todo.title}...` : 'Saving...')
                               : pendingCompleteId === todo._id
-                                ? `Marking bought in ${pendingCompleteSeconds}s. Tap again to cancel.`
+                                ? `Moving to bought in ${pendingCompleteSeconds}s. Tap again to keep it here.`
                                 : editingTodoId === todo._id
                                   ? 'Update the grocery name, then save it.'
                                   : (isMobile ? 'Tap Bought to move it off the live list.' : 'Tap the check to mark this item as bought.')}
@@ -384,12 +384,12 @@ export default function ShoppingListItemsPanel({
                                   disabled={savingTodoId === todo._id}
                                   className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition ${
                                     pendingCompleteId === todo._id
-                                      ? 'border-[var(--pm-accent)] bg-white text-[var(--pm-accent-strong)]'
+                                      ? 'border-emerald-300 bg-white text-emerald-700'
                                       : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                                   }`}
                                 >
                                   <CheckIcon className="h-4 w-4" />
-                                  {pendingCompleteId === todo._id ? `Bought in ${pendingCompleteSeconds}s` : 'Bought'}
+                                  {pendingCompleteId === todo._id ? `Undo ${pendingCompleteSeconds}s` : 'Bought'}
                                 </button>
                                 <button
                                   type="button"
