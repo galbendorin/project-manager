@@ -384,6 +384,22 @@ export const findUncertainShoppingCreateMatch = (record = {}, todos = []) => {
   return savedQuantity >= requestedQuantity ? matchingTodo : null;
 };
 
+export const getShoppingQueueSyncDetail = (queue = [], { syncing = false } = {}) => {
+  const queuedItems = Array.isArray(queue) ? queue : [];
+  const queuedAdds = queuedItems.filter((item) => item?.kind === 'create');
+  const protectedAdds = queuedAdds.filter((item) => String(item?.record?.operationId || '').trim());
+
+  if (syncing) {
+    return 'Your queued grocery updates are being pushed to the shared list now.';
+  }
+
+  if (protectedAdds.length > 0 && protectedAdds.length === queuedAdds.length) {
+    return 'These grocery changes are safe on this phone and protected against duplicate add retries.';
+  }
+
+  return 'These grocery changes are safe on this phone and will sync automatically.';
+};
+
 export const groupCompletedShoppingTodos = (items = []) => {
   const groups = new Map();
 

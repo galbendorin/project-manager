@@ -4,7 +4,11 @@ import { SHOPPING_MANUAL_TODO_SELECT, mapManualTodoRow } from './projectData/man
 import { isLikelyNetworkError } from '../utils/connectivity';
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
 import { replaceQueuedTargetId } from '../utils/offlineQueue';
-import { applyShoppingQueueToTodos, findUncertainShoppingCreateMatch } from '../utils/shoppingListViewState';
+import {
+  applyShoppingQueueToTodos,
+  findUncertainShoppingCreateMatch,
+  getShoppingQueueSyncDetail,
+} from '../utils/shoppingListViewState';
 import { isMissingShoppingUpsertRpcError, upsertShoppingListItem } from '../utils/shoppingListRpc';
 
 export function useShoppingListOfflineSync({
@@ -290,9 +294,7 @@ export function useShoppingListOfflineSync({
       items.push({
         id: 'queue',
         label: `${offlineQueue.length} grocery change${offlineQueue.length === 1 ? '' : 's'} waiting`,
-        detail: syncingQueue
-          ? 'Your queued grocery updates are being pushed to the shared list now.'
-          : 'These grocery changes are safe on this phone and will sync automatically.',
+        detail: getShoppingQueueSyncDetail(offlineQueue, { syncing: syncingQueue }),
         status: syncingQueue ? 'syncing' : 'queue',
         statusLabel: syncingQueue ? 'Syncing' : 'Queued',
       });
@@ -328,7 +330,7 @@ export function useShoppingListOfflineSync({
     formatSyncTimeLabel,
     isOnline,
     lastSyncedAt,
-    offlineQueue.length,
+    offlineQueue,
     retryTodoAction,
     syncOfflineQueue,
     syncingQueue,
