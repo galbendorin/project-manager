@@ -302,13 +302,16 @@ export function useShoppingListOfflineSync({
 
     if (failedTodoId) {
       const failedTodo = todos.find((todo) => todo._id === failedTodoId);
+      const failedIsQueued = offlineQueue.some((item) => item?.targetId === failedTodoId);
       items.push({
         id: 'failed',
         label: failedTodo ? `Could not save ${failedTodo.title}` : 'One grocery needs attention',
-        detail: failedTodoMessage || 'Retry this change when the connection settles.',
+        detail: failedIsQueued
+          ? (failedTodoMessage || 'This grocery is still safe on this phone. Retry when the signal settles.')
+          : (failedTodoMessage || 'Retry this change when the connection settles.'),
         status: 'error',
         statusLabel: 'Needs retry',
-        actionLabel: offlineQueue.length > 0 ? 'Retry sync' : (failedTodo ? 'Retry item' : ''),
+        actionLabel: offlineQueue.length > 0 ? 'Retry saved changes' : (failedTodo ? 'Retry item' : ''),
         onAction: offlineQueue.length > 0 ? () => void syncOfflineQueue() : (failedTodo ? () => retryTodoAction(failedTodo) : undefined),
       });
     }
