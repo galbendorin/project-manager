@@ -7,6 +7,7 @@ import {
   createEmptyShoppingOfflineState,
   findUncertainShoppingCreateMatch,
   formatShoppingAddSummary,
+  getShoppingQueueSyncDetail,
   groupCompletedShoppingTodos,
   mergeShoppingItemQuantity,
   normalizeShoppingOfflineState,
@@ -279,6 +280,31 @@ test('findUncertainShoppingCreateMatch retries when the saved quantity cannot co
     quantityValue: 250,
     quantityUnit: 'g',
   }]), null);
+});
+
+test('getShoppingQueueSyncDetail explains protected shopping adds', () => {
+  assert.equal(
+    getShoppingQueueSyncDetail([
+      {
+        kind: 'create',
+        record: {
+          operationId: '11111111-1111-4111-8111-111111111111',
+          title: 'Oats',
+        },
+      },
+    ]),
+    'These grocery changes are safe on this phone and protected against duplicate add retries.'
+  );
+
+  assert.equal(
+    getShoppingQueueSyncDetail([{ kind: 'update', targetId: 'todo-1', patch: { title: 'Milk' } }]),
+    'These grocery changes are safe on this phone and will sync automatically.'
+  );
+
+  assert.equal(
+    getShoppingQueueSyncDetail([{ kind: 'create', record: { operationId: 'op-1' } }], { syncing: true }),
+    'Your queued grocery updates are being pushed to the shared list now.'
+  );
 });
 
 test('applyShoppingQueueToTodos keeps queued local creates visible after a server refresh', () => {
