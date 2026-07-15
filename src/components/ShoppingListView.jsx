@@ -452,6 +452,7 @@ export default function ShoppingListView({ currentUserId }) {
   const {
     syncingQueue,
     queuedTodoIds,
+    retryShoppingSync,
     shoppingSyncSummary,
     syncCenterItems,
   } = useShoppingListOfflineSync({
@@ -604,6 +605,7 @@ export default function ShoppingListView({ currentUserId }) {
                     pendingCompleteId={pendingCompleteId}
                     pendingCompleteSeconds={pendingCompleteSeconds}
                     queuedTodoIds={queuedTodoIds}
+                    retryShoppingSync={retryShoppingSync}
                     retryTodoAction={retryTodoAction}
                     savingTodoAction={savingTodoAction}
                     savingTodoId={savingTodoId}

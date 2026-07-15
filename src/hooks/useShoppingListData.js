@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { isLikelyNetworkError } from '../utils/connectivity';
-import { pickPreferredShoppingProject } from '../utils/shoppingListViewState';
+import { applyShoppingQueueToTodos, pickPreferredShoppingProject } from '../utils/shoppingListViewState';
 import { createProjectWithLimits, getProjectCreationErrorMessage } from '../utils/projectCreation';
 
 export function useShoppingListData({
@@ -209,12 +209,17 @@ export function useShoppingListData({
 
     const cachedState = await loadShoppingOfflineStateAsync(currentUserId);
     const cachedTodos = cachedState.todosByProject?.[selectedProject.id] || [];
-    if (cachedTodos.length > 0) {
-      setTodos(sortTodos(cachedTodos));
+    const cachedVisibleTodos = applyShoppingQueueToTodos({
+      todos: cachedTodos,
+      queue: cachedState.queue || [],
+      projectId: selectedProject.id,
+    });
+    if (cachedVisibleTodos.length > 0) {
+      setTodos(cachedVisibleTodos);
     }
 
     if (!isOnline) {
-      if (!cachedTodos.length) {
+      if (!cachedVisibleTodos.length) {
         setTodoError('You are offline. Open this list once online on this device to cache it.');
       }
       setLoadingTodos(false);
@@ -242,8 +247,8 @@ export function useShoppingListData({
 
     if (error) {
       if (isLikelyNetworkError(error, { online: isOnline })) {
-        if (cachedTodos.length > 0) {
-          setTodos(sortTodos(cachedTodos));
+        if (cachedVisibleTodos.length > 0) {
+          setTodos(cachedVisibleTodos);
         } else {
           setTodoError('The connection is unavailable. Open this list once online on this device to cache it.');
         }
@@ -260,7 +265,12 @@ export function useShoppingListData({
       return;
     }
 
-    const nextTodos = sortTodos((data || []).map(mapManualTodoRow));
+    const serverTodos = sortTodos((data || []).map(mapManualTodoRow));
+    const nextTodos = applyShoppingQueueToTodos({
+      todos: serverTodos,
+      queue: cachedState.queue || [],
+      projectId: selectedProject.id,
+    });
     setTodos(nextTodos);
     persistOfflineState({
       ...cachedState,

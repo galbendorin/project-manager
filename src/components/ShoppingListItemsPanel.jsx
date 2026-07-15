@@ -82,6 +82,7 @@ export default function ShoppingListItemsPanel({
   pendingCompleteId,
   pendingCompleteSeconds,
   queuedTodoIds,
+  retryShoppingSync,
   retryTodoAction,
   savingTodoAction,
   savingTodoId,
@@ -344,7 +345,9 @@ export default function ShoppingListItemsPanel({
                             <p className="text-xs font-medium text-rose-700">{failedTodoMessage}</p>
                             <button
                               type="button"
-                              onClick={() => retryTodoAction(todo)}
+                              onClick={() => (queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
+                                ? retryShoppingSync()
+                                : retryTodoAction(todo))}
                               className="mt-2 inline-flex min-h-9 items-center rounded-full border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
                             >
                               Retry
@@ -610,7 +613,9 @@ export default function ShoppingListItemsPanel({
                             <p className="text-xs font-medium text-rose-700">{failedTodoMessage}</p>
                             <button
                               type="button"
-                              onClick={() => retryTodoAction(todo)}
+                              onClick={() => (queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
+                                ? retryShoppingSync()
+                                : retryTodoAction(todo))}
                               className="mt-2 inline-flex min-h-9 items-center rounded-full border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
                             >
                               Retry

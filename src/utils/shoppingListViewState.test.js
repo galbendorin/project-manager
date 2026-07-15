@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  applyShoppingQueueToTodos,
   buildMealPlanShoppingSyncPreview,
   createEmptyShoppingOfflineState,
   findUncertainShoppingCreateMatch,
@@ -166,6 +167,20 @@ test('planShoppingListAdds collapses duplicate incoming groceries before insert'
   assert.equal(plan.preparedItems[0].quantityValue, 5);
 });
 
+test('planShoppingListAdds keeps one operation id for consolidated groceries', () => {
+  const plan = planShoppingListAdds({
+    existingTodos: [],
+    incomingItems: [
+      { title: 'Tomatoes', operationId: 'operation-1', quantityValue: 2, quantityUnit: 'pcs' },
+      { title: ' tomatoes ', operationId: 'operation-2', quantityValue: 3, quantityUnit: 'pcs' },
+    ],
+  });
+
+  assert.equal(plan.preparedItems.length, 1);
+  assert.equal(plan.preparedItems[0].operationId, 'operation-1');
+  assert.equal(plan.inserts[0].operationId, 'operation-1');
+});
+
 test('planShoppingListAdds still merges repeated adds into one open grocery', () => {
   const plan = planShoppingListAdds({
     existingTodos: [
@@ -264,6 +279,94 @@ test('findUncertainShoppingCreateMatch retries when the saved quantity cannot co
     quantityValue: 250,
     quantityUnit: 'g',
   }]), null);
+});
+
+test('applyShoppingQueueToTodos keeps queued local creates visible after a server refresh', () => {
+  const visibleTodos = applyShoppingQueueToTodos({
+    projectId: 'shopping-project',
+    todos: [
+      {
+        _id: 'server-milk',
+        projectId: 'shopping-project',
+        title: 'Milk',
+        status: 'Open',
+        createdAt: '2026-07-15T08:00:00.000Z',
+        updatedAt: '2026-07-15T08:00:00.000Z',
+      },
+    ],
+    queue: [
+      {
+        kind: 'create',
+        targetId: 'offline-todo-oats',
+        record: {
+          localId: 'offline-todo-oats',
+          projectId: 'shopping-project',
+          userId: 'user-1',
+          title: 'Oats',
+          status: 'Open',
+          quantityValue: 500,
+          quantityUnit: 'g',
+          createdAt: '2026-07-15T08:01:00.000Z',
+          updatedAt: '2026-07-15T08:01:00.000Z',
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    visibleTodos.map((todo) => todo._id),
+    ['offline-todo-oats', 'server-milk'],
+  );
+  assert.equal(visibleTodos[0].title, 'Oats');
+  assert.equal(visibleTodos[0].quantityValue, 500);
+  assert.equal(visibleTodos[0].quantityUnit, 'g');
+});
+
+test('applyShoppingQueueToTodos reapplies queued edits and deletes over server rows', () => {
+  const visibleTodos = applyShoppingQueueToTodos({
+    projectId: 'shopping-project',
+    todos: [
+      {
+        _id: 'server-oats',
+        projectId: 'shopping-project',
+        title: 'Oats',
+        status: 'Open',
+        quantityValue: 250,
+        quantityUnit: 'g',
+        createdAt: '2026-07-15T08:00:00.000Z',
+        updatedAt: '2026-07-15T08:00:00.000Z',
+      },
+      {
+        _id: 'server-milk',
+        projectId: 'shopping-project',
+        title: 'Milk',
+        status: 'Open',
+        createdAt: '2026-07-15T08:00:00.000Z',
+        updatedAt: '2026-07-15T08:00:00.000Z',
+      },
+    ],
+    queue: [
+      {
+        kind: 'update',
+        targetId: 'server-oats',
+        patch: {
+          title: 'Porridge oats',
+          quantityValue: 750,
+          quantityUnit: 'g',
+          updatedAt: '2026-07-15T08:02:00.000Z',
+        },
+      },
+      {
+        kind: 'delete',
+        targetId: 'server-milk',
+      },
+    ],
+  });
+
+  assert.equal(visibleTodos.length, 1);
+  assert.equal(visibleTodos[0]._id, 'server-oats');
+  assert.equal(visibleTodos[0].title, 'Porridge oats');
+  assert.equal(visibleTodos[0].quantityValue, 750);
 });
 
 test('buildMealPlanShoppingSyncPreview flags manual matches without treating them as generated updates', () => {

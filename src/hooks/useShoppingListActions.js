@@ -4,22 +4,15 @@ import { isLikelyNetworkError } from '../utils/connectivity';
 import { isOfflineTempId } from '../utils/offlineState';
 import { enqueueCreate, enqueueDelete, enqueueUpdate } from '../utils/offlineQueue';
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
-import { planShoppingListAdds } from '../utils/shoppingListViewState';
+import { generateShoppingOperationId, planShoppingListAdds } from '../utils/shoppingListViewState';
 import { isFreshTimestamp } from '../utils/refreshThrottle';
+import { isMissingShoppingUpsertRpcError, upsertShoppingListItem } from '../utils/shoppingListRpc';
 
 const SHOPPING_ADD_FRESHNESS_MS = 30_000;
 
 const isOfflineBrowser = () => (
   typeof navigator !== 'undefined' && navigator.onLine === false
 );
-
-const isMissingShoppingUpsertRpcError = (error) => {
-  const code = String(error?.code || '').toLowerCase();
-  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
-  return code === '42883'
-    || message.includes('upsert_shopping_list_item')
-    || message.includes('manual_todos');
-};
 
 export function useShoppingListActions({
   currentUserId,
@@ -145,9 +138,14 @@ export function useShoppingListActions({
       meta: item.meta,
     }));
 
+    const insertOperationIdByTitle = new Map(
+      (plan.inserts || []).map((item) => [item.title, item.operationId || generateShoppingOperationId()])
+    );
+
     nextTodos = sortTodos([...nextTodos, ...offlineItems]);
     nextQueue = offlineItems.reduce((queue, todo) => enqueueCreate(queue, {
       localId: todo._id,
+      operationId: insertOperationIdByTitle.get(todo.title) || generateShoppingOperationId(),
       projectId: todo.projectId,
       userId: todo.assigneeUserId,
       title: todo.title,
@@ -212,8 +210,9 @@ export function useShoppingListActions({
       .map((item) => {
         if (typeof item === 'string') {
           return {
-            title: String(item || '').trim(),
-            quantityValue: null,
+          title: String(item || '').trim(),
+          operationId: generateShoppingOperationId(),
+          quantityValue: null,
             quantityUnit: '',
             sourceType: '',
             sourceBatchId: null,
@@ -223,6 +222,7 @@ export function useShoppingListActions({
 
         return {
           title: String(item?.title || '').trim(),
+          operationId: String(item?.operationId || '').trim() || generateShoppingOperationId(),
           quantityValue: (
             item?.quantityValue === null || item?.quantityValue === undefined || item?.quantityValue === ''
               ? null
@@ -288,14 +288,11 @@ export function useShoppingListActions({
 
     const rpcResults = await Promise.all((addPlan.preparedItems || []).map(async (item) => {
       try {
-        const { data, error } = await supabase.rpc('upsert_shopping_list_item', {
-          target_project_id: selectedProject.id,
-          target_title: item.title,
-          target_quantity_value: item.quantityValue,
-          target_quantity_unit: item.quantityUnit || '',
-          target_source_type: item.sourceType || '',
-          target_source_batch_id: item.sourceBatchId || null,
-          target_meta: item.meta || {},
+        const { data, error } = await upsertShoppingListItem({
+          supabaseClient: supabase,
+          projectId: selectedProject.id,
+          item,
+          operationId: item.operationId,
         });
 
         return { data, error, item };
