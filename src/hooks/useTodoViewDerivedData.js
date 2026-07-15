@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import {
   filterBySearch,
   collectDerivedTodos,
+  getCurrentDate,
 } from '../utils/helpers';
 import {
   matchesOwnerSelection,
@@ -9,6 +10,11 @@ import {
   matchesRecurrenceSelection,
   matchesSourceSelection,
 } from '../utils/todoFilterUtils';
+import {
+  getTodoFocusCounts,
+  matchesTodoFocusView,
+  mergeManualTodoCollections,
+} from '../utils/todoCommandCentre';
 
 const sourceFilterKeyForItem = (item) => {
   if (!item.isDerived) return 'manual';
@@ -21,9 +27,13 @@ const sourceFilterKeyForItem = (item) => {
 };
 
 export function useTodoViewDerivedData({
+  allProjectManualTodos,
   allProjectsData,
   bucketFilter,
   currentProject,
+  currentUserId,
+  currentUserName,
+  focusView,
   isExternalView,
   ownerFilter,
   pendingCompletedTodos,
@@ -81,7 +91,10 @@ export function useTodoViewDerivedData({
   }, [projectOptions, currentProject?.id, currentProject?.name]);
 
   const manualTodosByScope = useMemo(() => {
-    const manualTodos = (todos || []).map((item) => ({
+    const sourceTodos = scope === 'all'
+      ? mergeManualTodoCollections(allProjectManualTodos, todos)
+      : (todos || []);
+    const manualTodos = sourceTodos.map((item) => ({
       ...item,
       isDerived: false,
       source: 'Manual',
@@ -96,7 +109,7 @@ export function useTodoViewDerivedData({
       if (!currentProject?.id) return item.projectId === null;
       return item.projectId === currentProject.id || item.projectId === null;
     });
-  }, [todos, scope, currentProject?.id, projectNameMap]);
+  }, [allProjectManualTodos, todos, scope, currentProject?.id, projectNameMap]);
 
   const derivedTodosByScope = useMemo(() => (
     projectsForDerived.flatMap((project) => {
@@ -113,6 +126,12 @@ export function useTodoViewDerivedData({
     const merged = [...manualTodosByScope, ...derivedTodosByScope];
     return merged.filter((item) => item.status !== 'Done');
   }, [manualTodosByScope, derivedTodosByScope]);
+
+  const focusCounts = useMemo(() => getTodoFocusCounts(mergedOpenTodos, {
+    currentUserId,
+    currentUserName,
+    today: getCurrentDate(),
+  }), [currentUserId, currentUserName, mergedOpenTodos]);
 
   const allTodoItems = useMemo(
     () => [...manualTodosByScope, ...derivedTodosByScope],
@@ -136,6 +155,11 @@ export function useTodoViewDerivedData({
     nextItems = nextItems.filter((item) => matchesSourceSelection(sourceFilter, item, sourceFilterKeyForItem));
     nextItems = nextItems.filter((item) => matchesOwnerSelection(ownerFilter, item));
     nextItems = nextItems.filter((item) => matchesRecurrenceSelection(recurrenceFilter, item));
+    nextItems = nextItems.filter((item) => matchesTodoFocusView(item, focusView, {
+      currentUserId,
+      currentUserName,
+      today: getCurrentDate(),
+    }));
     nextItems = filterBySearch(nextItems, searchQuery);
 
     if (isExternalView) {
@@ -150,6 +174,9 @@ export function useTodoViewDerivedData({
     searchQuery,
     sourceFilter,
     isExternalView,
+    focusView,
+    currentUserId,
+    currentUserName,
   ]);
 
   const filteredOpenTodos = useMemo(
@@ -193,6 +220,7 @@ export function useTodoViewDerivedData({
     activeFilterCount,
     allTodoItems,
     filteredTransientTodos,
+    focusCounts,
     mergedOpenTodos,
     ownerOptions,
     projectSelectOptions,

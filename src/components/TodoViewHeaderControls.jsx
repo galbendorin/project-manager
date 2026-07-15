@@ -1,5 +1,13 @@
 import React from 'react';
 import TodoMultiSelectFilter from './TodoMultiSelectFilter';
+import { TODO_FOCUS_VIEWS } from '../utils/todoCommandCentre';
+
+const FOCUS_OPTIONS = [
+  { value: TODO_FOCUS_VIEWS.today, label: 'Today' },
+  { value: TODO_FOCUS_VIEWS.mine, label: 'My Work' },
+  { value: TODO_FOCUS_VIEWS.nextSevenDays, label: 'Next 7' },
+  { value: TODO_FOCUS_VIEWS.all, label: 'All Work' },
+];
 
 const MobileField = ({ label, children }) => (
   <label className="block space-y-1.5">
@@ -13,12 +21,16 @@ export default function TodoViewHeaderControls({
   bucketFilter,
   bucketOptions,
   clearAllFilters,
+  focusCounts,
+  focusView,
   futureItemCount,
   futureMonthCount,
   isMobile,
   loadingAllProjects,
   ownerFilter,
   ownerOptions,
+  onFocusViewChange,
+  onScopeChange,
   projectFilter,
   projectSelectOptions,
   recurrenceFilter,
@@ -29,7 +41,6 @@ export default function TodoViewHeaderControls({
   setOwnerFilter,
   setProjectFilter,
   setRecurrenceFilter,
-  setScope,
   setSearchQuery,
   setShowFutureMonths,
   setShowMobileFilters,
@@ -54,7 +65,7 @@ export default function TodoViewHeaderControls({
         <div>
           <h2 className="text-base font-bold text-slate-800 tracking-tight">Tasks</h2>
           <p className="text-[11px] text-slate-400 mt-1">
-            Switch between detailed list, deadline timeline, and Trello-style Kanban views.
+            Focus on what needs attention, then refine by project or source.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -114,6 +125,30 @@ export default function TodoViewHeaderControls({
             </button>
           ) : null}
         </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" aria-label="Task focus">
+        {FOCUS_OPTIONS.map((option) => {
+          const isActive = focusView === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={isActive}
+              onClick={() => onFocusViewChange(option.value)}
+              className={`flex min-h-11 min-w-0 flex-col items-center justify-center rounded-lg px-1.5 py-1.5 text-center transition-colors ${
+                isActive
+                  ? 'bg-white text-[var(--pm-accent-strong)] shadow-sm ring-1 ring-slate-200'
+                  : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+              }`}
+            >
+              <span className="w-full truncate text-[11px] font-semibold sm:text-xs">{option.label}</span>
+              <span className={`mt-0.5 text-[10px] font-medium ${isActive ? 'text-[var(--pm-accent)]' : 'text-slate-400'}`}>
+                {focusCounts?.[option.value] || 0}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {isMobile ? (
@@ -205,11 +240,7 @@ export default function TodoViewHeaderControls({
                   <MobileField label="Scope">
                     <select
                       value={scope}
-                      onChange={(e) => {
-                        const nextScope = e.target.value;
-                        setScope(nextScope);
-                        setProjectFilter([]);
-                      }}
+                      onChange={(e) => onScopeChange(e.target.value)}
                       className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white w-full"
                     >
                       <option value="project">This Project + Other</option>
@@ -277,11 +308,7 @@ export default function TodoViewHeaderControls({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
           <select
             value={scope}
-            onChange={(e) => {
-              const nextScope = e.target.value;
-              setScope(nextScope);
-              setProjectFilter([]);
-            }}
+            onChange={(e) => onScopeChange(e.target.value)}
             className="px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-lg bg-white"
           >
             <option value="project">This Project + Other</option>
@@ -327,7 +354,7 @@ export default function TodoViewHeaderControls({
       )}
 
       {scope === 'all' && loadingAllProjects && (
-        <div className="text-[11px] text-slate-400">Loading all-project derived tasks...</div>
+        <div className="text-[11px] text-slate-400">Loading tasks from all projects...</div>
       )}
     </div>
   );

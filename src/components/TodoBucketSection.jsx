@@ -249,11 +249,15 @@ export default function TodoBucketSection({
   onReorderDrop,
   onReorderMove,
   pendingCompletedTodos,
+  projectOptions,
+  quickAddProjectId,
   quickAddValues,
   setQuickAddInputRef,
+  setQuickAddProjectId,
   setQuickAddValue,
   setSelectedMobileTodo,
   showCompletionTick,
+  showProjectPicker,
   showQuickAdd,
   statusClass,
 }) {
@@ -350,6 +354,19 @@ export default function TodoBucketSection({
               placeholder={isMobile ? `Quick add to ${bucket.label.toLowerCase()}` : `Add a task to ${bucket.label.toLowerCase()} and press Enter`}
               className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10 sm:text-[12px]"
             />
+            {showProjectPicker ? (
+              <select
+                aria-label="Project for new task"
+                value={quickAddProjectId || 'other'}
+                onChange={(event) => setQuickAddProjectId(event.target.value)}
+                className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10 sm:w-48 sm:text-[12px]"
+              >
+                <option value="other">Other / no project</option>
+                {projectOptions.map((project) => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
+            ) : null}
             <div className={`${isMobile ? 'flex items-center justify-between gap-3' : ''}`}>
               <div className="whitespace-nowrap text-[11px] text-slate-500">
                 {formatQuickAddDueHint(bucket.key)}

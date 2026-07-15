@@ -254,10 +254,14 @@ export default function TodoBoardView({
   onReorderMove,
   onOpenTodo,
   pendingCompletedTodos,
+  projectOptions,
+  quickAddProjectId,
   quickAddValues,
   setQuickAddInputRef,
+  setQuickAddProjectId,
   setQuickAddValue,
   showCompletionTick,
+  showProjectPicker,
   showQuickAdd,
   statusClass,
 }) {
@@ -380,8 +384,23 @@ export default function TodoBoardView({
                   placeholder={`Add a task to ${bucket.label.toLowerCase()}`}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
                 />
-                <div className="mt-2 text-[11px] text-slate-500">
-                  {formatQuickAddDueHint(bucket.key)}
+                <div className="mt-2 flex items-center gap-2">
+                  {showProjectPicker ? (
+                    <select
+                      aria-label="Project for new task"
+                      value={quickAddProjectId || 'other'}
+                      onChange={(event) => setQuickAddProjectId(event.target.value)}
+                      className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[12px] text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
+                    >
+                      <option value="other">Other / no project</option>
+                      {projectOptions.map((project) => (
+                        <option key={project.id} value={project.id}>{project.name}</option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <div className="shrink-0 text-[11px] text-slate-500">
+                    {formatQuickAddDueHint(bucket.key)}
+                  </div>
                 </div>
               </div>
             ) : null}

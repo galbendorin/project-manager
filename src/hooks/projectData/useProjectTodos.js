@@ -478,9 +478,9 @@ export function useProjectTodos({
     return localTodo;
   }, [isOnline, now, projectId, setOfflinePendingSync, userId]);
 
-  const updateTodo = useCallback(async (todoId, key, value) => {
-    const todo = todos.find((item) => item._id === todoId);
-    if (!todo) return;
+  const updateTodo = useCallback(async (todoId, key, value, todoOverride = null) => {
+    const todo = todos.find((item) => item._id === todoId) || todoOverride;
+    if (!todo) return null;
 
     const ts = now();
     const {
@@ -494,7 +494,7 @@ export function useProjectTodos({
 
     if (!userId || !supportsManualTodosTableRef.current) {
       setTodos((prev) => applyTodoUpdateToState(prev, todoId, localUpdated, followUpLocal));
-      return;
+      return { updatedTodo: localUpdated, followUpTodo: followUpLocal };
     }
 
     const queuePatch = { updatedAt: localUpdated.updatedAt };
@@ -544,7 +544,7 @@ export function useProjectTodos({
         return nextQueue;
       });
       setOfflinePendingSync(true);
-      return;
+      return { updatedTodo: localUpdated, followUpTodo: queuedFollowUp };
     }
 
     const patch = buildTodoUpdatePatch({
@@ -582,12 +582,12 @@ export function useProjectTodos({
     if (updateError && isMissingRelationError(updateError, 'manual_todos')) {
       supportsManualTodosTableRef.current = false;
       setTodos((prev) => applyTodoUpdateToState(prev, todoId, localUpdated, followUpLocal));
-      return;
+      return { updatedTodo: localUpdated, followUpTodo: followUpLocal };
     }
 
     if (updateError || !updatedRow) {
       console.error('Failed to update manual todo:', updateError);
-      return;
+      return null;
     }
 
     let followUpDbRow = null;
@@ -617,27 +617,33 @@ export function useProjectTodos({
       }
     }
 
+    const updatedTodo = mapManualTodoRow(updatedRow);
+    const followUpTodo = followUpDbRow
+      ? mapManualTodoRow(followUpDbRow)
+      : followUpLocal;
+
     setTodos((prev) => {
-      const next = prev.map((item) => item._id === todoId ? mapManualTodoRow(updatedRow) : item);
+      const next = prev.map((item) => item._id === todoId ? updatedTodo : item);
       if (followUpDbRow) {
-        next.push(mapManualTodoRow(followUpDbRow));
+        next.push(followUpTodo);
       } else if (followUpLocal) {
         next.push(followUpLocal);
       }
       return next;
     });
+    return { updatedTodo, followUpTodo };
   }, [isOnline, now, setOfflinePendingSync, todos, userId]);
 
   const deleteTodo = useCallback(async (todoId) => {
     const previousTodos = todos;
     setTodos((prev) => prev.filter((todo) => todo._id !== todoId));
 
-    if (!userId || !supportsManualTodosTableRef.current) return;
+    if (!userId || !supportsManualTodosTableRef.current) return true;
 
     if (!isOnline || isOfflineTempId(todoId)) {
       setTodoQueue((prev) => enqueueDelete(prev, todoId));
       setOfflinePendingSync(true);
-      return;
+      return true;
     }
 
     const { error } = await supabase
@@ -647,12 +653,14 @@ export function useProjectTodos({
 
     if (error && isMissingRelationError(error, 'manual_todos')) {
       supportsManualTodosTableRef.current = false;
-      return;
+      return true;
     }
     if (error) {
       console.error('Failed to delete manual todo:', error);
       setTodos(previousTodos);
+      return false;
     }
+    return true;
   }, [isOnline, setOfflinePendingSync, todos, userId]);
 
   return {

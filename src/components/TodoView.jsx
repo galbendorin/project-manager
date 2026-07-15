@@ -22,6 +22,21 @@ import MobileTodoDetailSheet from './MobileTodoDetailSheet';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
 import { buildTodoCardKey, useTodoKanbanBoard } from '../hooks/useTodoKanbanBoard';
 import { useTaskCardChecklists } from '../hooks/useTaskCardChecklists';
+import {
+  LEGACY_MANUAL_TODO_SELECT,
+  MANUAL_TODO_SELECT,
+  SHOPPING_MANUAL_TODO_EXTRA_FIELDS,
+  SHOPPING_MANUAL_TODO_SELECT,
+  isMissingRelationError,
+  isMissingSchemaFieldError,
+  mapManualTodoRow,
+} from '../hooks/projectData/manualTodoUtils';
+import {
+  TODO_FOCUS_VIEWS,
+  isShoppingListProject,
+  mergeManualTodoCollections,
+  normalizeTodoFocusView,
+} from '../utils/todoCommandCentre';
 
 const SOURCE_FILTER_OPTIONS = [
   { value: 'all', label: 'All Sources' },
@@ -74,6 +89,52 @@ const MOBILE_COMPLETE_DELAY_MS = 3200;
 
 const TODO_VIEW_MODE_KEY = 'pmworkspace:todo-view-mode:v1';
 const TODO_FUTURE_MONTHS_KEY = 'pmworkspace:todo-future-months:v1';
+const TODO_COMMAND_STATE_KEY = 'pmworkspace:todo-command-state:v1';
+
+const readTodoCommandState = () => {
+  const cached = readLocalJson(TODO_COMMAND_STATE_KEY, {});
+  const readArray = (key) => Array.isArray(cached?.[key]) ? cached[key].filter(Boolean) : [];
+  return {
+    focusView: cached?.focusView
+      ? normalizeTodoFocusView(cached.focusView)
+      : TODO_FOCUS_VIEWS.today,
+    scope: cached?.scope === 'project' ? 'project' : 'all',
+    projectFilter: readArray('projectFilter'),
+    sourceFilter: readArray('sourceFilter'),
+    ownerFilter: readArray('ownerFilter'),
+    recurrenceFilter: readArray('recurrenceFilter'),
+    bucketFilter: readArray('bucketFilter'),
+    quickAddProjectId: String(cached?.quickAddProjectId || '').trim(),
+  };
+};
+
+const loadAllManualTodos = async () => {
+  let selectClause = SHOPPING_MANUAL_TODO_SELECT;
+  let response = await supabase
+    .from('manual_todos')
+    .select(selectClause)
+    .neq('status', 'Done')
+    .order('created_at', { ascending: true });
+
+  if (response.error && isMissingSchemaFieldError(response.error, SHOPPING_MANUAL_TODO_EXTRA_FIELDS)) {
+    selectClause = MANUAL_TODO_SELECT;
+    response = await supabase
+      .from('manual_todos')
+      .select(selectClause)
+      .neq('status', 'Done')
+      .order('created_at', { ascending: true });
+  }
+
+  if (response.error && isMissingSchemaFieldError(response.error, ['description', 'kanban_column_id', 'kanban_position'])) {
+    response = await supabase
+      .from('manual_todos')
+      .select(LEGACY_MANUAL_TODO_SELECT)
+      .neq('status', 'Done')
+      .order('created_at', { ascending: true });
+  }
+
+  return response;
+};
 
 const TodoView = ({
   todos,
@@ -82,6 +143,7 @@ const TodoView = ({
   tracker,
   currentProject,
   currentUserId,
+  currentUserName,
   isExternalView,
   pendingFocusTodoId,
   onTodoFocusHandled,
@@ -90,16 +152,23 @@ const TodoView = ({
   onDeleteTodo,
   onCompleteTodo
 }) => {
+  const initialCommandStateRef = useRef(null);
+  if (!initialCommandStateRef.current) {
+    initialCommandStateRef.current = readTodoCommandState();
+  }
+  const initialCommandState = initialCommandStateRef.current;
   const [searchQuery, setSearchQuery] = useState('');
-  const [scope, setScope] = useState('project');
-  const [projectFilter, setProjectFilter] = useState([]);
-  const [sourceFilter, setSourceFilter] = useState([]);
-  const [ownerFilter, setOwnerFilter] = useState([]);
-  const [recurrenceFilter, setRecurrenceFilter] = useState([]);
-  const [bucketFilter, setBucketFilter] = useState([]);
+  const [focusView, setFocusView] = useState(initialCommandState.focusView);
+  const [scope, setScope] = useState(initialCommandState.scope);
+  const [projectFilter, setProjectFilter] = useState(initialCommandState.projectFilter);
+  const [sourceFilter, setSourceFilter] = useState(initialCommandState.sourceFilter);
+  const [ownerFilter, setOwnerFilter] = useState(initialCommandState.ownerFilter);
+  const [recurrenceFilter, setRecurrenceFilter] = useState(initialCommandState.recurrenceFilter);
+  const [bucketFilter, setBucketFilter] = useState(initialCommandState.bucketFilter);
 
   const [projectOptions, setProjectOptions] = useState([]);
   const [allProjectsData, setAllProjectsData] = useState([]);
+  const [allProjectManualTodos, setAllProjectManualTodos] = useState([]);
   const [loadingAllProjects, setLoadingAllProjects] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [selectedTodo, setSelectedTodo] = useState(null);
@@ -114,10 +183,12 @@ const TodoView = ({
     return cached?.show === true;
   });
   const [quickAddValues, setQuickAddValues] = useState({});
+  const [quickAddProjectId, setQuickAddProjectId] = useState(initialCommandState.quickAddProjectId);
   const [pendingCompletedTodos, setPendingCompletedTodos] = useState({});
   const [todoDragState, setTodoDragState] = useState({ todo: null, sourceBucketKey: '', target: null });
   const quickAddInputRefs = useRef(new Map());
   const completionTimeoutsRef = useRef(new Map());
+  const previousProjectIdRef = useRef(currentProject?.id || null);
   const isMobile = useMediaQuery('(max-width: 768px)');
 
   const setQuickAddInputRef = (bucketKey, element) => {
@@ -145,6 +216,28 @@ const TodoView = ({
   }, [showFutureMonths]);
 
   useEffect(() => {
+    writeLocalJson(TODO_COMMAND_STATE_KEY, {
+      focusView,
+      scope,
+      projectFilter,
+      sourceFilter,
+      ownerFilter,
+      recurrenceFilter,
+      bucketFilter,
+      quickAddProjectId,
+    });
+  }, [
+    bucketFilter,
+    focusView,
+    ownerFilter,
+    projectFilter,
+    quickAddProjectId,
+    recurrenceFilter,
+    scope,
+    sourceFilter,
+  ]);
+
+  useEffect(() => {
     if (!isMobile && showMobileFilters) {
       setShowMobileFilters(false);
     }
@@ -166,8 +259,11 @@ const TodoView = ({
   }, []);
 
   useEffect(() => {
-    setProjectFilter([]);
-  }, [scope, currentProject?.id]);
+    const nextProjectId = currentProject?.id || null;
+    if (previousProjectIdRef.current === nextProjectId) return;
+    previousProjectIdRef.current = nextProjectId;
+    if (scope === 'project') setProjectFilter([]);
+  }, [currentProject?.id, scope]);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,7 +283,7 @@ const TodoView = ({
         return;
       }
 
-      setProjectOptions(data || []);
+      setProjectOptions((data || []).filter((project) => !isShoppingListProject(project)));
     };
 
     loadProjectOptions();
@@ -200,20 +296,41 @@ const TodoView = ({
     let cancelled = false;
 
     const loadAllProjectData = async () => {
-      if (scope !== 'all' || !currentUserId) return;
+      if (scope !== 'all' || !currentUserId) {
+        setLoadingAllProjects(false);
+        return;
+      }
 
       setLoadingAllProjects(true);
-      const { data, error } = await supabase
-        .from('projects')
-        .select('id, name, tasks, registers, tracker, version')
-        .order('updated_at', { ascending: false });
+      const [projectResponse, manualTodoResponse] = await Promise.all([
+        supabase
+          .from('projects')
+          .select('id, name, tasks, registers, tracker, version')
+          .order('updated_at', { ascending: false }),
+        loadAllManualTodos(),
+      ]);
 
       if (cancelled) return;
-      if (error) {
-        console.error('Failed to load all-project task data:', error);
+      if (projectResponse.error) {
+        console.error('Failed to load all-project task data:', projectResponse.error);
         setAllProjectsData([]);
+        setAllProjectManualTodos([]);
       } else {
-        setAllProjectsData(data || []);
+        const professionalProjects = (projectResponse.data || [])
+          .filter((project) => !isShoppingListProject(project));
+        const professionalProjectIds = new Set(professionalProjects.map((project) => project.id));
+        setAllProjectsData(professionalProjects);
+
+        if (!manualTodoResponse.error) {
+          setAllProjectManualTodos((manualTodoResponse.data || [])
+            .map(mapManualTodoRow)
+            .filter((todo) => !todo.projectId || professionalProjectIds.has(todo.projectId)));
+        } else if (isMissingRelationError(manualTodoResponse.error, 'manual_todos')) {
+          setAllProjectManualTodos([]);
+        } else {
+          console.error('Failed to load all-project manual tasks:', manualTodoResponse.error);
+          setAllProjectManualTodos([]);
+        }
       }
       setLoadingAllProjects(false);
     };
@@ -225,18 +342,32 @@ const TodoView = ({
     };
   }, [scope, currentUserId]);
 
+  useEffect(() => {
+    setQuickAddProjectId((currentValue) => {
+      if (currentValue === 'other') return currentValue;
+      if (projectOptions.some((project) => project.id === currentValue)) return currentValue;
+      if (currentProject?.id && !isShoppingListProject(currentProject)) return currentProject.id;
+      return projectOptions[0]?.id || 'other';
+    });
+  }, [currentProject, projectOptions]);
+
   const {
     activeFilterCount,
     allTodoItems,
     filteredTransientTodos,
+    focusCounts,
     mergedOpenTodos,
     ownerOptions,
     projectSelectOptions,
     visibleOpenTodos,
   } = useTodoViewDerivedData({
+    allProjectManualTodos,
     allProjectsData,
     bucketFilter,
     currentProject,
+    currentUserId,
+    currentUserName,
+    focusView,
     isExternalView,
     ownerFilter,
     pendingCompletedTodos,
@@ -275,6 +406,36 @@ const TodoView = ({
       setSelectedTodo(nextSelected);
     }
   }, [allTodoItems, selectedTodo]);
+
+  const applyManualMutationResult = useCallback((result) => {
+    const changedTodos = [result?.updatedTodo, result?.followUpTodo].filter(Boolean);
+    if (changedTodos.length === 0) return;
+    setAllProjectManualTodos((currentTodos) => (
+      mergeManualTodoCollections(currentTodos, changedTodos)
+    ));
+  }, []);
+
+  const handleUpdateTodo = useCallback(async (todoId, key, value) => {
+    if (!onUpdateTodo) return null;
+    const originalTodo = allTodoItems.find((todo) => (todo._id || todo.id) === todoId) || null;
+    const result = await onUpdateTodo(todoId, key, value, originalTodo);
+    applyManualMutationResult(result);
+    return result;
+  }, [allTodoItems, applyManualMutationResult, onUpdateTodo]);
+
+  const handleDeleteTodo = useCallback(async (todoId) => {
+    if (!onDeleteTodo) return false;
+    const deleted = await onDeleteTodo(todoId);
+    if (deleted === false) return false;
+
+    setAllProjectManualTodos((currentTodos) => (
+      currentTodos.filter((todo) => (todo._id || todo.id) !== todoId)
+    ));
+    setSelectedTodo((currentTodo) => (
+      currentTodo && (currentTodo._id || currentTodo.id) === todoId ? null : currentTodo
+    ));
+    return true;
+  }, [onDeleteTodo]);
 
   const clearPendingCompletion = useCallback((todoId) => {
     const existingTimeoutId = completionTimeoutsRef.current.get(todoId);
@@ -350,6 +511,11 @@ const TodoView = ({
   }, [allProjectsData, onCompleteTodo]);
 
   const persistCompletedTodo = useCallback(async (todo) => {
+    if (!todo?.isDerived) {
+      await handleUpdateTodo(todo._id, 'status', 'Done');
+      return;
+    }
+
     const isCrossProjectTodo = (
       scope === 'all'
       && todo?.projectId
@@ -364,7 +530,7 @@ const TodoView = ({
     if (onCompleteTodo) {
       await onCompleteTodo(todo);
     }
-  }, [completeCrossProjectTodo, currentProject?.id, onCompleteTodo, scope]);
+  }, [completeCrossProjectTodo, currentProject?.id, handleUpdateTodo, onCompleteTodo, scope]);
 
   const schedulePendingCompletion = useCallback((todo, delayMs) => {
     const existingTimeoutId = completionTimeoutsRef.current.get(todo._id);
@@ -416,11 +582,19 @@ const TodoView = ({
 
     setQuickAddValue(bucketKey, '');
 
-    await onAddTodo({
+    const destinationProjectId = scope === 'all'
+      ? (quickAddProjectId === 'other' ? null : quickAddProjectId)
+      : (currentProject?.id || null);
+    const addedTodo = await onAddTodo({
       title,
-      projectId: currentProject?.id || null,
+      projectId: destinationProjectId,
       dueDate: getTodoSectionDefaultDueDate(bucketKey)
     });
+    if (addedTodo) {
+      setAllProjectManualTodos((currentTodos) => (
+        mergeManualTodoCollections(currentTodos, [addedTodo])
+      ));
+    }
 
     window.requestAnimationFrame(() => {
       const input = quickAddInputRefs.current.get(bucketKey);
@@ -428,7 +602,7 @@ const TodoView = ({
         input.focus();
       }
     });
-  }, [currentProject?.id, isExternalView, onAddTodo, quickAddValues]);
+  }, [currentProject?.id, isExternalView, onAddTodo, quickAddProjectId, quickAddValues, scope]);
 
   const showCompletionTick = !isExternalView;
   const showQuickAdd = !isExternalView;
@@ -449,7 +623,7 @@ const TodoView = ({
     currentUserId,
     isExternalView,
     onAddTodo,
-    onUpdateTodo,
+    onUpdateTodo: handleUpdateTodo,
     scope,
     visibleOpenTodos,
   });
@@ -520,10 +694,10 @@ const TodoView = ({
     const nextDueDate = getTodoSectionDefaultDueDate(targetBucketKey);
 
     if (!todo.isDerived && (todo.dueDate || '') !== nextDueDate) {
-      await onUpdateTodo(todo._id, 'dueDate', nextDueDate);
+      await handleUpdateTodo(todo._id, 'dueDate', nextDueDate);
     }
     await moveCardToPosition(todo, nextPosition);
-  }, [bucketSections, canDragReorderTodo, moveCardToPosition, onUpdateTodo]);
+  }, [bucketSections, canDragReorderTodo, handleUpdateTodo, moveCardToPosition]);
 
   const getFlattenedReorderItems = useCallback(() => (
     bucketSections.flatMap((bucket) => (
@@ -611,6 +785,25 @@ const TodoView = ({
     setBucketFilter([]);
   }, []);
 
+  const handleFocusViewChange = useCallback((nextFocusView) => {
+    setFocusView(normalizeTodoFocusView(nextFocusView));
+    setScope('all');
+    setProjectFilter([]);
+    setSourceFilter([]);
+    setOwnerFilter([]);
+    setRecurrenceFilter([]);
+    setBucketFilter([]);
+    setSearchQuery('');
+    if (viewMode === 'kanban') setViewMode('list');
+  }, [viewMode]);
+
+  const handleScopeChange = useCallback((nextScope) => {
+    setFocusView(TODO_FOCUS_VIEWS.all);
+    setScope(nextScope === 'all' ? 'all' : 'project');
+    setProjectFilter([]);
+    if (nextScope === 'all' && viewMode === 'kanban') setViewMode('list');
+  }, [viewMode]);
+
   const selectedTodoCanEdit = !isExternalView && !selectedTodo?.isDerived && selectedTodo?.status !== 'Done';
   const checklistSourceTodos = useMemo(() => {
     const todoMap = new Map();
@@ -653,12 +846,16 @@ const TodoView = ({
           bucketFilter={bucketFilter}
           bucketOptions={filterableBucketSections.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
           clearAllFilters={clearAllFilters}
+          focusCounts={focusCounts}
+          focusView={focusView}
           futureItemCount={futureItemCount}
           futureMonthCount={futureMonthSections.length}
           isMobile={isMobile}
           loadingAllProjects={loadingAllProjects}
           ownerFilter={ownerFilter}
           ownerOptions={ownerOptions}
+          onFocusViewChange={handleFocusViewChange}
+          onScopeChange={handleScopeChange}
           projectFilter={projectFilter}
           projectSelectOptions={projectSelectOptions}
           recurrenceFilter={recurrenceFilter}
@@ -669,7 +866,6 @@ const TodoView = ({
           setOwnerFilter={setOwnerFilter}
           setProjectFilter={setProjectFilter}
           setRecurrenceFilter={setRecurrenceFilter}
-          setScope={setScope}
           setSearchQuery={setSearchQuery}
           setShowFutureMonths={setShowFutureMonths}
           setShowMobileFilters={setShowMobileFilters}
@@ -694,7 +890,7 @@ const TodoView = ({
             handleCompleteTodo={handleCompleteTodo}
             handleQuickAddSubmit={handleQuickAddSubmit}
             isExternalView={isExternalView}
-            onDeleteTodo={onDeleteTodo}
+            onDeleteTodo={handleDeleteTodo}
             onReorderDragEnd={handleTodoReorderDragEnd}
             onReorderDragOver={handleTodoReorderDragOver}
             onReorderDragStart={handleTodoReorderDragStart}
@@ -702,9 +898,13 @@ const TodoView = ({
             onReorderMove={handleTodoReorderMove}
             onOpenTodo={setSelectedTodo}
             pendingCompletedTodos={pendingCompletedTodos}
+            projectOptions={projectOptions}
+            quickAddProjectId={quickAddProjectId}
             quickAddValues={quickAddValues}
             setQuickAddInputRef={setQuickAddInputRef}
+            setQuickAddProjectId={setQuickAddProjectId}
             setQuickAddValue={setQuickAddValue}
+            showProjectPicker={scope === 'all'}
             showCompletionTick={showCompletionTick}
             showQuickAdd={showQuickAdd}
             statusClass={statusClass}
@@ -721,7 +921,7 @@ const TodoView = ({
             kanbanAvailable={kanbanAvailable}
             kanbanMessage={kanbanMessage}
             moveCardToColumn={moveCardToColumn}
-            onDeleteTodo={onDeleteTodo}
+            onDeleteTodo={handleDeleteTodo}
             onOpenTodo={setSelectedTodo}
             pendingCompletedTodos={pendingCompletedTodos}
             renameColumn={renameColumn}
@@ -746,17 +946,21 @@ const TodoView = ({
                 handleQuickAddSubmit={handleQuickAddSubmit}
                 isExternalView={isExternalView}
                 isMobile={isMobile}
-                onDeleteTodo={onDeleteTodo}
+                onDeleteTodo={handleDeleteTodo}
                 onReorderDragEnd={handleTodoReorderDragEnd}
                 onReorderDragOver={handleTodoReorderDragOver}
                 onReorderDragStart={handleTodoReorderDragStart}
                 onReorderDrop={handleTodoReorderDrop}
                 onReorderMove={handleTodoReorderMove}
                 pendingCompletedTodos={pendingCompletedTodos}
+                projectOptions={projectOptions}
+                quickAddProjectId={quickAddProjectId}
                 quickAddValues={quickAddValues}
                 setSelectedMobileTodo={setSelectedTodo}
                 setQuickAddInputRef={setQuickAddInputRef}
+                setQuickAddProjectId={setQuickAddProjectId}
                 setQuickAddValue={setQuickAddValue}
+                showProjectPicker={scope === 'all'}
                 showCompletionTick={showCompletionTick}
                 showQuickAdd={showQuickAdd}
                 statusClass={statusClass}
@@ -772,8 +976,8 @@ const TodoView = ({
           canEdit={selectedTodoCanEdit}
           projectOptions={projectOptions}
           onClose={() => setSelectedTodo(null)}
-          onDeleteTodo={onDeleteTodo}
-          onUpdateTodo={onUpdateTodo}
+          onDeleteTodo={handleDeleteTodo}
+          onUpdateTodo={handleUpdateTodo}
           recurrenceOptions={RECURRENCE_OPTIONS}
           recurrenceLabel={recurrenceLabel}
           statusClass={statusClass}
@@ -799,8 +1003,8 @@ const TodoView = ({
           canEdit={selectedTodoCanEdit}
           projectOptions={projectOptions}
           onClose={() => setSelectedTodo(null)}
-          onDeleteTodo={onDeleteTodo}
-          onUpdateTodo={onUpdateTodo}
+          onDeleteTodo={handleDeleteTodo}
+          onUpdateTodo={handleUpdateTodo}
           recurrenceLabel={recurrenceLabel}
           recurrenceOptions={RECURRENCE_OPTIONS}
           statusClass={statusClass}
