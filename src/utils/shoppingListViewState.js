@@ -487,6 +487,63 @@ export const getShoppingQuickAddSyncState = ({
   };
 };
 
+export const getShoppingQuickAddActionLabel = ({
+  isOnline = true,
+  queueCount = 0,
+  syncing = false,
+  hasFailedItem = false,
+} = {}) => {
+  const safeQueueCount = Math.max(0, Number.isFinite(Number(queueCount)) ? Number(queueCount) : 0);
+
+  if (syncing) return '';
+  if (hasFailedItem) return safeQueueCount > 0 ? 'Retry saved changes' : 'Retry item';
+  if (isOnline && safeQueueCount > 0) return 'Sync now';
+  return '';
+};
+
+export const getShoppingEmptyState = ({
+  isOnline = true,
+  hasSelectedProject = true,
+  queueCount = 0,
+  lastSyncLabel = '',
+} = {}) => {
+  const safeQueueCount = Math.max(0, Number.isFinite(Number(queueCount)) ? Number(queueCount) : 0);
+
+  if (!hasSelectedProject) {
+    return {
+      status: isOnline ? 'queue' : 'offline',
+      title: isOnline ? 'Shopping List is getting ready' : 'Shopping List needs signal',
+      detail: isOnline
+        ? 'Once the shared list is ready, groceries you add here will appear for everyone.'
+        : 'Connect once to prepare the shared list on this phone.',
+    };
+  }
+
+  if (!isOnline) {
+    return {
+      status: 'offline',
+      title: 'No groceries cached here yet',
+      detail: lastSyncLabel
+        ? `This phone last synced at ${lastSyncLabel}, and there are no visible groceries for this list.`
+        : 'Connect once to load your shared groceries, then this phone can keep them available.',
+    };
+  }
+
+  if (safeQueueCount > 0) {
+    return {
+      status: 'queue',
+      title: 'Saved changes are waiting',
+      detail: `${safeQueueCount} grocery change${safeQueueCount === 1 ? '' : 's'} will appear here after syncing.`,
+    };
+  }
+
+  return {
+    status: 'ok',
+    title: 'Your shared grocery list is ready',
+    detail: 'Add a few groceries above, or use voice to drop in a quick list for the week.',
+  };
+};
+
 export const getShoppingOfflineReadinessState = ({
   openCount = 0,
   boughtCount = 0,

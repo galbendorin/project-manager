@@ -7,7 +7,9 @@ import {
   createEmptyShoppingOfflineState,
   findUncertainShoppingCreateMatch,
   formatShoppingAddSummary,
+  getShoppingEmptyState,
   getShoppingOfflineReadinessState,
+  getShoppingQuickAddActionLabel,
   getShoppingQuickAddSyncState,
   getShoppingQueueSyncDetail,
   groupCompletedShoppingTodos,
@@ -362,6 +364,67 @@ test('getShoppingQuickAddSyncState summarizes the phone-safe shopping state', ()
       label: 'Shared list saved',
       detail: 'Last synced at 10:24.',
     }
+  );
+});
+
+test('getShoppingQuickAddActionLabel exposes only useful recovery actions', () => {
+  assert.equal(
+    getShoppingQuickAddActionLabel({ hasFailedItem: true, queueCount: 2 }),
+    'Retry saved changes',
+  );
+  assert.equal(
+    getShoppingQuickAddActionLabel({ hasFailedItem: true, queueCount: 0 }),
+    'Retry item',
+  );
+  assert.equal(
+    getShoppingQuickAddActionLabel({ isOnline: true, queueCount: 3 }),
+    'Sync now',
+  );
+  assert.equal(
+    getShoppingQuickAddActionLabel({ isOnline: false, queueCount: 3 }),
+    '',
+  );
+  assert.equal(
+    getShoppingQuickAddActionLabel({ syncing: true, hasFailedItem: true, queueCount: 3 }),
+    '',
+  );
+});
+
+test('getShoppingEmptyState explains first-open and offline list states', () => {
+  assert.deepEqual(
+    getShoppingEmptyState({ isOnline: false, hasSelectedProject: false }),
+    {
+      status: 'offline',
+      title: 'Shopping List needs signal',
+      detail: 'Connect once to prepare the shared list on this phone.',
+    },
+  );
+
+  assert.deepEqual(
+    getShoppingEmptyState({ isOnline: false, hasSelectedProject: true, lastSyncLabel: '10:24' }),
+    {
+      status: 'offline',
+      title: 'No groceries cached here yet',
+      detail: 'This phone last synced at 10:24, and there are no visible groceries for this list.',
+    },
+  );
+
+  assert.deepEqual(
+    getShoppingEmptyState({ isOnline: true, hasSelectedProject: true, queueCount: 2 }),
+    {
+      status: 'queue',
+      title: 'Saved changes are waiting',
+      detail: '2 grocery changes will appear here after syncing.',
+    },
+  );
+
+  assert.deepEqual(
+    getShoppingEmptyState({ isOnline: true, hasSelectedProject: true }),
+    {
+      status: 'ok',
+      title: 'Your shared grocery list is ready',
+      detail: 'Add a few groceries above, or use voice to drop in a quick list for the week.',
+    },
   );
 });
 

@@ -3,6 +3,14 @@ import { isOfflineTempId } from '../utils/offlineState';
 
 const MEAL_PLAN_NOTICE_STORAGE_KEY = 'pmworkspace:shopping-meal-plan-notice-seen:v1';
 
+const EMPTY_STATE_CLASSES = {
+  offline: 'border-amber-200 bg-amber-50 text-amber-700',
+  queue: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+  ok: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+};
+
+const emptyStateClassName = (status) => EMPTY_STATE_CLASSES[status] || EMPTY_STATE_CLASSES.ok;
+
 const formatQuantity = (value) => {
   if (!Number.isFinite(Number(value))) return '';
   const rounded = Math.round(Number(value) * 100) / 100;
@@ -66,6 +74,7 @@ export default function ShoppingListItemsPanel({
   editingError,
   editingTitle,
   editingTodoId,
+  emptyState,
   failedTodoId,
   failedTodoMessage,
   handleCancelEditingTodo,
@@ -161,12 +170,12 @@ export default function ShoppingListItemsPanel({
         </div>
       ) : todos.length === 0 ? (
         <div className="pm-surface-card rounded-[24px] px-4 py-12 text-center shadow-sm">
-          <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-[var(--pm-accent)] shadow-sm">
+          <div className={`mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm ${emptyStateClassName(emptyState?.status)}`}>
             <ShoppingBasketIcon className="h-5 w-5" />
           </div>
-          <p className="mt-4 text-sm font-semibold text-slate-900">Your shared grocery list is ready</p>
+          <p className="mt-4 text-sm font-semibold text-slate-900">{emptyState?.title || 'Your shared grocery list is ready'}</p>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Add a few groceries above, or use voice to drop in a quick list for the week.
+            {emptyState?.detail || 'Add a few groceries above, or use voice to drop in a quick list for the week.'}
           </p>
         </div>
       ) : (

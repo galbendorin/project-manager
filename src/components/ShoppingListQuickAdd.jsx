@@ -85,8 +85,20 @@ export default function ShoppingListQuickAdd({
       {syncState ? (
         <div className={`mt-3 rounded-2xl border px-3 py-2 text-xs ${syncStatusClassName(syncState.status)}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-semibold">{syncState.label}</span>
-            <span className="text-[11px] font-medium opacity-80">{syncState.detail}</span>
+            <div className="min-w-0">
+              <span className="font-semibold">{syncState.label}</span>
+              <span className="ml-2 text-[11px] font-medium opacity-80">{syncState.detail}</span>
+            </div>
+            {syncState.actionLabel && typeof syncState.onAction === 'function' ? (
+              <button
+                type="button"
+                onClick={syncState.onAction}
+                disabled={syncState.actionDisabled}
+                className="inline-flex min-h-8 items-center rounded-full border border-current bg-white/70 px-3 text-[11px] font-semibold transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {syncState.actionLabel}
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}
