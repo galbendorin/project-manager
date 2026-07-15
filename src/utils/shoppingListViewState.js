@@ -384,20 +384,48 @@ export const findUncertainShoppingCreateMatch = (record = {}, todos = []) => {
   return savedQuantity >= requestedQuantity ? matchingTodo : null;
 };
 
+const getQueuedShoppingChangeTitle = (item = {}) => {
+  if (item.kind === 'create') {
+    return String(item.record?.title || '').trim();
+  }
+  if (item.kind === 'update') {
+    return String(item.patch?.title || '').trim();
+  }
+  return '';
+};
+
+const formatQueuedShoppingChangeTitles = (queue = []) => {
+  const titles = (Array.isArray(queue) ? queue : [])
+    .map(getQueuedShoppingChangeTitle)
+    .filter(Boolean);
+
+  if (titles.length === 0) return '';
+
+  const visibleTitles = titles.slice(0, 3).join(', ');
+  const hiddenCount = titles.length - 3;
+  return hiddenCount > 0
+    ? `${visibleTitles}, and ${hiddenCount} more`
+    : visibleTitles;
+};
+
 export const getShoppingQueueSyncDetail = (queue = [], { syncing = false } = {}) => {
   const queuedItems = Array.isArray(queue) ? queue : [];
   const queuedAdds = queuedItems.filter((item) => item?.kind === 'create');
   const protectedAdds = queuedAdds.filter((item) => String(item?.record?.operationId || '').trim());
+  const titleList = formatQueuedShoppingChangeTitles(queuedItems);
+  const titlePrefix = titleList
+    ? `${syncing ? 'Syncing now' : 'Waiting to save'}: ${titleList}. `
+    : '';
 
   if (syncing) {
-    return 'Your queued grocery updates are being pushed to the shared list now.';
+    return `${titlePrefix}Your queued grocery updates are being pushed to the shared list now.`;
   }
 
-  if (protectedAdds.length > 0 && protectedAdds.length === queuedAdds.length) {
-    return 'These grocery changes are safe on this phone and protected against duplicate add retries.';
+  if (protectedAdds.length > 0 && protectedAdds.length === queuedItems.length) {
+    return `${titlePrefix}These grocery changes are safe on this phone and protected against duplicate add retries.`;
   }
 
-  return 'These grocery changes are safe on this phone and will sync automatically.';
+  return `${titlePrefix}These grocery changes are safe on this phone and will sync automatically.`;
 };
 
 export const groupCompletedShoppingTodos = (items = []) => {

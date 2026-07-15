@@ -293,17 +293,35 @@ test('getShoppingQueueSyncDetail explains protected shopping adds', () => {
         },
       },
     ]),
-    'These grocery changes are safe on this phone and protected against duplicate add retries.'
+    'Waiting to save: Oats. These grocery changes are safe on this phone and protected against duplicate add retries.'
   );
 
   assert.equal(
     getShoppingQueueSyncDetail([{ kind: 'update', targetId: 'todo-1', patch: { title: 'Milk' } }]),
-    'These grocery changes are safe on this phone and will sync automatically.'
+    'Waiting to save: Milk. These grocery changes are safe on this phone and will sync automatically.'
   );
 
   assert.equal(
-    getShoppingQueueSyncDetail([{ kind: 'create', record: { operationId: 'op-1' } }], { syncing: true }),
-    'Your queued grocery updates are being pushed to the shared list now.'
+    getShoppingQueueSyncDetail([
+      { kind: 'create', record: { operationId: 'op-1', title: 'Oats' } },
+      { kind: 'update', targetId: 'todo-1', patch: { title: 'Porridge oats' } },
+    ]),
+    'Waiting to save: Oats, Porridge oats. These grocery changes are safe on this phone and will sync automatically.'
+  );
+
+  assert.equal(
+    getShoppingQueueSyncDetail([{ kind: 'create', record: { operationId: 'op-1', title: 'Bread' } }], { syncing: true }),
+    'Syncing now: Bread. Your queued grocery updates are being pushed to the shared list now.'
+  );
+
+  assert.equal(
+    getShoppingQueueSyncDetail([
+      { kind: 'create', record: { operationId: 'op-1', title: 'Milk' } },
+      { kind: 'create', record: { operationId: 'op-2', title: 'Bread' } },
+      { kind: 'create', record: { operationId: 'op-3', title: 'Eggs' } },
+      { kind: 'create', record: { operationId: 'op-4', title: 'Apples' } },
+    ]),
+    'Waiting to save: Milk, Bread, Eggs, and 1 more. These grocery changes are safe on this phone and protected against duplicate add retries.'
   );
 });
 
