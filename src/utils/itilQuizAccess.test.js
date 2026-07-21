@@ -6,9 +6,11 @@ import {
   normalizeAccessEmail,
 } from './itilQuizAccess.js';
 
-test('ITIL quiz access is limited to Dorin email', () => {
+test('ITIL quiz access is limited to approved emails', () => {
   assert.equal(canAccessItilQuiz('galben.dorin@yahoo.com'), true);
   assert.equal(canAccessItilQuiz(' Galben.Dorin@Yahoo.com '), true);
+  assert.equal(canAccessItilQuiz('carlo.capaldo@gtt.net'), true);
+  assert.equal(canAccessItilQuiz(' Carlo.Capaldo@GTT.NET '), true);
   assert.equal(canAccessItilQuiz('dorin.galben@yahoo.com'), false);
   assert.equal(canAccessItilQuiz(''), false);
 });
