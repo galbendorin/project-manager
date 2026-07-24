@@ -6,6 +6,7 @@ import {
   STORAGE_SCOPES,
   clearAiSettings,
   loadAiSettings,
+  normalizeGeminiModel,
   saveAiSettings,
 } from './aiSettings.js';
 
@@ -117,5 +118,30 @@ test('clearAiSettings removes both session and local copies', async () => {
     assert.deepEqual(cleared, DEFAULT_SETTINGS);
     assert.equal(localStorage.getItem('pm_os_ai_settings'), null);
     assert.equal(sessionStorage.getItem('pm_os_ai_settings'), null);
+  });
+});
+
+test('legacy Gemini models migrate to current stable models', () => {
+  assert.equal(normalizeGeminiModel('gemini-1.5-pro'), 'gemini-3.5-flash');
+  assert.equal(normalizeGeminiModel('gemini-2.5-flash'), 'gemini-3.5-flash');
+  assert.equal(normalizeGeminiModel('gemini-2.5-flash-lite'), 'gemini-3.1-flash-lite');
+  assert.equal(normalizeGeminiModel('gemini-3.5-flash'), 'gemini-3.5-flash');
+});
+
+test('loadAiSettings upgrades a saved Gemini 2.5 model', async () => {
+  await withMockWindow(async ({ sessionStorage }) => {
+    sessionStorage.setItem('pm_os_ai_settings', JSON.stringify({
+      provider: 'gemini',
+      apiKey: 'AIza-test-key',
+      model: 'gemini-2.5-flash',
+    }));
+
+    const loaded = loadAiSettings();
+
+    assert.equal(loaded.model, 'gemini-3.5-flash');
+    assert.equal(
+      JSON.parse(sessionStorage.getItem('pm_os_ai_settings')).model,
+      'gemini-3.5-flash'
+    );
   });
 });
