@@ -56,9 +56,17 @@ const clearStoredSettings = (storage) => {
   }
 }
 
-const normalizeGeminiModel = (model) => {
-  if (model === 'gemini-2.0-flash') return 'gemini-2.5-flash'
-  if (model === 'gemini-2.0-flash-lite') return 'gemini-2.5-flash-lite'
+export const normalizeGeminiModel = (model) => {
+  if ([
+    'gemini-1.5-pro',
+    'gemini-1.5-flash',
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+  ].includes(model)) return 'gemini-3.5-flash'
+  if ([
+    'gemini-2.0-flash-lite',
+    'gemini-2.5-flash-lite',
+  ].includes(model)) return 'gemini-3.1-flash-lite'
   return model
 }
 
@@ -90,12 +98,10 @@ const PROVIDERS = {
   gemini: {
     id: 'gemini',
     label: 'Google (Gemini)',
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-3.5-flash',
     models: [
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
-      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' }
+      { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+      { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' }
     ],
     keyPrefix: 'AI',
     keyPlaceholder: 'AIza...',

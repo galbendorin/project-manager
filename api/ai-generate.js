@@ -133,7 +133,7 @@ export default async function handler(req, res) {
     }
     apiKey = platformKey
     resolvedProvider = 'gemini'
-    resolvedModel = 'gemini-2.5-flash-lite' // Cost-efficient model for trial users
+    resolvedModel = 'gemini-3.1-flash-lite' // Cost-efficient stable model for trial users
   }
 
   if (!resolvedProvider || !apiKey || !userMessage) {
@@ -410,7 +410,7 @@ async function handleOpenAI({ apiKey, model, systemPrompt, userMessage, maxToken
 }
 
 async function handleGemini({ apiKey, model, systemPrompt, userMessage, maxTokens, stream }, res, onAccepted) {
-  const geminiModel = model || 'gemini-2.5-flash'
+  const geminiModel = model || 'gemini-3.5-flash'
   const endpoint = stream ? 'streamGenerateContent' : 'generateContent'
   const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:${endpoint}`
 
