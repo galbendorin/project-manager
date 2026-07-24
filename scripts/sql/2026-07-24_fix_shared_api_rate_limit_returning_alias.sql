@@ -1,12 +1,4 @@
-create table if not exists public.api_rate_limits (
-  rate_key text primary key,
-  count integer not null default 0,
-  reset_at timestamptz not null,
-  updated_at timestamptz not null default timezone('utc', now())
-);
-
-create index if not exists api_rate_limits_reset_at_idx
-  on public.api_rate_limits (reset_at);
+begin;
 
 create or replace function public.check_api_rate_limit(
   p_key text,
@@ -81,3 +73,5 @@ $$;
 revoke all on table public.api_rate_limits from public, anon, authenticated;
 revoke all on function public.check_api_rate_limit(text, integer, integer) from public, anon, authenticated;
 grant execute on function public.check_api_rate_limit(text, integer, integer) to service_role;
+
+commit;
