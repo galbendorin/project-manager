@@ -11,6 +11,8 @@ test('ITIL quiz access is limited to approved emails', () => {
   assert.equal(canAccessItilQuiz(' Galben.Dorin@Yahoo.com '), true);
   assert.equal(canAccessItilQuiz('carlo.capaldo@gtt.net'), true);
   assert.equal(canAccessItilQuiz(' Carlo.Capaldo@GTT.NET '), true);
+  assert.equal(canAccessItilQuiz('elinor.iv@gmail.com'), true);
+  assert.equal(canAccessItilQuiz(' Elinor.IV@GMAIL.COM '), true);
   assert.equal(canAccessItilQuiz('dorin.galben@yahoo.com'), false);
   assert.equal(canAccessItilQuiz(''), false);
 });
