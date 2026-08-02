@@ -12,8 +12,12 @@ import {
   buildProjectUpdatePayload
 } from './projectData/loadSave.js';
 import {
+  addLinkedTaskRiskIfMissing,
   addTrackedActionIfMissing,
-  removeTrackedAction
+  getTaskRiskLinkState,
+  reconcileActionDeadlineRisks,
+  removeLinkedTaskRisk,
+  removeTrackedAction,
 } from './projectData/registers.js';
 import { getTodoCompletionDescriptor } from './projectData/todoCompletion.js';
 
@@ -189,6 +193,220 @@ test('tracked action helpers are idempotent and removable', () => {
 
   const removed = removeTrackedAction(stillOne, 5);
   assert.equal(removed.actions.length, 0);
+});
+
+test('linked task risk helpers avoid duplicates and preserve an automatic deadline risk', () => {
+  const baseRegisters = { actions: [], risks: [] };
+  const task = { id: 5, name: 'Secure deployment approval', owner: 'Delivery', rag: 'amber' };
+  const nowIso = '2026-08-02T10:00:00.000Z';
+
+  const withRisk = addLinkedTaskRiskIfMissing(baseRegisters, 5, task, nowIso);
+  const stillOne = addLinkedTaskRiskIfMissing(withRisk, 5, task, nowIso);
+  assert.equal(stillOne.risks.length, 1);
+  assert.deepEqual(getTaskRiskLinkState(stillOne, 5), {
+    linked: true,
+    manual: true,
+    automatic: false,
+  });
+
+  const automatic = {
+    ...stillOne,
+    risks: stillOne.risks.map((risk) => ({ ...risk, deadlineManaged: true })),
+  };
+  const removedManualLink = removeLinkedTaskRisk(automatic, 5, '2026-08-02T11:00:00.000Z');
+  assert.equal(removedManualLink.risks.length, 1);
+  assert.deepEqual(getTaskRiskLinkState(removedManualLink, 5), {
+    linked: true,
+    manual: false,
+    automatic: true,
+  });
+});
+
+test('deadline reconciliation creates one risk for an incomplete action due within three days', () => {
+  const registers = {
+    actions: [{
+      _id: 'action_1',
+      description: 'Obtain release approval',
+      actionassignedto: 'PM',
+      status: 'In Progress',
+      target: '2026-08-05',
+      public: true,
+      visible: true,
+    }],
+    risks: [],
+  };
+
+  const first = reconcileActionDeadlineRisks(registers, {
+    todayDate: '2026-08-02',
+    nowIso: '2026-08-02T10:00:00.000Z',
+  });
+  assert.equal(first.registers.risks.length, 1);
+  assert.equal(first.registers.risks[0]._id, 'risk_action_action_1');
+  assert.equal(first.registers.risks[0].deadlineDaysRemaining, 3);
+  assert.equal(first.changes[0].type, 'add');
+
+  const repeated = reconcileActionDeadlineRisks(first.registers, {
+    todayDate: '2026-08-02',
+    nowIso: '2026-08-02T11:00:00.000Z',
+  });
+  assert.strictEqual(repeated.registers, first.registers);
+  assert.equal(repeated.changes.length, 0);
+});
+
+test('deadline reconciliation ignores missing dates, future actions, and completed actions', () => {
+  const registers = {
+    actions: [
+      { _id: 'missing', description: 'Missing date', status: 'Open', target: '' },
+      { _id: 'future', description: 'Future date', status: 'Open', target: '2026-08-06' },
+      { _id: 'done', description: 'Completed action', status: 'Completed', target: '2026-08-03' },
+    ],
+    risks: [],
+  };
+
+  const result = reconcileActionDeadlineRisks(registers, {
+    todayDate: '2026-08-02',
+    nowIso: '2026-08-02T10:00:00.000Z',
+  });
+  assert.strictEqual(result.registers, registers);
+  assert.equal(result.changes.length, 0);
+});
+
+test('deadline reconciliation removes only generated risks after completion', () => {
+  const autoRisk = {
+    _id: 'risk_action_action_1',
+    riskdetails: 'Deadline risk',
+    deadlineManaged: true,
+    manualPlanLink: false,
+    sourceActionId: 'action_1',
+  };
+  const manualRisk = { _id: 'manual_risk', riskdetails: 'Supplier capacity', level: 'High' };
+  const registers = {
+    actions: [{ _id: 'action_1', description: 'Approval', status: 'Completed', target: '2026-08-03' }],
+    risks: [autoRisk, manualRisk],
+  };
+
+  const result = reconcileActionDeadlineRisks(registers, {
+    todayDate: '2026-08-02',
+    nowIso: '2026-08-02T10:00:00.000Z',
+  });
+  assert.deepEqual(result.registers.risks, [manualRisk]);
+  assert.equal(result.changes.length, 1);
+  assert.equal(result.changes[0].type, 'delete');
+  assert.equal(result.changes[0].item._id, autoRisk._id);
+});
+
+test('tracked actions and manual plan links share one risk row', () => {
+  const task = { id: 7, name: 'Production cutover', owner: 'Ops' };
+  const withManualRisk = addLinkedTaskRiskIfMissing({ actions: [], risks: [] }, 7, task, '2026-08-02T09:00:00.000Z');
+  const registers = {
+    ...withManualRisk,
+    actions: [{
+      _id: 'track_7',
+      sourceTaskId: 7,
+      description: task.name,
+      actionassignedto: 'Ops',
+      status: 'In Progress',
+      target: '2026-08-03',
+    }],
+  };
+
+  const result = reconcileActionDeadlineRisks(registers, {
+    todayDate: '2026-08-02',
+    nowIso: '2026-08-02T10:00:00.000Z',
+  });
+  assert.equal(result.registers.risks.length, 1);
+  assert.equal(result.registers.risks[0]._id, 'risk_task_7');
+  assert.equal(result.registers.risks[0].manualPlanLink, true);
+  assert.equal(result.registers.risks[0].deadlineManaged, true);
+});
+
+test('deadline reconciliation reconnects one unambiguous legacy linked action to its plan task', () => {
+  const registers = {
+    actions: [{
+      _id: 'Lnk',
+      number: 'Lnk',
+      description: 'Production cutover',
+      status: 'In Progress',
+      target: '2026-08-03',
+    }],
+    risks: [],
+  };
+
+  const result = reconcileActionDeadlineRisks(registers, {
+    todayDate: '2026-08-02',
+    nowIso: '2026-08-02T10:00:00.000Z',
+    tasks: [
+      { id: 7, name: 'Production cutover' },
+      { id: 8, name: 'Cutover support' },
+    ],
+  });
+
+  assert.equal(result.registers.risks.length, 1);
+  assert.equal(result.registers.risks[0]._id, 'risk_task_7');
+  assert.equal(result.registers.risks[0].sourceTaskId, 7);
+  assert.equal(result.registers.risks[0].sourceActionId, 'Lnk');
+});
+
+test('deadline reconciliation does not guess between duplicate legacy task names', () => {
+  const registers = {
+    actions: [{
+      _id: 'Lnk',
+      number: 'Lnk',
+      description: 'Production cutover',
+      status: 'In Progress',
+      target: '2026-08-03',
+    }],
+    risks: [],
+  };
+
+  const result = reconcileActionDeadlineRisks(registers, {
+    todayDate: '2026-08-02',
+    nowIso: '2026-08-02T10:00:00.000Z',
+    tasks: [
+      { id: 7, name: 'Production cutover' },
+      { id: 8, name: 'Production cutover' },
+    ],
+  });
+
+  assert.equal(result.registers.risks.length, 1);
+  assert.equal(result.registers.risks[0]._id, 'risk_action_Lnk');
+  assert.equal(result.registers.risks[0].sourceTaskId, null);
+});
+
+test('deadline reconciliation preserves a manual risk link after the automatic window closes', () => {
+  const linkedRisk = {
+    _id: 'risk_task_7',
+    riskdetails: 'Delivery risk: Production cutover.',
+    sourceTaskId: 7,
+    sourceActionId: 'track_7',
+    manualPlanLink: true,
+    deadlineManaged: true,
+    deadlineDate: '2026-08-03',
+    deadlineDaysRemaining: 1,
+  };
+  const registers = {
+    actions: [{
+      _id: 'track_7',
+      sourceTaskId: 7,
+      description: 'Production cutover',
+      status: 'Completed',
+      target: '2026-08-03',
+    }],
+    risks: [linkedRisk],
+  };
+
+  const result = reconcileActionDeadlineRisks(registers, {
+    todayDate: '2026-08-02',
+    nowIso: '2026-08-02T10:00:00.000Z',
+  });
+
+  assert.equal(result.registers.risks.length, 1);
+  assert.equal(result.registers.risks[0]._id, linkedRisk._id);
+  assert.equal(result.registers.risks[0].manualPlanLink, true);
+  assert.equal(result.registers.risks[0].deadlineManaged, false);
+  assert.equal(result.registers.risks[0].sourceActionId, null);
+  assert.equal(result.changes.length, 1);
+  assert.equal(result.changes[0].type, 'update');
 });
 
 test('getTodoCompletionDescriptor maps each Tasks source to the right underlying update', () => {

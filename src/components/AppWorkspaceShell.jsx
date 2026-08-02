@@ -108,11 +108,14 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     restoreRegisterItem,
     toggleItemPublic,
     sendToTracker,
+    sendToRiskLog,
     addManualTrackerItem,
     removeFromTracker,
+    removeFromRiskLog,
     updateTrackerItem,
     reorderTrackerItems,
     isInTracker,
+    getRiskLinkState,
     updateStatusReport,
     addTodo,
     updateTodo,
@@ -540,10 +543,13 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
               onInsertTask={(taskId) => handleOpenModal(null, true, taskId)}
               onReorderTask={handleReorderTask}
               onSendToTracker={sendToTracker}
+              onSendToRiskLog={sendToRiskLog}
               onSendToActionLog={handleSendToActionLog}
               onRemoveFromActionLog={handleRemoveFromActionLog}
+              onRemoveFromRiskLog={removeFromRiskLog}
               onRemoveFromTracker={handleRemoveFromTracker}
               isInTracker={isInTracker}
+              getRiskLinkState={getRiskLinkState}
               aiSettings={aiSettings}
               onAiSettingsChange={handleAiSettingsChange}
               onApplyAiTasks={setProjectData}

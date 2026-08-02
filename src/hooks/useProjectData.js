@@ -4,7 +4,10 @@ import { SCHEMAS } from '../utils/constants';
 import { buildDemoProjectPayload, buildDemoScheduleTasks } from '../utils/demoProjectBuilder';
 import { createEmptyRegisters, createEmptyStatusReport } from './projectData/defaults';
 import { buildProjectSyncOp } from './projectData/projectSync';
-import { patchRegisterItemInState } from './projectData/registers';
+import {
+  patchRegisterItemInState,
+  reconcileActionDeadlineRisks,
+} from './projectData/registers';
 import { getTodoCompletionDescriptor } from './projectData/todoCompletion';
 import { useProjectRegisters } from './projectData/useProjectRegisters';
 import { useProjectTodos } from './projectData/useProjectTodos';
@@ -30,6 +33,7 @@ export const useProjectData = (projectId, userId = null) => {
   ));
   const [offlinePendingSync, setOfflinePendingSync] = useState(false);
   const [usingOfflineSnapshot, setUsingOfflineSnapshot] = useState(false);
+  const [riskAutomationDate, setRiskAutomationDate] = useState(() => getCurrentDate());
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -41,6 +45,23 @@ export const useProjectData = (projectId, userId = null) => {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshAutomationDate = () => setRiskAutomationDate(getCurrentDate());
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshAutomationDate();
+    };
+
+    const intervalId = window.setInterval(refreshAutomationDate, 60_000);
+    window.addEventListener('focus', refreshAutomationDate);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshAutomationDate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -65,6 +86,7 @@ export const useProjectData = (projectId, userId = null) => {
   });
   const {
     loadingData,
+    readyProjectId,
     projectSyncQueue,
     queueProjectSyncOp,
     reloadProject,
@@ -99,6 +121,53 @@ export const useProjectData = (projectId, userId = null) => {
     userId,
   });
 
+  useEffect(() => {
+    if (!projectId || readyProjectId !== projectId) return;
+
+    const ts = now();
+    const reconciliation = reconcileActionDeadlineRisks(registers, {
+      todayDate: riskAutomationDate,
+      nowIso: ts,
+      tasks: projectData,
+    });
+    if (reconciliation.changes.length === 0) return;
+
+    setRegisters(reconciliation.registers);
+    reconciliation.changes.forEach((change) => {
+      const itemId = change.item._id;
+      const common = {
+        targetKey: `register:risks:${itemId}:deadline-automation`,
+        label: change.type === 'delete'
+          ? 'Cleared automatic deadline risk'
+          : change.type === 'add'
+            ? 'Added automatic deadline risk'
+            : 'Updated automatic deadline risk',
+        detail: change.item.riskdetails || 'Linked from Action Log deadline',
+        createdAt: ts,
+      };
+
+      if (change.type === 'add') {
+        queueProjectSyncOp(buildProjectSyncOp({
+          ...common,
+          kind: 'register-add',
+          payload: { registerType: 'risks', itemData: change.item },
+        }));
+      } else if (change.type === 'update') {
+        queueProjectSyncOp(buildProjectSyncOp({
+          ...common,
+          kind: 'register-update',
+          payload: { registerType: 'risks', itemId, patch: change.item },
+        }));
+      } else if (change.type === 'delete') {
+        queueProjectSyncOp(buildProjectSyncOp({
+          ...common,
+          kind: 'register-delete',
+          payload: { registerType: 'risks', itemId },
+        }));
+      }
+    });
+  }, [projectData, projectId, queueProjectSyncOp, readyProjectId, registers, riskAutomationDate]);
+
   const {
     addRegisterItem,
     addRegisterItems,
@@ -120,11 +189,14 @@ export const useProjectData = (projectId, userId = null) => {
     addTask,
     clearBaseline,
     deleteTask,
+    getRiskLinkState,
     isInTracker,
     modifyHierarchy,
     removeFromTracker,
+    removeFromRiskLog,
     reorderTrackerItems,
     sendToTracker,
+    sendToRiskLog,
     setBaseline,
     toggleTrackTask,
     updateTask,
@@ -133,6 +205,8 @@ export const useProjectData = (projectId, userId = null) => {
   } = useProjectTasksTracker({
     now,
     projectData,
+    queueProjectSyncOp,
+    registers,
     setBaselineState,
     setProjectData,
     setRegisters,
@@ -245,11 +319,14 @@ export const useProjectData = (projectId, userId = null) => {
     restoreRegisterItem,
     toggleItemPublic,
     sendToTracker,
+    sendToRiskLog,
     addManualTrackerItem,
     removeFromTracker,
+    removeFromRiskLog,
     updateTrackerItem,
     reorderTrackerItems,
     isInTracker,
+    getRiskLinkState,
     updateStatusReport,
     addTodo,
     updateTodo,

@@ -28,7 +28,7 @@ const HEADER_HELP = {
   start: 'Tasks with dependencies have start dates driven automatically by those links.',
   progress: '0% means not started, 1-99% means in progress, 100% means complete.',
   track: 'Track adds the task to the task list / Action Log feed for follow-up.',
-  actions: 'MT+ sends the task to Master Tracker. AL+ sends it to Action Log.',
+  actions: 'MT+ sends the task to Master Tracker. AL+ sends it to Action Log. RL+ links it to Risk Log; RL Auto means an incomplete action is due within 3 days.',
 };
 
 const getDependencyTaskLabel = (task) => {
@@ -107,8 +107,8 @@ const TaskRow = React.memo(({
   editingCell, colorPickerOpen,
   // Handlers
   onToggleCollapse, onUpdateTask, onDeleteTask, onModifyHierarchy,
-  onToggleTrack, onInsertTask, onSendToTracker, onSendToActionLog,
-  onRemoveFromActionLog, onRemoveFromTracker, isInTracker,
+  onToggleTrack, onInsertTask, onSendToTracker, onSendToActionLog, onSendToRiskLog,
+  onRemoveFromActionLog, onRemoveFromRiskLog, onRemoveFromTracker, isInTracker, getRiskLinkState,
   onDragStart, onDragEnd, onDragOver, onDrop,
   onCellEdit, setEditingCell, setColorPickerOpen, onOpenDepsEditor,
   dependencyTitle
@@ -118,6 +118,9 @@ const TaskRow = React.memo(({
   const isMilestone = task.type === 'Milestone';
   const finishDate = getFinishDate(task.start, task.dur);
   const isEven = absoluteRowIdx % 2 === 0;
+  const riskLinkState = getRiskLinkState
+    ? getRiskLinkState(task.id)
+    : { linked: false, manual: false, automatic: false };
 
   const getRowColor = () => {
     if (task.rowColor) {
@@ -226,7 +229,7 @@ const TaskRow = React.memo(({
       </td>
 
       <td className="text-center">
-        <div className="flex justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex justify-center gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
           <button onClick={() => onModifyHierarchy(task.id, -1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Outdent">←</button>
           <button onClick={() => onModifyHierarchy(task.id, 1)} className="p-0.5 text-slate-400 hover:text-indigo-600 text-[11px]" title="Indent">→</button>
           <button onClick={() => onInsertTask(task.id)} className="p-0.5 text-slate-400 hover:text-emerald-600 text-[11px]" title="Insert">+</button>
@@ -264,6 +267,32 @@ const TaskRow = React.memo(({
               title="Send to Action Log"
             >
               AL+
+            </button>
+          )}
+          {riskLinkState.automatic && !riskLinkState.manual ? (
+            <span
+              className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-amber-700 border-amber-200 bg-amber-50 whitespace-nowrap"
+              title="Automatically linked to Risk Log because its Action Log deadline is within 3 days"
+            >
+              RL Auto
+            </span>
+          ) : riskLinkState.linked ? (
+            <button
+              onClick={() => onRemoveFromRiskLog && onRemoveFromRiskLog(task.id)}
+              className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-rose-700 border-rose-200 bg-rose-50 hover:bg-white hover:text-rose-600 whitespace-nowrap"
+              title={riskLinkState.automatic
+                ? 'Remove the manual link; the deadline rule will keep this risk active'
+                : 'Remove from Risk Log'}
+            >
+              RL✓
+            </button>
+          ) : (
+            <button
+              onClick={() => onSendToRiskLog && onSendToRiskLog(task.id)}
+              className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-slate-500 border-slate-200 hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50 whitespace-nowrap"
+              title="Send to Risk Log"
+            >
+              RL+
             </button>
           )}
           <>
@@ -367,10 +396,13 @@ const ScheduleGrid = ({
   onInsertTask,
   onReorderTask,
   onSendToTracker,
+  onSendToRiskLog,
   onSendToActionLog,
   onRemoveFromActionLog,
+  onRemoveFromRiskLog,
   onRemoveFromTracker,
-  isInTracker
+  isInTracker,
+  getRiskLinkState,
 }) => {
   const [editingCell, setEditingCell] = useState(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(null);
@@ -380,7 +412,7 @@ const ScheduleGrid = ({
   const [dependencySearch, setDependencySearch] = useState('');
   const [columnWidths, setColumnWidths] = useState({
     drag: 28, id: 40, name: 280, parent: 50, dep: 60, type: 70,
-    dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 150
+    dur: 55, start: 100, finish: 100, pct: 55, track: 50, actions: 190
   });
   const [resizing, setResizing] = useState(null);
   const startX = useRef(0);
@@ -403,7 +435,7 @@ const ScheduleGrid = ({
           name: 220,
           start: 88,
           finish: 88,
-          actions: 132,
+          actions: 180,
         };
       }
 
@@ -412,7 +444,7 @@ const ScheduleGrid = ({
         name: 280,
         start: 100,
         finish: 100,
-        actions: 150,
+        actions: 190,
       };
     });
   }, [isMobile]);
@@ -770,10 +802,13 @@ const ScheduleGrid = ({
                   onToggleTrack={onToggleTrack}
                   onInsertTask={onInsertTask}
                   onSendToTracker={onSendToTracker}
+                  onSendToRiskLog={onSendToRiskLog}
                   onSendToActionLog={onSendToActionLog}
                   onRemoveFromActionLog={onRemoveFromActionLog}
+                  onRemoveFromRiskLog={onRemoveFromRiskLog}
                   onRemoveFromTracker={onRemoveFromTracker}
                   isInTracker={isInTracker}
+                  getRiskLinkState={getRiskLinkState}
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
                   onDragOver={handleDragOver}
