@@ -20,6 +20,7 @@ export default function RegisterEditableCell({
   onSetExpandedCell,
   onCommitCell,
   onTogglePublic,
+  readOnly = false,
 }) {
   const key = keyGen(colName);
   const cellId = `${item._id}-${key}`;
@@ -52,6 +53,7 @@ export default function RegisterEditableCell({
   }
 
   const handleClick = () => {
+    if (readOnly) return;
     if (expandedCell === cellId) {
       onSetExpandedCell(null);
       return;
@@ -74,7 +76,7 @@ export default function RegisterEditableCell({
     onSetExpandedCell(isExpanded ? null : cellId);
   };
 
-  if (isEditing) {
+  if (isEditing && !readOnly) {
     return (
       <td className="px-3 py-2.5">
         <input
@@ -92,8 +94,9 @@ export default function RegisterEditableCell({
   if (isLong) {
     return (
       <td
-        className="px-3 py-2.5 editable relative"
+        className={`px-3 py-2.5 relative ${readOnly ? 'bg-amber-50/40 text-slate-600' : 'editable'}`}
         onClick={handleClick}
+        title={readOnly ? 'Kept in sync with the linked Action Log deadline' : undefined}
       >
         <div className="flex items-start gap-1.5">
           <div
@@ -132,8 +135,9 @@ export default function RegisterEditableCell({
 
   return (
     <td
-      className="px-3 py-2.5 editable"
+      className={`px-3 py-2.5 ${readOnly ? 'bg-amber-50/40 text-slate-600' : 'editable'}`}
       onClick={handleClick}
+      title={readOnly ? 'Kept in sync with the linked Action Log deadline' : undefined}
     >
       {textValue}
     </td>

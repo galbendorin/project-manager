@@ -17,10 +17,13 @@ const ScheduleView = ({
   onInsertTask,
   onReorderTask,
   onSendToTracker,
+  onSendToRiskLog,
   onSendToActionLog,
   onRemoveFromActionLog,
+  onRemoveFromRiskLog,
   onRemoveFromTracker,
   isInTracker,
+  getRiskLinkState,
   aiSettings,
   onApplyAiTasks,
   usePlatformKey
@@ -139,6 +142,7 @@ const ScheduleView = ({
     { badge: 'Track', label: 'Adds the schedule task to the task list / Action Log feed.' },
     { badge: 'MT+', label: 'Send the task to Master Tracker for closer control.' },
     { badge: 'AL+', label: 'Send the task to Action Log so it appears as an action item.' },
+    { badge: 'RL+', label: 'Link the task to Risk Log. RL Auto means a linked action is due within 3 days.' },
     { badge: 'CP', label: 'Critical Path marker. Delay here is likely to move the finish date.' },
   ];
 
@@ -258,10 +262,13 @@ const ScheduleView = ({
             onInsertTask={onInsertTask}
             onReorderTask={onReorderTask}
             onSendToTracker={onSendToTracker}
+            onSendToRiskLog={onSendToRiskLog}
             onSendToActionLog={onSendToActionLog}
             onRemoveFromActionLog={onRemoveFromActionLog}
+            onRemoveFromRiskLog={onRemoveFromRiskLog}
             onRemoveFromTracker={onRemoveFromTracker}
             isInTracker={isInTracker}
+            getRiskLinkState={getRiskLinkState}
           />
         </div>
 

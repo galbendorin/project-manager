@@ -9,6 +9,8 @@ import { getRowColorBackground } from '../utils/rowColors';
 import RegisterEditableCell from './RegisterEditableCell';
 import RegisterHeaderMenuPopover from './RegisterHeaderMenuPopover';
 
+const AUTO_DEADLINE_COLUMNS = new Set(['Risk Details', 'Raised', 'Owner', 'Level']);
+
 // ── Main component ─────────────────────────────────────────────────
 
 const RegisterView = ({ 
@@ -76,6 +78,10 @@ const RegisterView = ({
   };
 
   if (!schema) return null;
+
+  const automaticDeadlineRiskCount = registerType === 'risks'
+    ? items.filter((item) => item.deadlineManaged).length
+    : 0;
 
   if (isMobile) {
     return (
@@ -152,6 +158,11 @@ const RegisterView = ({
               </div>
             </div>
           </div>
+          {automaticDeadlineRiskCount > 0 && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+              {automaticDeadlineRiskCount} deadline risk{automaticDeadlineRiskCount === 1 ? '' : 's'} linked from Action Log. Complete the action or move its target date beyond 3 days to clear the automatic link.
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -221,6 +232,7 @@ const RegisterView = ({
                       onSetExpandedCell={setExpandedCell}
                       onCommitCell={handleCellEdit}
                       onTogglePublic={onTogglePublic}
+                      readOnly={Boolean(item.deadlineManaged && AUTO_DEADLINE_COLUMNS.has(col))}
                     />
                   ))}
                   <td className={`px-3 py-2.5 text-center ${allowRowColor ? 'w-24' : 'w-12'}`}>
@@ -232,12 +244,21 @@ const RegisterView = ({
                           className="opacity-75 transition group-hover:opacity-100"
                         />
                       )}
-                      <button
-                        onClick={() => onDeleteItem(registerType, item._id)}
-                        className="text-slate-300 hover:text-rose-500 transition-colors"
-                      >
-                        <IconTrash />
-                      </button>
+                      {item.deadlineManaged ? (
+                        <span
+                          className="rounded border border-amber-200 bg-amber-50 px-1.5 py-1 text-[9px] font-semibold text-amber-700"
+                          title="Managed automatically from the linked Action Log deadline"
+                        >
+                          Linked
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => onDeleteItem(registerType, item._id)}
+                          className="text-slate-300 hover:text-rose-500 transition-colors"
+                        >
+                          <IconTrash />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

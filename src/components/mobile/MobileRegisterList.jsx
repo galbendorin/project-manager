@@ -53,6 +53,7 @@ const STATUS_OPTIONS = [
 ];
 
 const LEVEL_OPTIONS = ['High', 'Medium', 'Low'];
+const AUTO_DEADLINE_COLUMNS = new Set(['Risk Details', 'Raised', 'Owner', 'Level']);
 
 const getColumnValue = (item, column) => getRegisterFieldValue(item, column);
 
@@ -138,6 +139,7 @@ const RegisterDetailSheet = ({ item, schema, allowRowColor, onClose, onDeleteIte
     const isLevelField = column === 'Level';
     const options = isStatusField ? STATUS_OPTIONS : isLevelField ? LEVEL_OPTIONS : null;
     const empty = !hasValue(value);
+    const readOnly = Boolean(item.deadlineManaged && AUTO_DEADLINE_COLUMNS.has(column));
 
     return (
       <div key={column} className="border-b border-slate-100 px-4 py-3 last:border-b-0">
@@ -145,7 +147,14 @@ const RegisterDetailSheet = ({ item, schema, allowRowColor, onClose, onDeleteIte
           {column}
         </div>
 
-        {isEditing && options ? (
+        {readOnly ? (
+          <div
+            className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-left text-sm text-amber-900"
+            title="Kept in sync with the linked Action Log deadline"
+          >
+            {empty ? 'Linked from Action Log' : String(value)}
+          </div>
+        ) : isEditing && options ? (
           <div className="flex flex-wrap gap-2">
             {options.map((option) => (
               <button
@@ -219,21 +228,32 @@ const RegisterDetailSheet = ({ item, schema, allowRowColor, onClose, onDeleteIte
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
             {schema.title}
           </div>
-          <button
-            onClick={() => {
-              if (window.confirm('Delete this item?')) {
-                onDeleteItem(item._id || item.id);
-                onClose();
-              }
-            }}
-            className="text-sm font-semibold text-rose-500"
-          >
-            Delete
-          </button>
+          {item.deadlineManaged ? (
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
+              Auto-linked
+            </span>
+          ) : (
+            <button
+              onClick={() => {
+                if (window.confirm('Delete this item?')) {
+                  onDeleteItem(item._id || item.id);
+                  onClose();
+                }
+              }}
+              className="text-sm font-semibold text-rose-500"
+            >
+              Delete
+            </button>
+          )}
         </div>
 
         <div className="h-full overflow-y-auto pb-16">
           <div className="space-y-4 px-4 py-4">
+            {item.deadlineManaged && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+                This risk is linked to an Action Log deadline within 3 days. Complete the action or move its target date to clear it.
+              </div>
+            )}
             <div
               className="rounded-[24px] border border-slate-200 bg-slate-50 p-4"
               style={allowRowColor ? getRowColorSurfaceStyle(item.rowColor) || undefined : undefined}

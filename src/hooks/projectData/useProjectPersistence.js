@@ -67,6 +67,7 @@ export function useProjectPersistence({
   const [saveConflict, setSaveConflict] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [remoteUpdateAvailable, setRemoteUpdateAvailable] = useState(false);
+  const [readyProjectId, setReadyProjectId] = useState(null);
   const [projectSyncQueue, setProjectSyncQueue] = useState([]);
   const [projectSyncRetryToken, setProjectSyncRetryToken] = useState(0);
 
@@ -98,6 +99,7 @@ export function useProjectPersistence({
     if (!projectId) return;
 
     setLoadingData(true);
+    setReadyProjectId(null);
     initialLoadDone.current = false;
     supportsDirectProjectMutationsRef.current = true;
     setSaveConflict(false);
@@ -206,6 +208,7 @@ export function useProjectPersistence({
     }
 
     setLoadingData(false);
+    setReadyProjectId(projectId);
     window.setTimeout(() => {
       initialLoadDone.current = true;
     }, 500);
@@ -519,6 +522,7 @@ export function useProjectPersistence({
   return {
     loadingData,
     projectSyncQueue,
+    readyProjectId,
     queueProjectSyncOp,
     reloadProject,
     remoteUpdateAvailable,
