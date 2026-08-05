@@ -787,6 +787,7 @@ export const createEmptyShoppingOfflineState = () => ({
   todosByProject: {},
   queue: [],
   lastSyncedAt: '',
+  cacheUpdatedAt: '',
 });
 
 export const normalizeShoppingOfflineState = (state) => {
@@ -815,19 +816,68 @@ export const normalizeShoppingOfflineState = (state) => {
     todosByProject,
     queue: Array.isArray(rawState.queue) ? rawState.queue.filter((item) => item && typeof item === 'object') : [],
     lastSyncedAt: typeof rawState.lastSyncedAt === 'string' ? rawState.lastSyncedAt : '',
+    cacheUpdatedAt: typeof rawState.cacheUpdatedAt === 'string' ? rawState.cacheUpdatedAt : '',
   };
+};
+
+export const hasCachedShoppingTodos = (state, projectId) => {
+  const normalizedProjectId = String(projectId || '').trim();
+  if (!normalizedProjectId) return false;
+
+  return Object.prototype.hasOwnProperty.call(state?.todosByProject || {}, normalizedProjectId);
+};
+
+const hasShoppingOfflineContent = (state) => Boolean(
+  state?.projects?.length
+  || state?.selectedProjectId
+  || Object.keys(state?.todosByProject || {}).length
+  || state?.queue?.length
+  || state?.lastSyncedAt
+);
+
+const getShoppingCacheTime = (state) => {
+  const parsed = new Date(state?.cacheUpdatedAt || 0).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+export const pickNewestShoppingOfflineState = (localState, durableState) => {
+  const normalizedLocal = normalizeShoppingOfflineState(localState);
+  const normalizedDurable = normalizeShoppingOfflineState(durableState);
+  const localTime = getShoppingCacheTime(normalizedLocal);
+  const durableTime = getShoppingCacheTime(normalizedDurable);
+
+  if (localTime || durableTime) {
+    return durableTime > localTime ? normalizedDurable : normalizedLocal;
+  }
+
+  return hasShoppingOfflineContent(normalizedLocal) ? normalizedLocal : normalizedDurable;
 };
 
 export const loadShoppingOfflineState = (userId) => (
   normalizeShoppingOfflineState(readLocalJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState()))
 );
 
-export const loadShoppingOfflineStateAsync = async (userId) => (
-  normalizeShoppingOfflineState(await readOfflineJson(buildShoppingOfflineKey(userId), createEmptyShoppingOfflineState()))
-);
+export const loadShoppingOfflineStateAsync = async (userId) => {
+  const key = buildShoppingOfflineKey(userId);
+  const localState = loadShoppingOfflineState(userId);
+  const durableState = normalizeShoppingOfflineState(
+    await readOfflineJson(key, createEmptyShoppingOfflineState())
+  );
+  const preferredState = pickNewestShoppingOfflineState(localState, durableState);
+
+  if (preferredState === durableState) {
+    writeLocalJson(key, preferredState);
+  }
+  return preferredState;
+};
 
 export const saveShoppingOfflineState = (userId, state) => {
-  writeLocalJson(buildShoppingOfflineKey(userId), normalizeShoppingOfflineState(state));
+  const nextState = {
+    ...normalizeShoppingOfflineState(state),
+    cacheUpdatedAt: new Date().toISOString(),
+  };
+  writeLocalJson(buildShoppingOfflineKey(userId), nextState);
+  return nextState;
 };
 
 export const createOfflineShoppingTodo = ({

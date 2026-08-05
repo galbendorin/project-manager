@@ -185,10 +185,10 @@ export default function ShoppingListView({ currentUserId }) {
   const isCompactDesktop = !isMobile && desktopCompact;
   const shouldCollapseBought = isMobile || isCompactDesktop;
   const persistOfflineState = useCallback((nextState) => {
-    saveShoppingOfflineState(currentUserId, nextState);
-    setOfflineQueue(Array.isArray(nextState.queue) ? nextState.queue : []);
-    setLastSyncedAt(nextState.lastSyncedAt || '');
-    return nextState;
+    const savedState = saveShoppingOfflineState(currentUserId, nextState);
+    setOfflineQueue(Array.isArray(savedState.queue) ? savedState.queue : []);
+    setLastSyncedAt(savedState.lastSyncedAt || '');
+    return savedState;
   }, [currentUserId]);
 
   const {
@@ -196,6 +196,7 @@ export default function ShoppingListView({ currentUserId }) {
     loadTodos,
     loadingProjects,
     loadingTodos,
+    offlineStateHydrated,
     projectError,
     projects,
     selectedProject,
@@ -285,7 +286,7 @@ export default function ShoppingListView({ currentUserId }) {
   });
 
   useEffect(() => {
-    if (!currentUserId) return;
+    if (!currentUserId || !offlineStateHydrated) return;
     const cachedState = loadShoppingOfflineState(currentUserId);
     persistOfflineState({
       ...cachedState,
@@ -298,7 +299,7 @@ export default function ShoppingListView({ currentUserId }) {
         }
         : (cachedState.todosByProject || {}),
     });
-  }, [currentUserId, persistOfflineState, projects, selectedProjectId, todos]);
+  }, [currentUserId, offlineStateHydrated, persistOfflineState, projects, selectedProjectId, todos]);
 
   const {
     addItems,

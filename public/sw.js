@@ -26,21 +26,20 @@ self.addEventListener('activate', (event) => {
     await Promise.all(keys
       .filter((key) => key.startsWith(SHELL_CACHE_PREFIX) && key !== SHELL_CACHE_NAME)
       .map((key) => caches.delete(key)));
-    if (self.registration.navigationPreload) {
-      await self.registration.navigationPreload.enable();
-    }
     await self.clients.claim();
   })());
 });
 
 const loadNavigation = async (event) => {
+  const cachedShell = await caches.match(APP_SHELL_URL);
+  if (cachedShell) return cachedShell;
+
   try {
     const preloadedResponse = await event.preloadResponse;
     if (preloadedResponse) return preloadedResponse;
     return await fetch(event.request);
   } catch {
-    return (await caches.match(APP_SHELL_URL))
-      || (await caches.match(OFFLINE_URL))
+    return (await caches.match(OFFLINE_URL))
       || Response.error();
   }
 };
