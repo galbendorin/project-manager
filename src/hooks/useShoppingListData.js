@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { isLikelyNetworkError } from '../utils/connectivity';
-import { applyShoppingQueueToTodos, pickPreferredShoppingProject } from '../utils/shoppingListViewState';
+import {
+  applyShoppingQueueToTodos,
+  hasCachedShoppingTodos,
+  pickPreferredShoppingProject,
+} from '../utils/shoppingListViewState';
 import { createProjectWithLimits, getProjectCreationErrorMessage } from '../utils/projectCreation';
 
 export function useShoppingListData({
@@ -28,14 +32,27 @@ export function useShoppingListData({
   supportsProjectMembersRef,
   ensuringProjectRef,
 }) {
-  const [projects, setProjects] = useState([]);
-  const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [initialCachedState] = useState(() => loadShoppingOfflineState(currentUserId));
+  const initialSelectedProjectId = initialCachedState.selectedProjectId
+    || initialCachedState.projects?.[0]?.id
+    || '';
+  const initialHasCachedTodos = hasCachedShoppingTodos(initialCachedState, initialSelectedProjectId);
+  const initialTodos = applyShoppingQueueToTodos({
+    todos: initialCachedState.todosByProject?.[initialSelectedProjectId] || [],
+    queue: initialCachedState.queue || [],
+    projectId: initialSelectedProjectId,
+  });
+  const [projects, setProjects] = useState(() => initialCachedState.projects || []);
+  const [selectedProjectId, setSelectedProjectId] = useState(initialSelectedProjectId);
+  const [loadingProjects, setLoadingProjects] = useState(() => !initialCachedState.projects?.length);
   const [projectError, setProjectError] = useState('');
-  const [todos, setTodos] = useState([]);
-  const [loadingTodos, setLoadingTodos] = useState(false);
+  const [todos, setTodos] = useState(initialTodos);
+  const [loadingTodos, setLoadingTodos] = useState(() => (
+    Boolean(initialSelectedProjectId) && !initialHasCachedTodos
+  ));
   const [todoError, setTodoError] = useState('');
   const [supportsShoppingFields, setSupportsShoppingFields] = useState(true);
+  const [offlineStateHydrated, setOfflineStateHydrated] = useState(false);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) || null,
@@ -46,21 +63,47 @@ export function useShoppingListData({
     const cachedState = loadShoppingOfflineState(currentUserId);
     if (cachedState.projects?.length) {
       setProjects(cachedState.projects);
+      setLoadingProjects(false);
     }
-    if (cachedState.selectedProjectId) {
-      setSelectedProjectId((current) => current || cachedState.selectedProjectId);
+    const cachedSelectedProjectId = cachedState.selectedProjectId || cachedState.projects?.[0]?.id || '';
+    if (cachedSelectedProjectId) {
+      setSelectedProjectId((current) => current || cachedSelectedProjectId);
+    }
+    if (hasCachedShoppingTodos(cachedState, cachedSelectedProjectId)) {
+      setTodos(applyShoppingQueueToTodos({
+        todos: cachedState.todosByProject?.[cachedSelectedProjectId] || [],
+        queue: cachedState.queue || [],
+        projectId: cachedSelectedProjectId,
+      }));
+      setLoadingTodos(false);
     }
 
     let active = true;
-    void loadShoppingOfflineStateAsync(currentUserId).then((preferredState) => {
-      if (!active || !preferredState) return;
-      if (preferredState.projects?.length) {
-        setProjects(preferredState.projects);
-      }
-      if (preferredState.selectedProjectId) {
-        setSelectedProjectId((current) => current || preferredState.selectedProjectId);
-      }
-    });
+    void loadShoppingOfflineStateAsync(currentUserId)
+      .then((preferredState) => {
+        if (!active || !preferredState) return;
+        if (preferredState.projects?.length) {
+          setProjects(preferredState.projects);
+          setLoadingProjects(false);
+        }
+        const preferredProjectId = preferredState.selectedProjectId
+          || preferredState.projects?.[0]?.id
+          || '';
+        if (preferredProjectId) {
+          setSelectedProjectId((current) => current || preferredProjectId);
+        }
+        if (hasCachedShoppingTodos(preferredState, preferredProjectId)) {
+          setTodos(applyShoppingQueueToTodos({
+            todos: preferredState.todosByProject?.[preferredProjectId] || [],
+            queue: preferredState.queue || [],
+            projectId: preferredProjectId,
+          }));
+          setLoadingTodos(false);
+        }
+      })
+      .finally(() => {
+        if (active) setOfflineStateHydrated(true);
+      });
 
     return () => {
       active = false;
@@ -91,14 +134,30 @@ export function useShoppingListData({
   ]);
 
   const loadProjects = useCallback(async () => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      setLoadingProjects(false);
+      return;
+    }
 
-    setLoadingProjects(true);
     setProjectError('');
+
+    const localCachedState = loadShoppingOfflineState(currentUserId);
+    const hasLocalProjects = Boolean(localCachedState.projects?.length);
+    setLoadingProjects(!hasLocalProjects);
+    if (hasLocalProjects) {
+      setProjects(localCachedState.projects);
+      const localSelectedProjectId = localCachedState.selectedProjectId
+        || localCachedState.projects[0]?.id
+        || '';
+      if (localSelectedProjectId) {
+        setSelectedProjectId((current) => current || localSelectedProjectId);
+      }
+    }
 
     const cachedState = await loadShoppingOfflineStateAsync(currentUserId);
     if (cachedState.projects?.length) {
       setProjects(cachedState.projects);
+      setLoadingProjects(false);
       if (cachedState.selectedProjectId) {
         setSelectedProjectId((current) => current || cachedState.selectedProjectId);
       }
@@ -192,6 +251,7 @@ export function useShoppingListData({
     limits.label,
     limits.maxProjects,
     loadShoppingOfflineStateAsync,
+    loadShoppingOfflineState,
     normalizeProjectRecord,
     persistOfflineState,
     shoppingProjectName,
@@ -201,25 +261,40 @@ export function useShoppingListData({
   const loadTodos = useCallback(async () => {
     if (!selectedProject?.id) {
       setTodos([]);
+      setLoadingTodos(false);
       return;
     }
 
-    setLoadingTodos(true);
     setTodoError('');
+
+    const localCachedState = loadShoppingOfflineState(currentUserId);
+    let hasCachedTodos = hasCachedShoppingTodos(localCachedState, selectedProject.id);
+    let cachedVisibleTodos = applyShoppingQueueToTodos({
+      todos: localCachedState.todosByProject?.[selectedProject.id] || [],
+      queue: localCachedState.queue || [],
+      projectId: selectedProject.id,
+    });
+    setLoadingTodos(!hasCachedTodos);
+    if (hasCachedTodos) {
+      setTodos(cachedVisibleTodos);
+    }
 
     const cachedState = await loadShoppingOfflineStateAsync(currentUserId);
     const cachedTodos = cachedState.todosByProject?.[selectedProject.id] || [];
-    const cachedVisibleTodos = applyShoppingQueueToTodos({
+    const durableVisibleTodos = applyShoppingQueueToTodos({
       todos: cachedTodos,
       queue: cachedState.queue || [],
       projectId: selectedProject.id,
     });
-    if (cachedVisibleTodos.length > 0) {
-      setTodos(cachedVisibleTodos);
+    if (hasCachedShoppingTodos(cachedState, selectedProject.id)) {
+      hasCachedTodos = true;
+      cachedVisibleTodos = durableVisibleTodos;
+      setTodos(durableVisibleTodos);
+      setLoadingTodos(false);
     }
 
     if (!isOnline) {
-      if (!cachedVisibleTodos.length) {
+      if (!hasCachedTodos) {
         setTodoError('You are offline. Open this list once online on this device to cache it.');
       }
       setLoadingTodos(false);
@@ -247,7 +322,7 @@ export function useShoppingListData({
 
     if (error) {
       if (isLikelyNetworkError(error, { online: isOnline })) {
-        if (cachedVisibleTodos.length > 0) {
+        if (hasCachedTodos) {
           setTodos(cachedVisibleTodos);
         } else {
           setTodoError('The connection is unavailable. Open this list once online on this device to cache it.');
@@ -289,6 +364,7 @@ export function useShoppingListData({
     isOnline,
     legacyManualTodoSelect,
     loadShoppingOfflineStateAsync,
+    loadShoppingOfflineState,
     manualTodoSelect,
     mapManualTodoRow,
     persistOfflineState,
@@ -311,6 +387,7 @@ export function useShoppingListData({
     loadTodos,
     loadingProjects,
     loadingTodos,
+    offlineStateHydrated,
     projectError,
     projects,
     selectedProject,

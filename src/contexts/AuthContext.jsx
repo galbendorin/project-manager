@@ -1,7 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { clearAiSettings } from '../utils/aiSettings';
-import { clearOfflineDataForUser } from '../utils/offlineState';
+import {
+  clearCachedOfflineUser,
+  clearOfflineDataForUser,
+  loadCachedOfflineUser,
+  saveCachedOfflineUser,
+} from '../utils/offlineState';
 
 const AuthContext = createContext({});
 
@@ -65,12 +70,19 @@ const buildAuthRedirectUrl = () => (
 
 const clearSignedOutDeviceState = async (userId) => {
   clearAiSettings();
+  clearCachedOfflineUser(userId);
   await clearOfflineDataForUser(userId);
 };
 
+const browserStartsOffline = () => (
+  typeof navigator !== 'undefined' && navigator.onLine === false
+);
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedOfflineUserRef = useRef(loadCachedOfflineUser());
+  const initialOfflineUser = browserStartsOffline() ? cachedOfflineUserRef.current : null;
+  const [user, setUser] = useState(initialOfflineUser);
+  const [loading, setLoading] = useState(() => !initialOfflineUser);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => isPasswordRecoveryUrl());
   const activeUserIdRef = useRef(null);
 
@@ -84,6 +96,24 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let isActive = true;
+
+    const applyOfflineUser = () => {
+      const cachedUser = cachedOfflineUserRef.current || loadCachedOfflineUser();
+      if (!cachedUser || !isActive) return false;
+      cachedOfflineUserRef.current = cachedUser;
+      activeUserIdRef.current = cachedUser.id;
+      setUser(cachedUser);
+      return true;
+    };
+
+    const acceptSessionUser = (sessionUser) => {
+      if (!sessionUser || !isActive) return false;
+      cachedOfflineUserRef.current = sessionUser;
+      activeUserIdRef.current = sessionUser.id;
+      saveCachedOfflineUser(sessionUser);
+      setUser(sessionUser);
+      return true;
+    };
 
     const acceptPendingProjectInvites = async (session) => {
       const accessToken = session?.access_token;
@@ -110,6 +140,7 @@ export const AuthProvider = ({ children }) => {
 
     const bootstrapTimeout = window.setTimeout(() => {
       console.warn('Supabase session bootstrap timed out; continuing with fallback auth state.');
+      applyOfflineUser();
       finishBootstrap();
     }, 4000);
 
@@ -117,8 +148,13 @@ export const AuthProvider = ({ children }) => {
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
         if (!isActive) return;
-        activeUserIdRef.current = session?.user?.id || null;
-        setUser(session?.user ?? null);
+        const acceptedSession = acceptSessionUser(session?.user);
+        if (!acceptedSession) {
+          activeUserIdRef.current = null;
+          if (!browserStartsOffline() || !applyOfflineUser()) {
+            setUser(null);
+          }
+        }
         setIsPasswordRecovery(isPasswordRecoveryUrl());
         void acceptPendingProjectInvites(session);
         finishBootstrap();
@@ -126,7 +162,9 @@ export const AuthProvider = ({ children }) => {
       .catch((error) => {
         console.warn('Unable to load initial Supabase session:', error);
         if (!isActive) return;
-        setUser(null);
+        if (!applyOfflineUser()) {
+          setUser(null);
+        }
         setIsPasswordRecovery(isPasswordRecoveryUrl());
         finishBootstrap();
       });
@@ -136,7 +174,13 @@ export const AuthProvider = ({ children }) => {
       if (!isActive) return;
       const previousUserId = activeUserIdRef.current;
       activeUserIdRef.current = session?.user?.id || null;
-      setUser(session?.user ?? null);
+      if (session?.user) {
+        acceptSessionUser(session.user);
+      } else if (event !== 'SIGNED_OUT' && browserStartsOffline()) {
+        applyOfflineUser();
+      } else {
+        setUser(null);
+      }
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
       } else if (event === 'SIGNED_OUT') {

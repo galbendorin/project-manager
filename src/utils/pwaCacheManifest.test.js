@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
   buildPrecacheUrls,
@@ -42,4 +43,14 @@ test('injectServiceWorkerManifest fails closed when the source template is inval
     () => injectServiceWorkerManifest('const cache = [];', { version: 'abc', urls: [] }),
     /placeholders are missing/
   );
+});
+
+test('service worker serves the cached application shell before attempting navigation fetches', async () => {
+  const workerSource = await readFile(new URL('../../public/sw.js', import.meta.url), 'utf8');
+  const cachedShellLookup = workerSource.indexOf('const cachedShell = await caches.match(APP_SHELL_URL)');
+  const navigationFetch = workerSource.indexOf('return await fetch(event.request)', cachedShellLookup);
+
+  assert.notEqual(cachedShellLookup, -1);
+  assert.notEqual(navigationFetch, -1);
+  assert.ok(cachedShellLookup < navigationFetch);
 });

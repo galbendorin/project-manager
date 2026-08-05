@@ -3,9 +3,12 @@ const SHOPPING_OFFLINE_PREFIX = 'pmworkspace:shopping-offline:v1';
 const TIMESHEET_OFFLINE_PREFIX = 'pmworkspace:timesheet-offline:v1';
 const ITIL_QUIZ_PREFIX = 'pmworkspace:itil-foundation-quiz';
 const HOUSEHOLD_ACCESS_PREFIX = 'pmworkspace:household-access:v1';
+const OFFLINE_USER_PREFIX = 'pmworkspace:offline-user:v1';
+const ACTIVE_OFFLINE_USER_KEY = 'pmworkspace:offline-user-active:v1';
 const NAVIGATION_CACHE_KEYS = new Set([
   'pmworkspace:last-path:v1',
   'pmworkspace:last-project:v1',
+  ACTIVE_OFFLINE_USER_KEY,
 ]);
 const OFFLINE_DB_NAME = 'pmworkspace-offline';
 const OFFLINE_STORE_NAME = 'keyval';
@@ -168,6 +171,47 @@ export const buildHouseholdAccessKey = (userId = 'anon') => (
   `${HOUSEHOLD_ACCESS_PREFIX}:${userId}`
 );
 
+export const buildOfflineUserKey = (userId = 'anon') => (
+  `${OFFLINE_USER_PREFIX}:${userId}`
+);
+
+const normalizeOfflineUser = (user) => {
+  const id = String(user?.id || '').trim();
+  if (!id) return null;
+
+  const fullName = String(user?.user_metadata?.full_name || '').trim();
+  return {
+    id,
+    email: String(user?.email || '').trim(),
+    user_metadata: fullName ? { full_name: fullName } : {},
+    isOfflineFallback: true,
+  };
+};
+
+export const loadCachedOfflineUser = () => {
+  const activeUserId = String(readLocalJson(ACTIVE_OFFLINE_USER_KEY, '') || '').trim();
+  if (!activeUserId) return null;
+
+  return normalizeOfflineUser(readLocalJson(buildOfflineUserKey(activeUserId), null));
+};
+
+export const saveCachedOfflineUser = (user) => {
+  const normalizedUser = normalizeOfflineUser(user);
+  if (!normalizedUser) return false;
+
+  const savedUser = writeLocalJson(buildOfflineUserKey(normalizedUser.id), normalizedUser);
+  const savedPointer = writeLocalJson(ACTIVE_OFFLINE_USER_KEY, normalizedUser.id);
+  return savedUser && savedPointer;
+};
+
+export const clearCachedOfflineUser = (userId) => {
+  const normalizedUserId = String(userId || '').trim();
+  if (normalizedUserId) {
+    removeLocalJson(buildOfflineUserKey(normalizedUserId));
+  }
+  removeLocalJson(ACTIVE_OFFLINE_USER_KEY);
+};
+
 export const loadCachedHouseholdAccess = (userId) => (
   readLocalJson(buildHouseholdAccessKey(userId), false) === true
 );
@@ -186,6 +230,7 @@ export const shouldClearUserOfflineKey = (key, userId) => {
     || normalizedKey === `${SHOPPING_OFFLINE_PREFIX}:${normalizedUserId}`
     || normalizedKey === `${TIMESHEET_OFFLINE_PREFIX}:${normalizedUserId}`
     || normalizedKey.startsWith(`${ITIL_QUIZ_PREFIX}:${normalizedUserId}:`)
+    || normalizedKey === buildOfflineUserKey(normalizedUserId)
     || normalizedKey === buildHouseholdAccessKey(normalizedUserId);
 };
 

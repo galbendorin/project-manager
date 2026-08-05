@@ -13,10 +13,12 @@ import {
   getShoppingQuickAddSyncState,
   getShoppingQueueSyncDetail,
   groupCompletedShoppingTodos,
+  hasCachedShoppingTodos,
   mergeShoppingItemQuantity,
   normalizeShoppingOfflineState,
   normalizeBoughtTodoTitle,
   planShoppingListAdds,
+  pickNewestShoppingOfflineState,
   pickPreferredShoppingProject,
 } from './shoppingListViewState.js';
 
@@ -47,7 +49,43 @@ test('normalizeShoppingOfflineState keeps only valid array and object fields', (
     },
     queue: [{ kind: 'create', targetId: 'todo-1' }],
     lastSyncedAt: '2026-04-13T00:00:00.000Z',
+    cacheUpdatedAt: '',
   });
+});
+
+test('hasCachedShoppingTodos treats an intentionally empty downloaded list as offline-ready', () => {
+  assert.equal(hasCachedShoppingTodos({ todosByProject: { 'project-1': [] } }, 'project-1'), true);
+  assert.equal(hasCachedShoppingTodos({ todosByProject: {} }, 'project-1'), false);
+});
+
+test('pickNewestShoppingOfflineState keeps the newest phone copy during startup', () => {
+  const localState = {
+    projects: [{ id: 'project-1' }],
+    selectedProjectId: 'project-1',
+    todosByProject: { 'project-1': [{ _id: 'new-milk', title: 'Milk' }] },
+    cacheUpdatedAt: '2026-08-05T09:05:00.000Z',
+  };
+  const durableState = {
+    projects: [{ id: 'project-1' }],
+    selectedProjectId: 'project-1',
+    todosByProject: { 'project-1': [] },
+    cacheUpdatedAt: '2026-08-05T09:00:00.000Z',
+  };
+
+  const selected = pickNewestShoppingOfflineState(localState, durableState);
+  assert.equal(selected.todosByProject['project-1'][0].title, 'Milk');
+});
+
+test('pickNewestShoppingOfflineState restores IndexedDB when local storage was cleared', () => {
+  const durableState = {
+    projects: [{ id: 'project-1' }],
+    selectedProjectId: 'project-1',
+    todosByProject: { 'project-1': [{ _id: 'oats', title: 'Oats' }] },
+  };
+
+  const selected = pickNewestShoppingOfflineState(createEmptyShoppingOfflineState(), durableState);
+  assert.equal(selected.selectedProjectId, 'project-1');
+  assert.equal(selected.todosByProject['project-1'][0].title, 'Oats');
 });
 
 test('pickPreferredShoppingProject prefers the shared household list over a private one', () => {
