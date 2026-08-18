@@ -210,6 +210,7 @@ export const useProjectData = (projectId, userId = null) => {
     setBaselineState,
     setProjectData,
     setRegisters,
+    setStatusReport,
     setTracker,
     tracker,
   });
