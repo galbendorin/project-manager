@@ -45,7 +45,7 @@ const MobileMore = ({
       </div>
       <div className="bg-white rounded-xl mx-3 mb-3 border border-slate-100 overflow-hidden">
         <MenuItem icon="📤" label="Export" sublabel="Download project as XLSX" onClick={onExport} />
-        <MenuItem icon="📥" label="Import" sublabel="Import from XLSX file" onClick={onImport} />
+        <MenuItem icon="📥" label="Import" sublabel="Import PM Workspace or XLSX file" onClick={onImport} />
         {hasBaseline ? (
           <>
             <MenuItem icon="📏" label="Re-baseline" sublabel="Replace saved baseline snapshot" onClick={onSetBaseline} />

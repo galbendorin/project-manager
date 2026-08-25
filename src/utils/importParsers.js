@@ -24,7 +24,7 @@ const COLUMN_MAP_SCHEDULE = {
 
 const COLUMN_MAP_RISKS = {
   ID: 'number', Category: 'category', 'Risk Details': 'riskdetails',
-  'Mitigating Action': 'mitigatingaction', Notes: 'notes',
+  'Mitigating Action': 'mitigatingaction', 'Mitigation Action': 'mitigatingaction', Notes: 'notes',
   Raised: 'raised', Owner: 'owner', Level: 'level', Internal: '_internal'
 };
 
@@ -36,7 +36,7 @@ const COLUMN_MAP_ISSUES = {
 };
 
 const COLUMN_MAP_ACTIONS = {
-  ID: 'number', Description: 'description', Owner: 'actionassignedto',
+  ID: 'number', Category: 'category', Description: 'description', Owner: 'actionassignedto',
   'Due Date': 'target', Status: 'status', Internal: '_internal',
   'Action Assigned to': 'actionassignedto', 'Current Status': 'currentstatus',
   Raised: 'raised', Target: 'target', Updated: 'update', Completed: 'completed'
@@ -133,7 +133,7 @@ const COLUMN_MAP_ASSUMPTIONS = {
   'Date Raised': 'dateraised',
   Impact: 'impact',
   Status: 'status',
-  'Validation Notes': 'validationnotes',
+  'Validation Notes': 'validationnotes', 'Validation/Notes': 'validationnotes',
   Owner: 'owner',
   Internal: '_internal'
 };
@@ -162,6 +162,29 @@ const COLUMN_MAP_LESSONS = {
   Owner: 'owner',
   Status: 'status',
   Internal: '_internal'
+};
+
+const COLUMN_MAP_TRACKER = {
+  ID: '_id',
+  'Task ID': 'taskId',
+  'Task Name': 'taskName',
+  Notes: 'notes',
+  Status: 'status',
+  RAG: 'rag',
+  'Next Action': 'nextAction',
+  Owner: 'owner',
+  'Date Added': 'dateAdded',
+  'Last Updated': 'lastUpdated'
+};
+
+const COLUMN_MAP_STATUS_REPORT = {
+  'Overall RAG': 'overallRag',
+  'Overall Narrative': 'overallNarrative',
+  'Main Risks': 'mainRisks',
+  'Main Issues': 'mainIssues',
+  'Deliverables This Period': 'deliverablesThisPeriod',
+  'Deliverables Next Period': 'deliverablesNextPeriod',
+  'Additional Notes': 'additionalNotes'
 };
 
 export const REGISTER_IMPORT_COLUMN_MAPS = {
@@ -197,6 +220,22 @@ export const REGISTER_IMPORT_SHEET_CANDIDATES = {
 export const TODO_IMPORT_SHEET_CANDIDATES = ['ToDo', 'Todo', 'To Do', 'Task List', 'Manual Tasks'];
 
 export const RACI_IMPORT_SHEET_CANDIDATES = ['RACI', 'RACI Matrix'];
+
+export const TRACKER_IMPORT_SHEET_CANDIDATES = ['Master Tracker', 'Tracker'];
+
+export const STATUS_REPORT_IMPORT_SHEET_CANDIDATES = ['Status Report', 'Project Status'];
+
+export const PM_WORKSPACE_IMPORT_FORMAT = 'pmworkspace-project-import-v1';
+
+const WORKSPACE_REGISTER_KEYS = [
+  'risks', 'issues', 'actions', 'minutes', 'costs', 'changes',
+  'stakeholders', 'commsplan', 'assumptions', 'decisions', 'lessons'
+];
+
+const STATUS_REPORT_KEYS = [
+  'overallRag', 'overallNarrative', 'mainRisks', 'mainIssues',
+  'deliverablesThisPeriod', 'deliverablesNextPeriod', 'additionalNotes'
+];
 
 const RACI_ACTIVITY_COLUMN_CANDIDATES = [
   'Activity',
@@ -273,6 +312,147 @@ export function parseTodoSheet(rows) {
       recurrence: mapped.recurrence ? String(mapped.recurrence).trim() : null
     };
   }).filter(Boolean);
+}
+
+export function parseTrackerSheet(rows, { nowIso = new Date().toISOString() } = {}) {
+  return rows.map((row, idx) => {
+    const mapped = mapRow(row, COLUMN_MAP_TRACKER);
+    const taskName = String(mapped.taskName || '').trim();
+    if (!taskName) return null;
+
+    const normalizedStatus = String(mapped.status || '').trim();
+    const normalizedRag = String(mapped.rag || '').trim();
+    const taskId = parseInt(mapped.taskId, 10);
+
+    return {
+      _id: String(mapped._id || `tracker_import_${idx + 1}`),
+      taskId: Number.isFinite(taskId) ? taskId : null,
+      taskName,
+      rowColor: null,
+      notes: String(mapped.notes || '').trim(),
+      status: ['Not Started', 'In Progress', 'On Hold', 'Completed', 'Cancelled'].includes(normalizedStatus)
+        ? normalizedStatus
+        : 'Not Started',
+      rag: ['Green', 'Amber', 'Red'].includes(normalizedRag) ? normalizedRag : 'Green',
+      nextAction: String(mapped.nextAction || '').trim(),
+      owner: String(mapped.owner || '').trim(),
+      dateAdded: String(mapped.dateAdded || '').trim(),
+      lastUpdated: String(mapped.lastUpdated || '').trim(),
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+  }).filter(Boolean);
+}
+
+export function parseStatusReportSheet(rows) {
+  const firstRow = Array.isArray(rows) ? rows[0] : null;
+  if (!firstRow || typeof firstRow !== 'object') return null;
+
+  const mapped = mapRow(firstRow, COLUMN_MAP_STATUS_REPORT);
+  if (Object.keys(mapped).length === 0) return null;
+
+  return Object.fromEntries(
+    Object.entries(mapped).map(([key, value]) => [key, String(value ?? '').trim()])
+  );
+}
+
+export function parseWorkspaceJsonImport(payload, { nowIso = new Date().toISOString() } = {}) {
+  if (!payload || typeof payload !== 'object' || payload.format !== PM_WORKSPACE_IMPORT_FORMAT) {
+    throw new Error('Unsupported PM Workspace import file.');
+  }
+
+  const tasks = parseScheduleSheet(Array.isArray(payload.tasks) ? payload.tasks : []);
+  if (tasks.length === 0) {
+    throw new Error('The PM Workspace import file has no schedule tasks.');
+  }
+
+  const sourceRegisters = payload.registers && typeof payload.registers === 'object'
+    ? payload.registers
+    : {};
+  const registers = Object.fromEntries(WORKSPACE_REGISTER_KEYS.map((key) => {
+    const rows = Array.isArray(sourceRegisters[key]) ? sourceRegisters[key] : [];
+    return [key, rows
+      .filter((row) => row && typeof row === 'object' && !Array.isArray(row))
+      .map((row, idx) => ({
+        ...row,
+        _id: String(row._id || row.number || `${key}_${idx + 1}`),
+        number: parseInt(row.number, 10) || (idx + 1),
+        visible: row.visible !== false,
+        public: row.public !== false,
+      }))];
+  }));
+
+  const sourceRaci = Array.isArray(sourceRegisters._raci) ? sourceRegisters._raci[0] : null;
+  const roles = Array.isArray(sourceRaci?.roles)
+    ? sourceRaci.roles.map((role) => String(role || '').trim()).filter(Boolean)
+    : [];
+  const customTasks = Array.isArray(sourceRaci?.assignments?._customTasks)
+    ? sourceRaci.assignments._customTasks.map((task) => String(task || '').trim()).filter(Boolean)
+    : [];
+  registers._raci = roles.length > 0 && customTasks.length > 0
+    ? [{
+        _id: String(sourceRaci?._id || 'raci_matrix'),
+        roles,
+        assignments: {
+          ...(sourceRaci.assignments || {}),
+          _customTasks: customTasks,
+        },
+        updatedAt: nowIso,
+      }]
+    : [];
+
+  const tracker = (Array.isArray(payload.tracker) ? payload.tracker : [])
+    .filter((item) => item && typeof item === 'object' && String(item.taskName || '').trim())
+    .map((item, idx) => {
+      const taskId = parseInt(item.taskId, 10);
+      return {
+        _id: String(item._id || `tracker_import_${idx + 1}`),
+        taskId: Number.isFinite(taskId) ? taskId : null,
+        taskName: String(item.taskName).trim(),
+        rowColor: item.rowColor || null,
+        notes: String(item.notes || '').trim(),
+        status: ['Not Started', 'In Progress', 'On Hold', 'Completed', 'Cancelled'].includes(item.status)
+          ? item.status
+          : 'Not Started',
+        rag: ['Green', 'Amber', 'Red'].includes(item.rag) ? item.rag : 'Green',
+        nextAction: String(item.nextAction || '').trim(),
+        owner: String(item.owner || '').trim(),
+        dateAdded: String(item.dateAdded || '').trim(),
+        lastUpdated: String(item.lastUpdated || '').trim(),
+        createdAt: item.createdAt || nowIso,
+        updatedAt: item.updatedAt || nowIso,
+      };
+    });
+
+  const sourceStatusReport = payload.status_report && typeof payload.status_report === 'object'
+    ? payload.status_report
+    : {};
+  const statusReport = Object.fromEntries(STATUS_REPORT_KEYS.map((key) => [
+    key,
+    String(sourceStatusReport[key] ?? '').trim()
+  ]));
+
+  const todos = (Array.isArray(payload.todos) ? payload.todos : [])
+    .map((item) => {
+      const title = String(item?.title || '').trim();
+      if (!title) return null;
+      return {
+        title,
+        dueDate: String(item.dueDate || '').trim(),
+        owner: String(item.owner || '').trim(),
+        status: normalizeTodoStatus(item.status),
+        recurrence: item.recurrence ? String(item.recurrence).trim() : null,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    tasks,
+    registers,
+    tracker,
+    statusReport,
+    todos,
+  };
 }
 
 export function parseRegisterSheet(rows, columnMap) {

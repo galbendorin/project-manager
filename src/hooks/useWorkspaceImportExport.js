@@ -6,11 +6,16 @@ import {
   parseTodoSheet,
   parseRegisterSheet,
   parseRaciSheet,
+  parseStatusReportSheet,
+  parseTrackerSheet,
+  parseWorkspaceJsonImport,
   findSheet,
   REGISTER_IMPORT_COLUMN_MAPS,
   REGISTER_IMPORT_SHEET_CANDIDATES,
   RACI_IMPORT_SHEET_CANDIDATES,
+  STATUS_REPORT_IMPORT_SHEET_CANDIDATES,
   TODO_IMPORT_SHEET_CANDIDATES,
+  TRACKER_IMPORT_SHEET_CANDIDATES,
 } from '../utils/importParsers';
 
 export function useWorkspaceImportExport({
@@ -21,6 +26,8 @@ export function useWorkspaceImportExport({
   setImportStatus,
   setProjectData,
   setRegisters,
+  setStatusReport,
+  setTracker,
   statusReport,
   todos,
   tracker,
@@ -28,6 +35,28 @@ export function useWorkspaceImportExport({
   const handleImport = useCallback(async (file) => {
     try {
       setImportStatus('Importing...');
+
+      if (String(file?.name || '').toLowerCase().endsWith('.json')) {
+        const imported = parseWorkspaceJsonImport(JSON.parse(await file.text()));
+        for (const todo of imported.todos) {
+          await addTodo(todo);
+        }
+        setProjectData(imported.tasks);
+        setRegisters(imported.registers);
+        setTracker(imported.tracker);
+        setStatusReport(imported.statusReport);
+
+        const registerCount = Object.entries(imported.registers)
+          .filter(([key]) => key !== '_raci')
+          .reduce((total, [, items]) => total + items.length, 0);
+        const raciCount = imported.registers._raci?.[0]?.assignments?._customTasks?.length || 0;
+        setImportStatus(
+          `✓ Imported full workspace: ${imported.tasks.length} tasks, ${registerCount} register items, ${imported.tracker.length} tracker items, ${imported.todos.length} todos, ${raciCount} RACI activities`
+        );
+        setTimeout(() => setImportStatus(null), 5000);
+        return;
+      }
+
       const XLSX = await loadXLSX();
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array', cellDates: true });
@@ -44,6 +73,8 @@ export function useWorkspaceImportExport({
 
       const tasks = parseScheduleSheet(scheduleRows);
       let importedTodosCount = 0;
+      let importedTrackerCount = 0;
+      let importedStatusReport = false;
 
       const newRegisters = {
         risks: [], issues: [], actions: [],
@@ -116,6 +147,28 @@ export function useWorkspaceImportExport({
         importedTodosCount = parsedTodos.length;
       }
 
+      const trackerSheet = findSheet(sheetNames, TRACKER_IMPORT_SHEET_CANDIDATES);
+      if (trackerSheet) {
+        const parsedTracker = parseTrackerSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[trackerSheet], { raw: false })
+        );
+        if (parsedTracker.length > 0) {
+          setTracker(parsedTracker);
+          importedTrackerCount = parsedTracker.length;
+        }
+      }
+
+      const statusReportSheet = findSheet(sheetNames, STATUS_REPORT_IMPORT_SHEET_CANDIDATES);
+      if (statusReportSheet) {
+        const parsedStatusReport = parseStatusReportSheet(
+          XLSX.utils.sheet_to_json(workbook.Sheets[statusReportSheet], { raw: false })
+        );
+        if (parsedStatusReport) {
+          setStatusReport((prev) => ({ ...prev, ...parsedStatusReport }));
+          importedStatusReport = true;
+        }
+      }
+
       setProjectData(tasks);
       setRegisters((prev) => ({
         ...prev,
@@ -138,6 +191,8 @@ export function useWorkspaceImportExport({
         newRegisters.decisions?.length > 0 ? `${newRegisters.decisions.length} decisions` : null,
         newRegisters.lessons?.length > 0 ? `${newRegisters.lessons.length} lessons` : null,
         importedTodosCount > 0 ? `${importedTodosCount} todos` : null,
+        importedTrackerCount > 0 ? `${importedTrackerCount} tracker items` : null,
+        importedStatusReport ? 'status report' : null,
         newRegisters._raci?.[0]?.assignments?._customTasks?.length > 0
           ? `${newRegisters._raci[0].assignments._customTasks.length} RACI activities`
           : null,
@@ -150,7 +205,7 @@ export function useWorkspaceImportExport({
       setImportStatus('Import failed — check file format');
       setTimeout(() => setImportStatus(null), 4000);
     }
-  }, [addTodo, setImportStatus, setProjectData, setRegisters]);
+  }, [addTodo, setImportStatus, setProjectData, setRegisters, setStatusReport, setTracker]);
 
   const handleExport = useCallback(async () => {
     try {
@@ -162,6 +217,8 @@ export function useWorkspaceImportExport({
 
       if (tracker.length > 0) {
         const trackerExport = tracker.map((item) => ({
+          ID: item._id,
+          'Task ID': item.taskId,
           'Task Name': item.taskName,
           Notes: item.notes,
           Status: item.status,

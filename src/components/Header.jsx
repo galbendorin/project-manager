@@ -246,14 +246,14 @@ const Header = ({
                 <button
                   onClick={handleImportClick}
                   className="shrink-0 text-[11px] font-medium text-slate-500 border border-slate-200 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
-                  title="Import from Excel (.xlsx)"
+                  title="Import a PM Workspace file (.json) or Excel workbook (.xlsx)"
                 >
                   ↑ Import
                 </button>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".xlsx,.xls,.csv"
+                  accept=".json,.xlsx,.xls,.csv"
                   onChange={handleFileChange}
                   className="hidden"
                 />
