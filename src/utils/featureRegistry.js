@@ -81,13 +81,13 @@ export const APP_FEATURES = [
 ];
 
 export const PROJECT_HOME_LAUNCH_FEATURE_IDS = [
+  'financial-planner',
   'meal-planner',
   'shopping-list',
   'baby',
   'habits',
   'weight',
   'itil-quiz',
-  'financial-planner',
   'timesheets',
 ];
 
