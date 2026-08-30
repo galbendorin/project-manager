@@ -31,6 +31,12 @@ test('feature registry resolves launch metadata without exposing household tools
   });
   assert.deepEqual(allowedPrivateLaunches.map((feature) => feature.id), ['itil-quiz', 'timesheets']);
 
+  const financeLaunches = getProjectHomeLaunchFeatures({
+    includeHouseholdTools: false,
+    includeFinancePlanner: true,
+  });
+  assert.deepEqual(financeLaunches.map((feature) => feature.id), ['financial-planner', 'timesheets']);
+
   const householdLaunches = getProjectHomeLaunchFeatures({
     includeHouseholdTools: true,
     includeItilQuiz: true,

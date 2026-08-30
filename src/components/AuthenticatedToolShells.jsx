@@ -8,6 +8,7 @@ const BabyView = lazy(() => import('./BabyView'));
 const HabitsView = lazy(() => import('./HabitsView'));
 const WeightTrackerView = lazy(() => import('./WeightTrackerView'));
 const ItilQuizView = lazy(() => import('./ItilQuizView'));
+const FinancePlannerView = lazy(() => import('./FinancePlannerView'));
 
 export function AuthenticatedTrackShell({
   currentUserId,
@@ -166,6 +167,29 @@ export function AuthenticatedItilQuizShell({
       userEmail={userEmail}
     >
       <ItilQuizView currentUserId={currentUserId} />
+    </AuthenticatedMiniToolShell>
+  );
+}
+
+export function AuthenticatedFinancePlannerShell({
+  currentUserId,
+  userEmail,
+  onGoToProjects,
+  onSignOut,
+  accentTheme,
+  onAccentThemeChange,
+}) {
+  return (
+    <AuthenticatedMiniToolShell
+      accentTheme={accentTheme}
+      fallbackLabel="Loading Financial Planner..."
+      onAccentThemeChange={onAccentThemeChange}
+      onGoToProjects={onGoToProjects}
+      onSignOut={onSignOut}
+      title="Financial Planner"
+      userEmail={userEmail}
+    >
+      <FinancePlannerView currentUserId={currentUserId} />
     </AuthenticatedMiniToolShell>
   );
 }

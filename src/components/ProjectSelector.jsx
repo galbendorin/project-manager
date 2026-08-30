@@ -19,6 +19,7 @@ import { loadLastProject } from '../utils/navigationState';
 import { getStoredProjectTab } from '../utils/projectTabMemory';
 import { getProjectHomeLaunchFeatures } from '../utils/featureRegistry';
 import { canAccessItilQuiz } from '../utils/itilQuizAccess';
+import { canAccessFinancePlanner } from '../utils/financeAccess';
 
 const PROJECT_TAB_LABEL_BY_ID = new Map(TABS.map((tab) => [tab.id, tab.label]));
 
@@ -47,7 +48,7 @@ const getFriendlyProjectCreateErrorMessage = (error) => {
   return getProjectCreationErrorMessage(error);
 };
 
-const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenItilQuiz, onOpenMeals, onOpenTrack, onOpenShopping, onOpenWeight, accentTheme, onAccentThemeChange }) => {
+const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHabits, onOpenItilQuiz, onOpenMeals, onOpenTrack, onOpenShopping, onOpenWeight, accentTheme, onAccentThemeChange }) => {
   const { user, signOut } = useAuth();
   const { canCreateProject, limits, householdToolsEnabled, isReadOnly, refreshProjectCount } = usePlan();
   const [projects, setProjects] = useState([]);
@@ -73,12 +74,14 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenItil
   );
   const showInternalLaunchCards = householdToolsEnabled;
   const canUseItilQuiz = useMemo(() => canAccessItilQuiz(user?.email), [user?.email]);
+  const canUseFinancePlanner = useMemo(() => canAccessFinancePlanner(user?.email), [user?.email]);
   const projectHomeLaunchFeatures = useMemo(() => (
     getProjectHomeLaunchFeatures({
       includeHouseholdTools: showInternalLaunchCards,
       includeItilQuiz: canUseItilQuiz,
+      includeFinancePlanner: canUseFinancePlanner,
     })
-  ), [canUseItilQuiz, showInternalLaunchCards]);
+  ), [canUseFinancePlanner, canUseItilQuiz, showInternalLaunchCards]);
   const launchActionById = useMemo(() => ({
     'meal-planner': onOpenMeals,
     'shopping-list': onOpenShopping,
@@ -86,8 +89,9 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenHabits, onOpenItil
     habits: onOpenHabits,
     weight: onOpenWeight,
     'itil-quiz': onOpenItilQuiz,
+    'financial-planner': onOpenFinance,
     timesheets: onOpenTrack,
-  }), [onOpenBaby, onOpenHabits, onOpenItilQuiz, onOpenMeals, onOpenShopping, onOpenTrack, onOpenWeight]);
+  }), [onOpenBaby, onOpenFinance, onOpenHabits, onOpenItilQuiz, onOpenMeals, onOpenShopping, onOpenTrack, onOpenWeight]);
   const shareProject = useMemo(
     () => projects.find((project) => project.id === shareProjectId) || null,
     [projects, shareProjectId]

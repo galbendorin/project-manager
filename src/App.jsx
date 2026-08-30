@@ -17,6 +17,7 @@ import { getFeatureByRoute } from './utils/featureRegistry';
 import { readAppShortcutIntent } from './utils/appShortcutIntent';
 import { activatePendingServiceWorker } from './utils/registerServiceWorker';
 import { canAccessItilQuiz } from './utils/itilQuizAccess';
+import { canAccessFinancePlanner } from './utils/financeAccess';
 
 const AuthPage = lazy(() => import('./components/AuthPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -30,6 +31,7 @@ const AuthenticatedBabyShell = lazy(() => import('./components/AuthenticatedTool
 const AuthenticatedHabitsShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedHabitsShell })));
 const AuthenticatedWeightShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedWeightShell })));
 const AuthenticatedItilQuizShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedItilQuizShell })));
+const AuthenticatedFinancePlannerShell = lazy(() => import('./components/AuthenticatedToolShells').then((module) => ({ default: module.AuthenticatedFinancePlannerShell })));
 
 const normalizeAppPath = (value = '/') => {
   const normalized = String(value || '/').replace(/\/+$/, '');
@@ -135,6 +137,7 @@ function App() {
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const currentFeature = getFeatureByRoute(currentPath);
   const canUseItilQuiz = canAccessItilQuiz(user?.email);
+  const canUseFinancePlanner = canAccessFinancePlanner(user?.email);
 
   useEffect(() => {
     applyAccentTheme(accentTheme);
@@ -294,6 +297,20 @@ function App() {
                   'Loading ITIL Quiz...'
                 )
               : <PrivateToolUnavailable onGoToProjects={openProjectSelector} toolName={currentFeature?.label || 'This tool'} />
+          : currentPath === '/finance'
+            ? canUseFinancePlanner
+              ? renderLazyPage(
+                  <AuthenticatedFinancePlannerShell
+                    currentUserId={user.id}
+                    userEmail={user.email}
+                    onGoToProjects={openProjectSelector}
+                    onSignOut={signOut}
+                    accentTheme={accentTheme}
+                    onAccentThemeChange={setAccentTheme}
+                  />,
+                  'Loading Financial Planner...'
+                )
+              : <PrivateToolUnavailable onGoToProjects={openProjectSelector} toolName={currentFeature?.label || 'This tool'} />
           : currentPath === '/shopping' && householdToolsEnabled
             ? renderLazyPage(
                 <AuthenticatedShoppingShell
@@ -370,6 +387,7 @@ function App() {
                   onOpenHabits={() => householdToolsEnabled && navigateToPath('/habits')}
                   onOpenWeight={() => householdToolsEnabled && navigateToPath('/weight')}
                   onOpenItilQuiz={() => canUseItilQuiz && navigateToPath('/itil-quiz')}
+                  onOpenFinance={() => canUseFinancePlanner && navigateToPath('/finance')}
                   accentTheme={accentTheme}
                   onAccentThemeChange={setAccentTheme}
                 />,

@@ -31,6 +31,14 @@ export const APP_FEATURES = [
     homeTitle: 'Practise mock tests',
   },
   {
+    id: 'financial-planner',
+    label: 'Financial Planner',
+    route: '/finance',
+    access: FEATURE_ACCESS.authenticated,
+    surface: 'workspace',
+    homeTitle: 'Plan household finances',
+  },
+  {
     id: 'meal-planner',
     label: 'Meal Planner',
     route: '/meals',
@@ -79,6 +87,7 @@ export const PROJECT_HOME_LAUNCH_FEATURE_IDS = [
   'habits',
   'weight',
   'itil-quiz',
+  'financial-planner',
   'timesheets',
 ];
 
@@ -112,6 +121,7 @@ export const isHouseholdFeaturePath = (path = '') => (
 export const getProjectHomeLaunchFeatures = ({
   includeHouseholdTools = false,
   includeItilQuiz = false,
+  includeFinancePlanner = false,
 } = {}) => (
   PROJECT_HOME_LAUNCH_FEATURE_IDS
     .map(getFeatureById)
@@ -121,6 +131,9 @@ export const getProjectHomeLaunchFeatures = ({
     ))
     .filter((feature) => (
       feature.id !== 'itil-quiz' || includeItilQuiz
+    ))
+    .filter((feature) => (
+      feature.id !== 'financial-planner' || includeFinancePlanner
     ))
 );
 
