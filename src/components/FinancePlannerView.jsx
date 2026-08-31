@@ -5,14 +5,24 @@ import {
   FINANCE_HORIZON_OPTIONS,
   formatCurrency,
   formatMonthLabel,
+  getCurrentMonthKey,
   getItemAmountForMonth,
   parseCurrencyToPence,
 } from '../utils/financePlanner';
+import {
+  FINANCE_QUICK_ENTRY_EXAMPLES,
+  findFinanceCategoryId,
+  parseFinanceQuickEntry,
+} from '../utils/financeQuickEntry';
+import {
+  groupFinanceExpenseItems,
+  isHistoricalFinanceItem,
+} from '../utils/financePlanRows';
 
 const TABS = [
+  { id: 'plan', label: 'Plan' },
   { id: 'regular', label: 'Regular' },
   { id: 'other', label: 'Other' },
-  { id: 'plan', label: 'Plan' },
 ];
 
 const fieldClass = 'pm-input w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-950 placeholder:text-slate-400';
@@ -20,6 +30,12 @@ const primaryButton = 'pm-toolbar-primary rounded-xl px-4 py-2.5 text-sm font-bo
 const secondaryButton = 'rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50';
 
 const penceToInput = (value) => String(Math.round((Number(value) || 0) / 100));
+
+const QUICK_CLASSIFICATION_LABELS = {
+  essential: 'Required',
+  discretionary: 'Optional',
+  wealth_building: 'Saving / overpayment',
+};
 
 const Section = ({ children, className = '' }) => (
   <section className={`rounded-2xl border border-slate-200 bg-white ${className}`}>{children}</section>
@@ -65,6 +81,156 @@ const SummaryStrip = ({ currentMonth, openingCashPence, currencyCode }) => {
           <div className={`mt-1 text-xl font-black tracking-[-0.035em] ${cell.tone}`}>{formatCurrency(cell.value, currencyCode)}</div>
         </div>
       ))}
+    </div>
+  );
+};
+
+const quickScheduleLabel = (item) => {
+  if (item.frequency === 'annual') {
+    return `Every ${formatMonthLabel(item.startMonth, { year: undefined })}, next due ${formatMonthLabel(item.startMonth)}`;
+  }
+  if (item.frequency === 'one_off') return `Once in ${formatMonthLabel(item.startMonth)}`;
+  return `Monthly from ${formatMonthLabel(item.startMonth)}${item.endMonth ? ` until ${formatMonthLabel(item.endMonth)}` : ''}`;
+};
+
+export const FinanceQuickAdd = ({ mode, categories, startMonth, currencyCode, saving, onSave, onUseDetails }) => {
+  const examples = FINANCE_QUICK_ENTRY_EXAMPLES[mode];
+  const isOther = mode === 'other';
+  const [text, setText] = useState('');
+  const [result, setResult] = useState(null);
+  const [message, setMessage] = useState('');
+
+  const interpret = (value = text) => {
+    const parsed = parseFinanceQuickEntry(value, { mode, startMonth });
+    setResult(parsed);
+    setMessage('');
+    return parsed;
+  };
+
+  const updateText = (value) => {
+    setText(value);
+    setResult(null);
+    setMessage('');
+  };
+
+  const chooseExample = (example) => {
+    setText(example);
+    interpret(example);
+  };
+
+  const buildDraft = () => {
+    if (!result?.ok) return null;
+    const categoryId = findFinanceCategoryId(
+      categories,
+      result.item.categoryHint,
+      result.item.flowType,
+    );
+    return { ...result.item, categoryId };
+  };
+
+  const save = async () => {
+    const draft = buildDraft();
+    if (!draft) return;
+    try {
+      await onSave(draft);
+      setText('');
+      setResult(null);
+      setMessage(`${draft.name} was added to your plan.`);
+    } catch (error) {
+      setMessage(error?.message || 'Unable to add this row.');
+    }
+  };
+
+  const useDetails = () => {
+    const draft = buildDraft();
+    if (draft) onUseDetails(draft);
+  };
+
+  const draft = buildDraft();
+  const matchedCategory = draft?.categoryId
+    ? categories.find((category) => category.id === draft.categoryId)
+    : null;
+
+  return (
+    <div className="border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4">
+      <div className="rounded-2xl border border-[var(--pm-accent)]/20 bg-[var(--pm-accent-tint)] p-3 sm:p-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <div className="text-sm font-black text-slate-950">Quick add</div>
+            <p id={`finance-quick-help-${mode}`} className="mt-0.5 text-xs leading-5 text-slate-500">
+              {isOther ? 'Type the cost, amount, and when it is due.' : 'Type the name, amount, and whether it is income or optional.'}
+            </p>
+          </div>
+          <span className="rounded-full border border-[var(--pm-accent)]/20 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--pm-accent-strong)]">Parsed privately</span>
+        </div>
+
+        <form
+          onSubmit={(event) => { event.preventDefault(); interpret(); }}
+          className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"
+        >
+          <label className="min-w-0">
+            <span className="sr-only">Describe the {isOther ? 'other cost' : 'regular amount'}</span>
+            <input
+              value={text}
+              onChange={(event) => updateText(event.target.value)}
+              placeholder={isOther ? 'e.g. MOT £350 in October' : 'e.g. Energy £150 monthly'}
+              aria-describedby={`finance-quick-help-${mode}`}
+              autoComplete="off"
+              enterKeyHint="done"
+              className={`${fieldClass} min-h-11 border-white bg-white shadow-sm`}
+            />
+          </label>
+          <button type="submit" disabled={!text.trim()} className={`${primaryButton} min-h-11 w-full sm:w-auto`}>Preview</button>
+        </form>
+
+        <div className="mt-3">
+          <span className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Examples</span>
+          <div className="mt-1.5 flex gap-2 overflow-x-auto pb-1">
+            {examples.map((example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() => chooseExample(example)}
+                className="min-h-9 shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:border-[var(--pm-accent)]/30 hover:text-[var(--pm-accent-strong)]"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {result && !result.ok ? (
+          <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+            {result.errors.join(' ')}
+          </div>
+        ) : null}
+
+        {result?.ok && draft ? (
+          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="text-sm font-black text-slate-950">{draft.name}</div>
+                <div className="mt-1 text-xs font-semibold text-slate-500">{quickScheduleLabel(draft)}</div>
+              </div>
+              <div className={`text-lg font-black ${draft.flowType === 'income' ? 'text-emerald-700' : 'text-slate-950'}`}>
+                {draft.flowType === 'income' ? '+' : '-'}{formatCurrency(draft.amountPence, currencyCode)}
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold">
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{draft.flowType === 'income' ? 'Income' : QUICK_CLASSIFICATION_LABELS[draft.classification]}</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{matchedCategory?.name || draft.categoryHint || 'No category'}</span>
+            </div>
+            {result.warnings.map((warning) => <p key={warning} className="mt-2 text-xs font-semibold text-amber-700">{warning}</p>)}
+            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={useDetails} className={`${secondaryButton} min-h-11 w-full sm:w-auto`}>Edit details</button>
+              <button type="button" onClick={() => void save()} disabled={saving} className={`${primaryButton} min-h-11 w-full sm:w-auto`}>{saving ? 'Adding...' : 'Add to plan'}</button>
+            </div>
+          </div>
+        ) : null}
+
+        {message ? <p role="status" className="mt-3 text-sm font-semibold text-slate-600">{message}</p> : null}
+        <p className="mt-3 text-[11px] leading-4 text-slate-400">This sentence is interpreted in your browser and is not sent to AI. Only the confirmed plan row is saved.</p>
+      </div>
     </div>
   );
 };
@@ -175,20 +341,33 @@ const ProfileSettings = ({ profile, saving, onSave, onReset }) => {
 const RegularView = ({ finance, currentMonth, currencyCode }) => {
   const [editingItem, setEditingItem] = useState(null);
   const [adding, setAdding] = useState(false);
-  const regularItems = useMemo(() => finance.budgetItems.filter((item) => item.frequency === 'monthly').sort((left, right) => `${left.flowType === 'income' ? '0' : '1'}${left.name}`.localeCompare(`${right.flowType === 'income' ? '0' : '1'}${right.name}`)), [finance.budgetItems]);
+  const historyMonth = getCurrentMonthKey();
+  const regularItems = useMemo(() => finance.budgetItems.filter((item) => item.frequency === 'monthly' && !isHistoricalFinanceItem(item, historyMonth)).sort((left, right) => `${left.flowType === 'income' ? '0' : '1'}${left.name}`.localeCompare(`${right.flowType === 'income' ? '0' : '1'}${right.name}`)), [finance.budgetItems, historyMonth]);
   const incomeItems = regularItems.filter((item) => item.flowType === 'income');
   const expenseItems = regularItems.filter((item) => item.flowType === 'expense');
+  const expenseGroups = useMemo(() => groupFinanceExpenseItems(expenseItems, finance.categories), [expenseItems, finance.categories]);
+  const populatedExpenseGroups = expenseGroups.filter((group) => group.items.length);
   const closeForm = () => { setAdding(false); setEditingItem(null); };
   return (
     <div className="space-y-4">
       <SummaryStrip currentMonth={currentMonth} openingCashPence={finance.profile.openingCashPence} currencyCode={currencyCode} />
       <Section>
-        <SectionHeader title="Regular income and expenses" detail="Amounts that normally repeat every month." action={<button type="button" onClick={() => { setEditingItem(null); setAdding(true); }} className={primaryButton}>Add regular row</button>} />
-        {adding || editingItem ? <PlannerItemForm key={editingItem?.id || 'new-regular'} mode="regular" categories={finance.categories} initialItem={editingItem} startMonth={finance.profile.forecastStartMonth} saving={finance.saving} onSave={finance.saveBudgetItem} onClose={closeForm} /> : null}
+        <SectionHeader title="Regular income and expenses" detail="Amounts that normally repeat every month." action={<button type="button" onClick={() => { setEditingItem(null); setAdding(true); }} className={secondaryButton}>Use detailed form</button>} />
+        <FinanceQuickAdd mode="regular" categories={finance.categories} startMonth={finance.profile.forecastStartMonth} currencyCode={currencyCode} saving={finance.saving} onSave={finance.saveBudgetItem} onUseDetails={(item) => { setAdding(true); setEditingItem(item); }} />
+        {adding || editingItem ? <PlannerItemForm key={editingItem?.id || `new-regular-${editingItem?.name || 'row'}-${editingItem?.startMonth || ''}`} mode="regular" categories={finance.categories} initialItem={editingItem} startMonth={finance.profile.forecastStartMonth} saving={finance.saving} onSave={finance.saveBudgetItem} onClose={closeForm} /> : null}
         <div className="bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 sm:px-5">Income</div>
         <ItemRows items={incomeItems} categories={finance.categories} currencyCode={currencyCode} onEdit={(item) => { setAdding(false); setEditingItem(item); }} onDelete={finance.deleteBudgetItem} />
-        <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 sm:px-5">Expenses</div>
-        <ItemRows items={expenseItems} categories={finance.categories} currencyCode={currencyCode} onEdit={(item) => { setAdding(false); setEditingItem(item); }} onDelete={finance.deleteBudgetItem} />
+        {populatedExpenseGroups.length ? populatedExpenseGroups.map((group) => (
+          <React.Fragment key={group.id}>
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 sm:px-5">{group.label}</div>
+            <ItemRows items={group.items} categories={finance.categories} currencyCode={currencyCode} onEdit={(item) => { setAdding(false); setEditingItem(item); }} onDelete={finance.deleteBudgetItem} />
+          </React.Fragment>
+        )) : (
+          <React.Fragment>
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 sm:px-5">Expenses</div>
+            <ItemRows items={[]} categories={finance.categories} currencyCode={currencyCode} onEdit={(item) => { setAdding(false); setEditingItem(item); }} onDelete={finance.deleteBudgetItem} />
+          </React.Fragment>
+        )}
       </Section>
       <ProfileSettings profile={finance.profile} saving={finance.saving} onSave={finance.saveProfile} onReset={finance.resetFinanceData} />
     </div>
@@ -198,12 +377,14 @@ const RegularView = ({ finance, currentMonth, currencyCode }) => {
 const OtherView = ({ finance, currencyCode }) => {
   const [editingItem, setEditingItem] = useState(null);
   const [adding, setAdding] = useState(false);
-  const otherItems = useMemo(() => finance.budgetItems.filter((item) => item.frequency !== 'monthly').sort((left, right) => `${left.startMonth}${left.name}`.localeCompare(`${right.startMonth}${right.name}`)), [finance.budgetItems]);
+  const historyMonth = getCurrentMonthKey();
+  const otherItems = useMemo(() => finance.budgetItems.filter((item) => item.frequency !== 'monthly' && !isHistoricalFinanceItem(item, historyMonth)).sort((left, right) => `${left.startMonth}${left.name}`.localeCompare(`${right.startMonth}${right.name}`)), [finance.budgetItems, historyMonth]);
   const closeForm = () => { setAdding(false); setEditingItem(null); };
   return (
     <Section>
-      <SectionHeader title="Other and future costs" detail="Add MOT, insurance, birthdays, holidays, repairs, or any other dated cost. Each row appears automatically in the Plan." action={<button type="button" onClick={() => { setEditingItem(null); setAdding(true); }} className={primaryButton}>Add other cost</button>} />
-      {adding || editingItem ? <PlannerItemForm key={editingItem?.id || 'new-other'} mode="other" categories={finance.categories} initialItem={editingItem} startMonth={finance.profile.forecastStartMonth} saving={finance.saving} onSave={finance.saveBudgetItem} onClose={closeForm} /> : null}
+      <SectionHeader title="Other and future costs" detail="Add MOT, insurance, birthdays, holidays, repairs, or any other dated cost. Each row appears automatically in the Plan." action={<button type="button" onClick={() => { setEditingItem(null); setAdding(true); }} className={secondaryButton}>Use detailed form</button>} />
+      <FinanceQuickAdd mode="other" categories={finance.categories} startMonth={finance.profile.forecastStartMonth} currencyCode={currencyCode} saving={finance.saving} onSave={finance.saveBudgetItem} onUseDetails={(item) => { setAdding(true); setEditingItem(item); }} />
+      {adding || editingItem ? <PlannerItemForm key={editingItem?.id || `new-other-${editingItem?.name || 'row'}-${editingItem?.startMonth || ''}`} mode="other" categories={finance.categories} initialItem={editingItem} startMonth={finance.profile.forecastStartMonth} saving={finance.saving} onSave={finance.saveBudgetItem} onClose={closeForm} /> : null}
       <ItemRows items={otherItems} categories={finance.categories} currencyCode={currencyCode} onEdit={(item) => { setAdding(false); setEditingItem(item); }} onDelete={finance.deleteBudgetItem} />
     </Section>
   );
@@ -221,12 +402,14 @@ const PlanRow = ({ label, months, valueForMonth, tone = 'text-slate-800', strong
 
 const PlanGroup = ({ label, months }) => <tr><th className="sticky left-0 z-20 border-r border-slate-200 bg-slate-100 px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</th>{months.map((month) => <td key={month.monthKey} className="bg-slate-100" />)}</tr>;
 
-const MonthlyPlanTable = ({ forecast, budgetItems, snapshots, profile, currencyCode }) => {
+const MonthlyPlanTable = ({ forecast, budgetItems, categories, snapshots, profile, currencyCode }) => {
   const snapshotByMonth = useMemo(() => new Map(snapshots.map((snapshot) => [snapshot.asOfMonth, snapshot])), [snapshots]);
-  const regularIncome = budgetItems.filter((item) => item.frequency === 'monthly' && item.flowType === 'income');
-  const regularExpenses = budgetItems.filter((item) => item.frequency === 'monthly' && item.flowType === 'expense');
-  const otherItems = budgetItems.filter((item) => item.frequency !== 'monthly');
   const amountFor = (item, month) => getItemAmountForMonth({ item, monthKey: month.monthKey, forecastStartMonth: profile.forecastStartMonth, annualExpenseInflationBps: profile.annualExpenseInflationBps, annualIncomeGrowthBps: profile.annualIncomeGrowthBps });
+  const appearsInForecast = (item) => forecast.some((month) => amountFor(item, month) > 0);
+  const regularIncome = budgetItems.filter((item) => item.frequency === 'monthly' && item.flowType === 'income' && appearsInForecast(item));
+  const regularExpenses = budgetItems.filter((item) => item.frequency === 'monthly' && item.flowType === 'expense' && appearsInForecast(item));
+  const expenseGroups = groupFinanceExpenseItems(regularExpenses, categories).filter((group) => group.items.length);
+  const otherItems = budgetItems.filter((item) => item.frequency !== 'monthly' && appearsInForecast(item));
   const otherTotal = (month) => otherItems.reduce((sum, item) => sum + (item.flowType === 'expense' ? amountFor(item, month) : 0), 0);
   const rowProps = { months: forecast, currencyCode };
   return (
@@ -237,8 +420,12 @@ const MonthlyPlanTable = ({ forecast, budgetItems, snapshots, profile, currencyC
           <PlanGroup label="Income" months={forecast} />
           {regularIncome.map((item) => <PlanRow key={item.id} {...rowProps} label={item.name} valueForMonth={(month) => amountFor(item, month)} tone="text-emerald-700" />)}
           <PlanRow {...rowProps} label="Income total" valueForMonth={(month) => month.incomePence} tone="text-emerald-700" strong />
-          <PlanGroup label="Regular expenses" months={forecast} />
-          {regularExpenses.map((item) => <PlanRow key={item.id} {...rowProps} label={item.name} valueForMonth={(month) => amountFor(item, month)} />)}
+          {expenseGroups.map((group) => (
+            <React.Fragment key={group.id}>
+              <PlanGroup label={group.label} months={forecast} />
+              {group.items.map((item) => <PlanRow key={item.id} {...rowProps} label={item.name} valueForMonth={(month) => amountFor(item, month)} />)}
+            </React.Fragment>
+          ))}
           <PlanGroup label="Other expenses" months={forecast} />
           {otherItems.map((item) => <PlanRow key={item.id} {...rowProps} label={item.name} valueForMonth={(month) => amountFor(item, month)} tone="text-amber-700" />)}
           <PlanRow {...rowProps} label="Other expenses total" valueForMonth={otherTotal} tone="text-amber-700" strong />
@@ -251,6 +438,135 @@ const MonthlyPlanTable = ({ forecast, budgetItems, snapshots, profile, currencyC
       </table>
       <div className="border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">Swipe or scroll sideways to see later months.</div>
     </div>
+  );
+};
+
+const FUTURE_EXPENSE_ROW_COUNT = 10;
+
+const createFutureExpenseRows = (defaultMonth) => Array.from({ length: FUTURE_EXPENSE_ROW_COUNT }, (_, index) => ({
+  key: `future-expense-${index + 1}`,
+  name: '',
+  amount: '',
+  month: defaultMonth,
+  frequency: 'one_off',
+  error: '',
+}));
+
+const FutureExpenseGrid = ({ categories, defaultMonth, currencyCode, saving, onSave }) => {
+  const [rows, setRows] = useState(() => createFutureExpenseRows(defaultMonth));
+  const [message, setMessage] = useState('');
+
+  const updateRow = (index, patch) => {
+    setRows((previous) => previous.map((row, rowIndex) => (
+      rowIndex === index ? { ...row, error: '', ...patch } : row
+    )));
+    setMessage('');
+  };
+
+  const saveRow = async (index) => {
+    const row = rows[index];
+    const amountPence = parseCurrencyToPence(row.amount);
+    const fieldErrors = [];
+    if (!row.name.trim()) fieldErrors.push('Add a short description.');
+    if (amountPence === null || amountPence <= 0) fieldErrors.push('Add an amount greater than zero.');
+    if (!row.month) fieldErrors.push('Choose a due month.');
+    if (fieldErrors.length) {
+      updateRow(index, { error: fieldErrors.join(' ') });
+      return;
+    }
+
+    const parsed = parseFinanceQuickEntry(`${row.name} ${row.amount}`, {
+      mode: 'other',
+      startMonth: row.month,
+    });
+    if (!parsed.ok) {
+      updateRow(index, { error: parsed.errors.join(' ') });
+      return;
+    }
+
+    const categoryId = findFinanceCategoryId(
+      categories,
+      parsed.item.categoryHint,
+      'expense',
+    );
+    const draft = {
+      ...parsed.item,
+      categoryId,
+      frequency: row.frequency,
+      startMonth: row.month,
+      endMonth: '',
+      annualMonth: row.frequency === 'annual' ? Number(row.month.slice(5, 7)) : null,
+    };
+
+    try {
+      await onSave(draft);
+      setRows((previous) => previous.map((current, rowIndex) => (
+        rowIndex === index
+          ? { ...createFutureExpenseRows(defaultMonth)[index], key: current.key }
+          : current
+      )));
+      setMessage(`${draft.name} was added to ${formatMonthLabel(draft.startMonth)}.`);
+    } catch (error) {
+      updateRow(index, { error: error?.message || 'Unable to add this expense.' });
+    }
+  };
+
+  return (
+    <Section>
+      <SectionHeader
+        title="Add future expenses"
+        detail="Ten blank lines stay ready below your plan. Add a one-off cost, or make it repeat monthly or yearly."
+      />
+      <div className="hidden grid-cols-[28px_minmax(180px,1fr)_120px_150px_135px_78px] gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 sm:grid">
+        <span>#</span><span>Description</span><span>Amount ({currencyCode})</span><span>Due month</span><span>Repeat</span><span />
+      </div>
+      <div className="divide-y divide-slate-100">
+        {rows.map((row, index) => (
+          <div key={row.key} className="grid grid-cols-[28px_minmax(0,1fr)] gap-2 px-3 py-3 sm:grid-cols-[28px_minmax(180px,1fr)_120px_150px_135px_78px] sm:items-start sm:px-4 sm:py-2">
+            <span className="pt-2.5 text-xs font-black text-slate-300">{index + 1}</span>
+            <label>
+              <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 sm:sr-only">Description</span>
+              <input
+                value={row.name}
+                onChange={(event) => updateRow(index, { name: event.target.value })}
+                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void saveRow(index); } }}
+                placeholder="e.g. MOT or holiday"
+                className={`${fieldClass} min-h-10 py-2`}
+              />
+            </label>
+            <label className="col-start-2 sm:col-start-auto">
+              <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 sm:sr-only">Amount</span>
+              <input
+                value={row.amount}
+                onChange={(event) => updateRow(index, { amount: event.target.value })}
+                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void saveRow(index); } }}
+                inputMode="decimal"
+                placeholder="0"
+                className={`${fieldClass} min-h-10 py-2`}
+              />
+            </label>
+            <label className="col-start-2 sm:col-start-auto">
+              <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 sm:sr-only">Due month</span>
+              <input type="month" value={row.month} min={getCurrentMonthKey()} onChange={(event) => updateRow(index, { month: event.target.value })} className={`${fieldClass} min-h-10 py-2`} />
+            </label>
+            <label className="col-start-2 sm:col-start-auto">
+              <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 sm:sr-only">Repeat</span>
+              <select value={row.frequency} onChange={(event) => updateRow(index, { frequency: event.target.value })} className={`${fieldClass} min-h-10 py-2`}>
+                <option value="one_off">Once</option>
+                <option value="monthly">Every month</option>
+                <option value="annual">Every year</option>
+              </select>
+            </label>
+            <button type="button" onClick={() => void saveRow(index)} disabled={saving || !row.name.trim() || !row.amount.trim()} className={`${primaryButton} col-start-2 min-h-10 px-3 py-2 sm:col-start-auto`}>Add</button>
+            {row.error ? <p role="alert" className="col-start-2 text-xs font-semibold text-rose-700 sm:col-span-5 sm:col-start-2">{row.error}</p> : null}
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 text-xs font-semibold leading-5 text-slate-500">
+        <p>Once: moves to History after its due month. Every month: joins the regular expense groups. Every year: stays scheduled for the same month each year.</p>
+        {message ? <p role="status" className="mt-1 font-black text-emerald-700">{message}</p> : null}
+      </div>
+    </Section>
   );
 };
 
@@ -277,30 +593,64 @@ const FactForm = ({ profile, saving, onSave }) => {
   );
 };
 
-const History = ({ snapshots, actualEntries, currencyCode }) => (
-  <details className="rounded-xl border border-slate-200 bg-white">
-    <summary className="cursor-pointer list-none px-4 py-3 text-sm font-black text-slate-700">Past and recorded history ({snapshots.length + actualEntries.length})</summary>
-    <div className="grid gap-4 border-t border-slate-100 px-4 py-4 lg:grid-cols-2">
-      <div><div className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Savings facts</div><div className="mt-2 divide-y divide-slate-100">{snapshots.length ? snapshots.map((snapshot) => <div key={snapshot.id} className="flex justify-between gap-3 py-2 text-sm"><span className="font-semibold text-slate-500">{formatMonthLabel(snapshot.asOfMonth)}</span><span className="font-black text-slate-900">{formatCurrency(snapshot.cashBalancePence, currencyCode)}</span></div>) : <p className="py-2 text-sm text-slate-500">No facts recorded.</p>}</div></div>
-      <div><div className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Older actual entries</div><div className="mt-2 divide-y divide-slate-100">{actualEntries.length ? actualEntries.slice(0, 24).map((entry) => <div key={entry.id} className="flex justify-between gap-3 py-2 text-sm"><span className="min-w-0 truncate font-semibold text-slate-500">{entry.note || entry.occurredOn}</span><span className="font-black text-slate-900">{entry.flowType === 'income' ? '+' : '-'}{formatCurrency(entry.amountPence, currencyCode)}</span></div>) : <p className="py-2 text-sm text-slate-500">No actual entries recorded.</p>}</div></div>
-    </div>
-  </details>
-);
+const historicalScheduleLabel = (item) => {
+  if (item.frequency === 'one_off') return formatMonthLabel(item.startMonth);
+  if (item.endMonth) return `${formatMonthLabel(item.startMonth)} – ${formatMonthLabel(item.endMonth)}`;
+  if (item.frequency === 'annual') return `Every ${formatMonthLabel(item.startMonth, { year: undefined })}`;
+  return `From ${formatMonthLabel(item.startMonth)}`;
+};
 
-const PlanView = ({ finance, forecast, horizon, onHorizonChange, currencyCode }) => (
-  <div className="space-y-4">
-    <Section>
-      <SectionHeader title="Monthly plan" detail="Regular rows repeat automatically. Costs added under Other appear in their selected month." action={<div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1">{FINANCE_HORIZON_OPTIONS.map((option) => <button key={option.value} type="button" onClick={() => onHorizonChange(option.value)} className={`rounded-lg px-3 py-2 text-xs font-black ${horizon === option.value ? 'bg-white text-[var(--pm-accent)] shadow-sm' : 'text-slate-500'}`}>{option.label}</button>)}</div>} />
-      <div className="p-3 sm:p-4"><MonthlyPlanTable forecast={forecast} budgetItems={finance.budgetItems} snapshots={finance.balanceSnapshots} profile={finance.profile} currencyCode={currencyCode} /></div>
-    </Section>
-    <FactForm profile={finance.profile} saving={finance.saving} onSave={finance.saveBalanceSnapshot} />
-    <History snapshots={finance.balanceSnapshots} actualEntries={finance.actualEntries} currencyCode={currencyCode} />
-  </div>
-);
+const History = ({ snapshots, actualEntries, budgetItems, currencyCode }) => {
+  const currentMonth = getCurrentMonthKey();
+  const historicalItems = budgetItems
+    .filter((item) => isHistoricalFinanceItem(item, currentMonth))
+    .sort((left, right) => String(right.endMonth || right.startMonth).localeCompare(String(left.endMonth || left.startMonth)));
+  const historyCount = snapshots.length + actualEntries.length + historicalItems.length;
+
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white">
+      <summary className="cursor-pointer list-none px-4 py-3 text-sm font-black text-slate-700">Past and recorded history ({historyCount})</summary>
+      <div className="grid gap-4 border-t border-slate-100 px-4 py-4 lg:grid-cols-3">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Past plan rows</div>
+          <div className="mt-2 divide-y divide-slate-100">
+            {historicalItems.length ? historicalItems.map((item) => (
+              <div key={item.id} className="py-2 text-sm">
+                <div className="flex justify-between gap-3"><span className="min-w-0 truncate font-semibold text-slate-600">{item.name}</span><span className={`shrink-0 font-black ${item.flowType === 'income' ? 'text-emerald-700' : 'text-slate-900'}`}>{item.flowType === 'income' ? '+' : '-'}{formatCurrency(item.amountPence, currencyCode)}</span></div>
+                <div className="mt-0.5 text-xs font-semibold text-slate-400">{historicalScheduleLabel(item)}</div>
+              </div>
+            )) : <p className="py-2 text-sm text-slate-500">Past one-offs and ended rows will appear here.</p>}
+          </div>
+        </div>
+        <div><div className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Savings facts</div><div className="mt-2 divide-y divide-slate-100">{snapshots.length ? snapshots.map((snapshot) => <div key={snapshot.id} className="flex justify-between gap-3 py-2 text-sm"><span className="font-semibold text-slate-500">{formatMonthLabel(snapshot.asOfMonth)}</span><span className="font-black text-slate-900">{formatCurrency(snapshot.cashBalancePence, currencyCode)}</span></div>) : <p className="py-2 text-sm text-slate-500">No facts recorded.</p>}</div></div>
+        <div><div className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Older actual entries</div><div className="mt-2 divide-y divide-slate-100">{actualEntries.length ? actualEntries.slice(0, 24).map((entry) => <div key={entry.id} className="flex justify-between gap-3 py-2 text-sm"><span className="min-w-0 truncate font-semibold text-slate-500">{entry.note || entry.occurredOn}</span><span className="font-black text-slate-900">{entry.flowType === 'income' ? '+' : '-'}{formatCurrency(entry.amountPence, currencyCode)}</span></div>) : <p className="py-2 text-sm text-slate-500">No actual entries recorded.</p>}</div></div>
+      </div>
+    </details>
+  );
+};
+
+const PlanView = ({ finance, forecast, horizon, onHorizonChange, currencyCode }) => {
+  const currentMonth = getCurrentMonthKey();
+  const defaultExpenseMonth = finance.profile.forecastStartMonth > currentMonth
+    ? finance.profile.forecastStartMonth
+    : currentMonth;
+
+  return (
+    <div className="space-y-4">
+      <Section>
+        <SectionHeader title="Monthly plan" detail="Regular expenses are grouped like your household spreadsheet. Future costs appear in their selected month." action={<div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1">{FINANCE_HORIZON_OPTIONS.map((option) => <button key={option.value} type="button" onClick={() => onHorizonChange(option.value)} className={`rounded-lg px-3 py-2 text-xs font-black ${horizon === option.value ? 'bg-white text-[var(--pm-accent)] shadow-sm' : 'text-slate-500'}`}>{option.label}</button>)}</div>} />
+        <div className="p-3 sm:p-4"><MonthlyPlanTable forecast={forecast} budgetItems={finance.budgetItems} categories={finance.categories} snapshots={finance.balanceSnapshots} profile={finance.profile} currencyCode={currencyCode} /></div>
+      </Section>
+      <FutureExpenseGrid key={defaultExpenseMonth} categories={finance.categories} defaultMonth={defaultExpenseMonth} currencyCode={currencyCode} saving={finance.saving} onSave={finance.saveBudgetItem} />
+      <FactForm profile={finance.profile} saving={finance.saving} onSave={finance.saveBalanceSnapshot} />
+      <History snapshots={finance.balanceSnapshots} actualEntries={finance.actualEntries} budgetItems={finance.budgetItems} currencyCode={currencyCode} />
+    </div>
+  );
+};
 
 export default function FinancePlannerView({ currentUserId }) {
   const finance = useFinanceData({ currentUserId });
-  const [activeTab, setActiveTab] = useState('regular');
+  const [activeTab, setActiveTab] = useState('plan');
   const [horizon, setHorizon] = useState(36);
   const forecast = useMemo(() => buildFinanceForecast({ ...finance.profile, startMonth: finance.profile.forecastStartMonth, budgetItems: finance.budgetItems, months: horizon }), [finance.budgetItems, finance.profile, horizon]);
   const currentMonth = forecast[0] || null;
@@ -313,7 +663,7 @@ export default function FinancePlannerView({ currentUserId }) {
   return (
     <div className="mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-5 sm:py-6">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div><h1 className="text-2xl font-black tracking-[-0.04em] text-slate-950 sm:text-3xl">Financial Planner</h1><p className="mt-1 text-sm text-slate-500">Set regular amounts, add future costs, then read the monthly plan.</p></div>
+        <div><h1 className="text-2xl font-black tracking-[-0.04em] text-slate-950 sm:text-3xl">Financial Planner</h1><p className="mt-1 text-sm text-slate-500">Read the plan and add future costs in the same place.</p></div>
         <div className="text-right text-xs font-bold text-slate-400">Plan starts<span className="ml-2 text-sm font-black text-slate-800">{formatMonthLabel(finance.profile.forecastStartMonth)}</span></div>
       </header>
       <PlannerTabs activeTab={activeTab} onChange={setActiveTab} />
