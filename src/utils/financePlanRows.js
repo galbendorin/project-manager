@@ -1,40 +1,56 @@
-import { compareMonthKeys, normalizeMonthKey } from './financePlanner.js';
+import {
+  addMonths,
+  compareMonthKeys,
+  normalizeMonthKey,
+} from './financePlanner.js';
 
 export const FINANCE_EXPENSE_GROUPS = [
   {
     id: 'household',
-    label: 'Household, bills & mortgage',
-    categoryNames: ['housing', 'utilities', 'food'],
+    label: 'Home & bills',
+    categoryName: 'Home & bills',
+    categoryNames: ['home & bills', 'household, bills & mortgage', 'housing', 'utilities', 'food'],
+    classification: 'essential',
     pattern: /\b(?:household|home|mortgage|rent|council\s+tax|bill|energy|electric(?:ity)?|gas|water|broadband|internet|grocer(?:y|ies)|food|insurance)\b/i,
   },
   {
     id: 'subscriptions',
-    label: 'Subscriptions, gym & memberships',
-    categoryNames: [],
+    label: 'Subscriptions & memberships',
+    categoryName: 'Subscriptions & memberships',
+    categoryNames: ['subscriptions & memberships'],
+    classification: 'discretionary',
     pattern: /\b(?:subscription|gym|membership|netflix|spotify|streaming|prime|football)\b/i,
   },
   {
     id: 'childcare',
-    label: 'Childcare 1 & 2',
-    categoryNames: ['family & childcare'],
+    label: 'Childcare',
+    categoryName: 'Childcare',
+    categoryNames: ['childcare', 'family & childcare'],
+    classification: 'essential',
     pattern: /\b(?:child|childcare|nursery|school)\b/i,
   },
   {
     id: 'pocket_money',
-    label: 'Pocket money 1 & 2',
-    categoryNames: [],
+    label: 'Pocket money',
+    categoryName: 'Pocket money',
+    categoryNames: ['pocket money'],
+    classification: 'discretionary',
     pattern: /\bpocket\s+money\b/i,
   },
   {
     id: 'car',
     label: 'Car',
-    categoryNames: ['transport'],
+    categoryName: 'Car',
+    categoryNames: ['car', 'transport'],
+    classification: 'essential',
     pattern: /\b(?:car|vehicle|mot|fuel|petrol|diesel|road\s+tax|parking|transport)\b/i,
   },
   {
     id: 'other',
-    label: 'Other regular expenses',
-    categoryNames: [],
+    label: 'Other',
+    categoryName: 'Other household expenses',
+    categoryNames: ['other household expenses', 'irregular costs'],
+    classification: 'essential',
     pattern: null,
   },
 ];
@@ -49,8 +65,13 @@ export const getFinanceExpenseGroupId = (item = {}, categories = []) => {
   const name = String(item.name || '').trim();
   const categoryName = categoryNameMap(categories).get(item.categoryId) || '';
 
-  // Specific names win over broad categories. This keeps a gym subscription out
-  // of a generic Lifestyle or Household group, for example.
+  const explicitCategoryMatch = FINANCE_EXPENSE_GROUPS.find((group) => (
+    group.categoryName.toLowerCase() === categoryName
+  ));
+  if (explicitCategoryMatch) return explicitCategoryMatch.id;
+
+  // Name inference remains for legacy rows whose saved categories are broader
+  // than the household groups shown in the planner.
   const nameMatch = NAME_MATCH_PRIORITY
     .map((groupId) => FINANCE_EXPENSE_GROUPS.find((group) => group.id === groupId))
     .find((group) => group?.pattern?.test(name));
@@ -60,6 +81,20 @@ export const getFinanceExpenseGroupId = (item = {}, categories = []) => {
     group.categoryNames.includes(categoryName)
   ));
   return categoryMatch?.id || 'other';
+};
+
+export const getFinanceExpenseGroup = (groupId = 'other') => (
+  FINANCE_EXPENSE_GROUPS.find((group) => group.id === groupId)
+  || FINANCE_EXPENSE_GROUPS.at(-1)
+);
+
+export const findFinanceGroupCategoryId = (categories = [], groupId = 'other') => {
+  const group = getFinanceExpenseGroup(groupId);
+  const canonicalName = group.categoryName.toLowerCase();
+  return categories.find((category) => (
+    category.flowType === 'expense'
+    && String(category.name || '').trim().toLowerCase() === canonicalName
+  ))?.id || '';
 };
 
 export const groupFinanceExpenseItems = (items = [], categories = []) => {
@@ -84,4 +119,47 @@ export const isHistoricalFinanceItem = (item = {}, currentMonth) => {
     return Boolean(item.startMonth) && compareMonthKeys(item.startMonth, month) < 0;
   }
   return Boolean(item.endMonth) && compareMonthKeys(item.endMonth, month) < 0;
+};
+
+export const buildFinanceScheduleChange = (item = {}, effectiveMonth, patch = {}) => {
+  const startMonth = normalizeMonthKey(item.startMonth);
+  const changeMonth = normalizeMonthKey(effectiveMonth, startMonth);
+  const patched = { ...item, ...patch };
+  const next = {
+    ...patched,
+    endMonth: patched.frequency === 'one_off' ? '' : (patched.endMonth || ''),
+    annualMonth: patched.frequency === 'annual'
+      ? Number(patched.annualMonth) || Number(normalizeMonthKey(patched.startMonth, changeMonth).slice(5, 7))
+      : null,
+  };
+  const canVersion = Boolean(item.id)
+    && item.frequency !== 'one_off'
+    && compareMonthKeys(changeMonth, startMonth) > 0;
+
+  if (!canVersion) {
+    return { mode: 'replace', item: next };
+  }
+  if (item.endMonth && compareMonthKeys(changeMonth, item.endMonth) > 0) {
+    throw new Error('Choose a change month inside the current schedule.');
+  }
+
+  const successorEndMonth = next.frequency === 'one_off' ? '' : (next.endMonth || '');
+  if (successorEndMonth && compareMonthKeys(successorEndMonth, changeMonth) < 0) {
+    throw new Error('The end month must be after the change month.');
+  }
+
+  return {
+    mode: 'split',
+    previous: {
+      ...item,
+      endMonth: addMonths(changeMonth, -1),
+    },
+    successor: {
+      ...next,
+      id: undefined,
+      startMonth: changeMonth,
+      endMonth: successorEndMonth,
+      annualMonth: next.annualMonth,
+    },
+  };
 };

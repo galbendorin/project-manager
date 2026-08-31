@@ -7,6 +7,7 @@ import {
   getCurrentMonthKey,
   normalizeMonthKey,
 } from '../utils/financePlanner';
+import { buildFinanceScheduleChange } from '../utils/financePlanRows';
 
 const PROFILE_SELECT = 'user_id, currency_code, opening_cash_pence, forecast_start_month, emergency_target_months, protected_cash_floor_pence, annual_expense_inflation_bps, annual_income_growth_bps, created_at, updated_at';
 const CATEGORY_SELECT = 'id, user_id, name, flow_type, classification, sort_order, archived_at, created_at, updated_at';
@@ -272,6 +273,43 @@ export function useFinanceData({ currentUserId } = {}) {
       setSaving(false);
     }
   }, [currentUserId]);
+
+  const saveBudgetItemChange = useCallback(async (item = {}, effectiveMonth, patch = {}) => {
+    const change = buildFinanceScheduleChange(item, effectiveMonth, patch);
+    if (change.mode === 'replace') return saveBudgetItem(change.item);
+    if (!currentUserId) return null;
+
+    const successorId = crypto.randomUUID();
+    const payloads = [
+      { id: change.previous.id, ...toBudgetItemPayload(change.previous, currentUserId) },
+      { id: successorId, ...toBudgetItemPayload({ ...change.successor, id: successorId }, currentUserId) },
+    ];
+
+    setSaving(true);
+    setError('');
+    try {
+      const { data, error: saveError } = await supabase
+        .from('finance_budget_items')
+        .upsert(payloads, { onConflict: 'id' })
+        .select(BUDGET_ITEM_SELECT);
+      if (saveError) throw saveError;
+      const savedItems = (data || []).map(mapBudgetItem);
+      const savedIds = new Set(savedItems.map((savedItem) => savedItem.id));
+      setBudgetItems((previous) => [
+        ...previous.filter((current) => current.id !== item.id && !savedIds.has(current.id)),
+        ...savedItems,
+      ].sort((left, right) => `${left.startMonth}${left.name}`.localeCompare(`${right.startMonth}${right.name}`)));
+      return {
+        previous: savedItems.find((savedItem) => savedItem.id === item.id) || null,
+        successor: savedItems.find((savedItem) => savedItem.id === successorId) || null,
+      };
+    } catch (nextError) {
+      setError(nextError?.message || 'Unable to save the scheduled change.');
+      throw nextError;
+    } finally {
+      setSaving(false);
+    }
+  }, [currentUserId, saveBudgetItem]);
 
   const saveCategory = useCallback(async (category = {}) => {
     if (!currentUserId) return null;
@@ -615,6 +653,7 @@ export function useFinanceData({ currentUserId } = {}) {
     loadAll,
     saveProfile,
     saveBudgetItem,
+    saveBudgetItemChange,
     deleteBudgetItem,
     saveCategory,
     saveActualEntry,
