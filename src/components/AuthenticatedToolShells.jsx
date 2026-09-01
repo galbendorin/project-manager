@@ -182,6 +182,7 @@ export function AuthenticatedFinancePlannerShell({
   return (
     <AuthenticatedMiniToolShell
       accentTheme={accentTheme}
+      compactMobile
       fallbackLabel="Loading Financial Planner..."
       onAccentThemeChange={onAccentThemeChange}
       onGoToProjects={onGoToProjects}

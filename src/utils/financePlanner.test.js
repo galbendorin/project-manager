@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   addMonths,
   buildFinanceForecast,
+  buildFinanceMonthKpis,
   calculateEmergencyCoverage,
   calculateLoanPayment,
   calculateMortgageSummary,
@@ -71,6 +72,59 @@ test('cash safety, sinking fund, loan payment, and savings rate calculations are
   assert.ok(summary.standardPaymentPence > 0);
   assert.equal(summary.ltv, 16000000 / 30000000);
   assert.ok(summary.payoffMonths < 300);
+});
+
+test('monthly KPIs distinguish plans, snapshots, and recorded spending', () => {
+  const month = buildFinanceForecast({
+    startMonth: '2026-08',
+    months: 1,
+    openingCashPence: 1000000,
+    budgetItems: [
+      { amountPence: 500000, flowType: 'income', frequency: 'monthly', startMonth: '2026-08' },
+      { amountPence: 300000, flowType: 'expense', classification: 'essential', frequency: 'monthly', startMonth: '2026-08' },
+    ],
+  })[0];
+  const kpis = buildFinanceMonthKpis({
+    month,
+    snapshot: { cashBalancePence: 1250000 },
+    actualEntries: [
+      { flowType: 'expense', cashTreatment: 'cash_outflow', occurredOn: '2026-08-05', amountPence: 275000 },
+      { flowType: 'expense', cashTreatment: 'internal_transfer', occurredOn: '2026-08-06', amountPence: 50000 },
+      { flowType: 'expense', cashTreatment: 'cash_outflow', occurredOn: '2026-07-30', amountPence: 90000 },
+    ],
+    emergencyTargetMonths: 4,
+    currentMonthKey: '2026-08',
+  });
+
+  assert.equal(kpis.leftPence, 200000);
+  assert.equal(kpis.savingsRate, 0.4);
+  assert.equal(kpis.savingsVariancePence, 50000);
+  assert.equal(kpis.emergencyCoverageMonths, 1250000 / 300000);
+  assert.equal(kpis.actualExpensePence, 275000);
+  assert.equal(kpis.actualExpenseVariancePence, -25000);
+  assert.equal(kpis.actualsArePartial, true);
+});
+
+test('monthly KPIs preserve a zero snapshot and neutral missing actuals', () => {
+  const kpis = buildFinanceMonthKpis({
+    month: {
+      monthKey: '2026-09',
+      surplusPence: -1000,
+      savingsRate: null,
+      closingCashPence: 5000,
+      expensePence: 1000,
+      essentialPence: 0,
+    },
+    snapshot: { cashBalancePence: 0 },
+    actualEntries: [],
+    currentMonthKey: '2026-08',
+  });
+
+  assert.equal(kpis.hasSnapshot, true);
+  assert.equal(kpis.savingsVariancePence, -5000);
+  assert.equal(kpis.emergencyCoverageMonths, null);
+  assert.equal(kpis.hasActualExpenses, false);
+  assert.equal(kpis.actualExpenseVariancePence, null);
 });
 
 test('sample finance data mirrors the current household baseline and schedules future childcare changes', () => {
