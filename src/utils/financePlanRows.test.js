@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildFinancePlanSections,
   buildFinanceScheduleChange,
   findFinanceGroupCategoryId,
   getFinanceExpenseGroupId,
@@ -42,6 +43,25 @@ test('returns expense groups in the stable planner order', () => {
   ], categories).filter((group) => group.items.length);
 
   assert.deepEqual(grouped.map((group) => group.id), ['household', 'subscriptions', 'car']);
+});
+
+test('builds stable plan sections and keeps transfers outside expense groups', () => {
+  const sections = buildFinancePlanSections([
+    { id: 'salary', name: 'Salary', flowType: 'income', cashTreatment: 'cash_outflow', frequency: 'monthly' },
+    { id: 'mortgage', name: 'Mortgage', flowType: 'expense', cashTreatment: 'cash_outflow', frequency: 'monthly', categoryId: 'housing' },
+    { id: 'insurance', name: 'Insurance', flowType: 'expense', cashTreatment: 'cash_outflow', frequency: 'annual' },
+    { id: 'holiday', name: 'Holiday', flowType: 'expense', cashTreatment: 'cash_outflow', frequency: 'one_off' },
+    { id: 'isa', name: 'ISA transfer', flowType: 'expense', cashTreatment: 'internal_transfer', frequency: 'monthly' },
+  ], categories).filter((section) => section.items.length);
+
+  assert.deepEqual(sections.map((section) => section.id), [
+    'income',
+    'expense:household',
+    'yearly',
+    'occasional',
+    'transfers',
+  ]);
+  assert.deepEqual(sections.find((section) => section.id === 'transfers').items.map((item) => item.id), ['isa']);
 });
 
 test('moves expired one-offs and ended recurring rows into history', () => {

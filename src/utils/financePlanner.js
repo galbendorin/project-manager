@@ -155,6 +155,50 @@ export const calculateEmergencyCoverage = (cashPence, monthlyLeanSpendPence) => 
   return leanSpend > 0 ? asInteger(cashPence) / leanSpend : null;
 };
 
+export const buildFinanceMonthKpis = ({
+  month,
+  snapshot,
+  actualEntries = [],
+  emergencyTargetMonths = 6,
+  currentMonthKey = getCurrentMonthKey(),
+} = {}) => {
+  if (!month) return null;
+  const hasSnapshot = snapshot?.cashBalancePence !== null
+    && snapshot?.cashBalancePence !== undefined;
+  const snapshotPence = hasSnapshot ? asInteger(snapshot.cashBalancePence) : null;
+  const emergencyCashPence = hasSnapshot ? snapshotPence : month.closingCashPence;
+  const emergencyCoverageMonths = calculateEmergencyCoverage(
+    emergencyCashPence,
+    month.essentialPence,
+  );
+  const monthActualExpenses = actualEntries.filter((entry) => (
+    entry.flowType === 'expense'
+    && entry.cashTreatment !== 'internal_transfer'
+    && String(entry.occurredOn || '').slice(0, 7) === month.monthKey
+  ));
+  const actualExpensePence = monthActualExpenses.reduce(
+    (total, entry) => total + Math.max(0, asInteger(entry.amountPence)),
+    0,
+  );
+  const hasActualExpenses = monthActualExpenses.length > 0;
+
+  return {
+    leftPence: month.surplusPence,
+    savingsRate: month.savingsRate,
+    savingsVariancePence: hasSnapshot ? snapshotPence - month.closingCashPence : null,
+    hasSnapshot,
+    emergencyCoverageMonths,
+    emergencyTargetMonths: Math.max(1, Number(emergencyTargetMonths) || 6),
+    emergencyUsesSnapshot: hasSnapshot,
+    actualExpensePence,
+    actualExpenseVariancePence: hasActualExpenses
+      ? actualExpensePence - month.expensePence
+      : null,
+    hasActualExpenses,
+    actualsArePartial: month.monthKey === currentMonthKey,
+  };
+};
+
 export const calculateSinkingFundContribution = (annualCostPence) => (
   Math.round(Math.max(0, asInteger(annualCostPence)) / 12)
 );

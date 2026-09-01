@@ -112,6 +112,50 @@ export const groupFinanceExpenseItems = (items = [], categories = []) => {
   }));
 };
 
+export const buildFinancePlanSections = (items = [], categories = []) => {
+  const transfers = items.filter((item) => item.cashTreatment === 'internal_transfer');
+  const cashItems = items.filter((item) => item.cashTreatment !== 'internal_transfer');
+  const income = cashItems.filter((item) => item.flowType === 'income');
+  const expenses = cashItems.filter((item) => item.flowType === 'expense');
+  const monthlyGroups = groupFinanceExpenseItems(
+    expenses.filter((item) => item.frequency === 'monthly'),
+    categories,
+  );
+
+  return [
+    {
+      id: 'income',
+      label: 'Income',
+      tone: 'income',
+      items: income,
+    },
+    ...monthlyGroups.map((group) => ({
+      id: `expense:${group.id}`,
+      label: group.label,
+      tone: 'expense',
+      items: group.items,
+    })),
+    {
+      id: 'yearly',
+      label: 'Yearly expenses',
+      tone: 'extra',
+      items: expenses.filter((item) => item.frequency === 'annual'),
+    },
+    {
+      id: 'occasional',
+      label: 'Occasional expenses',
+      tone: 'extra',
+      items: expenses.filter((item) => item.frequency === 'one_off'),
+    },
+    {
+      id: 'transfers',
+      label: 'Transfers',
+      tone: 'transfer',
+      items: transfers,
+    },
+  ];
+};
+
 export const isHistoricalFinanceItem = (item = {}, currentMonth) => {
   const month = normalizeMonthKey(currentMonth);
   const frequency = item.frequency || 'monthly';
