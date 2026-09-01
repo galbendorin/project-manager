@@ -5,6 +5,8 @@ import React, {
   useState,
 } from 'react';
 import { useFinanceData } from '../hooks/useFinanceData';
+import { useFinanceReconciliation } from '../hooks/useFinanceReconciliation';
+import MonthReconciliation from './finance/MonthReconciliation';
 import {
   addMonths,
   buildFinanceForecast,
@@ -28,6 +30,10 @@ import {
   downloadFinanceAnalysisWorkbook,
   FINANCE_EXPORT_RANGE_OPTIONS,
 } from '../utils/financeAnalysisExport';
+import {
+  buildFinanceMonthReconciliation,
+  getFinanceReconciliationKind,
+} from '../utils/financeReconciliation';
 
 const VIEWS = [
   { id: 'plan', label: 'Plan' },
@@ -148,7 +154,7 @@ const KPI_TONES = {
   neutral: 'text-slate-700',
 };
 
-const MonthlyKpis = ({ month, snapshot, actualEntries, profile, currencyCode, currentMonthKey }) => {
+const MonthlyKpis = ({ month, snapshot, actualEntries, profile, currencyCode, currentMonthKey, reconciliationSummary }) => {
   const kpis = buildFinanceMonthKpis({
     month,
     snapshot,
@@ -159,22 +165,26 @@ const MonthlyKpis = ({ month, snapshot, actualEntries, profile, currencyCode, cu
   const rate = kpis.savingsRate;
   const rateTone = rate === null ? 'neutral' : rate < 0 ? 'danger' : rate < 0.1 ? 'watch' : 'good';
   const rateStatus = rate === null ? 'No income' : rate < 0 ? 'Overspending' : rate >= 0.2 ? 'Strong' : rate >= 0.1 ? 'Building' : 'Low margin';
-  const variance = kpis.savingsVariancePence;
-  const savingsStatus = !kpis.hasSnapshot
-    ? 'Not recorded'
-    : month.monthKey === currentMonthKey
-      ? 'Current position'
+  const isCurrentMonth = month.monthKey === currentMonthKey;
+  const reconciledClosing = reconciliationSummary?.actualClosingCashPence;
+  const hasReconciledClosing = reconciledClosing !== null && reconciledClosing !== undefined;
+  const currentBalance = hasReconciledClosing
+    ? reconciledClosing
+    : kpis.hasSnapshot ? snapshot.cashBalancePence : null;
+  const targetRemaining = currentBalance === null ? null : month.closingCashPence - currentBalance;
+  const variance = reconciliationSummary?.closingVariancePence ?? kpis.savingsVariancePence;
+  const savingsStatus = isCurrentMonth
+    ? targetRemaining === null
+      ? 'Record current position'
+      : targetRemaining > 0 ? 'To month-end target' : targetRemaining < 0 ? 'Above month-end target' : 'At month-end target'
+    : variance === null
+      ? 'Not recorded'
       : variance >= 0 ? 'On track' : 'Behind plan';
   const emergency = kpis.emergencyCoverageMonths;
   const emergencyOnTarget = emergency !== null && emergency >= kpis.emergencyTargetMonths;
-  const actualVariance = kpis.actualExpenseVariancePence;
   const actualDetail = !kpis.hasActualExpenses
-    ? 'Add actual expenses to compare'
-    : kpis.actualsArePartial
-      ? 'Recorded so far'
-      : actualVariance <= 0
-        ? `${formatCurrency(Math.abs(actualVariance), currencyCode)} under plan`
-        : `${formatCurrency(actualVariance, currencyCode)} over plan`;
+    ? 'No actual entries recorded'
+    : 'Entries recorded · may be incomplete';
   const cards = [
     {
       label: 'Left this month',
@@ -192,9 +202,13 @@ const MonthlyKpis = ({ month, snapshot, actualEntries, profile, currencyCode, cu
     },
     {
       label: 'Savings plan',
-      value: variance === null ? '—' : formatCurrency(variance, currencyCode),
+      value: isCurrentMonth
+        ? targetRemaining === null ? '—' : formatCurrency(Math.abs(targetRemaining), currencyCode)
+        : variance === null ? '—' : formatCurrency(variance, currencyCode),
       detail: savingsStatus,
-      tone: variance === null ? 'neutral' : variance >= 0 ? 'good' : month.monthKey === currentMonthKey ? 'watch' : 'danger',
+      tone: isCurrentMonth
+        ? targetRemaining !== null && targetRemaining < 0 ? 'good' : 'neutral'
+        : variance === null ? 'neutral' : variance >= 0 ? 'good' : 'danger',
       mobileSpan: 'col-span-2',
     },
     {
@@ -205,10 +219,10 @@ const MonthlyKpis = ({ month, snapshot, actualEntries, profile, currencyCode, cu
       mobileSpan: 'col-span-2',
     },
     {
-      label: 'Spending plan',
+      label: 'Recorded actuals',
       value: kpis.hasActualExpenses ? formatCurrency(kpis.actualExpensePence, currencyCode) : '—',
       detail: actualDetail,
-      tone: !kpis.hasActualExpenses || kpis.actualsArePartial ? 'neutral' : actualVariance <= 0 ? 'good' : 'danger',
+      tone: 'neutral',
       mobileSpan: 'col-span-2',
     },
   ];
@@ -557,7 +571,7 @@ const ExpenseEntryPanel = ({ defaultMonth, currencyCode, saving, requestId, onSa
 
   return (
     <Section id="add-expense">
-      <SectionHeader title="Add expenses" detail="Type straight into the plan. Group is optional—the planner can suggest it from the description." action={<button type="button" onClick={() => setMobileOpen(true)} className={`${primaryButton} lg:hidden`}>+ Add expense</button>} />
+      <SectionHeader title="Add planned expenses" detail="Add what you expect to spend. Use the month check-in above for money already spent." action={<button type="button" onClick={() => setMobileOpen(true)} className={`${primaryButton} lg:hidden`}>+ Planned expense</button>} />
 
       <div className="hidden lg:block">
         <div className="grid grid-cols-[minmax(190px,1fr)_180px_120px_150px_120px_76px] gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
@@ -588,7 +602,7 @@ const ExpenseEntryPanel = ({ defaultMonth, currencyCode, saving, requestId, onSa
         <div className="fixed inset-0 z-[100] flex items-end bg-slate-950/45 p-0 sm:items-center sm:justify-center sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>
           <div ref={mobileDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="mobile-expense-title" className="max-h-[calc(100dvh-8px)] w-full overflow-y-auto rounded-t-3xl bg-white px-3 pb-0 pt-3 shadow-2xl min-[480px]:max-w-lg min-[480px]:rounded-3xl min-[480px]:p-4">
             <div className="flex items-start justify-between gap-3 px-1">
-              <div><h2 id="mobile-expense-title" className="text-[18px] font-black text-slate-950">Add expense</h2><p className="mt-0.5 text-[13px] leading-5 text-slate-500">Add it once or make it repeat automatically.</p></div>
+            <div><h2 id="mobile-expense-title" className="text-[18px] font-black text-slate-950">Add planned expense</h2><p className="mt-0.5 text-[13px] leading-5 text-slate-500">Add it once or make it repeat automatically.</p></div>
               <button type="button" onClick={() => setMobileOpen(false)} className="min-h-[44px] min-w-[44px] rounded-xl text-[20px] font-bold text-slate-500 hover:bg-slate-100" aria-label="Close add expense">×</button>
             </div>
             <fieldset className="mt-3 grid grid-cols-1 gap-2.5 px-1 min-[480px]:grid-cols-2">
@@ -597,7 +611,7 @@ const ExpenseEntryPanel = ({ defaultMonth, currencyCode, saving, requestId, onSa
               {mobileDraft.error ? <p id="mobile-expense-error" role="alert" className="text-[13px] font-semibold text-rose-700 min-[480px]:col-span-2">{mobileDraft.error}</p> : null}
             </fieldset>
             <div className="sticky bottom-0 mt-4 grid gap-2 border-t border-slate-100 bg-white px-1 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 min-[480px]:grid-cols-2">
-              <button type="button" onClick={() => void saveMobile(false)} disabled={saving || pendingKey === mobileDraft.key} className={primaryButton}>Save expense</button>
+              <button type="button" onClick={() => void saveMobile(false)} disabled={saving || pendingKey === mobileDraft.key} className={primaryButton}>Save planned expense</button>
               <button type="button" onClick={() => void saveMobile(true)} disabled={saving || pendingKey === mobileDraft.key} className={secondaryButton}>Save & add another</button>
             </div>
           </div>
@@ -607,7 +621,7 @@ const ExpenseEntryPanel = ({ defaultMonth, currencyCode, saving, requestId, onSa
   );
 };
 
-export const FinanceExportDialog = ({ finance, forecast, onClose, onDownloaded }) => {
+export const FinanceExportDialog = ({ finance, forecast, loadReconciliations, onClose, onDownloaded }) => {
   const [range, setRange] = useState('overview');
   const [includeNotes, setIncludeNotes] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -632,6 +646,9 @@ export const FinanceExportDialog = ({ finance, forecast, onClose, onDownloaded }
     setExporting(true);
     setError('');
     try {
+      const reconciliationExport = loadReconciliations
+        ? await loadReconciliations()
+        : { reconciliations: [], reconciliationLines: [] };
       const result = await downloadFinanceAnalysisWorkbook({
         profile: finance.profile,
         categories: finance.categories,
@@ -642,6 +659,8 @@ export const FinanceExportDialog = ({ finance, forecast, onClose, onDownloaded }
         mortgages: finance.mortgages,
         scenarios: finance.scenarios,
         scenarioChanges: finance.scenarioChanges,
+        reconciliations: reconciliationExport.reconciliations,
+        reconciliationLines: reconciliationExport.reconciliationLines,
         forecast,
         range,
         includeNotes,
@@ -854,7 +873,7 @@ const historyScheduleLabel = (item) => {
   return `From ${formatMonthLabel(item.startMonth)}`;
 };
 
-const HistoryView = ({ finance, currencyCode, onRepeat }) => {
+const HistoryView = ({ finance, reconciliationHistory = [], currencyCode, onRepeat }) => {
   const currentMonth = getCurrentMonthKey();
   const historicalItems = finance.budgetItems
     .filter((item) => isHistoricalFinanceItem(item, currentMonth))
@@ -869,6 +888,14 @@ const HistoryView = ({ finance, currencyCode, onRepeat }) => {
             <div className="flex items-center gap-2"><span className={`font-black ${item.flowType === 'income' ? 'text-emerald-700' : 'text-slate-900'}`}>{item.flowType === 'income' ? '+' : '-'}{formatCurrency(item.amountPence, currencyCode)}</span>{item.flowType === 'expense' ? <button type="button" onClick={() => onRepeat(item)} className="min-h-11 rounded-xl px-3 text-xs font-black text-[var(--pm-accent)] hover:bg-[var(--pm-accent-tint)]">Plan again</button> : null}</div>
           </div>
         ))}</div> : <p className="px-4 py-10 text-center text-sm text-slate-500">Past plan rows will appear here automatically.</p>}
+      </Section>
+      <Section>
+        <SectionHeader title="Monthly reviews" detail="Finalized months keep the plan and actual savings comparison used at the time." />
+        {reconciliationHistory.length ? <div className="divide-y divide-slate-100">{reconciliationHistory.map((item) => {
+          const hasComparison = item.actualClosingCashPence !== null && item.plannedClosingCashPence !== null;
+          const variance = hasComparison ? item.actualClosingCashPence - item.plannedClosingCashPence : null;
+          return <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5"><div><div className="text-sm font-black text-slate-900">{formatMonthLabel(item.monthKey)}</div><div className="mt-0.5 text-xs font-semibold text-slate-400">{item.status === 'finalized' ? `Finalized${item.finalizedAt ? ` · ${new Date(item.finalizedAt).toLocaleDateString('en-GB')}` : ''}` : 'Review in progress'}</div></div><div className="text-right"><div className={`text-sm font-black tabular-nums ${variance === null ? 'text-slate-500' : variance >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{variance === null ? '—' : `${variance > 0 ? '+' : ''}${formatCurrency(variance, currencyCode)}`}</div><div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">vs plan</div></div></div>;
+        })}</div> : <p className="px-4 py-8 text-center text-sm text-slate-500">No monthly reviews yet.</p>}
       </Section>
       <div className="grid gap-4 lg:grid-cols-2">
         <Section><SectionHeader title="Recorded savings" detail="Balances you entered for previous months." /><div className="divide-y divide-slate-100 px-4">{finance.balanceSnapshots.length ? finance.balanceSnapshots.map((snapshot) => <div key={snapshot.id} className="flex justify-between gap-3 py-3 text-sm"><span className="font-semibold text-slate-500">{formatMonthLabel(snapshot.asOfMonth)}</span><span className="font-black text-slate-900">{formatCurrency(snapshot.cashBalancePence, currencyCode)}</span></div>) : <p className="py-8 text-center text-sm text-slate-500">No balances recorded.</p>}</div></Section>
@@ -888,10 +915,13 @@ export default function FinancePlannerView({ currentUserId }) {
   const finance = useFinanceData({ currentUserId });
   const [activeView, setActiveView] = useState('plan');
   const [selectedMonthKey, setSelectedMonthKey] = useState('');
+  const reconciliation = useFinanceReconciliation({ currentUserId, monthKey: selectedMonthKey });
   const [editingItem, setEditingItem] = useState(null);
+  const [promotingLineId, setPromotingLineId] = useState('');
   const [addRequest, setAddRequest] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
+  const [plannerMessage, setPlannerMessage] = useState('');
   const [expandedSections, setExpandedSections] = useState(() => new Set());
 
   const currentMonthKey = getCurrentMonthKey();
@@ -920,6 +950,12 @@ export default function FinancePlannerView({ currentUserId }) {
   ));
   const selectedSnapshot = finance.balanceSnapshots.find((snapshot) => snapshot.asOfMonth === selectedMonth?.monthKey);
   const currencyCode = finance.profile.currencyCode || 'GBP';
+  const selectedReconciliationSummary = selectedMonth ? buildFinanceMonthReconciliation({
+    month: selectedMonth,
+    reconciliation: reconciliation.reconciliation,
+    lines: reconciliation.lines,
+    currentMonthKey,
+  }) : null;
 
   const toggleSection = (sectionId) => {
     setExpandedSections((current) => {
@@ -955,12 +991,54 @@ export default function FinancePlannerView({ currentUserId }) {
     const originalGroupId = item.flowType === 'expense'
       ? getFinanceExpenseGroupId(item, finance.categories)
       : '';
-    return finance.saveBudgetItemChange(item, effectiveMonth, {
+    const result = await finance.saveBudgetItemChange(item, effectiveMonth, {
       ...patch,
       categoryId,
       classification: group && originalGroupId !== groupId
         ? group.classification
         : item.classification,
+    });
+    const savedItem = result?.successor || result;
+    if (promotingLineId && savedItem?.id) {
+      const sourceLine = reconciliation.lines.find((line) => line.id === promotingLineId);
+      try {
+        if (sourceLine) await reconciliation.saveLine({ ...sourceLine, promotedBudgetItemId: savedItem.id });
+      } catch {
+        setPlannerMessage('The planned expense was saved, but it could not be linked back to the month check-in. The plan itself is safe.');
+      }
+      setPromotingLineId('');
+    }
+    return result;
+  };
+
+  const saveReconciliationLine = async (line) => {
+    let categoryId = line.categoryId || '';
+    if (!categoryId && getFinanceReconciliationKind(line.kind).flowType === 'expense') {
+      categoryId = await ensureGroupCategory(line.groupId || 'other');
+    }
+    return reconciliation.saveLine({ ...line, categoryId });
+  };
+
+  const planReconciliationLine = (line) => {
+    const startMonth = addMonths(selectedMonth.monthKey, 1);
+    const groupId = getFinanceExpenseGroupId({
+      name: line.description,
+      categoryId: line.categoryId,
+    }, finance.categories);
+    setPromotingLineId(line.id);
+    setEditingItem({
+      name: line.description,
+      amountPence: Math.abs(line.variancePence),
+      flowType: 'expense',
+      classification: line.classificationSnapshot || getFinanceExpenseGroup(groupId).classification,
+      cashTreatment: 'cash_outflow',
+      frequency: 'monthly',
+      startMonth,
+      endMonth: '',
+      annualMonth: null,
+      annualGrowthBps: null,
+      categoryId: line.categoryId || '',
+      isActive: true,
     });
   };
 
@@ -1010,7 +1088,7 @@ export default function FinancePlannerView({ currentUserId }) {
         <div className="flex items-center justify-between gap-2 sm:hidden">
           <div className="min-w-0"><div className="text-[9px] font-black uppercase tracking-[0.14em] text-[var(--pm-accent)]">Household finance</div><h1 className="truncate text-[18px] font-black tracking-[-0.03em] text-slate-950">Household plan</h1></div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <button type="button" onClick={requestAddExpense} className={`${primaryButton} px-3`}>+ Expense</button>
+            <button type="button" onClick={requestAddExpense} className={`${primaryButton} px-3`}>+ Planned</button>
             <details className="relative">
               <summary className="flex min-h-[44px] min-w-[44px] cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-[18px] font-black tracking-[0.12em] text-slate-600 marker:hidden" aria-label="More finance actions">•••</summary>
               <div className="absolute right-0 z-40 mt-2 grid w-[210px] gap-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
@@ -1022,17 +1100,40 @@ export default function FinancePlannerView({ currentUserId }) {
         </div>
         <div className="hidden flex-wrap items-end justify-between gap-3 sm:flex">
           <div><div className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--pm-accent)]">Household finance</div><h1 className="mt-1 text-3xl font-black tracking-[-0.04em] text-slate-950">Household plan</h1><p className="mt-1 text-[14px] text-slate-500">Review one month, change a regular amount, or add what is coming next.</p></div>
-          <div className="flex gap-2"><button type="button" onClick={() => { setExportMessage(''); setExportOpen(true); }} className={secondaryButton}>↓ Export for ChatGPT</button><button type="button" onClick={requestAddIncome} className={secondaryButton}>+ Add income</button><button type="button" onClick={requestAddExpense} className={primaryButton}>+ Add expense</button></div>
+          <div className="flex gap-2"><button type="button" onClick={() => { setExportMessage(''); setExportOpen(true); }} className={secondaryButton}>↓ Export for ChatGPT</button><button type="button" onClick={requestAddIncome} className={secondaryButton}>+ Add income</button><button type="button" onClick={requestAddExpense} className={primaryButton}>+ Planned expense</button></div>
         </div>
       </header>
       <div className="mb-4"><PlannerNavigation activeView={activeView} onChange={setActiveView} /></div>
       {exportMessage ? <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-800">{exportMessage}</div> : null}
+      {plannerMessage ? <div role="status" className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-900"><span>{plannerMessage}</span><button type="button" onClick={() => setPlannerMessage('')} className="min-h-11 min-w-11 rounded-xl text-lg text-amber-700" aria-label="Dismiss finance message">×</button></div> : null}
       {finance.error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{finance.error}</div> : null}
 
       {activeView === 'plan' ? (
         <main id="finance-panel-plan" role="tabpanel" aria-labelledby="finance-tab-plan" className="space-y-4">
           <MonthNavigator forecast={forecast} selectedIndex={selectedIndex} onChange={(index) => setSelectedMonthKey(forecast[index].monthKey)} />
-          <MonthlyKpis month={selectedMonth} snapshot={selectedSnapshot} actualEntries={finance.actualEntries} profile={finance.profile} currencyCode={currencyCode} currentMonthKey={currentMonthKey} />
+          <MonthlyKpis month={selectedMonth} snapshot={selectedSnapshot} actualEntries={finance.actualEntries} profile={finance.profile} currencyCode={currencyCode} currentMonthKey={currentMonthKey} reconciliationSummary={selectedReconciliationSummary} />
+          <MonthReconciliation
+            month={selectedMonth}
+            currentMonthKey={currentMonthKey}
+            currencyCode={currencyCode}
+            profile={finance.profile}
+            reconciliation={reconciliation.reconciliation}
+            lines={reconciliation.lines}
+            history={reconciliation.history}
+            snapshots={finance.balanceSnapshots}
+            categories={finance.categories}
+            localToday={reconciliation.localToday}
+            loading={reconciliation.loading}
+            saving={reconciliation.saving}
+            available={reconciliation.available}
+            error={reconciliation.error}
+            onSaveDraft={reconciliation.saveDraft}
+            onSaveLine={saveReconciliationLine}
+            onDeleteLine={reconciliation.deleteLine}
+            onFinalize={async () => { const result = await reconciliation.finalize(); await finance.loadAll(); return result; }}
+            onReopen={reconciliation.reopen}
+            onPlanLine={planReconciliationLine}
+          />
           <Section className="hidden lg:block">
             <SectionHeader title={`${formatMonthLabel(visibleMonths[0]?.monthKey)} to ${formatMonthLabel(visibleMonths.at(-1)?.monthKey)}`} detail="A focused 12-month window. Click any row name to change it." action={<div className="flex gap-1"><button type="button" disabled={windowStartIndex <= 0} onClick={() => setSelectedMonthKey(forecast[Math.max(0, windowStartIndex - 12)].monthKey)} className={subtleButton} aria-label="Previous twelve months">← 12 months</button><button type="button" disabled={windowStartIndex + 12 >= forecast.length} onClick={() => setSelectedMonthKey(forecast[Math.min(forecast.length - 1, windowStartIndex + 12)].monthKey)} className={subtleButton} aria-label="Next twelve months">12 months →</button></div>} />
             <div className="p-3 sm:p-4"><DesktopPlanTable months={visibleMonths} budgetItems={planBudgetItems} categories={finance.categories} snapshots={finance.balanceSnapshots} profile={finance.profile} currencyCode={currencyCode} expandedSections={expandedSections} onToggleSection={toggleSection} onExpandAll={(ids) => setExpandedSections(new Set(ids))} onCollapseAll={() => setExpandedSections(new Set())} onEdit={setEditingItem} /></div>
@@ -1042,10 +1143,10 @@ export default function FinancePlannerView({ currentUserId }) {
           <ExpenseEntryPanel defaultMonth={selectedMonth.monthKey} currencyCode={currencyCode} saving={finance.saving} requestId={addRequest} onSave={saveExpense} />
           <div className="grid gap-4 lg:grid-cols-2"><RecordBalanceForm profile={finance.profile} saving={finance.saving} onSave={finance.saveBalanceSnapshot} /><PlanSettings profile={finance.profile} saving={finance.saving} onSave={finance.saveProfile} onReset={finance.resetFinanceData} /></div>
         </main>
-      ) : <HistoryView finance={finance} currencyCode={currencyCode} onRepeat={(item) => { setSelectedMonthKey(currentMonthKey); setActiveView('plan'); setEditingItem({ ...item, id: undefined, startMonth: currentMonthKey, endMonth: '' }); }} />}
+      ) : <HistoryView finance={finance} reconciliationHistory={reconciliation.history} currencyCode={currencyCode} onRepeat={(item) => { setSelectedMonthKey(currentMonthKey); setActiveView('plan'); setEditingItem({ ...item, id: undefined, startMonth: currentMonthKey, endMonth: '' }); }} />}
 
-      {editingItem ? <PlanItemEditor key={`${editingItem.id || 'repeat'}-${editingItem.startMonth}`} item={editingItem} categories={finance.categories} effectiveMonth={selectedMonth.monthKey} saving={finance.saving} onSave={saveEditedItem} onRemove={removeEditedItem} onClose={() => setEditingItem(null)} /> : null}
-      {exportOpen ? <FinanceExportDialog finance={finance} forecast={forecast} onClose={() => setExportOpen(false)} onDownloaded={(fileName) => setExportMessage(`Finance workbook downloaded: ${fileName}. Attach it in ChatGPT and ask it to review your spending.`)} /> : null}
+      {editingItem ? <PlanItemEditor key={`${editingItem.id || 'repeat'}-${editingItem.startMonth}`} item={editingItem} categories={finance.categories} effectiveMonth={selectedMonth.monthKey} saving={finance.saving} onSave={saveEditedItem} onRemove={removeEditedItem} onClose={() => { setEditingItem(null); setPromotingLineId(''); }} /> : null}
+      {exportOpen ? <FinanceExportDialog finance={finance} forecast={forecast} loadReconciliations={reconciliation.loadAllForExport} onClose={() => setExportOpen(false)} onDownloaded={(fileName) => setExportMessage(`Finance workbook downloaded: ${fileName}. Attach it in ChatGPT and ask it to review your spending.`)} /> : null}
     </div>
   );
 }

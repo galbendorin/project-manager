@@ -600,6 +600,13 @@ export function useFinanceData({ currentUserId } = {}) {
     setSaving(true);
     setError('');
     try {
+      const { error: reconciliationDeleteError } = await supabase
+        .from('finance_month_reconciliations')
+        .delete()
+        .eq('user_id', currentUserId);
+      if (reconciliationDeleteError && !isMissingFinanceTableError(reconciliationDeleteError)) {
+        throw reconciliationDeleteError;
+      }
       const deletions = [
         supabase.from('finance_actual_entries').delete().eq('user_id', currentUserId),
         supabase.from('finance_balance_snapshots').delete().eq('user_id', currentUserId),
