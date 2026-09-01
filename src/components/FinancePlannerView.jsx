@@ -22,6 +22,10 @@ import {
   groupFinanceExpenseItems,
   isHistoricalFinanceItem,
 } from '../utils/financePlanRows';
+import {
+  downloadFinanceAnalysisWorkbook,
+  FINANCE_EXPORT_RANGE_OPTIONS,
+} from '../utils/financeAnalysisExport';
 
 const VIEWS = [
   { id: 'plan', label: 'Plan' },
@@ -523,6 +527,104 @@ const ExpenseEntryPanel = ({ defaultMonth, currencyCode, saving, requestId, onSa
   );
 };
 
+export const FinanceExportDialog = ({ finance, forecast, onClose, onDownloaded }) => {
+  const [range, setRange] = useState('overview');
+  const [includeNotes, setIncludeNotes] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState('');
+  const dialogRef = useRef(null);
+  const firstRangeRef = useRef(null);
+
+  const close = () => {
+    if (!exporting) onClose();
+  };
+
+  useDialogFocus({
+    open: true,
+    onClose: close,
+    dialogRef,
+    initialFocusRef: firstRangeRef,
+  });
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (exporting) return;
+    setExporting(true);
+    setError('');
+    try {
+      const result = await downloadFinanceAnalysisWorkbook({
+        profile: finance.profile,
+        categories: finance.categories,
+        budgetItems: finance.budgetItems,
+        actualEntries: finance.actualEntries,
+        balanceSnapshots: finance.balanceSnapshots,
+        goals: finance.goals,
+        mortgages: finance.mortgages,
+        scenarios: finance.scenarios,
+        scenarioChanges: finance.scenarioChanges,
+        forecast,
+        range,
+        includeNotes,
+      });
+      setExporting(false);
+      onDownloaded(result.fileName);
+      onClose();
+    } catch {
+      setError('We could not create the export. Your data has not been shared. Try again.');
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end bg-slate-950/45 p-0 sm:items-center sm:justify-center sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+      <form ref={dialogRef} tabIndex={-1} onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="finance-export-title" aria-describedby="finance-export-description" className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:max-w-xl sm:rounded-3xl">
+        <div className="flex items-start justify-between gap-3 px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
+          <div>
+            <h2 id="finance-export-title" className="text-xl font-black text-slate-950">Export your finance data</h2>
+            <p id="finance-export-description" className="mt-1 text-sm leading-6 text-slate-500">Download a structured Excel workbook you can attach to ChatGPT for analysis.</p>
+          </div>
+          <button type="button" onClick={close} disabled={exporting} className="min-h-[44px] min-w-[44px] rounded-xl text-xl font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-40" aria-label="Close finance export">×</button>
+        </div>
+
+        <div className="space-y-4 px-4 pb-4 sm:px-5">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <p className="text-sm font-black text-emerald-900">Created privately on this device</p>
+            <p className="mt-1 text-xs leading-5 text-emerald-800">PMWorkspace does not send this workbook to ChatGPT or anyone else. Account IDs, your account email and internal timestamps are not added.</p>
+          </div>
+
+          <fieldset>
+            <legend className="text-sm font-black text-slate-900">Choose the period</legend>
+            <p className="mt-1 text-xs leading-5 text-slate-500">The export includes entries and saved schedule versions that overlap this period.</p>
+            <div className="mt-2 grid gap-2">
+              {FINANCE_EXPORT_RANGE_OPTIONS.map((option, index) => (
+                <label key={option.value} className={`flex min-h-14 cursor-pointer items-start gap-3 rounded-2xl border px-3 py-3 transition ${range === option.value ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-tint)]' : 'border-slate-200 hover:bg-slate-50'}`}>
+                  <input ref={index === 0 ? firstRangeRef : undefined} type="radio" name="finance-export-range" value={option.value} checked={range === option.value} onChange={(event) => setRange(event.target.value)} className="mt-1" />
+                  <span><span className="block text-sm font-black text-slate-900">{option.label}</span><span className="mt-0.5 block text-xs leading-5 text-slate-500">{option.description}</span></span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <label className="flex min-h-14 cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 px-3 py-3 hover:bg-slate-50">
+            <input type="checkbox" checked={includeNotes} onChange={(event) => setIncludeNotes(event.target.checked)} className="mt-1" />
+            <span><span className="block text-sm font-black text-slate-900">Include notes and owner labels</span><span className="mt-0.5 block text-xs leading-5 text-slate-500">Off by default because free-text fields may contain private details.</span></span>
+          </label>
+
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+            Item and category names are included so the analysis is useful. The workbook contains sensitive financial information, so store and share it carefully. A ready-to-use analysis prompt is included on the first sheet.
+          </div>
+          {error ? <p role="alert" className="text-sm font-semibold text-rose-700">{error}</p> : null}
+        </div>
+
+        <div className="sticky bottom-0 border-t border-slate-100 bg-white px-4 py-4 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:px-5">
+          <p className="mb-3 text-xs leading-5 text-slate-400 sm:mb-0">Excel workbook (.xlsx)</p>
+          <button type="submit" disabled={exporting} className={`${primaryButton} min-h-[44px] w-full sm:w-auto`}>{exporting ? 'Preparing workbook...' : 'Download workbook'}</button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 const PlanItemEditor = ({ item, categories, effectiveMonth, saving, onSave, onRemove, onClose }) => {
   const isNew = !item.id;
   const initialGroupId = item.flowType === 'expense' ? getFinanceExpenseGroupId(item, categories) : '';
@@ -708,6 +810,8 @@ export default function FinancePlannerView({ currentUserId }) {
   const [selectedMonthKey, setSelectedMonthKey] = useState('');
   const [editingItem, setEditingItem] = useState(null);
   const [addRequest, setAddRequest] = useState(0);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
 
   const currentMonthKey = getCurrentMonthKey();
   const monthsFromAnchor = Math.max(0, monthsBetween(finance.profile.forecastStartMonth, currentMonthKey));
@@ -814,9 +918,19 @@ export default function FinancePlannerView({ currentUserId }) {
     <div className="mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-5 sm:py-6">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div><div className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--pm-accent)]">Household finance</div><h1 className="mt-1 text-2xl font-black tracking-[-0.04em] text-slate-950 sm:text-3xl">Household plan</h1><p className="mt-1 text-sm text-slate-500">Review one month, change a regular amount, or add what is coming next.</p></div>
-        <div className="flex flex-wrap gap-2"><button type="button" onClick={requestAddIncome} className={secondaryButton}>+ Add income</button><button type="button" onClick={requestAddExpense} className={primaryButton}>+ Add expense</button></div>
+        <div className="grid w-full grid-cols-2 gap-2 sm:hidden">
+          <button type="button" onClick={requestAddExpense} className={`${primaryButton} min-h-[44px] col-span-2`}>+ Add expense</button>
+          <button type="button" onClick={() => { setExportMessage(''); setExportOpen(true); }} className={`${secondaryButton} min-h-[44px]`}>↓ Export for ChatGPT</button>
+          <button type="button" onClick={requestAddIncome} className={`${secondaryButton} min-h-[44px]`}>+ Add income</button>
+        </div>
+        <div className="hidden gap-2 sm:flex">
+          <button type="button" onClick={() => { setExportMessage(''); setExportOpen(true); }} className={`${secondaryButton} min-h-[44px]`}>↓ Export for ChatGPT</button>
+          <button type="button" onClick={requestAddIncome} className={`${secondaryButton} min-h-[44px]`}>+ Add income</button>
+          <button type="button" onClick={requestAddExpense} className={`${primaryButton} min-h-[44px]`}>+ Add expense</button>
+        </div>
       </header>
       <div className="mb-4"><PlannerNavigation activeView={activeView} onChange={setActiveView} /></div>
+      {exportMessage ? <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-800">{exportMessage}</div> : null}
       {finance.error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{finance.error}</div> : null}
 
       {activeView === 'plan' ? (
@@ -835,6 +949,7 @@ export default function FinancePlannerView({ currentUserId }) {
       ) : <HistoryView finance={finance} currencyCode={currencyCode} onRepeat={(item) => { setSelectedMonthKey(currentMonthKey); setActiveView('plan'); setEditingItem({ ...item, id: undefined, startMonth: currentMonthKey, endMonth: '' }); }} />}
 
       {editingItem ? <PlanItemEditor key={`${editingItem.id || 'repeat'}-${editingItem.startMonth}`} item={editingItem} categories={finance.categories} effectiveMonth={selectedMonth.monthKey} saving={finance.saving} onSave={saveEditedItem} onRemove={removeEditedItem} onClose={() => setEditingItem(null)} /> : null}
+      {exportOpen ? <FinanceExportDialog finance={finance} forecast={forecast} onClose={() => setExportOpen(false)} onDownloaded={(fileName) => setExportMessage(`Finance workbook downloaded: ${fileName}. Attach it in ChatGPT and ask it to review your spending.`)} /> : null}
     </div>
   );
 }
