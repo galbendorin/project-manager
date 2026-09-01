@@ -349,6 +349,46 @@ test('notes and owner labels are only added when explicitly included and remain 
   assert.equal(neutralizeSpreadsheetText('\tformula'), "'\tformula");
 });
 
+test('reconciliation export preserves frozen month totals and explanation variance without IDs', () => {
+  const output = buildFinanceAnalysisExportData({
+    ...baseInput(),
+    reconciliations: [{
+      id: 'SECRET-RECON-ID',
+      monthKey: '2026-09',
+      status: 'finalized',
+      balanceAsOfDate: '2026-09-30',
+      actualOpeningCashPence: 100000,
+      actualClosingCashPence: 151600,
+      plannedOpeningCashPence: 100000,
+      plannedIncomePence: 300000,
+      plannedExpensePence: 200000,
+      plannedClosingCashPence: 200000,
+      finalizedAt: '2026-10-01T08:00:00Z',
+      note: 'PRIVATE-RECON-NOTE',
+    }],
+    reconciliationLines: [{
+      id: 'SECRET-LINE-ID',
+      reconciliationId: 'SECRET-RECON-ID',
+      kind: 'unknown_out',
+      description: '=cash difference',
+      variancePence: -48400,
+      groupSnapshot: 'Other',
+      budgetItemSnapshot: '',
+      classificationSnapshot: 'essential',
+      plannedAmountPence: null,
+      actualAmountPence: null,
+      promotedBudgetItemId: '',
+      occurredOn: '2026-09-30',
+    }],
+  });
+
+  assert.equal(output.reconciliationRows[0]['Monthly variance'], -484);
+  assert.equal(output.reconciliationRows[0]['Unexplained variance'], 0);
+  assert.equal(output.reconciliationRows[0]['Explicitly unknown'], -484);
+  assert.equal(output.reconciliationLineRows[0].Description, "'=cash difference");
+  assert.doesNotMatch(JSON.stringify(output.reconciliationRows), /SECRET-RECON-ID/);
+});
+
 test('workbook has ordered sheets, schemas for empty data, and numeric cell formats', async () => {
   const output = buildFinanceAnalysisExportData(baseInput());
   const XLSX = await loadXLSX();
@@ -365,6 +405,8 @@ test('workbook has ordered sheets, schemas for empty data, and numeric cell form
     '07_GOALS',
     '08_MORTGAGES',
     '09_SCENARIOS',
+    '10_RECONCILIATIONS',
+    '11_RECON_LINES',
   ]);
   assert.equal(workbook.Sheets['02_MONTHLY_SUMMARY'].B2.t, 'n');
   assert.equal(workbook.Sheets['02_MONTHLY_SUMMARY'].B2.v, 3000);

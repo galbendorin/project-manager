@@ -122,6 +122,8 @@ const buildInstructionsRows = ({ currencyCode, rangeLabel, includeNotes, actualE
   ['07_GOALS', 'Savings goals and target gaps.'],
   ['08_MORTGAGES', 'Mortgage position and projection using the saved payment information.'],
   ['09_SCENARIOS', 'Saved scenario changes, if any. These are not included in the base monthly plan.'],
+  ['10_RECONCILIATIONS', 'Monthly close status, frozen plan, actual balances and unexplained differences.'],
+  ['11_RECON_LINES', 'The specific differences used to explain each reconciled month.'],
 ];
 
 const buildSettingsRows = ({
@@ -299,6 +301,63 @@ const buildBalanceRows = ({ snapshots, forecast, includeNotes }) => {
     });
 };
 
+const buildReconciliationRows = ({ reconciliations, reconciliationLines, includeNotes }) => {
+  const linesByParent = reconciliationLines.reduce((map, line) => {
+    const current = map.get(line.reconciliationId) || [];
+    current.push(line);
+    map.set(line.reconciliationId, current);
+    return map;
+  }, new Map());
+  return reconciliations.map((item) => {
+    const monthLines = linesByParent.get(item.id) || [];
+    const explainedPence = monthLines.reduce((total, line) => total + (Number(line.variancePence) || 0), 0);
+    const unknownPence = monthLines
+      .filter((line) => String(line.kind || '').startsWith('unknown_'))
+      .reduce((total, line) => total + (Number(line.variancePence) || 0), 0);
+    const hasMovement = item.actualOpeningCashPence !== null && item.actualClosingCashPence !== null
+      && item.plannedIncomePence !== null && item.plannedExpensePence !== null;
+    const monthlyVariancePence = hasMovement
+      ? (item.actualClosingCashPence - item.actualOpeningCashPence)
+        - (item.plannedIncomePence - item.plannedExpensePence)
+      : null;
+    const row = {
+      Month: item.monthKey,
+      Status: humanize(item.status),
+      'Balance date': normalizeDate(item.balanceAsOfDate),
+      'Actual opening savings': nullablePenceToCurrency(item.actualOpeningCashPence),
+      'Actual closing savings': nullablePenceToCurrency(item.actualClosingCashPence),
+      'Frozen planned opening': nullablePenceToCurrency(item.plannedOpeningCashPence),
+      'Frozen planned income': nullablePenceToCurrency(item.plannedIncomePence),
+      'Frozen planned expenses': nullablePenceToCurrency(item.plannedExpensePence),
+      'Frozen planned closing': nullablePenceToCurrency(item.plannedClosingCashPence),
+      'Monthly variance': nullablePenceToCurrency(monthlyVariancePence),
+      'Explained variance': penceToCurrency(explainedPence),
+      'Unexplained variance': monthlyVariancePence === null ? '' : penceToCurrency(monthlyVariancePence - explainedPence),
+      'Explicitly unknown': penceToCurrency(unknownPence),
+      'Explanation count': monthLines.length,
+      'Finalized at': item.finalizedAt || '',
+    };
+    if (includeNotes) row.Note = neutralizeSpreadsheetText(item.note);
+    return row;
+  });
+};
+
+const buildReconciliationLineRows = ({ reconciliationLines, reconciliationMap }) => (
+  reconciliationLines.map((line) => ({
+    Month: reconciliationMap.get(line.reconciliationId)?.monthKey || monthFromDate(line.occurredOn),
+    Date: normalizeDate(line.occurredOn),
+    Type: humanize(line.kind),
+    Description: neutralizeSpreadsheetText(line.description),
+    Group: neutralizeSpreadsheetText(line.groupSnapshot),
+    'Planned item': neutralizeSpreadsheetText(line.budgetItemSnapshot),
+    Classification: humanize(line.classificationSnapshot),
+    'Planned amount': nullablePenceToCurrency(line.plannedAmountPence),
+    'Actual amount': nullablePenceToCurrency(line.actualAmountPence),
+    Variance: penceToCurrency(line.variancePence),
+    'Added to future plan': line.promotedBudgetItemId ? 'Yes' : 'No',
+  }))
+);
+
 const buildGoalRows = ({ goals, includeNotes }) => goals.map((goal) => {
   const current = penceToCurrency(goal.currentBalancePence);
   const target = nullablePenceToCurrency(goal.targetBalancePence);
@@ -394,6 +453,8 @@ export function buildFinanceAnalysisExportData({
   mortgages = [],
   scenarios = [],
   scenarioChanges = [],
+  reconciliations = [],
+  reconciliationLines = [],
   forecast = [],
   range = 'overview',
   includeNotes = false,
@@ -412,6 +473,9 @@ export function buildFinanceAnalysisExportData({
   const selectedSnapshots = balanceSnapshots.filter((snapshot) => isMonthInRange(snapshot.asOfMonth, bounds));
   const selectedBudgetItems = budgetItems.filter((item) => doesScheduleOverlapRange(item, bounds));
   const selectedScenarioChanges = scenarioChanges.filter((change) => isMonthInRange(change.effectiveMonth, bounds));
+  const selectedReconciliations = reconciliations.filter((item) => isMonthInRange(item.monthKey, bounds));
+  const selectedReconciliationIds = new Set(selectedReconciliations.map((item) => item.id));
+  const selectedReconciliationLines = reconciliationLines.filter((line) => selectedReconciliationIds.has(line.reconciliationId));
   const categoryMap = makeCategoryMap(categories);
   const budgetItemMap = makeBudgetItemMap(budgetItems);
 
@@ -456,6 +520,15 @@ export function buildFinanceAnalysisExportData({
   const goalRows = buildGoalRows({ goals, includeNotes });
   const mortgageRows = buildMortgageRows(mortgages);
   const scenarioRows = buildScenarioRows({ scenarios, scenarioChanges: selectedScenarioChanges, includeNotes });
+  const reconciliationRows = buildReconciliationRows({
+    reconciliations: selectedReconciliations,
+    reconciliationLines: selectedReconciliationLines,
+    includeNotes,
+  });
+  const reconciliationLineRows = buildReconciliationLineRows({
+    reconciliationLines: selectedReconciliationLines,
+    reconciliationMap: new Map(selectedReconciliations.map((item) => [item.id, item])),
+  });
 
   const scheduleHeaders = [
     'Item', 'Group', 'Category', 'Flow', 'Classification', 'Cash treatment', 'Frequency',
@@ -566,6 +639,33 @@ export function buildFinanceAnalysisExportData({
         Amount: '#,##0.00',
       }));
   }
+  const reconciliationHeaders = [
+    'Month', 'Status', 'Balance date', 'Actual opening savings', 'Actual closing savings',
+    'Frozen planned opening', 'Frozen planned income', 'Frozen planned expenses',
+    'Frozen planned closing', 'Monthly variance', 'Explained variance', 'Unexplained variance',
+    'Explicitly unknown', 'Explanation count', 'Finalized at', ...(includeNotes ? ['Note'] : []),
+  ];
+  sheets.push(defineSheet('10_RECONCILIATIONS', reconciliationHeaders, reconciliationRows,
+    [12, 15, 14, 22, 22, 22, 22, 23, 22, 18, 20, 22, 19, 18, 24, 46].slice(0, reconciliationHeaders.length), {
+      'Actual opening savings': '#,##0.00',
+      'Actual closing savings': '#,##0.00',
+      'Frozen planned opening': '#,##0.00',
+      'Frozen planned income': '#,##0.00',
+      'Frozen planned expenses': '#,##0.00',
+      'Frozen planned closing': '#,##0.00',
+      'Monthly variance': '#,##0.00;[Red]-#,##0.00',
+      'Explained variance': '#,##0.00;[Red]-#,##0.00',
+      'Unexplained variance': '#,##0.00;[Red]-#,##0.00',
+      'Explicitly unknown': '#,##0.00;[Red]-#,##0.00',
+    }));
+  sheets.push(defineSheet('11_RECON_LINES', [
+    'Month', 'Date', 'Type', 'Description', 'Group', 'Planned item', 'Classification',
+    'Planned amount', 'Actual amount', 'Variance', 'Added to future plan',
+  ], reconciliationLineRows, [12, 13, 22, 34, 24, 28, 18, 18, 18, 16, 22], {
+    'Planned amount': '#,##0.00',
+    'Actual amount': '#,##0.00',
+    Variance: '#,##0.00;[Red]-#,##0.00',
+  }));
 
   return {
     fileName: `pmworkspace-finance-analysis_${effectiveGeneratedAt.toISOString().slice(0, 10)}.xlsx`,
@@ -583,6 +683,8 @@ export function buildFinanceAnalysisExportData({
     goalRows,
     mortgageRows,
     scenarioRows,
+    reconciliationRows,
+    reconciliationLineRows,
     sheets,
   };
 }
