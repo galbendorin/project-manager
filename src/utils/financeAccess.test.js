@@ -6,9 +6,11 @@ import {
   normalizeFinanceAccessEmail,
 } from './financeAccess.js';
 
-test('Financial Planner access is limited to Dorin\'s account', () => {
+test('Financial Planner access is limited to the household accounts', () => {
   assert.equal(canAccessFinancePlanner('galben.dorin@yahoo.com'), true);
   assert.equal(canAccessFinancePlanner(' Galben.Dorin@Yahoo.com '), true);
+  assert.equal(canAccessFinancePlanner('irina.urmanschi@gmail.com'), true);
+  assert.equal(canAccessFinancePlanner(' Irina.Urmanschi@Gmail.com '), true);
   assert.equal(canAccessFinancePlanner('dorin.galben@yahoo.com'), false);
   assert.equal(canAccessFinancePlanner(''), false);
 });

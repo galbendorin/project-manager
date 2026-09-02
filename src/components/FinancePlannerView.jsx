@@ -5,6 +5,7 @@ import React, {
   useState,
 } from 'react';
 import { useFinanceData } from '../hooks/useFinanceData';
+import { useFinanceHouseholdAccess } from '../hooks/useFinanceHouseholdAccess';
 import { useFinanceReconciliation } from '../hooks/useFinanceReconciliation';
 import MonthReconciliation from './finance/MonthReconciliation';
 import {
@@ -919,10 +920,11 @@ const monthsBetween = (startMonth, endMonth) => {
 };
 
 export default function FinancePlannerView({ currentUserId }) {
-  const finance = useFinanceData({ currentUserId });
+  const householdAccess = useFinanceHouseholdAccess({ currentUserId });
+  const finance = useFinanceData({ currentUserId: householdAccess.ownerUserId });
   const [activeView, setActiveView] = useState('plan');
   const [selectedMonthKey, setSelectedMonthKey] = useState('');
-  const reconciliation = useFinanceReconciliation({ currentUserId, monthKey: selectedMonthKey });
+  const reconciliation = useFinanceReconciliation({ currentUserId: householdAccess.ownerUserId, monthKey: selectedMonthKey });
   const [editingItem, setEditingItem] = useState(null);
   const [promotingLineId, setPromotingLineId] = useState('');
   const [addRequest, setAddRequest] = useState(0);
@@ -1089,8 +1091,11 @@ export default function FinancePlannerView({ currentUserId }) {
     });
   };
 
+  if (householdAccess.loading) return <div className="mx-auto flex min-h-[360px] max-w-6xl items-center justify-center px-4 text-sm font-semibold text-slate-500">Opening household plan...</div>;
+  if (householdAccess.error) return <div className="mx-auto max-w-xl px-4 py-10"><Section className="p-5"><h1 className="text-xl font-black text-slate-950">Household plan access is not ready</h1><p className="mt-2 text-sm leading-6 text-slate-500">We could not verify which household plan belongs to this account. Retry the connection or ask the plan owner to check access.</p><button type="button" onClick={() => void householdAccess.reload()} className={`${secondaryButton} mt-4`}>Retry access</button></Section></div>;
   if (finance.loading) return <div className="mx-auto flex min-h-[360px] max-w-6xl items-center justify-center px-4 text-sm font-semibold text-slate-500">Loading Financial Planner...</div>;
   if (finance.needsMigration) return <div className="mx-auto max-w-xl px-4 py-10"><Section className="p-5"><h1 className="text-xl font-black text-slate-950">Finance setup is not connected</h1><p className="mt-2 text-sm leading-6 text-slate-500">The Finance tables could not be reached. Retry after checking the Supabase migration.</p><button type="button" onClick={() => void finance.loadAll()} className={`${secondaryButton} mt-4`}>Retry connection</button></Section></div>;
+  if (!finance.summary.hasData && !householdAccess.isOwner) return <div className="mx-auto max-w-xl px-4 py-10"><Section className="p-5"><h1 className="text-xl font-black text-slate-950">The household plan is not set up yet</h1><p className="mt-2 text-sm leading-6 text-slate-500">You have editor access. Once the owner starts the plan, you will be able to add and update its figures here.</p><button type="button" onClick={() => void finance.loadAll()} className={`${secondaryButton} mt-4`}>Check again</button></Section></div>;
   if (!finance.summary.hasData) return <div className="mx-auto max-w-xl px-4 py-10"><Section className="p-5"><h1 className="text-xl font-black text-slate-950">Start your household plan</h1><p className="mt-2 text-sm leading-6 text-slate-500">Load the figures from your existing spreadsheet, then adjust any row that has changed.</p><div className="mt-5 flex flex-wrap gap-2"><button type="button" disabled={finance.saving} onClick={() => void finance.loadSampleHouseholdBudget()} className={primaryButton}>{finance.saving ? 'Loading...' : 'Load current figures'}</button><button type="button" disabled={finance.saving} onClick={() => void finance.saveProfile(finance.profile)} className={secondaryButton}>Start empty</button></div>{finance.error ? <p className="mt-3 text-sm font-semibold text-rose-700">{finance.error}</p> : null}</Section></div>;
   if (!selectedMonth) return null;
 
@@ -1098,7 +1103,7 @@ export default function FinancePlannerView({ currentUserId }) {
     <div className="mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-5 sm:py-6">
       <header className="mb-3 sm:mb-4">
         <div className="flex items-center justify-between gap-2 sm:hidden">
-          <div className="min-w-0"><div className="text-[9px] font-black uppercase tracking-[0.14em] text-[var(--pm-accent)]">Household finance</div><h1 className="truncate text-[18px] font-black tracking-[-0.03em] text-slate-950">Household plan</h1></div>
+          <div className="min-w-0"><div className="text-[9px] font-black uppercase tracking-[0.14em] text-[var(--pm-accent)]">Household finance{householdAccess.isOwner ? '' : ' · Shared'}</div><h1 className="truncate text-[18px] font-black tracking-[-0.03em] text-slate-950">Household plan</h1></div>
           <div className="flex shrink-0 items-center gap-1.5">
             <button type="button" onClick={requestAddExpense} className={`${primaryButton} px-3`}>+ Planned</button>
             <details className="relative">
@@ -1111,7 +1116,7 @@ export default function FinancePlannerView({ currentUserId }) {
           </div>
         </div>
         <div className="hidden flex-wrap items-end justify-between gap-3 sm:flex">
-          <div><div className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--pm-accent)]">Household finance</div><h1 className="mt-1 text-3xl font-black tracking-[-0.04em] text-slate-950">Household plan</h1><p className="mt-1 text-[14px] text-slate-500">Review one month, change a regular amount, or add what is coming next.</p></div>
+          <div><div className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--pm-accent)]">Household finance{householdAccess.isOwner ? '' : ' · Shared editor'}</div><h1 className="mt-1 text-3xl font-black tracking-[-0.04em] text-slate-950">Household plan</h1><p className="mt-1 text-[14px] text-slate-500">Review one month, change a regular amount, or add what is coming next.</p></div>
           <div className="flex gap-2"><button type="button" onClick={() => { setExportMessage(''); setExportOpen(true); }} className={secondaryButton}>↓ Export for ChatGPT</button><button type="button" onClick={requestAddIncome} className={secondaryButton}>+ Add income</button><button type="button" onClick={requestAddExpense} className={primaryButton}>+ Planned expense</button></div>
         </div>
       </header>
@@ -1153,7 +1158,7 @@ export default function FinancePlannerView({ currentUserId }) {
           <MobileMonthPlan month={selectedMonth} budgetItems={planBudgetItems} categories={finance.categories} profile={finance.profile} currencyCode={currencyCode} expandedSections={expandedSections} onToggleSection={toggleSection} onCollapseAll={() => setExpandedSections(new Set())} onEdit={setEditingItem} />
           <UpcomingExpenses forecast={forecast} selectedIndex={selectedIndex} budgetItems={planBudgetItems} categories={finance.categories} profile={finance.profile} currencyCode={currencyCode} onEdit={setEditingItem} />
           <ExpenseEntryPanel defaultMonth={selectedMonth.monthKey} currencyCode={currencyCode} saving={finance.saving} requestId={addRequest} onSave={saveExpense} />
-          <div className="grid gap-4 lg:grid-cols-2"><RecordBalanceForm profile={finance.profile} saving={finance.saving} onSave={finance.saveBalanceSnapshot} /><PlanSettings profile={finance.profile} saving={finance.saving} onSave={finance.saveProfile} onReset={finance.resetFinanceData} /></div>
+          <div className={`grid gap-4 ${householdAccess.isOwner ? 'lg:grid-cols-2' : ''}`}><RecordBalanceForm profile={finance.profile} saving={finance.saving} onSave={finance.saveBalanceSnapshot} />{householdAccess.isOwner ? <PlanSettings profile={finance.profile} saving={finance.saving} onSave={finance.saveProfile} onReset={finance.resetFinanceData} /> : null}</div>
         </main>
       ) : <HistoryView finance={finance} reconciliationHistory={reconciliation.history} currencyCode={currencyCode} onRepeat={(item) => { setSelectedMonthKey(currentMonthKey); setActiveView('plan'); setEditingItem({ ...item, id: undefined, startMonth: currentMonthKey, endMonth: '' }); }} />}
 
