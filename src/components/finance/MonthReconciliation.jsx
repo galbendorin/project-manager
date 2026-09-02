@@ -65,7 +65,7 @@ const statusCopy = (summary, currencyCode) => {
   if (!summary.hasActualClosing) return {
     eyebrow: summary.isFinalized ? 'Finalized' : 'Not started',
     title: `Close ${formatMonthLabel(summary.monthKey)}`,
-    detail: 'Add the opening and closing savings balances, then explain any difference.',
+    detail: 'Add the opening and closing savings balances, then explain every difference before the month can close.',
   };
   if (summary.isFinalized) return {
     eyebrow: summary.status === 'finalized_with_unknown' ? 'Finalized with an unknown amount' : 'Reconciled',
@@ -75,23 +75,28 @@ const statusCopy = (summary, currencyCode) => {
         ? `${formatCurrency(summary.closingVariancePence, currencyCode)} ahead of the overall plan`
         : 'Matched the overall plan',
     detail: summary.status === 'finalized_with_unknown'
-      ? `${formatCurrency(Math.abs(summary.unknownVariancePence), currencyCode)} was explicitly marked as unknown.`
-      : 'The month is locked and its planned comparison is preserved.',
+      ? `${formatCurrency(Math.abs(summary.unknownVariancePence), currencyCode)} was marked unknown. The recorded closing balance now drives future savings.`
+      : `The recorded closing balance now becomes ${formatMonthLabel(addMonths(summary.monthKey, 1))}’s opening balance.`,
   };
   if (summary.unexplainedVariancePence === null) return {
     eyebrow: 'Review in progress',
     title: 'Add the opening balance to isolate this month',
     detail: 'Without it, a carried difference could be mistaken for spending in this month.',
   };
+  if (summary.hasUnknownLines) return {
+    eyebrow: 'Still investigating',
+    title: `${formatCurrency(summary.unknownAmountPence, currencyCode)} still marked unknown`,
+    detail: 'Replace the unknown entry with the real expense, income change, or transfer before this month can close.',
+  };
   if (summary.isBalanced) return {
     eyebrow: 'Ready to finalize',
     title: '£0 left to explain',
-    detail: 'Review the explanations, then finalize the completed month.',
+    detail: `Finalize to use this recorded closing balance as ${formatMonthLabel(addMonths(summary.monthKey, 1))}’s opening balance.`,
   };
   return {
     eyebrow: 'Review in progress',
     title: `${formatCurrency(Math.abs(summary.unexplainedVariancePence), currencyCode)} still unexplained`,
-    detail: 'Add another explanation or explicitly mark the remaining amount as unknown.',
+    detail: 'This month cannot close or update the future forecast until the difference reaches £0.',
   };
 };
 
@@ -357,7 +362,7 @@ const ReconciliationDialog = ({
                 {getFinanceReconciliationKind(kind).flowType === 'expense' ? <label className="text-[12px] font-bold text-slate-500">Group<select value={groupId} onChange={(event) => setGroupId(event.target.value)} className={`${inputClass} mt-1`}>{FINANCE_EXPENSE_GROUPS.map((group) => <option key={group.id} value={group.id}>{group.label}</option>)}</select></label> : <div />}
                 {selectedKind.flowType !== 'adjustment' ? <label className="text-[12px] font-bold text-slate-500 min-[520px]:col-span-2">Related planned row (optional)<select value={budgetItemId} onChange={(event) => { const nextId = event.target.value; setBudgetItemId(nextId); const item = eligiblePlannedItems.find((candidate) => candidate.id === nextId); if (item?.flowType === 'expense') setGroupId(getFinanceExpenseGroupId(item, categories)); }} className={`${inputClass} mt-1`}><option value="">No planned row — this was extra</option>{eligiblePlannedItems.map((item) => <option key={item.id} value={item.id}>{item.name} · {formatCurrency(item.amountPence, currencyCode)}</option>)}</select></label> : null}
               </fieldset>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2"><button type="button" disabled={!summary.unexplainedVariancePence} onClick={markRemainingUnknown} className="min-h-[44px] rounded-xl px-2 text-[11px] font-black text-amber-700 hover:bg-amber-50 disabled:hidden">Mark remainder unknown</button><button type="submit" disabled={saving} className={primaryButton}>{saving ? 'Saving…' : 'Add explanation'}</button></div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2"><button type="button" disabled={!summary.unexplainedVariancePence} onClick={markRemainingUnknown} className="min-h-[44px] rounded-xl px-2 text-[11px] font-black text-amber-700 hover:bg-amber-50 disabled:hidden">Track remainder as unknown</button><button type="submit" disabled={saving} className={primaryButton}>{saving ? 'Saving…' : 'Add explanation'}</button></div>
             </form> : null}
           </section>
 
@@ -367,7 +372,7 @@ const ReconciliationDialog = ({
 
         <footer className="shrink-0 border-t border-slate-200 bg-white px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 sm:flex sm:items-center sm:justify-between sm:gap-3 sm:px-5">
           <div className="mb-2 min-w-0 sm:mb-0"><div className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">{copy.eyebrow}</div><div className="truncate text-[12px] font-semibold text-slate-600">{copy.detail}</div></div>
-          {summary.isFinalized ? <button type="button" onClick={() => void onReopen()} disabled={saving} className={`${secondaryButton} w-full sm:w-auto`}>Reopen month</button> : summary.isPast ? <button type="button" onClick={() => void finalize()} disabled={saving || !summary.canFinalize} className={`${primaryButton} w-full sm:w-auto`}>{summary.canFinalize ? `Finalize ${formatMonthLabel(month.monthKey, { year: undefined })}` : 'Explain the remaining difference'}</button> : <button type="button" onClick={onClose} className={`${secondaryButton} w-full sm:w-auto`}>Save progress and close</button>}
+          {summary.isFinalized ? <button type="button" onClick={() => void onReopen()} disabled={saving} className={`${secondaryButton} w-full sm:w-auto`}>Reopen month</button> : summary.isPast ? <button type="button" onClick={() => void finalize()} disabled={saving || !summary.canFinalize} className={`${primaryButton} w-full sm:w-auto`}>{summary.canFinalize ? `Finalize ${formatMonthLabel(month.monthKey, { year: undefined })}` : summary.hasUnknownLines ? 'Resolve the unknown amount' : 'Explain the remaining difference'}</button> : <button type="button" onClick={onClose} className={`${secondaryButton} w-full sm:w-auto`}>Save progress and close</button>}
         </footer>
       </section>
     </div>
@@ -402,6 +407,9 @@ export default function MonthReconciliation({
   const previousSnapshot = snapshots.find((item) => item.asOfMonth === previousMonthKey) || null;
   const summary = buildFinanceMonthReconciliation({ month, reconciliation, lines, currentMonthKey });
   const copy = statusCopy(summary, currencyCode);
+  const actualBaselineCopy = month.actualBaselineMonth
+    ? `Forecast rebased from ${formatMonthLabel(month.actualBaselineMonth)} recorded savings.`
+    : '';
 
   if (!available) return null;
 
@@ -409,7 +417,7 @@ export default function MonthReconciliation({
     <>
       <section aria-label={`${formatMonthLabel(month.monthKey)} month check-in`} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <button type="button" disabled={loading || summary.isFuture} onClick={() => setOpen(true)} className="grid min-h-[72px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-white sm:px-5">
-          <span className="min-w-0"><span className="block text-[10px] font-black uppercase tracking-[0.13em] text-[var(--pm-accent)]">{copy.eyebrow}</span><span className="mt-0.5 block truncate text-[15px] font-black text-slate-950">{copy.title}</span><span className="mt-0.5 block text-[11px] font-semibold leading-4 text-slate-500">{copy.detail}</span></span>
+          <span className="min-w-0"><span className="block text-[10px] font-black uppercase tracking-[0.13em] text-[var(--pm-accent)]">{copy.eyebrow}</span><span className="mt-0.5 block truncate text-[15px] font-black text-slate-950">{copy.title}</span><span className="mt-0.5 block text-[11px] font-semibold leading-4 text-slate-500">{copy.detail}</span>{actualBaselineCopy ? <span className="mt-1 block text-[10px] font-black text-emerald-700">{actualBaselineCopy}</span> : null}</span>
           <span className="flex min-h-[44px] shrink-0 items-center rounded-xl bg-[var(--pm-accent-tint)] px-3 text-[12px] font-black text-[var(--pm-accent-strong)]">{summary.isFuture ? 'Edit plan' : summary.isCurrent ? 'Check in' : summary.isFinalized ? 'Review' : summary.hasActualClosing ? 'Continue' : 'Start'} <span aria-hidden="true" className="ml-1">→</span></span>
         </button>
       </section>

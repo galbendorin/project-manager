@@ -2,12 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildFinalizedClosingCashByMonth,
   buildFinanceMonthReconciliation,
   getDefaultReconciliationOpening,
   getLocalDateKey,
   getMonthEndDate,
   getReconciliationVariancePence,
 } from './financeReconciliation.js';
+
+test('only finalized recorded balances are eligible to rebase future forecasts', () => {
+  assert.deepEqual(buildFinalizedClosingCashByMonth([
+    { monthKey: '2026-07', status: 'finalized', actualClosingCashPence: 0 },
+    { monthKey: '2026-08', status: 'draft', actualClosingCashPence: 950000 },
+    { monthKey: '2026-09', status: 'finalized', actualClosingCashPence: null },
+    { monthKey: '2026-10', status: 'finalized', actualClosingCashPence: 1200000 },
+  ]), {
+    '2026-07': 0,
+    '2026-10': 1200000,
+  });
+});
 
 const planMonth = {
   monthKey: '2026-08',
@@ -90,11 +103,11 @@ test('finalized reconciliations use frozen plan values after the live plan chang
   assert.equal(result.closingVariancePence, 0);
 });
 
-test('unknown lines can balance a month while remaining visible', () => {
+test('unknown lines can balance the arithmetic but cannot close a month', () => {
   const result = buildFinanceMonthReconciliation({
     month: planMonth,
     reconciliation: {
-      status: 'finalized',
+      status: 'draft',
       plannedOpeningCashPence: 1000000,
       plannedIncomePence: 500000,
       plannedExpensePence: 300000,
@@ -107,7 +120,10 @@ test('unknown lines can balance a month while remaining visible', () => {
   });
   assert.equal(result.unexplainedVariancePence, 0);
   assert.equal(result.unknownVariancePence, -48400);
-  assert.equal(result.status, 'finalized_with_unknown');
+  assert.equal(result.unknownAmountPence, 48400);
+  assert.equal(result.hasUnknownLines, true);
+  assert.equal(result.isBalanced, true);
+  assert.equal(result.canFinalize, false);
 });
 
 test('opening balance defaults only from a consecutive source or the plan start', () => {

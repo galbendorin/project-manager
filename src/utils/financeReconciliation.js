@@ -34,6 +34,16 @@ export const getReconciliationVariancePence = (kind, amountPence) => (
   getFinanceReconciliationKind(kind).direction * Math.max(0, asInteger(amountPence))
 );
 
+export const buildFinalizedClosingCashByMonth = (reconciliations = []) => (
+  Object.fromEntries(reconciliations
+    .filter((item) => (
+      item?.status === 'finalized'
+      && hasValue(item.actualClosingCashPence)
+      && item.monthKey
+    ))
+    .map((item) => [normalizeMonthKey(item.monthKey), asInteger(item.actualClosingCashPence)]))
+);
+
 export const getLocalDateKey = (date = new Date()) => {
   const parsed = date instanceof Date ? date : new Date(date);
   const safe = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
@@ -127,6 +137,12 @@ export const buildFinanceMonthReconciliation = ({
       ? total + asInteger(line.variancePence)
       : total
   ), 0);
+  const unknownAmountPence = lines.reduce((total, line) => (
+    getFinanceReconciliationKind(line.kind).unknown
+      ? total + Math.abs(asInteger(line.variancePence))
+      : total
+  ), 0);
+  const hasUnknownLines = unknownAmountPence > 0;
   const monthlyVariancePence = hasActualOpening && hasActualClosing
     ? (actualClosingCashPence - actualOpeningCashPence) - plannedNetPence
     : null;
@@ -147,7 +163,7 @@ export const buildFinanceMonthReconciliation = ({
 
   let status = 'not_started';
   if (isFuture) status = 'future';
-  else if (isFinalized) status = Math.abs(unknownVariancePence) > 0 ? 'finalized_with_unknown' : 'finalized';
+  else if (isFinalized) status = hasUnknownLines ? 'finalized_with_unknown' : 'finalized';
   else if (reconciliation) status = 'draft';
 
   return {
@@ -172,8 +188,10 @@ export const buildFinanceMonthReconciliation = ({
     explainedVariancePence,
     unexplainedVariancePence,
     unknownVariancePence,
+    unknownAmountPence,
+    hasUnknownLines,
     targetRemainingPence,
     isBalanced,
-    canFinalize: isPast && !isFinalized && hasActualOpening && hasActualClosing && isBalanced,
+    canFinalize: isPast && !isFinalized && hasActualOpening && hasActualClosing && isBalanced && !hasUnknownLines,
   };
 };

@@ -289,6 +289,7 @@ export const buildFinanceForecast = ({
   startMonth = getCurrentMonthKey(),
   months = 36,
   openingCashPence = 0,
+  actualClosingCashByMonth = {},
   annualExpenseInflationBps = 0,
   annualIncomeGrowthBps = 0,
   protectedCashFloorPence = 0,
@@ -296,7 +297,16 @@ export const buildFinanceForecast = ({
   const horizon = Math.max(1, Math.min(120, asInteger(months, 36)));
   const forecastStartMonth = normalizeMonthKey(startMonth);
   const allItems = [...budgetItems, ...scenarioItems].map(toForecastItem);
-  let openingCash = asInteger(openingCashPence);
+  const actualClosingForMonth = (monthKey) => {
+    const value = actualClosingCashByMonth instanceof Map
+      ? actualClosingCashByMonth.get(monthKey)
+      : actualClosingCashByMonth?.[monthKey];
+    return value === null || value === undefined || value === '' ? null : asInteger(value);
+  };
+  const priorMonthKey = addMonths(forecastStartMonth, -1);
+  const priorActualClosing = actualClosingForMonth(priorMonthKey);
+  let openingCash = priorActualClosing ?? asInteger(openingCashPence);
+  let actualBaselineMonth = priorActualClosing === null ? '' : priorMonthKey;
 
   return Array.from({ length: horizon }, (_, index) => {
     const monthKey = addMonths(forecastStartMonth, index);
@@ -342,6 +352,8 @@ export const buildFinanceForecast = ({
       monthKey,
       openingCashPence: openingCash,
       closingCashPence,
+      openingCashSource: actualBaselineMonth ? 'finalized_actual' : 'plan',
+      actualBaselineMonth,
       surplusPence,
       savingsRate: calculateSavingsRate(summary.incomePence, surplusPence),
       emergencyCoverageMonths: calculateEmergencyCoverage(closingCashPence, summary.essentialPence),
@@ -349,7 +361,13 @@ export const buildFinanceForecast = ({
       ...summary,
       lineItems,
     };
-    openingCash = closingCashPence;
+    const actualClosingCashPence = actualClosingForMonth(monthKey);
+    if (actualClosingCashPence === null) {
+      openingCash = closingCashPence;
+    } else {
+      openingCash = actualClosingCashPence;
+      actualBaselineMonth = monthKey;
+    }
     return month;
   });
 };
