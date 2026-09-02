@@ -30,15 +30,16 @@ export default function FinanceHouseholdInvitationCard({
       const token = data?.session?.access_token || '';
       if (!token) throw new Error('Your session has expired. Please sign in again.');
 
-      const response = await fetch('/api/finance-household-invitation', {
+      const response = await fetch('/api/finance-access', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          operation: 'respond-to-invitation',
           invitationId: access.pendingInvitationId,
-          action,
+          invitationAction: action,
         }),
       });
       if (!response.ok) throw new Error(await getApiError(response));

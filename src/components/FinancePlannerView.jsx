@@ -1111,9 +1111,13 @@ export default function FinancePlannerView({ onGoToProjects }) {
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token || '';
       if (!token) throw new Error('Your session has expired. Please sign in again.');
-      const response = await fetch('/api/finance-household-leave', {
+      const response = await fetch('/api/finance-access', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ operation: 'leave-household' }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result?.error || 'Unable to leave this household plan right now.');

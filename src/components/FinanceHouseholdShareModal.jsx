@@ -123,8 +123,8 @@ export default function FinanceHouseholdShareModal({ isOpen, onClose }) {
     setMessage('');
     try {
       const result = await post(
-        '/api/finance-household-invite',
-        { email: normalizedEmail },
+        '/api/finance-access',
+        { operation: 'invite-member', email: normalizedEmail },
         'Unable to send this invitation right now.',
       );
       setEmail('');
@@ -149,8 +149,8 @@ export default function FinanceHouseholdShareModal({ isOpen, onClose }) {
     setMessage('');
     try {
       await post(
-        '/api/finance-household-remove',
-        { membershipId: member.id },
+        '/api/finance-access',
+        { operation: 'remove-member', membershipId: member.id },
         'Unable to remove this access right now.',
       );
       setMessage(member.status === 'active'

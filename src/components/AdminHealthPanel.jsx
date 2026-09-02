@@ -104,13 +104,13 @@ export default function AdminHealthPanel() {
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token || '';
       if (!token) throw new Error('Your session has expired. Please sign in again.');
-      const response = await fetch('/api/admin-finance-access', {
+      const response = await fetch('/api/finance-access', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: normalizedEmail, enabled }),
+        body: JSON.stringify({ operation: 'set-owner-access', email: normalizedEmail, enabled }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result?.error || 'Unable to update Household Finance access.');
