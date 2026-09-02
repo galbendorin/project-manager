@@ -7,6 +7,7 @@ import EmailDigestModal from './EmailDigestModal';
 import StatusReportActivitySection from './StatusReportActivitySection';
 import StatusReportSummaryCards from './StatusReportSummaryCards';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { getStatusReportRegisterSignals } from '../utils/statusReportVisibility';
 
 // Track which detail sections are expanded
 
@@ -56,8 +57,6 @@ const PRESETS = [
   { label: 'This month', from: () => startOfMonth(), to: () => getCurrentDate() },
 ];
 
-const isPublicItem = (item) => item?.public !== false;
-
 const StatusReportView = ({
   tasks,
   baseline,
@@ -78,7 +77,10 @@ const StatusReportView = ({
   isExternalView = false
 }) => {
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const hideRegisterSignals = isExternalView;
+  const registerSignals = useMemo(
+    () => getStatusReportRegisterSignals(registers, isExternalView),
+    [registers, isExternalView],
+  );
   // Date range state
   const [dateFrom, setDateFrom] = useState(daysAgo(14));
   const [dateTo, setDateTo] = useState(getCurrentDate());
@@ -150,27 +152,22 @@ const StatusReportView = ({
       isInRange(t.updatedAt, dateFrom, dateTo) && !isInRange(t.createdAt, dateFrom, dateTo)
     );
 
-    if (hideRegisterSignals) {
-      result.trackerUpdates = (tracker || []).filter(t => isInRange(t.updatedAt, dateFrom, dateTo));
-      return result;
-    }
-
     // Risks
-    const risks = (registers?.risks || []).filter(isPublicItem);
+    const risks = registerSignals.risks;
     result.newRisks = risks.filter(r => isInRange(r.createdAt, dateFrom, dateTo));
     result.updatedRisks = risks.filter(r =>
       isInRange(r.updatedAt, dateFrom, dateTo) && !isInRange(r.createdAt, dateFrom, dateTo)
     );
 
     // Issues
-    const issues = (registers?.issues || []).filter(isPublicItem);
+    const issues = registerSignals.issues;
     result.newIssues = issues.filter(i => isInRange(i.createdAt, dateFrom, dateTo));
     result.updatedIssues = issues.filter(i =>
       isInRange(i.updatedAt, dateFrom, dateTo) && !isInRange(i.createdAt, dateFrom, dateTo)
     );
 
     // Actions
-    const actions = (registers?.actions || []).filter(isPublicItem);
+    const actions = registerSignals.actions;
     result.newActions = actions.filter(a => isInRange(a.createdAt, dateFrom, dateTo));
     result.completedActions = actions.filter(a => {
       const status = (a.status || '').toLowerCase();
@@ -178,14 +175,14 @@ const StatusReportView = ({
     });
 
     // Changes
-    const changes = (registers?.changes || []).filter(isPublicItem);
+    const changes = registerSignals.changes;
     result.newChanges = changes.filter(c => isInRange(c.createdAt, dateFrom, dateTo));
 
     // Tracker
     result.trackerUpdates = (tracker || []).filter(t => isInRange(t.updatedAt, dateFrom, dateTo));
 
     return result;
-  }, [tasks, registers, tracker, dateFrom, dateTo, hideRegisterSignals]);
+  }, [tasks, registerSignals, tracker, dateFrom, dateTo]);
 
   // Total activity count
   const totalActivity = useMemo(() => {
@@ -214,20 +211,16 @@ const StatusReportView = ({
 
   // Top open risks
   const topRisks = useMemo(() => {
-    if (hideRegisterSignals || !registers?.risks) return [];
-    return registers.risks
-      .filter(isPublicItem)
-      .filter(r => r.level && r.level.toString().toLowerCase() !== 'closed');
-  }, [registers, hideRegisterSignals]);
+    return registerSignals.risks.filter(r => r.level && r.level.toString().toLowerCase() !== 'closed');
+  }, [registerSignals.risks]);
 
   // Top open issues
   const topIssues = useMemo(() => {
-    if (hideRegisterSignals || !registers?.issues) return [];
-    return registers.issues.filter(isPublicItem).filter(i => {
+    return registerSignals.issues.filter(i => {
       const status = (i.status || '').toLowerCase();
       return status !== 'closed' && status !== 'completed';
     });
-  }, [registers, hideRegisterSignals]);
+  }, [registerSignals.issues]);
 
   const ragStyle = RAG_STYLES[statusReport.overallRag] || RAG_STYLES.Green;
   const handleFieldChange = (key, value) => onUpdateStatusReport(key, value);
@@ -473,7 +466,6 @@ const StatusReportView = ({
           dateFromLabel={formatDateDisplay(dateFrom)}
           dateToLabel={formatDateDisplay(dateTo)}
           detailsExpanded={detailsExpanded}
-          hideRegisterSignals={hideRegisterSignals}
           onToggleDetails={() => setDetailsExpanded(!detailsExpanded)}
           periodActivity={periodActivity}
           totalActivity={totalActivity}
@@ -524,8 +516,7 @@ const StatusReportView = ({
         </div>
 
         {/* Risks & Issues */}
-        {!hideRegisterSignals && (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
               <div className="flex items-center justify-between mb-3">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Main Risks</label>
@@ -550,12 +541,12 @@ const StatusReportView = ({
                   ))}
                 </div>
               )}
-              <textarea
+              {!isExternalView && <textarea
                 value={statusReport.mainRisks}
                 onChange={(e) => handleFieldChange('mainRisks', e.target.value)}
                 placeholder="Additional risk commentary..."
                 className="w-full h-16 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] text-slate-700 outline-none focus:border-indigo-300 resize-none transition-colors"
-              />
+              />}
             </div>
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
               <div className="flex items-center justify-between mb-3">
@@ -577,15 +568,14 @@ const StatusReportView = ({
                   ))}
                 </div>
               )}
-              <textarea
+              {!isExternalView && <textarea
                 value={statusReport.mainIssues}
                 onChange={(e) => handleFieldChange('mainIssues', e.target.value)}
                 placeholder="Additional issue commentary..."
                 className="w-full h-16 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] text-slate-700 outline-none focus:border-indigo-300 resize-none transition-colors"
-              />
+              />}
             </div>
           </div>
-        )}
 
         {/* Milestone Comparison Table */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
