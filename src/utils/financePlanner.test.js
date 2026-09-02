@@ -63,6 +63,41 @@ test('forecast calculates surplus, cash, lean emergency coverage, and future cha
   assert.equal(forecast[0].emergencyCoverageMonths, 1951700 / 359800);
 });
 
+test('a recorded closing balance rebases the next month without rewriting the completed month plan', () => {
+  const forecast = buildFinanceForecast({
+    startMonth: '2026-08',
+    months: 3,
+    openingCashPence: 1000000,
+    actualClosingCashByMonth: { '2026-08': 950000 },
+    budgetItems: [
+      { amountPence: 500000, flowType: 'income', frequency: 'monthly', startMonth: '2026-08' },
+      { amountPence: 300000, flowType: 'expense', frequency: 'monthly', startMonth: '2026-08' },
+    ],
+  });
+
+  assert.equal(forecast[0].openingCashPence, 1000000);
+  assert.equal(forecast[0].closingCashPence, 1200000);
+  assert.equal(forecast[1].openingCashPence, 950000);
+  assert.equal(forecast[1].closingCashPence, 1150000);
+  assert.equal(forecast[2].openingCashPence, 1150000);
+  assert.equal(forecast[2].closingCashPence, 1350000);
+  assert.equal(forecast[1].openingCashSource, 'finalized_actual');
+  assert.equal(forecast[2].actualBaselineMonth, '2026-08');
+});
+
+test('an actual closing balance immediately before the forecast start becomes its opening balance', () => {
+  const [month] = buildFinanceForecast({
+    startMonth: '2026-09',
+    months: 1,
+    openingCashPence: 1000000,
+    actualClosingCashByMonth: new Map([['2026-08', 875000]]),
+  });
+
+  assert.equal(month.openingCashPence, 875000);
+  assert.equal(month.openingCashSource, 'finalized_actual');
+  assert.equal(month.actualBaselineMonth, '2026-08');
+});
+
 test('cash safety, sinking fund, loan payment, and savings rate calculations are deterministic', () => {
   assert.equal(calculateSavingsRate(561500, 151700), 151700 / 561500);
   assert.equal(calculateEmergencyCoverage(1800000, 300000), 6);

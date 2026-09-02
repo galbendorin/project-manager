@@ -31,6 +31,7 @@ import {
   FINANCE_EXPORT_RANGE_OPTIONS,
 } from '../utils/financeAnalysisExport';
 import {
+  buildFinalizedClosingCashByMonth,
   buildFinanceMonthReconciliation,
   getFinanceReconciliationKind,
 } from '../utils/financeReconciliation';
@@ -185,6 +186,12 @@ const MonthlyKpis = ({ month, snapshot, actualEntries, profile, currencyCode, cu
   const actualDetail = !kpis.hasActualExpenses
     ? 'No actual entries recorded'
     : 'Entries recorded · may be incomplete';
+  const actualBaselineDetail = month.actualBaselineMonth
+    ? `From ${formatMonthLabel(month.actualBaselineMonth)} actual`
+    : '';
+  const savingsDetail = actualBaselineDetail
+    ? `${savingsStatus} · ${actualBaselineDetail}`
+    : savingsStatus;
   const cards = [
     {
       label: 'Left this month',
@@ -205,7 +212,7 @@ const MonthlyKpis = ({ month, snapshot, actualEntries, profile, currencyCode, cu
       value: isCurrentMonth
         ? targetRemaining === null ? '—' : formatCurrency(Math.abs(targetRemaining), currencyCode)
         : variance === null ? '—' : formatCurrency(variance, currencyCode),
-      detail: savingsStatus,
+      detail: savingsDetail,
       tone: isCurrentMonth
         ? targetRemaining !== null && targetRemaining < 0 ? 'good' : 'neutral'
         : variance === null ? 'neutral' : variance >= 0 ? 'good' : 'danger',
@@ -927,12 +934,17 @@ export default function FinancePlannerView({ currentUserId }) {
   const currentMonthKey = getCurrentMonthKey();
   const monthsFromAnchor = Math.max(0, monthsBetween(finance.profile.forecastStartMonth, currentMonthKey));
   const horizon = Math.min(120, Math.max(60, monthsFromAnchor + 60));
+  const finalizedActualCashByMonth = useMemo(
+    () => buildFinalizedClosingCashByMonth(reconciliation.history),
+    [reconciliation.history],
+  );
   const forecast = useMemo(() => buildFinanceForecast({
     ...finance.profile,
     startMonth: finance.profile.forecastStartMonth,
     budgetItems: finance.budgetItems,
+    actualClosingCashByMonth: finalizedActualCashByMonth,
     months: horizon,
-  }), [finance.budgetItems, finance.profile, horizon]);
+  }), [finalizedActualCashByMonth, finance.budgetItems, finance.profile, horizon]);
 
   useEffect(() => {
     if (!forecast.length) return;
