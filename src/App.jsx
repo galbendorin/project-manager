@@ -17,7 +17,7 @@ import { getFeatureByRoute } from './utils/featureRegistry';
 import { readAppShortcutIntent } from './utils/appShortcutIntent';
 import { activatePendingServiceWorker } from './utils/registerServiceWorker';
 import { canAccessItilQuiz } from './utils/itilQuizAccess';
-import { canAccessFinancePlanner } from './utils/financeAccess';
+import { hasPendingFinanceInvitation } from './utils/financeAccess';
 
 const AuthPage = lazy(() => import('./components/AuthPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -94,7 +94,7 @@ const PrivateToolUnavailable = ({ onGoToProjects, toolName = 'This tool' }) => (
           {toolName} is not available on this account
         </h1>
         <p className="mt-3 text-sm leading-6 text-slate-500">
-          {toolName} is currently limited to Dorin's PM Workspace account.
+          {toolName} is private. Ask the account owner to enable it or invite you to their household plan.
         </p>
         <button
           type="button"
@@ -124,7 +124,12 @@ const getUserDisplayName = (user) => {
 
 function App() {
   const { user, loading: authLoading, signOut, isPasswordRecovery } = useAuth();
-  const { householdToolsEnabled, loading: planLoading } = usePlan();
+  const {
+    financeHouseholdAccess,
+    financeToolsEnabled,
+    householdToolsEnabled,
+    loading: planLoading,
+  } = usePlan();
   const checkoutStatus = useCheckoutStatus();
   const isOnline = useOnlineStatus();
   const [currentProject, setCurrentProject] = useState(null);
@@ -137,7 +142,8 @@ function App() {
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const currentFeature = getFeatureByRoute(currentPath);
   const canUseItilQuiz = canAccessItilQuiz(user?.email);
-  const canUseFinancePlanner = canAccessFinancePlanner(user?.email);
+  const canUseFinancePlanner = financeToolsEnabled;
+  const hasPendingFinanceAccess = hasPendingFinanceInvitation(financeHouseholdAccess);
 
   useEffect(() => {
     applyAccentTheme(accentTheme);
@@ -201,12 +207,17 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!user || currentProject || currentPath !== '/') return;
+    if (!user || currentProject || currentPath !== '/' || hasPendingFinanceAccess) return;
 
     const savedProject = loadLastProject();
     if (!savedProject?.id) return;
     setCurrentProject(savedProject);
-  }, [currentPath, currentProject, user]);
+  }, [currentPath, currentProject, hasPendingFinanceAccess, user]);
+
+  useEffect(() => {
+    if (planLoading || currentPath !== '/finance' || !hasPendingFinanceAccess) return;
+    navigateToPath('/', { replace: true });
+  }, [currentPath, hasPendingFinanceAccess, navigateToPath, planLoading]);
 
   useEffect(() => {
     if (planLoading || householdToolsEnabled || !isHouseholdToolPath(currentPath)) return;
@@ -257,7 +268,10 @@ function App() {
     );
   }
 
-  if (planLoading && isHouseholdToolPath(currentPath) && !householdToolsEnabled) {
+  if (planLoading && (
+    (isHouseholdToolPath(currentPath) && !householdToolsEnabled)
+    || currentPath === '/finance'
+  )) {
     return (
       <>
         <OfflineBanner isOnline={isOnline} />

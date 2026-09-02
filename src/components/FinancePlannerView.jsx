@@ -4,9 +4,11 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { usePlan } from '../contexts/PlanContext';
 import { useFinanceData } from '../hooks/useFinanceData';
-import { useFinanceHouseholdAccess } from '../hooks/useFinanceHouseholdAccess';
 import { useFinanceReconciliation } from '../hooks/useFinanceReconciliation';
+import { supabase } from '../lib/supabase';
+import FinanceHouseholdShareModal from './FinanceHouseholdShareModal';
 import MonthReconciliation from './finance/MonthReconciliation';
 import {
   addMonths,
@@ -732,7 +734,7 @@ export const FinanceExportDialog = ({ finance, forecast, loadReconciliations, on
   );
 };
 
-const PlanItemEditor = ({ item, categories, effectiveMonth, saving, onSave, onRemove, onClose }) => {
+const PlanItemEditor = ({ item, categories, destructiveDeleteAllowed = true, effectiveMonth, saving, onSave, onRemove, onClose }) => {
   const isNew = !item.id;
   const initialGroupId = item.flowType === 'expense' ? getFinanceExpenseGroupId(item, categories) : '';
   const canVersion = !isNew && item.frequency !== 'one_off' && effectiveMonth > item.startMonth;
@@ -786,7 +788,9 @@ const PlanItemEditor = ({ item, categories, effectiveMonth, saving, onSave, onRe
     const preservesHistory = item.frequency !== 'one_off' && effectiveMonth > item.startMonth;
     const prompt = preservesHistory
       ? `Stop ${item.name} from ${formatMonthLabel(effectiveMonth)}? Earlier months will stay in History.`
-      : `Delete ${item.name}? This removes the saved row.`;
+      : destructiveDeleteAllowed
+        ? `Delete ${item.name}? This removes the saved row.`
+        : `Archive ${item.name}? It will leave the active plan and remain in History.`;
     if (!window.confirm(prompt)) return;
     setError('');
     try {
@@ -818,7 +822,7 @@ const PlanItemEditor = ({ item, categories, effectiveMonth, saving, onSave, onRe
         </div>
         {error ? <p role="alert" className="mt-3 text-sm font-semibold text-rose-700">{error}</p> : null}
         <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {!isNew ? <button type="button" onClick={() => void remove()} disabled={saving} className="min-h-11 rounded-xl px-3 text-sm font-bold text-rose-600 hover:bg-rose-50">{item.frequency !== 'one_off' && effectiveMonth > item.startMonth ? `Stop from ${formatMonthLabel(effectiveMonth)}` : 'Delete row'}</button> : <span />}
+          {!isNew ? <button type="button" onClick={() => void remove()} disabled={saving} className="min-h-11 rounded-xl px-3 text-sm font-bold text-rose-600 hover:bg-rose-50">{item.frequency !== 'one_off' && effectiveMonth > item.startMonth ? `Stop from ${formatMonthLabel(effectiveMonth)}` : destructiveDeleteAllowed ? 'Delete row' : 'Archive row'}</button> : <span />}
           <div className="flex flex-col-reverse gap-2 sm:flex-row"><button type="button" onClick={onClose} className={secondaryButton}>Cancel</button><button type="submit" disabled={saving} className={primaryButton}>{saving ? 'Saving...' : isNew ? `Add ${item.flowType}` : applyMode === 'from_month' ? 'Save new version' : 'Save changes'}</button></div>
         </div>
       </form>
@@ -919,8 +923,11 @@ const monthsBetween = (startMonth, endMonth) => {
   return ((endYear - startYear) * 12) + end - start;
 };
 
-export default function FinancePlannerView({ currentUserId }) {
-  const householdAccess = useFinanceHouseholdAccess({ currentUserId });
+export default function FinancePlannerView({ onGoToProjects }) {
+  const {
+    financeHouseholdAccess: householdAccess,
+    refreshFinanceAccess,
+  } = usePlan();
   const finance = useFinanceData({ currentUserId: householdAccess.ownerUserId });
   const [activeView, setActiveView] = useState('plan');
   const [selectedMonthKey, setSelectedMonthKey] = useState('');
@@ -929,8 +936,10 @@ export default function FinancePlannerView({ currentUserId }) {
   const [promotingLineId, setPromotingLineId] = useState('');
   const [addRequest, setAddRequest] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
   const [plannerMessage, setPlannerMessage] = useState('');
+  const [accessActionPending, setAccessActionPending] = useState(false);
   const [expandedSections, setExpandedSections] = useState(() => new Set());
 
   const currentMonthKey = getCurrentMonthKey();
@@ -1065,6 +1074,7 @@ export default function FinancePlannerView({ currentUserId }) {
         endMonth: addMonths(effectiveMonth, -1),
       });
     }
+    if (!householdAccess.isOwner) return finance.archiveBudgetItem(item.id);
     return finance.deleteBudgetItem(item.id);
   };
 
@@ -1091,8 +1101,32 @@ export default function FinancePlannerView({ currentUserId }) {
     });
   };
 
-  if (householdAccess.loading) return <div className="mx-auto flex min-h-[360px] max-w-6xl items-center justify-center px-4 text-sm font-semibold text-slate-500">Opening household plan...</div>;
-  if (householdAccess.error) return <div className="mx-auto max-w-xl px-4 py-10"><Section className="p-5"><h1 className="text-xl font-black text-slate-950">Household plan access is not ready</h1><p className="mt-2 text-sm leading-6 text-slate-500">We could not verify which household plan belongs to this account. Retry the connection or ask the plan owner to check access.</p><button type="button" onClick={() => void householdAccess.reload()} className={`${secondaryButton} mt-4`}>Retry access</button></Section></div>;
+  const leaveHousehold = async () => {
+    if (householdAccess.isOwner || accessActionPending) return;
+    if (!window.confirm('Leave this shared household plan? You will lose access immediately, but the owner’s data will not be changed.')) return;
+
+    setAccessActionPending(true);
+    setPlannerMessage('');
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token || '';
+      if (!token) throw new Error('Your session has expired. Please sign in again.');
+      const response = await fetch('/api/finance-household-leave', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result?.error || 'Unable to leave this household plan right now.');
+      await refreshFinanceAccess();
+      onGoToProjects?.();
+    } catch (nextError) {
+      setPlannerMessage(nextError?.message || 'Unable to leave this household plan right now.');
+    } finally {
+      setAccessActionPending(false);
+    }
+  };
+
+  if (!householdAccess.hasAccess || !householdAccess.ownerUserId) return <div className="mx-auto max-w-xl px-4 py-10"><Section className="p-5"><h1 className="text-xl font-black text-slate-950">Household plan access is not ready</h1><p className="mt-2 text-sm leading-6 text-slate-500">We could not verify which household plan belongs to this account. Retry the connection or ask the plan owner to check access.</p><button type="button" onClick={() => void refreshFinanceAccess()} className={`${secondaryButton} mt-4`}>Retry access</button></Section></div>;
   if (finance.loading) return <div className="mx-auto flex min-h-[360px] max-w-6xl items-center justify-center px-4 text-sm font-semibold text-slate-500">Loading Financial Planner...</div>;
   if (finance.needsMigration) return <div className="mx-auto max-w-xl px-4 py-10"><Section className="p-5"><h1 className="text-xl font-black text-slate-950">Finance setup is not connected</h1><p className="mt-2 text-sm leading-6 text-slate-500">The Finance tables could not be reached. Retry after checking the Supabase migration.</p><button type="button" onClick={() => void finance.loadAll()} className={`${secondaryButton} mt-4`}>Retry connection</button></Section></div>;
   if (!finance.summary.hasData && !householdAccess.isOwner) return <div className="mx-auto max-w-xl px-4 py-10"><Section className="p-5"><h1 className="text-xl font-black text-slate-950">The household plan is not set up yet</h1><p className="mt-2 text-sm leading-6 text-slate-500">You have editor access. Once the owner starts the plan, you will be able to add and update its figures here.</p><button type="button" onClick={() => void finance.loadAll()} className={`${secondaryButton} mt-4`}>Check again</button></Section></div>;
@@ -1111,13 +1145,15 @@ export default function FinancePlannerView({ currentUserId }) {
               <div className="absolute right-0 z-40 mt-2 grid w-[210px] gap-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
                 <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; requestAddIncome(); }} className="min-h-[44px] rounded-xl px-3 text-left text-[13px] font-bold text-slate-700 hover:bg-slate-50">+ Add income</button>
                 <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; setExportMessage(''); setExportOpen(true); }} className="min-h-[44px] rounded-xl px-3 text-left text-[13px] font-bold text-slate-700 hover:bg-slate-50">↓ Export for ChatGPT</button>
+                {householdAccess.isOwner ? <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; setShareOpen(true); }} className="min-h-[44px] rounded-xl px-3 text-left text-[13px] font-bold text-slate-700 hover:bg-slate-50">Manage family access</button> : null}
+                {!householdAccess.isOwner ? <button type="button" disabled={accessActionPending} onClick={(event) => { event.currentTarget.closest('details').open = false; void leaveHousehold(); }} className="min-h-[44px] rounded-xl px-3 text-left text-[13px] font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50">Leave shared plan</button> : null}
               </div>
             </details>
           </div>
         </div>
         <div className="hidden flex-wrap items-end justify-between gap-3 sm:flex">
           <div><div className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--pm-accent)]">Household finance{householdAccess.isOwner ? '' : ' · Shared editor'}</div><h1 className="mt-1 text-3xl font-black tracking-[-0.04em] text-slate-950">Household plan</h1><p className="mt-1 text-[14px] text-slate-500">Review one month, change a regular amount, or add what is coming next.</p></div>
-          <div className="flex gap-2"><button type="button" onClick={() => { setExportMessage(''); setExportOpen(true); }} className={secondaryButton}>↓ Export for ChatGPT</button><button type="button" onClick={requestAddIncome} className={secondaryButton}>+ Add income</button><button type="button" onClick={requestAddExpense} className={primaryButton}>+ Planned expense</button></div>
+          <div className="flex flex-wrap justify-end gap-2">{householdAccess.isOwner ? <button type="button" onClick={() => setShareOpen(true)} className={secondaryButton}>Family access</button> : <button type="button" disabled={accessActionPending} onClick={() => void leaveHousehold()} className="min-h-[44px] rounded-xl border border-rose-200 bg-white px-4 py-2 text-[14px] font-bold text-rose-700 disabled:opacity-50">Leave shared plan</button>}<button type="button" onClick={() => { setExportMessage(''); setExportOpen(true); }} className={secondaryButton}>↓ Export for ChatGPT</button><button type="button" onClick={requestAddIncome} className={secondaryButton}>+ Add income</button><button type="button" onClick={requestAddExpense} className={primaryButton}>+ Planned expense</button></div>
         </div>
       </header>
       <div className="mb-4"><PlannerNavigation activeView={activeView} onChange={setActiveView} /></div>
@@ -1162,8 +1198,9 @@ export default function FinancePlannerView({ currentUserId }) {
         </main>
       ) : <HistoryView finance={finance} reconciliationHistory={reconciliation.history} currencyCode={currencyCode} onRepeat={(item) => { setSelectedMonthKey(currentMonthKey); setActiveView('plan'); setEditingItem({ ...item, id: undefined, startMonth: currentMonthKey, endMonth: '' }); }} />}
 
-      {editingItem ? <PlanItemEditor key={`${editingItem.id || 'repeat'}-${editingItem.startMonth}`} item={editingItem} categories={finance.categories} effectiveMonth={selectedMonth.monthKey} saving={finance.saving} onSave={saveEditedItem} onRemove={removeEditedItem} onClose={() => { setEditingItem(null); setPromotingLineId(''); }} /> : null}
+      {editingItem ? <PlanItemEditor key={`${editingItem.id || 'repeat'}-${editingItem.startMonth}`} item={editingItem} categories={finance.categories} destructiveDeleteAllowed={householdAccess.isOwner} effectiveMonth={selectedMonth.monthKey} saving={finance.saving} onSave={saveEditedItem} onRemove={removeEditedItem} onClose={() => { setEditingItem(null); setPromotingLineId(''); }} /> : null}
       {exportOpen ? <FinanceExportDialog finance={finance} forecast={forecast} loadReconciliations={reconciliation.loadAllForExport} onClose={() => setExportOpen(false)} onDownloaded={(fileName) => setExportMessage(`Finance workbook downloaded: ${fileName}. Attach it in ChatGPT and ask it to review your spending.`)} /> : null}
+      {householdAccess.isOwner ? <FinanceHouseholdShareModal isOpen={shareOpen} onClose={() => setShareOpen(false)} /> : null}
     </div>
   );
 }

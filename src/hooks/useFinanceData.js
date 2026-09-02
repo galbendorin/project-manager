@@ -350,6 +350,28 @@ export function useFinanceData({ currentUserId } = {}) {
     }
   }, []);
 
+  const archiveBudgetItem = useCallback(async (itemId) => {
+    if (!currentUserId) return;
+    setSaving(true);
+    setError('');
+    try {
+      const { error: archiveError } = await supabase
+        .from('finance_budget_items')
+        .update({ is_active: false })
+        .eq('id', itemId)
+        .eq('user_id', currentUserId);
+      if (archiveError) throw archiveError;
+      setBudgetItems((previous) => previous.map((item) => (
+        item.id === itemId ? { ...item, isActive: false } : item
+      )));
+    } catch (nextError) {
+      setError(nextError?.message || 'Unable to archive budget item.');
+      throw nextError;
+    } finally {
+      setSaving(false);
+    }
+  }, [currentUserId]);
+
   const saveActualEntry = useCallback(async (entry = {}) => {
     if (!currentUserId) return null;
     const payload = {
@@ -661,6 +683,7 @@ export function useFinanceData({ currentUserId } = {}) {
     saveProfile,
     saveBudgetItem,
     saveBudgetItemChange,
+    archiveBudgetItem,
     deleteBudgetItem,
     saveCategory,
     saveActualEntry,

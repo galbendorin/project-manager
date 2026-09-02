@@ -172,7 +172,6 @@ export function AuthenticatedItilQuizShell({
 }
 
 export function AuthenticatedFinancePlannerShell({
-  currentUserId,
   userEmail,
   onGoToProjects,
   onSignOut,
@@ -190,7 +189,7 @@ export function AuthenticatedFinancePlannerShell({
       title="Financial Planner"
       userEmail={userEmail}
     >
-      <FinancePlannerView currentUserId={currentUserId} />
+      <FinancePlannerView onGoToProjects={onGoToProjects} />
     </AuthenticatedMiniToolShell>
   );
 }
