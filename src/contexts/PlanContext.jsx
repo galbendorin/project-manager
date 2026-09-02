@@ -20,10 +20,15 @@ import {
   loadCachedHouseholdAccess,
   saveCachedHouseholdAccess,
 } from '../utils/offlineState';
+import {
+  EMPTY_FINANCE_HOUSEHOLD_ACCESS,
+  normalizeFinanceHouseholdAccess,
+} from '../utils/financeAccess';
 
 const PlanContext = createContext({});
 const HOUSEHOLD_PROJECT_NAME = 'Shopping List';
 const PROFILE_REFRESH_FRESHNESS_MS = 30_000;
+const FINANCE_ACCESS_REFRESH_MS = 5 * 60_000;
 
 export const usePlan = () => useContext(PlanContext);
 
@@ -45,11 +50,14 @@ export const PlanProvider = ({ children }) => {
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [householdAccessLoading, setHouseholdAccessLoading] = useState(true);
+  const [financeAccessLoading, setFinanceAccessLoading] = useState(true);
   const [projectCount, setProjectCount] = useState(0);
   const [hasSharedHouseholdProjectAccess, setHasSharedHouseholdProjectAccess] = useState(false);
+  const [financeHouseholdAccess, setFinanceHouseholdAccess] = useState(EMPTY_FINANCE_HOUSEHOLD_ACCESS);
   const lastExternalRefreshAtRef = useRef(0);
   const profileAccessResolvedRef = useRef(false);
   const householdAccessResolvedRef = useRef(false);
+  const financeAccessRequestRef = useRef(0);
 
   // ── Plan simulator state (admin only) ───────────────────────
   const [simulatedPlan, setSimulatedPlan] = useState(null);
@@ -107,6 +115,41 @@ export const PlanProvider = ({ children }) => {
     }
   }, [user]);
 
+  const loadFinanceHouseholdAccess = useCallback(async () => {
+    const requestId = financeAccessRequestRef.current + 1;
+    financeAccessRequestRef.current = requestId;
+
+    if (!user) {
+      setFinanceHouseholdAccess(EMPTY_FINANCE_HOUSEHOLD_ACCESS);
+      setFinanceAccessLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .rpc('get_my_finance_household_access')
+        .single();
+
+      if (error) {
+        console.error('Failed to load finance household access:', error);
+        if (financeAccessRequestRef.current === requestId) {
+          setFinanceHouseholdAccess(EMPTY_FINANCE_HOUSEHOLD_ACCESS);
+        }
+      } else if (financeAccessRequestRef.current === requestId) {
+        setFinanceHouseholdAccess(normalizeFinanceHouseholdAccess(data));
+      }
+    } catch (err) {
+      console.error('Finance household access load error:', err);
+      if (financeAccessRequestRef.current === requestId) {
+        setFinanceHouseholdAccess(EMPTY_FINANCE_HOUSEHOLD_ACCESS);
+      }
+    } finally {
+      if (financeAccessRequestRef.current === requestId) {
+        setFinanceAccessLoading(false);
+      }
+    }
+  }, [user]);
+
   // ── Count projects ──────────────────────────────────────────
   const loadProjectCount = useCallback(async () => {
     if (!user) {
@@ -122,11 +165,14 @@ export const PlanProvider = ({ children }) => {
 
   useEffect(() => {
     if (!user) {
+      financeAccessRequestRef.current += 1;
       setProfile(null);
       setProjectCount(0);
       setHasSharedHouseholdProjectAccess(false);
+      setFinanceHouseholdAccess(EMPTY_FINANCE_HOUSEHOLD_ACCESS);
       setProfileLoading(false);
       setHouseholdAccessLoading(false);
+      setFinanceAccessLoading(false);
       return;
     }
 
@@ -136,10 +182,12 @@ export const PlanProvider = ({ children }) => {
     setHasSharedHouseholdProjectAccess(loadCachedHouseholdAccess(user.id));
     setProfileLoading(true);
     setHouseholdAccessLoading(true);
+    setFinanceAccessLoading(true);
     void loadProfile();
     void loadProjectCount();
     void loadHouseholdProjectAccess();
-  }, [loadHouseholdProjectAccess, loadProfile, loadProjectCount, user]);
+    void loadFinanceHouseholdAccess();
+  }, [loadFinanceHouseholdAccess, loadHouseholdProjectAccess, loadProfile, loadProjectCount, user]);
 
   const refreshProfileFromExternalChange = useCallback(({ force = false } = {}) => {
     if (!user) return;
@@ -150,7 +198,8 @@ export const PlanProvider = ({ children }) => {
     lastExternalRefreshAtRef.current = now;
     void loadProfile();
     void loadHouseholdProjectAccess();
-  }, [user, loadHouseholdProjectAccess, loadProfile]);
+    void loadFinanceHouseholdAccess();
+  }, [user, loadFinanceHouseholdAccess, loadHouseholdProjectAccess, loadProfile]);
 
   useEffect(() => {
     if (!user || typeof window === 'undefined') return undefined;
@@ -200,12 +249,23 @@ export const PlanProvider = ({ children }) => {
     };
   }, [user, refreshProfileFromExternalChange]);
 
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return undefined;
+    const intervalId = window.setInterval(() => {
+      void loadFinanceHouseholdAccess();
+    }, FINANCE_ACCESS_REFRESH_MS);
+    return () => window.clearInterval(intervalId);
+  }, [loadFinanceHouseholdAccess, user]);
+
   // ── Derived state ───────────────────────────────────────────
-  const loading = profileLoading || householdAccessLoading;
+  const loading = profileLoading || householdAccessLoading || financeAccessLoading;
   const isAdmin = useMemo(() => Boolean(profile?.is_admin || profile?.is_platform_admin), [profile?.is_admin, profile?.is_platform_admin]);
   const householdToolsEnabled = useMemo(
     () => canAccessHouseholdToolsFromProfile(profile, { hasSharedHouseholdProjectAccess }),
     [hasSharedHouseholdProjectAccess, profile]
+  );
+  const financeToolsEnabled = Boolean(
+    financeHouseholdAccess.hasAccess && financeHouseholdAccess.ownerUserId
   );
 
   useEffect(() => {
@@ -364,7 +424,8 @@ export const PlanProvider = ({ children }) => {
   const refreshProfile = useCallback(() => {
     void loadProfile();
     void loadHouseholdProjectAccess();
-  }, [loadHouseholdProjectAccess, loadProfile]);
+    void loadFinanceHouseholdAccess();
+  }, [loadFinanceHouseholdAccess, loadHouseholdProjectAccess, loadProfile]);
 
   // ── Context value ──────────────────────────────────────────
   const value = useMemo(() => ({
@@ -413,11 +474,15 @@ export const PlanProvider = ({ children }) => {
     isInTaskGrace,
     householdToolsEnabled,
     hasSharedHouseholdProjectAccess,
+    financeToolsEnabled,
+    financeHouseholdAccess,
+    financeAccessLoading,
 
     // Actions
     incrementAiReports,
     refreshProjectCount,
     refreshProfile,
+    refreshFinanceAccess: loadFinanceHouseholdAccess,
 
     // Plan simulator (admin only)
     simulatedPlan,
@@ -432,7 +497,8 @@ export const PlanProvider = ({ children }) => {
     canCreateProject, canUseAiReport, canExport, canImport,
     canBaseline, canUseAi, canUseAiAssistant, canExportAiReport, canUsePlatformAi,
     aiReportsRemaining, getTaskLimit, getTaskHardLimit, isInTaskGrace, householdToolsEnabled, hasSharedHouseholdProjectAccess,
-    incrementAiReports, refreshProjectCount, refreshProfile,
+    financeToolsEnabled, financeHouseholdAccess, financeAccessLoading,
+    incrementAiReports, refreshProjectCount, refreshProfile, loadFinanceHouseholdAccess,
     simulatedPlan,
   ]);
 

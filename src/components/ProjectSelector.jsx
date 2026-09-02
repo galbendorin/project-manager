@@ -6,6 +6,7 @@ import { buildDemoProjectPayload } from '../utils/demoProjectBuilder';
 import { createEmptyProjectSnapshot } from '../hooks/projectData/defaults';
 import AuthenticatedFooter from './AuthenticatedFooter';
 import AdminHealthPanel from './AdminHealthPanel';
+import FinanceHouseholdInvitationCard from './FinanceHouseholdInvitationCard';
 import ProjectShareModal from './ProjectShareModal';
 import PmWorkspaceLogo from './PmWorkspaceLogo';
 import AccentThemePicker from './AccentThemePicker';
@@ -19,7 +20,6 @@ import { loadLastProject } from '../utils/navigationState';
 import { getStoredProjectTab } from '../utils/projectTabMemory';
 import { getProjectHomeLaunchFeatures } from '../utils/featureRegistry';
 import { canAccessItilQuiz } from '../utils/itilQuizAccess';
-import { canAccessFinancePlanner } from '../utils/financeAccess';
 
 const PROJECT_TAB_LABEL_BY_ID = new Map(TABS.map((tab) => [tab.id, tab.label]));
 
@@ -50,7 +50,16 @@ const getFriendlyProjectCreateErrorMessage = (error) => {
 
 const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHabits, onOpenItilQuiz, onOpenMeals, onOpenTrack, onOpenShopping, onOpenWeight, accentTheme, onAccentThemeChange }) => {
   const { user, signOut } = useAuth();
-  const { canCreateProject, limits, householdToolsEnabled, isReadOnly, refreshProjectCount } = usePlan();
+  const {
+    canCreateProject,
+    financeHouseholdAccess,
+    financeToolsEnabled,
+    householdToolsEnabled,
+    isReadOnly,
+    limits,
+    refreshFinanceAccess,
+    refreshProjectCount,
+  } = usePlan();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Loading projects...');
@@ -74,7 +83,7 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHab
   );
   const showInternalLaunchCards = householdToolsEnabled;
   const canUseItilQuiz = useMemo(() => canAccessItilQuiz(user?.email), [user?.email]);
-  const canUseFinancePlanner = useMemo(() => canAccessFinancePlanner(user?.email), [user?.email]);
+  const canUseFinancePlanner = financeToolsEnabled;
   const projectHomeLaunchFeatures = useMemo(() => (
     getProjectHomeLaunchFeatures({
       includeHouseholdTools: showInternalLaunchCards,
@@ -483,6 +492,12 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHab
                 )}
 
                 <AdminHealthPanel />
+
+                <FinanceHouseholdInvitationCard
+                  access={financeHouseholdAccess}
+                  onAccessChanged={refreshFinanceAccess}
+                  onOpenFinance={onOpenFinance}
+                />
 
                 {projectHomeLaunchFeatures.map((feature) => renderUtilityLaunchCard(
                   feature,

@@ -3,18 +3,43 @@ import assert from 'node:assert/strict';
 
 import {
   canAccessFinancePlanner,
-  normalizeFinanceAccessEmail,
+  hasPendingFinanceInvitation,
+  normalizeFinanceHouseholdAccess,
 } from './financeAccess.js';
 
-test('Financial Planner access is limited to the household accounts', () => {
-  assert.equal(canAccessFinancePlanner('galben.dorin@yahoo.com'), true);
-  assert.equal(canAccessFinancePlanner(' Galben.Dorin@Yahoo.com '), true);
-  assert.equal(canAccessFinancePlanner('irina.urmanschi@gmail.com'), true);
-  assert.equal(canAccessFinancePlanner(' Irina.Urmanschi@Gmail.com '), true);
-  assert.equal(canAccessFinancePlanner('dorin.galben@yahoo.com'), false);
-  assert.equal(canAccessFinancePlanner(''), false);
+test('finance access is derived from server-owned household access', () => {
+  const access = normalizeFinanceHouseholdAccess({
+    owner_user_id: 'owner-1',
+    role: 'editor',
+    is_owner: false,
+    has_access: true,
+  });
+
+  assert.deepEqual(access, {
+    ownerUserId: 'owner-1',
+    role: 'editor',
+    isOwner: false,
+    hasAccess: true,
+    pendingInvitationId: '',
+    pendingInvitationExpiresAt: '',
+  });
+  assert.equal(canAccessFinancePlanner(access), true);
 });
 
-test('Financial Planner access normalizes email addresses', () => {
-  assert.equal(normalizeFinanceAccessEmail(' Galben.Dorin@Yahoo.com '), 'galben.dorin@yahoo.com');
+test('pending finance invitations do not grant data access before acceptance', () => {
+  const access = normalizeFinanceHouseholdAccess({
+    has_access: false,
+    pending_invitation_id: 'invite-1',
+    pending_invitation_expires_at: '2026-09-16T12:00:00Z',
+  });
+
+  assert.equal(canAccessFinancePlanner(access), false);
+  assert.equal(hasPendingFinanceInvitation(access), true);
+});
+
+test('missing finance access stays private and unavailable', () => {
+  const access = normalizeFinanceHouseholdAccess(null);
+
+  assert.equal(canAccessFinancePlanner(access), false);
+  assert.equal(hasPendingFinanceInvitation(access), false);
 });

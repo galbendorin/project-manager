@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   CUSTOMER_PORTAL_RATE_LIMIT,
   buildCustomerPortalRateLimitKey,
-} from '../../api/billingRateLimit.js';
+} from '../../api/_billingRateLimit.js';
 
 test('customer portal rate limit uses a strict user and IP scoped key', () => {
   assert.equal(

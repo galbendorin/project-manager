@@ -1,7 +1,7 @@
 import Stripe from 'stripe';
 import { applyApiCors, getAdminSupabase, requireAuthenticatedUser } from './_auth.js';
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
-import { CUSTOMER_PORTAL_RATE_LIMIT, buildCustomerPortalRateLimitKey } from './billingRateLimit.js';
+import { CUSTOMER_PORTAL_RATE_LIMIT, buildCustomerPortalRateLimitKey } from './_billingRateLimit.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://pmworkspace.com';
