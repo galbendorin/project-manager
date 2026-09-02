@@ -30,7 +30,6 @@ const StatusReportActivitySection = ({
   dateFromLabel,
   dateToLabel,
   detailsExpanded,
-  hideRegisterSignals,
   onToggleDetails,
   periodActivity,
   totalActivity,
@@ -52,18 +51,10 @@ const StatusReportActivitySection = ({
         {totalActivity > 0 ? (
           <div className="space-y-1.5">
             <ActivityRow label="Tasks" icon="📋" color="text-indigo-600" newItems={periodActivity.newTasks} updatedItems={periodActivity.updatedTasks} />
-            {!hideRegisterSignals && (
-              <ActivityRow label="Risks" icon="⚠️" color="text-amber-600" newItems={periodActivity.newRisks} updatedItems={periodActivity.updatedRisks} />
-            )}
-            {!hideRegisterSignals && (
-              <ActivityRow label="Issues" icon="🔴" color="text-rose-600" newItems={periodActivity.newIssues} updatedItems={periodActivity.updatedIssues} />
-            )}
-            {!hideRegisterSignals && (
-              <ActivityRow label="Actions" icon="✅" color="text-emerald-600" newItems={periodActivity.newActions} updatedItems={periodActivity.completedActions} />
-            )}
-            {!hideRegisterSignals && (
-              <ActivityRow label="Changes" icon="🔄" color="text-blue-600" newItems={periodActivity.newChanges} updatedItems={[]} />
-            )}
+            <ActivityRow label="Risks" icon="⚠️" color="text-amber-600" newItems={periodActivity.newRisks} updatedItems={periodActivity.updatedRisks} />
+            <ActivityRow label="Issues" icon="🔴" color="text-rose-600" newItems={periodActivity.newIssues} updatedItems={periodActivity.updatedIssues} />
+            <ActivityRow label="Actions" icon="✅" color="text-emerald-600" newItems={periodActivity.newActions} updatedItems={periodActivity.completedActions} />
+            <ActivityRow label="Changes" icon="🔄" color="text-blue-600" newItems={periodActivity.newChanges} updatedItems={[]} />
             <ActivityRow label="Tracker Items" icon="📌" color="text-purple-600" newItems={[]} updatedItems={periodActivity.trackerUpdates} />
           </div>
         ) : (
@@ -117,7 +108,7 @@ const StatusReportActivitySection = ({
                   ))}
                 </div>
               )}
-              {!hideRegisterSignals && periodActivity.newRisks.length > 0 && (
+              {periodActivity.newRisks.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Risks This Period</div>
                   {periodActivity.newRisks.map((r, i) => (
@@ -127,7 +118,7 @@ const StatusReportActivitySection = ({
                   ))}
                 </div>
               )}
-              {!hideRegisterSignals && periodActivity.updatedRisks.length > 0 && (
+              {periodActivity.updatedRisks.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Updated Risks This Period</div>
                   {periodActivity.updatedRisks.map((r, i) => (
@@ -137,7 +128,7 @@ const StatusReportActivitySection = ({
                   ))}
                 </div>
               )}
-              {!hideRegisterSignals && periodActivity.newIssues.length > 0 && (
+              {periodActivity.newIssues.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Issues This Period</div>
                   {periodActivity.newIssues.map((item, idx) => (
@@ -147,7 +138,7 @@ const StatusReportActivitySection = ({
                   ))}
                 </div>
               )}
-              {!hideRegisterSignals && periodActivity.updatedIssues.length > 0 && (
+              {periodActivity.updatedIssues.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Updated Issues This Period</div>
                   {periodActivity.updatedIssues.map((item, idx) => (
@@ -157,7 +148,7 @@ const StatusReportActivitySection = ({
                   ))}
                 </div>
               )}
-              {!hideRegisterSignals && periodActivity.newActions.length > 0 && (
+              {periodActivity.newActions.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Actions This Period</div>
                   {periodActivity.newActions.map((a, i) => (
@@ -167,7 +158,7 @@ const StatusReportActivitySection = ({
                   ))}
                 </div>
               )}
-              {!hideRegisterSignals && periodActivity.completedActions.length > 0 && (
+              {periodActivity.completedActions.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Actions Completed This Period</div>
                   {periodActivity.completedActions.map((a, i) => (
@@ -177,7 +168,7 @@ const StatusReportActivitySection = ({
                   ))}
                 </div>
               )}
-              {!hideRegisterSignals && periodActivity.newChanges.length > 0 && (
+              {periodActivity.newChanges.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">New Changes This Period</div>
                   {periodActivity.newChanges.map((c, i) => (
