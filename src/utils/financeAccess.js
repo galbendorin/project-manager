@@ -1,5 +1,6 @@
 const FINANCE_ALLOWED_EMAILS = new Set([
   'galben.dorin@yahoo.com',
+  'irina.urmanschi@gmail.com',
 ]);
 
 export const normalizeFinanceAccessEmail = (email = '') => (
