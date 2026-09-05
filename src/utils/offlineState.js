@@ -12,21 +12,25 @@ const NAVIGATION_CACHE_KEYS = new Set([
 ]);
 const OFFLINE_DB_NAME = 'pmworkspace-offline';
 const OFFLINE_STORE_NAME = 'keyval';
+const OFFLINE_STORAGE_TIMEOUT_MS = 1500;
 
 const safeWindow = () => (typeof window !== 'undefined' ? window : null);
 let openDbPromise = null;
 
-const canUseIndexedDb = () => {
-  const win = safeWindow();
-  return Boolean(win?.indexedDB);
+const getBrowserStorage = (name) => {
+  try {
+    return safeWindow()?.[name] || null;
+  } catch {
+    return null;
+  }
 };
 
 const writeLocalStorageOnly = (key, value) => {
-  const win = safeWindow();
-  if (!win?.localStorage) return false;
+  const storage = getBrowserStorage('localStorage');
+  if (!storage) return false;
 
   try {
-    win.localStorage.setItem(key, JSON.stringify(value));
+    storage.setItem(key, JSON.stringify(value));
     return true;
   } catch {
     return false;
@@ -34,11 +38,11 @@ const writeLocalStorageOnly = (key, value) => {
 };
 
 const removeLocalStorageOnly = (key) => {
-  const win = safeWindow();
-  if (!win?.localStorage) return false;
+  const storage = getBrowserStorage('localStorage');
+  if (!storage) return false;
 
   try {
-    win.localStorage.removeItem(key);
+    storage.removeItem(key);
     return true;
   } catch {
     return false;
@@ -46,79 +50,105 @@ const removeLocalStorageOnly = (key) => {
 };
 
 const openOfflineDb = async () => {
-  if (!canUseIndexedDb()) return null;
+  const indexedDb = getBrowserStorage('indexedDB');
+  if (!indexedDb) return null;
   if (openDbPromise) return openDbPromise;
 
-  openDbPromise = new Promise((resolve, reject) => {
-    const request = safeWindow().indexedDB.open(OFFLINE_DB_NAME, 1);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(OFFLINE_STORE_NAME)) {
-        db.createObjectStore(OFFLINE_STORE_NAME);
+  const pendingOpen = new Promise((resolve) => {
+    let settled = false;
+    const finish = (db) => {
+      if (settled) {
+        // A timed-out open can still succeed later. Do not leak its connection.
+        db?.close();
+        return;
       }
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(db);
     };
+    const timeoutId = setTimeout(() => finish(null), OFFLINE_STORAGE_TIMEOUT_MS);
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('Unable to open offline database.'));
-    request.onblocked = () => reject(new Error('Offline database is blocked.'));
-  }).catch((error) => {
-    openDbPromise = null;
-    console.warn('IndexedDB unavailable, falling back to localStorage only.', error);
-    return null;
+    try {
+      const request = indexedDb.open(OFFLINE_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(OFFLINE_STORE_NAME)) {
+          db.createObjectStore(OFFLINE_STORE_NAME);
+        }
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        const forgetConnection = () => {
+          if (openDbPromise === pendingOpen) openDbPromise = null;
+        };
+        db.onversionchange = () => {
+          forgetConnection();
+          db.close();
+        };
+        db.onclose = forgetConnection;
+        finish(db);
+      };
+      request.onerror = () => finish(null);
+      request.onblocked = () => finish(null);
+    } catch {
+      finish(null);
+    }
   });
-
-  return openDbPromise;
+  openDbPromise = pendingOpen;
+  const db = await pendingOpen;
+  if (!db && openDbPromise === pendingOpen) openDbPromise = null;
+  return db;
 };
 
-const readIndexedDbJson = async (key) => {
+const runOfflineTransaction = async (mode, operation, fallback, getResult = (request) => request.result) => {
   const db = await openOfflineDb();
-  if (!db) return undefined;
+  if (!db) return fallback;
 
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(OFFLINE_STORE_NAME, 'readonly');
-    const store = transaction.objectStore(OFFLINE_STORE_NAME);
-    const request = store.get(key);
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('Unable to read offline cache.'));
-  }).catch(() => undefined);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(value);
+    };
+    const timeoutId = setTimeout(() => finish(fallback), OFFLINE_STORAGE_TIMEOUT_MS);
+    try {
+      const transaction = db.transaction(OFFLINE_STORE_NAME, mode);
+      const request = operation(transaction.objectStore(OFFLINE_STORE_NAME));
+      transaction.oncomplete = () => finish(getResult(request));
+      transaction.onabort = () => finish(fallback);
+      transaction.onerror = () => finish(fallback);
+      request.onerror = () => finish(fallback);
+    } catch {
+      // Safari can close an idle database while the app is suspended. Reopen it
+      // on the next attempt instead of retaining a permanently unusable handle.
+      openDbPromise = null;
+      finish(fallback);
+    }
+    // A slow write may still commit after the deadline. Leave it intact: queued
+    // offline changes must not be discarded to unblock startup or sign-out.
+  });
 };
 
-const writeIndexedDbJson = async (key, value) => {
-  const db = await openOfflineDb();
-  if (!db) return false;
+const readIndexedDbJson = (key) => (
+  runOfflineTransaction('readonly', (store) => store.get(key), undefined)
+);
 
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(OFFLINE_STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(OFFLINE_STORE_NAME);
-    const request = store.put(value, key);
+const writeIndexedDbJson = (key, value) => (
+  runOfflineTransaction('readwrite', (store) => store.put(value, key), false, () => true)
+);
 
-    request.onsuccess = () => resolve(true);
-    request.onerror = () => reject(request.error || new Error('Unable to write offline cache.'));
-  }).catch(() => false);
-};
-
-const removeIndexedDbJson = async (key) => {
-  const db = await openOfflineDb();
-  if (!db) return false;
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(OFFLINE_STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(OFFLINE_STORE_NAME);
-    const request = store.delete(key);
-
-    request.onsuccess = () => resolve(true);
-    request.onerror = () => reject(request.error || new Error('Unable to remove offline cache.'));
-  }).catch(() => false);
-};
+const removeIndexedDbJson = (key) => (
+  runOfflineTransaction('readwrite', (store) => store.delete(key), false, () => true)
+);
 
 export const readLocalJson = (key, fallback) => {
-  const win = safeWindow();
-  if (!win?.localStorage) return fallback;
+  const storage = getBrowserStorage('localStorage');
+  if (!storage) return fallback;
 
   try {
-    const raw = win.localStorage.getItem(key);
+    const raw = storage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
@@ -235,7 +265,7 @@ export const shouldClearUserOfflineKey = (key, userId) => {
 };
 
 const listLocalStorageKeys = () => {
-  const storage = safeWindow()?.localStorage;
+  const storage = getBrowserStorage('localStorage');
   if (!storage) return [];
 
   try {
@@ -245,17 +275,9 @@ const listLocalStorageKeys = () => {
   }
 };
 
-const listIndexedDbKeys = async () => {
-  const db = await openOfflineDb();
-  if (!db) return [];
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(OFFLINE_STORE_NAME, 'readonly');
-    const request = transaction.objectStore(OFFLINE_STORE_NAME).getAllKeys();
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error || new Error('Unable to inspect offline cache.'));
-  }).catch(() => []);
-};
+const listIndexedDbKeys = () => (
+  runOfflineTransaction('readonly', (store) => store.getAllKeys(), [], (request) => request.result || [])
+);
 
 export const clearOfflineDataForUser = async (userId) => {
   const normalizedUserId = String(userId || '').trim();

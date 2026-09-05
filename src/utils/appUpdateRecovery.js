@@ -7,6 +7,7 @@ const CHUNK_LOAD_PATTERNS = [
   'chunkloaderror',
   'error loading dynamically imported module',
   'failed to load module script',
+  'unable to preload css',
 ];
 
 export const isLikelyChunkLoadFailure = (input) => {
@@ -52,9 +53,19 @@ export const clearChunkReloadGuard = (storage) => {
   }
 };
 
-export const shouldAttemptChunkRecoveryReload = (errorLike, storage, isOnline = true) => {
+export const hasChunkRecoveryParam = (locationLike) => {
+  try {
+    return new URLSearchParams(locationLike?.search || '').has(CHUNK_RECOVERY_QUERY_PARAM);
+  } catch {
+    return false;
+  }
+};
+
+export const shouldAttemptChunkRecoveryReload = (errorLike, storage, isOnline = true, locationLike) => {
   if (!isOnline) return false;
   if (!isLikelyChunkLoadFailure(errorLike)) return false;
+  // The URL guard survives a navigation even when Safari denies sessionStorage.
+  if (hasChunkRecoveryParam(locationLike)) return false;
   if (consumeChunkReloadGuard(storage)) return false;
   return true;
 };

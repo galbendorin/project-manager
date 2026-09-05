@@ -15,7 +15,8 @@ import {
 } from './utils/navigationState';
 import { getFeatureByRoute } from './utils/featureRegistry';
 import { readAppShortcutIntent } from './utils/appShortcutIntent';
-import { activatePendingServiceWorker } from './utils/registerServiceWorker';
+import { activatePendingServiceWorker, hasPendingServiceWorker } from './utils/registerServiceWorker';
+import { AppStartupReady } from './components/AppErrorBoundary';
 import { canAccessItilQuiz } from './utils/itilQuizAccess';
 import { hasPendingFinanceInvitation } from './utils/financeAccess';
 
@@ -59,6 +60,7 @@ const PageFallback = ({ label = 'Loading...' }) => (
 const renderLazyPage = (node, label) => (
   <Suspense fallback={<PageFallback label={label} />}>
     {node}
+    <AppStartupReady />
   </Suspense>
 );
 
@@ -138,8 +140,9 @@ function App() {
   const [launchShortcut, setLaunchShortcut] = useState(() => (
     typeof window !== 'undefined' ? readAppShortcutIntent(window.location.search) : null
   ));
-  const [updateReady, setUpdateReady] = useState(false);
+  const [updateReady, setUpdateReady] = useState(hasPendingServiceWorker);
   const [applyingUpdate, setApplyingUpdate] = useState(false);
+  const [updateFailed, setUpdateFailed] = useState(false);
   const currentFeature = getFeatureByRoute(currentPath);
   const canUseItilQuiz = canAccessItilQuiz(user?.email);
   const canUseFinancePlanner = financeToolsEnabled;
@@ -162,20 +165,13 @@ function App() {
       setUpdateReady(true);
     };
 
-    const handleControllerChanged = () => {
-      if (!applyingUpdate) return;
-      window.location.reload();
-    };
-
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('pmworkspace:update-available', handleUpdateAvailable);
-    window.addEventListener('pmworkspace:controller-changed', handleControllerChanged);
     return () => {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('pmworkspace:update-available', handleUpdateAvailable);
-      window.removeEventListener('pmworkspace:controller-changed', handleControllerChanged);
     };
-  }, [applyingUpdate]);
+  }, []);
 
   const navigateToPath = useCallback((path, { replace = false } = {}) => {
     const nextPath = normalizeAppPath(path);
@@ -193,17 +189,16 @@ function App() {
     navigateToPath('/');
   }, [navigateToPath]);
 
-  const handleApplyUpdate = useCallback(() => {
+  const handleApplyUpdate = useCallback(async () => {
     setApplyingUpdate(true);
-    const activated = activatePendingServiceWorker();
-    if (!activated) {
+    setUpdateFailed(false);
+    const activated = await activatePendingServiceWorker();
+    if (activated) {
       window.location.reload();
       return;
     }
-
-    window.setTimeout(() => {
-      window.location.reload();
-    }, 2500);
+    setApplyingUpdate(false);
+    setUpdateFailed(true);
   }, []);
 
   useEffect(() => {
@@ -421,12 +416,13 @@ function App() {
             <div className="min-w-0">
               <div className="text-sm font-semibold text-slate-950">Update ready</div>
               <div className="text-xs text-slate-600">
-                A new version of PM Workspace is available.
+                {updateFailed ? 'The update is taking longer than expected. Please try again.' : 'A new version of PM Workspace is available.'}
               </div>
             </div>
             <button
               type="button"
               onClick={handleApplyUpdate}
+              disabled={applyingUpdate}
               className="whitespace-nowrap rounded-xl bg-[var(--pm-accent)] px-3 py-2 text-xs font-semibold text-white transition hover:brightness-95"
             >
               {applyingUpdate ? 'Updating…' : 'Update now'}

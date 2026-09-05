@@ -13,6 +13,15 @@ test('isLikelyChunkLoadFailure detects common dynamic import failures', () => {
   assert.equal(isLikelyChunkLoadFailure('TypeError: Failed to fetch dynamically imported module'), true);
   assert.equal(isLikelyChunkLoadFailure('Importing a module script failed.'), true);
   assert.equal(isLikelyChunkLoadFailure('ChunkLoadError: Loading chunk 42 failed'), true);
+  assert.equal(isLikelyChunkLoadFailure('Unable to preload CSS for /assets/view-123.css'), true);
+});
+
+test('recovery URL prevents automatic reload loops when Safari blocks storage', () => {
+  const blockedStorage = { getItem() { throw new Error('Access denied'); } };
+  const error = 'Importing a module script failed.';
+  assert.equal(shouldAttemptChunkRecoveryReload(error, blockedStorage, true, { search: '?pmw-recover=123' }), false);
+  assert.equal(shouldAttemptChunkRecoveryReload(error, null, true, { search: '?pmw-recover=' }), false);
+  assert.equal(shouldAttemptChunkRecoveryReload(error, blockedStorage, true, { search: '?code=auth-callback' }), true);
 });
 
 test('isLikelyChunkLoadFailure ignores unrelated errors', () => {

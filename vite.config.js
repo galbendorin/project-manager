@@ -37,7 +37,8 @@ const pwaPrecacheManifest = () => {
       const workerPath = path.join(outputDirectory, 'sw.js')
       const outputFiles = await collectOutputFiles(outputDirectory)
       const precacheUrls = buildPrecacheUrls(outputFiles)
-      const cacheHash = createHash('sha256')
+      const source = await readFile(workerPath, 'utf8')
+      const cacheHash = createHash('sha256').update(source)
 
       for (const url of precacheUrls) {
         const relativePath = url.replace(/^\//, '')
@@ -45,7 +46,6 @@ const pwaPrecacheManifest = () => {
         cacheHash.update(await readFile(path.join(outputDirectory, relativePath)))
       }
 
-      const source = await readFile(workerPath, 'utf8')
       const nextSource = injectServiceWorkerManifest(source, {
         version: cacheHash.digest('hex').slice(0, 16),
         urls: precacheUrls,

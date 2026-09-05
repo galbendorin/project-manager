@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { clearAiSettings } from '../utils/aiSettings';
+import { startAuthBootstrap } from '../utils/authBootstrap';
 import {
   clearCachedOfflineUser,
   clearOfflineDataForUser,
@@ -84,7 +85,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(initialOfflineUser);
   const [loading, setLoading] = useState(() => !initialOfflineUser);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => isPasswordRecoveryUrl());
-  const activeUserIdRef = useRef(null);
+  const activeUserIdRef = useRef(initialOfflineUser?.id || null);
 
   const normalizeFullName = (value) => {
     if (typeof value === 'string') return value.trim();
@@ -138,15 +139,14 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
     };
 
-    const bootstrapTimeout = window.setTimeout(() => {
-      console.warn('Supabase session bootstrap timed out; continuing with fallback auth state.');
-      applyOfflineUser();
-      finishBootstrap();
-    }, 4000);
-
-    // Get initial session
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
+    const stopBootstrap = startAuthBootstrap({
+      auth: supabase.auth,
+      onTimeout: () => {
+        console.warn('Supabase session bootstrap timed out; continuing with fallback auth state.');
+        applyOfflineUser();
+        finishBootstrap();
+      },
+      onSession: (session) => {
         if (!isActive) return;
         const acceptedSession = acceptSessionUser(session?.user);
         if (!acceptedSession) {
@@ -158,8 +158,8 @@ export const AuthProvider = ({ children }) => {
         setIsPasswordRecovery(isPasswordRecoveryUrl());
         void acceptPendingProjectInvites(session);
         finishBootstrap();
-      })
-      .catch((error) => {
+      },
+      onError: (error) => {
         console.warn('Unable to load initial Supabase session:', error);
         if (!isActive) return;
         if (!applyOfflineUser()) {
@@ -167,37 +167,36 @@ export const AuthProvider = ({ children }) => {
         }
         setIsPasswordRecovery(isPasswordRecoveryUrl());
         finishBootstrap();
-      });
+      },
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!isActive) return;
-      const previousUserId = activeUserIdRef.current;
-      activeUserIdRef.current = session?.user?.id || null;
-      if (session?.user) {
-        acceptSessionUser(session.user);
-      } else if (event !== 'SIGNED_OUT' && browserStartsOffline()) {
-        applyOfflineUser();
-      } else {
-        setUser(null);
-      }
-      if (event === 'PASSWORD_RECOVERY') {
-        setIsPasswordRecovery(true);
-      } else if (event === 'SIGNED_OUT') {
-        setIsPasswordRecovery(false);
-        clearRecoveryUrl();
-        void clearSignedOutDeviceState(previousUserId);
-      } else if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user?.email) {
-        void acceptPendingProjectInvites(session);
-      }
-      // Only set loading false if we're still loading
-      finishBootstrap();
+      onAuthStateChange: (event, session) => {
+        if (!isActive) return;
+        const previousUserId = activeUserIdRef.current;
+        activeUserIdRef.current = session?.user?.id || null;
+        if (session?.user) {
+          acceptSessionUser(session.user);
+        } else if (event !== 'SIGNED_OUT' && browserStartsOffline()) {
+          applyOfflineUser();
+        } else {
+          setUser(null);
+        }
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsPasswordRecovery(true);
+        } else if (event === 'SIGNED_OUT') {
+          cachedOfflineUserRef.current = null;
+          setIsPasswordRecovery(false);
+          clearRecoveryUrl();
+          void clearSignedOutDeviceState(previousUserId);
+        } else if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user?.email) {
+          void acceptPendingProjectInvites(session);
+        }
+        finishBootstrap();
+      },
     });
 
     return () => {
       isActive = false;
-      window.clearTimeout(bootstrapTimeout);
-      subscription.unsubscribe();
+      stopBootstrap();
     };
   }, []);
 
@@ -251,6 +250,7 @@ export const AuthProvider = ({ children }) => {
     const { error } = await supabase.auth.signOut();
     if (!error) {
       activeUserIdRef.current = null;
+      cachedOfflineUserRef.current = null;
       await clearSignedOutDeviceState(signedOutUserId);
       setUser(null);
       setIsPasswordRecovery(false);
@@ -271,6 +271,7 @@ export const AuthProvider = ({ children }) => {
     const { error } = await supabase.auth.signOut();
     if (!error) {
       activeUserIdRef.current = null;
+      cachedOfflineUserRef.current = null;
       await clearSignedOutDeviceState(signedOutUserId);
       setUser(null);
     }
