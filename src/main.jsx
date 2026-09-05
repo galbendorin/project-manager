@@ -6,16 +6,7 @@ import App from './App';
 import './styles/index.css';
 import { isSupabaseConfigured, supabaseConfigStatus } from './lib/supabase';
 import { registerServiceWorker } from './utils/registerServiceWorker';
-import {
-  buildChunkRecoveryUrl,
-  CHUNK_RECOVERY_QUERY_PARAM,
-  clearChunkReloadGuard,
-  getSafeSessionStorage,
-  isLikelyChunkLoadFailure,
-  markChunkReloadGuard,
-  shouldAttemptChunkRecoveryReload,
-  stripChunkRecoveryParam,
-} from './utils/appUpdateRecovery';
+import AppErrorBoundary, { AppStartupRendered, AppStartupReady } from './components/AppErrorBoundary';
 
 const DEFAULT_VIEWPORT =
   'width=device-width, initial-scale=1.0, viewport-fit=cover';
@@ -53,35 +44,9 @@ const applyStandaloneClass = () => {
 applyStandaloneClass();
 applyStandaloneViewport();
 
-const attemptChunkRecoveryReload = (errorLike) => {
-  if (typeof window === 'undefined') return;
-  const sessionStorage = getSafeSessionStorage();
-  const isOnline = window.navigator?.onLine !== false;
-  if (!shouldAttemptChunkRecoveryReload(errorLike, sessionStorage, isOnline)) return;
-
-  markChunkReloadGuard(sessionStorage);
-  window.location.replace(buildChunkRecoveryUrl(window.location));
-};
-
-window.addEventListener('vite:preloadError', (event) => {
-  event.preventDefault?.();
-  attemptChunkRecoveryReload(event?.payload || event?.error || event);
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-  const reason = event?.reason || event;
-  if (!isLikelyChunkLoadFailure(reason)) return;
-  attemptChunkRecoveryReload(reason);
-});
-
 window.addEventListener('DOMContentLoaded', () => {
   applyStandaloneClass();
   applyStandaloneViewport();
-  clearChunkReloadGuard(getSafeSessionStorage());
-  if (typeof window !== 'undefined' && window.location.search.includes(CHUNK_RECOVERY_QUERY_PARAM)) {
-    const cleanUrl = stripChunkRecoveryParam(window.location);
-    window.history.replaceState({}, '', cleanUrl);
-  }
 }, { once: true });
 window.addEventListener('pageshow', applyStandaloneViewport);
 registerServiceWorker();
@@ -110,14 +75,20 @@ const MissingSupabaseConfig = () => (
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {isSupabaseConfigured ? (
-      <AuthProvider>
-        <PlanProvider>
-          <App />
-        </PlanProvider>
-      </AuthProvider>
-    ) : (
-      <MissingSupabaseConfig />
-    )}
+    <AppErrorBoundary>
+      <AppStartupRendered />
+      {isSupabaseConfigured ? (
+        <AuthProvider>
+          <PlanProvider>
+            <App />
+          </PlanProvider>
+        </AuthProvider>
+      ) : (
+        <>
+          <MissingSupabaseConfig />
+          <AppStartupReady />
+        </>
+      )}
+    </AppErrorBoundary>
   </React.StrictMode>
 );
