@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { startAuthBootstrap } from './authBootstrap.js';
 
 const createAuthHarness = () => {
-  const initialSession = Promise.withResolvers();
+  const initialSession = {};
+  initialSession.promise = new Promise((resolve, reject) => {
+    initialSession.resolve = resolve;
+    initialSession.reject = reject;
+  });
   let listener;
   let unsubscribed = false;
   const calls = [];
