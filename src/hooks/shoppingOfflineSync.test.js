@@ -35,6 +35,10 @@ function setup({ replies, queue = [operation] }) {
   let responseIndex = 0;
   const supabase = createClient('https://shopping-test.invalid', 'synthetic-test-key', {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    // HTTP-only tests must also run on CI's Node 20, which has no WebSocket.
+    realtime: { transport: class UnusedWebSocket {
+      constructor() { throw new Error('These tests must not open a realtime connection'); }
+    } },
     global: {
       fetch: async (url, options) => {
         const request = { url: new URL(url), method: options.method, headers: new Headers(options.headers) };
