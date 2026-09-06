@@ -31,6 +31,11 @@ import {
   splitIngredientList,
 } from '../utils/mealPlanner';
 import { STARTER_MEAL_IMPORT_TEXT_BY_SLOT } from '../utils/mealPlannerSeedData';
+import {
+  buildMealNamePayload,
+  persistMealName,
+  validateMealNameInput,
+} from '../utils/mealNamePlanning';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const MEAL_PLAN_WEEK_SELECT_BASE = 'id, week_start_date, adult_count, kid_count';
@@ -1399,6 +1404,34 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     }
   }, [upsertMealEntry]);
 
+  const createMealFromName = useCallback(async (input) => {
+    setSaving(true);
+    setError('');
+    try {
+      const validatedInput = validateMealNameInput(input);
+      if (!currentUserId) throw new Error('Sign in before adding a meal.');
+      const shoppingProject = await resolvePlannerProject();
+      const payload = buildMealNamePayload({
+        ...validatedInput,
+        userId: currentUserId,
+        shoppingProjectId: supportsSharedMealPlanner ? shoppingProject.id : '',
+      });
+      const { row, sharedFieldMissing } = await persistMealName({ supabaseClient: supabase, payload });
+      if (sharedFieldMissing) setSupportsSharedMealPlanner(false);
+      const nextRecipe = mapRecipeRow(row, splitIngredientList(row.ingredients_raw || ''));
+      setRecipes((previous) => sortRecipes([
+        ...previous.filter((recipe) => recipe.id !== nextRecipe.id),
+        nextRecipe,
+      ]));
+      return nextRecipe;
+    } catch (nextError) {
+      setError(nextError?.message || 'Unable to save this meal.');
+      throw nextError;
+    } finally {
+      setSaving(false);
+    }
+  }, [currentUserId, resolvePlannerProject, supportsSharedMealPlanner]);
+
   const createRecipe = useCallback(async (recipeInput) => {
     setSaving(true);
     setError('');
@@ -1909,6 +1942,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     confirmGroceryDraft,
     canUseStarterLibrary,
     createCarryoverForNextDay,
+    createMealFromName,
     createRecipe,
     deleteRecipe,
     entries,

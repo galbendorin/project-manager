@@ -17,6 +17,7 @@ import {
   summarizeRecipeIngredients,
 } from '../utils/mealPlanner';
 import { estimateRecipeNutritionFromStarterCatalog } from '../utils/mealCalorieCatalog';
+import { isNameOnlyMeal, MEAL_NAME_MAX_LENGTH } from '../utils/mealNamePlanning';
 import { generateAiContent } from '../utils/aiClient';
 import { isAiConfigured, loadAiSettings } from '../utils/aiSettings';
 
@@ -596,8 +597,37 @@ const fetchRecipeCalorieEstimate = async ({
   return payload;
 };
 
-function ModalShell({ children, onClose, wide = false }) {
+function ModalShell({ children, onClose, wide = false, label }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    if (!label) return undefined;
+    const previousFocus = document.activeElement;
+    const dialog = dialogRef.current;
+    dialog?.focus();
+    const trapFocus = (event) => {
+      if (event.key !== 'Tab') return;
+      const controls = [...dialog.querySelectorAll('button, input, select, textarea, [tabindex="0"]')]
+        .filter((element) => !element.disabled && element.getClientRects().length > 0);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!first) {
+        event.preventDefault();
+      } else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    dialog?.addEventListener('keydown', trapFocus);
+    return () => {
+      dialog?.removeEventListener('keydown', trapFocus);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [label]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -614,6 +644,11 @@ function ModalShell({ children, onClose, wide = false }) {
     <div className={`fixed inset-0 z-[90] flex justify-center bg-slate-950/40 ${isMobile ? 'items-end px-0 py-0' : 'items-center px-4 py-6'}`}>
       <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-hidden="true" tabIndex={-1} />
       <div
+        ref={dialogRef}
+        role={label ? 'dialog' : undefined}
+        aria-modal={label ? true : undefined}
+        aria-label={label}
+        tabIndex={label ? -1 : undefined}
         className={`relative w-full overflow-y-auto border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)] ${
           isMobile
             ? 'max-h-[94dvh] rounded-t-[28px] rounded-b-none'
@@ -1796,8 +1831,13 @@ function QuickPlanRecipeModal({ recipe, weekDays, initialDateKey, initialSlot, i
   );
 }
 
-function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, onClose, onPick }) {
+function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, onClose, onPick, onCreateFromName }) {
   const [search, setSearch] = useState('');
+  const [entryMode, setEntryMode] = useState('recipe');
+  const [mealName, setMealName] = useState('');
+  const [pickError, setPickError] = useState('');
+  const pendingRef = useRef(false);
+  const namedMealsRef = useRef(new Map());
   const [selectedMealFilters, setSelectedMealFilters] = useState([slot]);
   const [visibleCount, setVisibleCount] = useState(PICKER_INITIAL_COUNT);
   const [pendingRecipeId, setPendingRecipeId] = useState('');
@@ -1840,28 +1880,63 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
   ), [filteredRecipes, visibleCount]);
 
   const handlePick = async (recipe) => {
-    if (!recipe?.id || pendingRecipeId) return;
+    if (!recipe?.id || pendingRef.current) return;
+    pendingRef.current = true;
+    setPickError('');
     setPendingRecipeId(recipe.id);
     try {
       await onPick(recipe);
+    } catch (error) {
+      setPickError(error?.message || 'Unable to add this meal. Please try again.');
     } finally {
+      pendingRef.current = false;
       setPendingRecipeId('');
     }
   };
 
+  const handleNameSubmit = async (event) => {
+    event.preventDefault();
+    const name = mealName.trim();
+    if (!name || pendingRef.current) return;
+    pendingRef.current = true;
+    setPendingRecipeId('meal-name');
+    setPickError('');
+    const requestKey = `${slot}:${name}`;
+    let request = namedMealsRef.current.get(requestKey);
+    try {
+      if (!request) {
+        request = { id: crypto.randomUUID(), recipe: null };
+        namedMealsRef.current.set(requestKey, request);
+      }
+      if (!request.recipe) {
+        request.recipe = await onCreateFromName({ name, mealSlot: slot, id: request.id });
+      }
+      await onPick(request.recipe);
+    } catch (error) {
+      setPickError(request?.recipe
+        ? 'Your meal name is saved, but it could not be added to this day. Try again, or choose it from your recipes later.'
+        : (error?.message || 'Unable to save this meal name. Please try again.'));
+    } finally {
+      pendingRef.current = false;
+      setPendingRecipeId('');
+    }
+  };
+  const handleClose = () => {
+    if (!pendingRef.current) onClose();
+  };
+
   return (
-    <ModalShell onClose={onClose} wide>
+    <ModalShell onClose={handleClose} wide label="Add a meal">
       <div className="p-5 sm:p-6">
         <div className="sticky top-0 z-20 -mx-5 -mt-5 flex items-start justify-between gap-3 border-b border-slate-100 bg-white/95 px-5 pb-3 pt-5 backdrop-blur sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6">
           <div>
             <p className="pm-kicker">{getMealSlotLabel(slot)}</p>
-            <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">Choose a recipe</h3>
+            <h3 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">Add a meal</h3>
             <p className="mt-2 text-sm text-slate-500">
               This meal will be planned for <span className="font-semibold text-slate-700">{getMealAudienceLabel(audience).toLowerCase()}</span>.
-              Any recipe can be used here, and recipes already matching {getMealSlotLabel(slot).toLowerCase()} are shown first.
             </p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close modal" className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
+          <button type="button" onClick={handleClose} disabled={Boolean(pendingRecipeId)} aria-label="Close modal" className="min-h-11 min-w-11 rounded-full border border-slate-200 p-3 text-slate-500 transition hover:bg-slate-50 disabled:opacity-50">
             <Close className="h-4 w-4" />
           </button>
         </div>
@@ -1872,6 +1947,8 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
               key={option}
               type="button"
               onClick={() => onAudienceChange?.(option)}
+              disabled={Boolean(pendingRecipeId)}
+              aria-pressed={audience === option}
               className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
                 audience === option
                   ? 'bg-[var(--pm-accent)] text-white'
@@ -1883,6 +1960,47 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
           ))}
         </div>
 
+        <div className="mt-5 grid grid-cols-2 gap-2" aria-label="Meal entry options">
+          {[['recipe', 'Choose recipe'], ['name', 'Type meal name']].map(([mode, title]) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={entryMode === mode}
+              disabled={Boolean(pendingRecipeId)}
+              onClick={() => { setEntryMode(mode); setPickError(''); }}
+              className={`min-h-11 rounded-2xl border px-3 py-3 text-sm font-semibold disabled:opacity-60 ${entryMode === mode ? 'border-[var(--pm-accent)] bg-[var(--pm-accent-soft)] text-[var(--pm-accent-strong)]' : 'border-slate-200 bg-white text-slate-600'}`}
+            >
+              {title}
+            </button>
+          ))}
+        </div>
+
+        {pickError ? <p role="alert" className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{pickError}</p> : null}
+
+        {entryMode === 'name' ? (
+          <form onSubmit={handleNameSubmit} className="mt-5">
+            <label htmlFor="planned-meal-name" className="block text-sm font-semibold text-slate-800">Meal name</label>
+            <input
+              id="planned-meal-name"
+              value={mealName}
+              onChange={(event) => setMealName(event.target.value)}
+              maxLength={MEAL_NAME_MAX_LENGTH}
+              required
+              autoFocus
+              disabled={Boolean(pendingRecipeId)}
+              aria-describedby="planned-meal-name-hint"
+              placeholder="e.g. Roast chicken or dinner out"
+              className="pm-input mt-2 w-full rounded-2xl px-4 py-3 text-base"
+            />
+            <p id="planned-meal-name-hint" className="mt-3 text-sm leading-6 text-slate-500">
+              No recipe needed. The name is saved in your recipe library, so you can add details later. Ingredients will appear in your grocery draft once you add them.
+            </p>
+            <button type="submit" disabled={!mealName.trim() || Boolean(pendingRecipeId)} className="pm-toolbar-primary mt-5 min-h-11 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">
+              {pendingRecipeId ? 'Adding meal…' : 'Add to plan'}
+            </button>
+          </form>
+        ) : (
+          <>
         <div className="mt-5">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Recipe types to show</p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1961,8 +2079,8 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
                       </span>
                     ) : null}
                   </div>
-                  <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
-                  <p className="mt-2 text-sm text-slate-500">{summarizeRecipeIngredients(recipe, 4)}</p>
+                  <h4 className="mt-3 break-words text-base font-semibold text-slate-950">{recipe.name}</h4>
+                  <p className="mt-2 text-sm text-slate-500">{isNameOnlyMeal(recipe) ? 'Recipe can be added later' : summarizeRecipeIngredients(recipe, 4)}</p>
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                     {recipe.estimatedKcal ? (
                       <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">{recipe.estimatedKcal} kcal</span>
@@ -1998,6 +2116,8 @@ function RecipePickerModal({ recipes, slot, audience = 'all', onAudienceChange, 
           <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
             No recipes match the selected meal-type filters and search.
           </div>
+        )}
+          </>
         )}
       </div>
     </ModalShell>
@@ -2084,7 +2204,8 @@ function RecipeDetailModal({
                 </span>
               ) : null}
             </div>
-            <h3 className="mt-3 text-3xl font-bold tracking-[-0.05em] text-slate-950">{recipe.name}</h3>
+            <h3 className="mt-3 break-words text-3xl font-bold tracking-[-0.05em] text-slate-950">{recipe.name}</h3>
+            {isNameOnlyMeal(recipe) ? <p className="mt-2 text-sm text-slate-500">Meal name saved. Add the recipe whenever you are ready.</p> : null}
             {recipe.estimatedKcal ? (
               <p className="mt-2 text-sm text-slate-500">{recipe.estimatedKcal} kcal</p>
             ) : null}
@@ -2098,6 +2219,9 @@ function RecipeDetailModal({
           <div>
             <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-5">
               <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Ingredients</h4>
+              {(recipe.ingredients || []).length === 0 ? (
+                <p className="mt-3 text-sm leading-6 text-slate-600">No ingredients added yet. Add them to include this meal in your grocery draft.</p>
+              ) : null}
               <div className="mt-4 space-y-2.5">
                 {(recipe.ingredients || []).map((ingredient) => (
                   <div key={`${recipe.id}-${ingredient.rawText}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2 shadow-sm">
@@ -2150,7 +2274,7 @@ function RecipeDetailModal({
               <div className="mt-4 space-y-2">
                 <button type="button" onClick={() => onEditRecipe(recipe)} className="pm-subtle-button flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
                   <Edit className="h-4 w-4" />
-                  Edit recipe
+                  {isNameOnlyMeal(recipe) ? 'Add recipe details' : 'Edit recipe'}
                 </button>
                 <button type="button" onClick={() => onDuplicateRecipe(recipe)} className="pm-subtle-button flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
                   <Copy className="h-4 w-4" />
@@ -2442,8 +2566,20 @@ function GrocerySyncPreviewPanel({
   );
 }
 
+function MissingMealIngredientsNotice({ meals = [] }) {
+  if (meals.length === 0) return null;
+  return (
+    <div className="mt-4 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+      <p className="font-semibold">{meals.length} meal{meals.length === 1 ? ' has' : 's have'} no ingredients yet</p>
+      <p className="mt-1 break-words">{meals.slice(0, 3).map((meal) => meal.name).join(', ')}{meals.length > 3 ? ` and ${meals.length - 3} more` : ''}.</p>
+      <p className="mt-1">These meals do not add any groceries. Add their ingredients when ready, then review and update Shopping List.</p>
+    </div>
+  );
+}
+
 function GroceryReviewModal({
   draft,
+  mealsWithoutIngredients,
   canClearApprovedBatch,
   hiddenDraft,
   onApprove,
@@ -2489,6 +2625,8 @@ function GroceryReviewModal({
             <Close className="h-4 w-4" />
           </button>
         </div>
+
+        <MissingMealIngredientsNotice meals={mealsWithoutIngredients} />
 
         {hiddenDraft.length > 0 ? (
           <div className="mt-4 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -2612,7 +2750,7 @@ function GroceryReviewModal({
           <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
             {canClearApprovedBatch
               ? 'There are no grocery lines left in this draft. Update Shopping List to remove the generated Meal plan batch for this week.'
-              : 'There are no grocery lines left in this draft. Restore one ingredient if you want to send groceries to Shopping List.'}
+              : 'There are no grocery lines in this draft. Add ingredients to your meals, or restore hidden ingredients, to create a shopping draft.'}
           </div>
         ) : null}
 
@@ -2691,8 +2829,13 @@ function LazyPlannerDayCard({
         <div className="w-full rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-left sm:w-auto sm:min-w-[180px] sm:shrink-0 sm:rounded-[20px] sm:text-right">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-700">{planViewHeadline}</p>
           <p className="mt-1 text-sm font-semibold text-amber-800">
-            {daySummary?.calories > 0 ? `${daySummary.calories} kcal` : 'No meals yet'}
+            {daySummary?.calories > 0
+              ? `${daySummary.calories} kcal${daySummary.missingNutritionCount ? ' · partial estimate' : ''}`
+              : (daySummary?.mealCount > 0 ? 'Nutrition not added' : 'No meals yet')}
           </p>
+          {daySummary?.missingNutritionCount > 0 ? (
+            <p className="mt-1 text-xs text-amber-800">Nutrition missing for {daySummary.missingNutritionCount} meal{daySummary.missingNutritionCount === 1 ? '' : 's'}.</p>
+          ) : null}
           {daySummary?.calories > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold sm:justify-end">
               <span className="rounded-full bg-white px-2 py-1 text-sky-700">
@@ -2741,6 +2884,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     confirmGroceryDraft,
     createCarryoverForNextDay,
     createRecipe,
+    createMealFromName,
     defaultServingMultiplier,
     deleteRecipe,
     duplicateRecipe,
@@ -2956,6 +3100,13 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       return accumulator;
     }, {})
   ), [plannerEntriesBySlotKey, resolvedRecipeByEntryId]);
+  const mealsWithoutIngredients = useMemo(() => (
+    [...new Map(plannerEntries
+      .filter((entry) => entry.entryKind !== 'carryover')
+      .map((entry) => resolvedRecipeByEntryId[entry.id])
+      .filter((recipe) => recipe && !(recipe.ingredients || []).length)
+      .map((recipe) => [recipe.id, recipe])).values()]
+  ), [plannerEntries, resolvedRecipeByEntryId]);
 
   const activeMobileDay = useMemo(() => (
     weekDays.find((day) => day.key === activeMobileDayKey) || weekDays[0] || null
@@ -3024,6 +3175,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
     const summary = visibleWeekDays.reduce((accumulator, day) => {
       accumulator[day.key] = {
         calories: 0,
+        mealCount: 0,
+        missingNutritionCount: 0,
         nutrition: createEmptyNutritionTotals(),
       };
       return accumulator;
@@ -3035,6 +3188,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       if (!daySummary) return;
 
       const recipe = resolvedRecipeByEntryId[entry.id];
+      daySummary.mealCount += 1;
+      if (!recipe?.estimatedKcal) daySummary.missingNutritionCount += 1;
       if (!recipe) return;
 
       const entryUsage = plannerEntryUsageById?.[entry.id] || null;
@@ -3162,41 +3317,40 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
 
   const handleRecipePicked = async (recipe) => {
     if (!pickerContext) return;
-    try {
-      const selectionContext = pickerContext;
-      const savedEntry = await upsertMealEntry({
-        entryId: selectionContext.entryId,
-        date: selectionContext.dateKey,
-        mealSlot: selectionContext.mealSlot,
-        mealId: recipe.id,
-        audience: selectionContext.audience,
-        servingMultiplier: selectionContext.entryId
-          ? (entries.find((entry) => entry.id === selectionContext.entryId)?.servingMultiplier ?? null)
-          : null,
-      });
+    const selectionContext = pickerContext;
+    const savedEntry = await upsertMealEntry({
+      entryId: selectionContext.entryId,
+      date: selectionContext.dateKey,
+      mealSlot: selectionContext.mealSlot,
+      mealId: recipe.id,
+      audience: selectionContext.audience,
+      servingMultiplier: selectionContext.entryId
+        ? (entries.find((entry) => entry.id === selectionContext.entryId)?.servingMultiplier ?? null)
+        : null,
+    });
+    if (!savedEntry?.id) {
+      throw new Error('This week is not ready yet. Please try adding the meal again.');
+    }
 
-      const nextCopyPrompt = buildNextDayCopyPrompt({
-        weekDays,
-        dateKey: selectionContext.dateKey,
-        mealSlot: selectionContext.mealSlot,
-        recipeId: recipe.id,
-        sourceEntryId: savedEntry?.id || '',
-        audience: selectionContext.audience,
-      });
+    const nextCopyPrompt = buildNextDayCopyPrompt({
+      weekDays,
+      dateKey: selectionContext.dateKey,
+      mealSlot: selectionContext.mealSlot,
+      recipeId: recipe.id,
+      sourceEntryId: savedEntry?.id || '',
+      audience: selectionContext.audience,
+    });
 
-      setPickerContext(null);
-      setStatusMessage(`${recipe.name} added to ${getMealSlotLabel(selectionContext.mealSlot).toLowerCase()}.`);
+    setPickerContext(null);
+    setStatusMessage(`${recipe.name} added to ${getMealSlotLabel(selectionContext.mealSlot).toLowerCase()}.`);
 
-      if (nextCopyPrompt) {
-        setCopyPrompt(nextCopyPrompt);
-      } else if (selectionContext.mealSlot !== 'snack') {
-        setCopyPrompt(null);
-      }
-      if (isMobile) {
-        setMobileActivePanel('planner');
-      }
-    } catch {
-      // Error banner already set in the data hook.
+    if (nextCopyPrompt) {
+      setCopyPrompt(nextCopyPrompt);
+    } else if (selectionContext.mealSlot !== 'snack') {
+      setCopyPrompt(null);
+    }
+    if (isMobile) {
+      setMobileActivePanel('planner');
     }
   };
 
@@ -3841,7 +3995,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                         </span>
                                       ) : null}
                                     </div>
-                                    <h4 className="mt-2 text-[15px] font-semibold leading-5 text-slate-950 sm:text-base">{recipe.name}</h4>
+                                    <h4 className="mt-2 break-words text-[15px] font-semibold leading-5 text-slate-950 sm:text-base">{recipe.name}</h4>
+                                    {isNameOnlyMeal(recipe) ? <p className="mt-1 text-xs font-medium text-slate-600">Recipe not added yet</p> : null}
                                     <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold">
                                       {(isCarryoverEntry ? carryoverKcal : recipe.estimatedKcal) ? (
                                         <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">
@@ -4001,7 +4156,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 className="flex w-full items-center justify-center gap-2 rounded-[18px] border border-dashed border-slate-300 px-3 py-3 text-[13px] font-semibold text-slate-500 transition hover:border-[var(--pm-accent)] hover:text-[var(--pm-accent-strong)] sm:rounded-[22px] sm:py-4 sm:text-sm"
                               >
                                 <Plus className="h-4 w-4" />
-                                {slotEntries.length > 0 ? (plannerIsShared ? 'Add to your plan' : 'Add another meal') : 'Select recipe'}
+                                {slotEntries.length > 0 ? (plannerIsShared ? 'Add to your plan' : 'Add another meal') : 'Add meal'}
                               </button>
                             </div>
                           </div>
@@ -4080,8 +4235,8 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                                 <span className="hidden rounded-full bg-white px-2.5 py-1 text-slate-600 shadow-sm sm:inline-flex">{recipe.sourcePdf}</span>
                               ) : null}
                             </div>
-                            <h4 className="mt-3 text-base font-semibold text-slate-950">{recipe.name}</h4>
-                            <p className="mt-2 text-sm text-slate-500">{recipeDisplayMetaById[recipe.id]?.libraryIngredients || ''}</p>
+                            <h4 className="mt-3 break-words text-base font-semibold text-slate-950">{recipe.name}</h4>
+                            <p className="mt-2 text-sm text-slate-500">{isNameOnlyMeal(recipe) ? 'Recipe not added yet' : (recipeDisplayMetaById[recipe.id]?.libraryIngredients || '')}</p>
                           </button>
                           <div className="mt-3 flex flex-wrap gap-2">
                             {recipe.estimatedKcal ? (
@@ -4098,7 +4253,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                             <button type="button" onClick={() => openQuickPlan(recipe)} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Add to week</button>
-                            <button type="button" onClick={() => setFormState(buildRecipeFormState(recipe))} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Edit</button>
+                            <button type="button" onClick={() => setFormState(buildRecipeFormState(recipe))} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">{isNameOnlyMeal(recipe) ? 'Add recipe details' : 'Edit'}</button>
                             <button type="button" onClick={() => void duplicateRecipe(recipe)} className="pm-subtle-button rounded-full px-3 py-2 text-xs font-semibold">Duplicate</button>
                             <button type="button" onClick={() => void deleteRecipe(recipe.id)} className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Delete</button>
                           </div>
@@ -4159,6 +4314,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
                         </div>
                       ) : null}
                     </div>
+                    <MissingMealIngredientsNotice meals={mealsWithoutIngredients} />
                     <button type="button" onClick={() => setShowReviewModal(true)} className="pm-toolbar-primary mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white">
                       {hasApprovedGroceryBatch ? 'Review / update groceries' : 'Review groceries'}
                     </button>
@@ -4185,6 +4341,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           ))}
           onClose={() => setPickerContext(null)}
           onPick={handleRecipePicked}
+          onCreateFromName={createMealFromName}
         />
       ) : null}
 
@@ -4322,6 +4479,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
       {showReviewModal ? (
         <GroceryReviewModal
           draft={plannerGroceryDraft}
+          mealsWithoutIngredients={mealsWithoutIngredients}
           canClearApprovedBatch={hasApprovedGroceryBatch}
           hiddenDraft={plannerHiddenGroceryDraft}
           onApprove={(draftOverride) => void handleApproveGroceries(draftOverride)}
