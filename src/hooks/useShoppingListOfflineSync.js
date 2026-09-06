@@ -138,7 +138,7 @@ export function useShoppingListOfflineSync({
         }
 
         if (op.kind === 'update') {
-          const { error } = await supabase
+          const { data, error: updateError } = await supabase
             .from('manual_todos')
             .update({
               ...(Object.prototype.hasOwnProperty.call(op.patch, 'title') ? { title: op.patch.title } : {}),
@@ -148,7 +148,13 @@ export function useShoppingListOfflineSync({
               ...(Object.prototype.hasOwnProperty.call(op.patch, 'quantityUnit') ? { quantity_unit: op.patch.quantityUnit || '' } : {}),
               updated_at: op.patch.updatedAt || new Date().toISOString(),
             })
-            .eq('id', op.targetId);
+            .eq('id', op.targetId)
+            .select('id')
+            .maybeSingle();
+
+          const error = updateError || (data?.id === op.targetId ? null : new Error(
+            'Could not confirm this edit was saved. The item may have been removed or your access changed. Your edit is still queued.'
+          ));
 
           if (error) {
             if (isLikelyNetworkError(error, { online: isOnline })) {
