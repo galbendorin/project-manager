@@ -18,6 +18,18 @@ Use this checklist before pushing changes that touch Meal Planner, Shopping List
 
 ## Grocery Draft
 
+### Meals without a recipe
+
+1. In an empty day/slot, select **Add meal → Type meal name**.
+2. Confirm blank or whitespace-only names cannot submit. Type a meal name and choose the audience.
+3. Add it to the plan. Confirm the correct day/slot and audience, the **Recipe not added yet** label, and no invented nutrition or grocery lines.
+4. Open the meal and use **Add recipe details** later. Save ingredients and confirm the same planned meal now contributes to the grocery draft.
+5. In an isolated test environment, fail calendar assignment after the name is saved. Confirm the picker retains the name, explains the partial result, and retry creates one library meal and one planned entry.
+6. Repeat with an empty recipe library, a long name, keyboard submission, and phone/desktop widths. Confirm the recipe-choice path and copy-forward still work.
+7. Save known calories and macros without ingredients. Confirm the daily totals preserve those values and grocery review still explains the missing ingredients.
+
+### Review and sync
+
 1. Open Review groceries.
 2. Confirm the modal explains that generated groceries replace one weekly Meal plan batch.
 3. Hide one ingredient, close, reopen, and confirm it stays excluded.
