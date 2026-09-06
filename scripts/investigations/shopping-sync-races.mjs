@@ -1,7 +1,8 @@
 // Q02 reproduction suite. Intentionally outside the normal CI test glob.
 // Run: node --test scripts/investigations/shopping-sync-races.mjs
 // Assertions describe required behaviour; confirmed defects fail on the Q02 baseline.
-import test from 'node:test';
+import nodeTest from 'node:test';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
@@ -190,6 +191,11 @@ async function runSyncRace(t, options, action) {
   return runtime;
 }
 
+export function registerShoppingSyncRaceTests({ includeKnownFailures = true } = {}) {
+const test = (name, options, callback) => {
+  if (includeKnownFailures || !/^Q0[45]:/.test(name)) nodeTest(name, options, callback);
+};
+
 test('control: an uncontested queued update reaches the server and drains', { timeout: 3000 }, async (t) => {
   const runtime = await runSyncRace(t, {}, null);
   assert.equal(runtime.durableTitle('item-a'), 'First edit');
@@ -209,6 +215,21 @@ test('Q03: a newer edit compacted into the same queued update remains durable', 
 test('Q03: a failed request cannot replace a newer queued edit with its older patch', { timeout: 3000 }, async (t) => {
   const runtime = await runSyncRace(t, { failure: true }, (r) => r.edit('item-a', 'Newest milk'));
   assert.equal(runtime.durableTitle('item-a'), 'Newest milk');
+});
+
+test('Q03: a newer delete superseding an in-flight update reaches the server', { timeout: 3000 }, async (t) => {
+  const runtime = await runSyncRace(t, {}, (r) => r.remove('item-a'));
+  assert.equal(runtime.durableTitle('item-a'), undefined);
+  assert.equal(runtime.snapshot().cache.queue.length, 0);
+  assert.equal(runtime.snapshot().visible.some((todo) => todo._id === 'item-a'), false);
+});
+
+test('Q03: a mixed create/update queue preserves an unrelated edit made during the create', { timeout: 3000 }, async (t) => {
+  const runtime = await runSyncRace(t, { queue: [create, update], hold: 'rpc' }, (r) => r.edit('item-b', 'New bread'));
+  assert.equal(runtime.durableTitle('server-new'), 'New milk');
+  assert.equal(runtime.durableTitle('item-a'), 'First edit');
+  assert.equal(runtime.durableTitle('item-b'), 'New bread');
+  assert.equal(runtime.snapshot().cache.queue.length, 0);
 });
 
 test('control: an uncontested queued create maps its temporary item to the saved ID', { timeout: 3000 }, async (t) => {
@@ -267,3 +288,8 @@ test('Q05: failed item refresh preserves the latest optimistic item on screen', 
   const { snapshot } = await runRefreshRace(t, { failure: true });
   assert.equal(snapshot.dataTodos.find((todo) => todo._id === 'item-a').title, 'Newest milk');
 });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  registerShoppingSyncRaceTests();
+}
