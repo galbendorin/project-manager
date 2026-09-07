@@ -53,9 +53,9 @@ The native runner always creates a fresh local cluster on a loopback-only dynami
 
 ## Remaining release gates and next task
 
-1. **Native multi-session PostgreSQL: complete locally.** All 69 cases pass, including 20 concurrency cases. Verify the added Linux/Node 20 CI workflow before relying on it. Keep the fixture isolated; it creates/truncates synthetic tables.
+1. **Native multi-session PostgreSQL: complete locally and in CI.** All 69 cases pass, including 20 concurrency cases. Linux/Node 20 [CI run 34123979736](https://github.com/galbendorin/project-manager/actions/runs/34123979736) confirms 69 passes, zero failures and zero skips at source head `8e3ffb7`. The PR-triggered SQL run and both app checks/previews also pass. Keep the fixture isolated; it creates/truncates synthetic tables.
 2. Review the final concurrency-tested SQL, including trigger cost, migration locking, deployed RLS/grants/schema drift and rollback compatibility. Keep the conservative conflict behavior; do not remove checks to make races pass.
 3. Q04-C: implement the durable Shopping-only submitted envelope and latest desired revision/tombstone, then run the existing actual-hook regressions and new RPC capability/recovery cases. Legacy receipts need an explicit recoverable path, not guessed ownership.
 4. Q04-D: staged migration, real owner/member/revoked-member checks, authenticated household flow, iPhone Safari/Home Screen verification, rollout and live checks. The user has authorized publishing after successful verification; no further blanket confirmation is required. These technical gates remain unfinished.
 
-Next useful workload: verify native CI, then implement Q04-C's durable client envelope and capability handling. Do not start unrelated design work, regenerate the agency plan, or claim Q04 is fixed for users yet. SQL remains a staged release dependency.
+Next useful workload: implement Q04-C's durable client envelope and capability handling, starting with `shopping-client-integration-handoff.md`. Draft PR: https://github.com/galbendorin/project-manager/pull/53. Do not start unrelated design work, regenerate the agency plan, or claim Q04 is fixed for users yet. SQL remains a staged release dependency.
