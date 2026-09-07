@@ -61,14 +61,19 @@ function reactHarness() {
   };
 }
 
-async function setup({ queue = [update], hold = 'update', failure = false, onRequest = noop, notify = noop } = {}) {
+async function setup({ queue = [update], hold = 'update', failure = false, onRequest = noop, notify = noop,
+  mergeAdds = false, commitThenFail = false } = {}) {
   let server = [
     { id: 'item-a', project_id: project.id, title: 'Milk', status: 'Open' },
     { id: 'item-b', project_id: project.id, title: 'Bread', status: 'Open' },
   ];
+  if (mergeAdds) Object.assign(server[0], { quantity_value: 2, quantity_unit: 'carton' });
+  const receipts = new Map();
+  let commitFailureDelivered = false;
   let cache = { projects: [project], selectedProjectId: project.id, queue: copy(queue),
     todosByProject: { [project.id]: view.applyShoppingQueueToTodos({
-      todos: server.map(rows.mapManualTodoRow), queue, projectId: project.id,
+      // The shared row was absent from this device's earlier offline snapshot.
+      todos: server.filter((row) => !mergeAdds || row.id !== 'item-a').map(rows.mapManualTodoRow), queue, projectId: project.id,
     }) }, lastSyncedAt: previousSync };
   let visible = copy(cache.todosByProject[project.id]);
   let dataSetTodos;
@@ -93,11 +98,28 @@ async function setup({ queue = [update], hold = 'update', failure = false, onReq
     }
     if (request.kind === 'rpc') {
       assert.equal(request.name, 'apply_shopping_list_add_v2');
+      const operationId = request.args.target_operation_id;
+      const receipt = receipts.get(operationId);
+      if (receipt) return { data: [copy(server.find((row) => row.id === receipt.id) || receipt)], error: null };
+      // Controlled model of v2 receipt replay and same-unit quantity merge,
+      // grounded in the checked-in SQL. This does not execute PostgreSQL.
+      const matching = mergeAdds && server.find((row) => row.title.toLowerCase() === request.args.target_title.toLowerCase());
       const saved = { id: 'server-new', project_id: project.id,
         title: request.args.target_title, quantity_value: request.args.target_quantity_value,
         quantity_unit: request.args.target_quantity_unit, status: 'Open' };
-      server.push(saved);
-      return { data: [copy(saved)], error: null };
+      if (matching) {
+        assert.equal(matching.quantity_unit, request.args.target_quantity_unit);
+        matching.quantity_value += request.args.target_quantity_value;
+      } else {
+        server.push(saved);
+      }
+      const result = matching || saved;
+      receipts.set(operationId, copy(result));
+      if (commitThenFail && !commitFailureDelivered) {
+        commitFailureDelivered = true;
+        return { data: null, error: { message: 'Failed to fetch' } };
+      }
+      return { data: [copy(result)], error: null };
     }
     if (request.kind === 'delete') {
       server = server.filter((row) => row.id !== request.id);
@@ -286,6 +308,43 @@ test('Q04: deleting a temporary item during create does not resurrect it', { tim
   const runtime = await runSyncRace(t, { queue: [create], hold: 'rpc' }, (r) => r.remove('offline-new'));
   assert.equal(runtime.durableTitle('server-new'), undefined);
   assert.equal(runtime.snapshot().visible.some((todo) => todo._id === 'server-new'), false);
+});
+
+test('control: retrying an add after a lost response reuses its operation ID without adding quantity twice', { timeout: 3000 }, async (t) => {
+  const mergedCreate = { ...create, record: { ...create.record, title: 'Milk' } };
+  const runtime = await runSyncRace(t, { queue: [mergedCreate], hold: 'rpc', mergeAdds: true, commitThenFail: true });
+  assert.equal(runtime.snapshot().cache.queue.length, 1);
+  await runtime.sync().retryShoppingSync();
+  assert.equal(runtime.snapshot().server.find((row) => row.id === 'item-a').quantity_value, 3);
+  assert.equal(runtime.snapshot().cache.queue.length, 0);
+  const calls = runtime.requests.filter((request) => request.kind === 'rpc');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].args.target_operation_id, calls[1].args.target_operation_id);
+});
+
+test('Q04: cancelling an in-flight merged add restores the prior shared quantity without deleting the shared row', { timeout: 3000 }, async (t) => {
+  const mergedCreate = { ...create, record: { ...create.record, title: 'Milk' } };
+  const runtime = await runSyncRace(t, { queue: [mergedCreate], hold: 'rpc', mergeAdds: true }, (r) => r.remove('offline-new'));
+  const sharedRow = runtime.snapshot().server.find((row) => row.id === 'item-a');
+  assert.ok(sharedRow, 'Cancelling one contribution must not delete the existing household item');
+  assert.equal(sharedRow.quantity_value, 2);
+});
+
+test('Q04: editing a merged pending add preserves the new title as separate pending or saved intent', { timeout: 3000 }, async (t) => {
+  const mergedCreate = { ...create, record: { ...create.record, title: 'Milk' } };
+  const runtime = await runSyncRace(t, { queue: [mergedCreate], hold: 'rpc', mergeAdds: true }, (r) => r.edit('offline-new', 'Oat milk'));
+  const snapshot = runtime.snapshot();
+  assert.equal(snapshot.server.find((row) => row.id === 'item-a').title, 'Milk');
+  assert.ok(snapshot.server.some((row) => row.title === 'Oat milk')
+    || snapshot.cache.queue.some((op) => op.record?.title === 'Oat milk' || op.patch?.title === 'Oat milk'),
+  'The later title must be saved or remain recoverable, without renaming the pre-existing shared row');
+});
+
+test('Q04: an edited create survives replay after the original save committed but its response was lost', { timeout: 3000 }, async (t) => {
+  const runtime = await runSyncRace(t, { queue: [create], hold: 'rpc', commitThenFail: true }, (r) => r.edit('offline-new', 'Changed new milk'));
+  assert.equal(runtime.snapshot().cache.queue[0].record.title, 'Changed new milk');
+  await runtime.sync().retryShoppingSync();
+  assert.equal(runtime.durableTitle('server-new'), 'Changed new milk');
 });
 
 async function runRefreshRace(t, { projects = false, failure = false, edit = true } = {}) {
