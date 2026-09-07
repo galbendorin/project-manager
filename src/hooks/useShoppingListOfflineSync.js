@@ -12,6 +12,17 @@ import {
 } from '../utils/shoppingListViewState';
 import { isMissingShoppingUpsertRpcError, upsertShoppingListItem } from '../utils/shoppingListRpc';
 
+const matchesSubmittedOperation = (current, submitted) => {
+  if (current.kind !== submitted.kind || current.targetId !== submitted.targetId) return false;
+  if (submitted.kind !== 'update') return true;
+  const currentPatch = current.patch || {};
+  const submittedPatch = submitted.patch || {};
+  const keys = Object.keys(submittedPatch);
+  return keys.length === Object.keys(currentPatch).length
+    && keys.every((key) => Object.prototype.hasOwnProperty.call(currentPatch, key)
+      && Object.is(currentPatch[key], submittedPatch[key]));
+};
+
 export function useShoppingListOfflineSync({
   currentUserId,
   isOnline,
@@ -45,6 +56,46 @@ export function useShoppingListOfflineSync({
     let todosByProject = { ...(cachedState.todosByProject || {}) };
     const createdTitlesByProject = new Map();
 
+    // Complete each operation against current storage in one synchronous turn.
+    // User actions can replace/compact queue entries while a request is pending.
+    const commitCurrentState = (mutate = (state) => state) => {
+      const nextState = mutate(loadShoppingOfflineState(currentUserId));
+      queue = Array.isArray(nextState.queue) ? [...nextState.queue] : [];
+      todosByProject = Object.fromEntries(
+        Object.entries(nextState.todosByProject || {}).map(([projectId, projectTodos]) => [
+          projectId,
+          applyShoppingQueueToTodos({ todos: projectTodos, queue, projectId }),
+        ])
+      );
+      persistOfflineState({ ...nextState, queue, todosByProject });
+      if (selectedProjectId) setTodos(sortTodos(todosByProject[selectedProjectId] || []));
+    };
+
+    const acknowledgeOperation = (submitted, savedTodo = null) => {
+      commitCurrentState((latest) => {
+        let remainingQueue = (latest.queue || []).filter((item) => !matchesSubmittedOperation(item, submitted));
+        let nextTodosByProject = latest.todosByProject || {};
+        if (savedTodo) {
+          // Preserve existing create/remap behaviour. Later changes to the
+          // submitted temporary item itself require Q04's cancellation contract.
+          remainingQueue = replaceQueuedTargetId(remainingQueue, submitted.targetId, savedTodo._id);
+          const projectId = submitted.record.projectId;
+          nextTodosByProject = {
+            ...nextTodosByProject,
+            [projectId]: sortTodos((nextTodosByProject[projectId] || [])
+              .filter((item) => item._id !== submitted.targetId && item._id !== savedTodo._id)
+              .concat(savedTodo)),
+          };
+        }
+        return {
+          ...latest,
+          queue: remainingQueue,
+          todosByProject: nextTodosByProject,
+          lastSyncedAt: remainingQueue.length === 0 ? new Date().toISOString() : latest.lastSyncedAt,
+        };
+      });
+    };
+
     const refreshProjectTodos = async (projectId) => {
       if (!projectId) return [];
       const { data, error } = await supabase
@@ -57,15 +108,10 @@ export function useShoppingListOfflineSync({
       if (error) throw error;
 
       const serverTodos = sortTodos((data || []).map(mapManualTodoRow));
-      const visibleTodos = applyShoppingQueueToTodos({
-        todos: serverTodos,
-        queue,
-        projectId,
-      });
-      todosByProject[projectId] = visibleTodos;
-      if (selectedProjectId === projectId) {
-        setTodos(visibleTodos);
-      }
+      commitCurrentState((latest) => ({
+        ...latest,
+        todosByProject: { ...(latest.todosByProject || {}), [projectId]: serverTodos },
+      }));
       return serverTodos;
     };
 
@@ -90,13 +136,7 @@ export function useShoppingListOfflineSync({
           const confirmedTodo = findUncertainShoppingCreateMatch(op.record, refreshedTodos);
 
           if (confirmedTodo) {
-            const projectTodos = todosByProject[op.record.projectId] || [];
-            todosByProject[op.record.projectId] = sortTodos(
-              projectTodos
-                .filter((item) => item._id !== op.targetId && item._id !== confirmedTodo._id)
-                .concat(confirmedTodo)
-            );
-            queue = replaceQueuedTargetId(queue.slice(1), op.targetId, confirmedTodo._id);
+            acknowledgeOperation(op, confirmedTodo);
             continue;
           }
 
@@ -124,16 +164,10 @@ export function useShoppingListOfflineSync({
           }
 
           const savedTodo = mapManualTodoRow(data);
-          const projectTodos = todosByProject[op.record.projectId] || [];
-          todosByProject[op.record.projectId] = sortTodos(
-            projectTodos
-              .filter((item) => item._id !== op.targetId && item._id !== savedTodo._id)
-              .concat(savedTodo)
-          );
 
           const existingTitles = createdTitlesByProject.get(op.record.projectId) || [];
           createdTitlesByProject.set(op.record.projectId, [...existingTitles, savedTodo.title]);
-          queue = replaceQueuedTargetId(queue.slice(1), op.targetId, savedTodo._id);
+          acknowledgeOperation(op, savedTodo);
           continue;
         }
 
@@ -167,7 +201,7 @@ export function useShoppingListOfflineSync({
             await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
             break;
           }
-          queue = queue.slice(1);
+          acknowledgeOperation(op);
           continue;
         }
 
@@ -188,38 +222,14 @@ export function useShoppingListOfflineSync({
             await refreshProjectTodos(resolveProjectIdForTarget(op.targetId)).catch(() => {});
             break;
           }
-          queue = queue.slice(1);
+          acknowledgeOperation(op);
           continue;
         }
 
-        queue = queue.slice(1);
+        acknowledgeOperation(op);
       }
 
-      const visibleTodosByProject = Object.fromEntries(
-        Object.entries(todosByProject).map(([projectId, projectTodos]) => [
-          projectId,
-          applyShoppingQueueToTodos({
-            todos: projectTodos,
-            queue,
-            projectId,
-          }),
-        ])
-      );
-
-      persistOfflineState({
-        ...cachedState,
-        todosByProject: visibleTodosByProject,
-        queue,
-        lastSyncedAt: queue.length === 0 ? new Date().toISOString() : cachedState.lastSyncedAt,
-      });
-
-      if (selectedProjectId) {
-        setTodos(sortTodos(visibleTodosByProject[selectedProjectId] || []));
-      }
-
-      for (const [projectId, itemTitles] of createdTitlesByProject.entries()) {
-        await notifyShoppingListSubscribers({ projectId, itemTitles });
-      }
+      commitCurrentState();
 
       if (queue.length === 0) {
         setFailedTodoId('');
@@ -228,6 +238,12 @@ export function useShoppingListOfflineSync({
     } finally {
       syncingQueueRef.current = false;
       setSyncingQueue(false);
+    }
+
+    // Delivery may be slow. The queue is already persisted, so allow the next
+    // online/focus/retry trigger to sync new edits while notifications finish.
+    for (const [projectId, itemTitles] of createdTitlesByProject.entries()) {
+      await notifyShoppingListSubscribers({ projectId, itemTitles });
     }
   }, [
     currentUserId,
