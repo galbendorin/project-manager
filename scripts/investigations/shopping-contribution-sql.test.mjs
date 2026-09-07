@@ -1,15 +1,15 @@
 // Executable PostgreSQL contract tests, isolated from user data.
 // PGLITE_MODULE=/absolute/path/to/pglite/dist/index.js node --test <this file>
-// Single connection: this does NOT certify multi-session lock ordering.
+// PMW_NATIVE_POSTGRES_MODULE=/absolute/path/to/embedded-postgres/dist/index.js
+// Native mode also runs deterministic multi-session cases in the same fixture.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { before, beforeEach, after, test } from 'node:test';
-import { pathToFileURL } from 'node:url';
+import { createShoppingTestDatabase } from './shopping-test-database.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
 
-const { PGlite } = await import(process.env.PGLITE_MODULE
-  ? pathToFileURL(process.env.PGLITE_MODULE).href : '@electric-sql/pglite');
-const db = new PGlite();
+const db = await createShoppingTestDatabase();
 const owner = randomUUID();
 const member = randomUUID();
 const outsider = randomUUID();
@@ -327,6 +327,7 @@ test('anon RPCs and authenticated direct receipt/helper/sequence access denied',
     'delete from public.shopping_contributions',
     "select nextval('public.shopping_write_revision_seq')",
     "select public.record_shopping_contribution(null,'{}')",
+    'select public.lock_shopping_project_access(null,null)',
   ]) await assert.rejects(asUser(member, query), /permission denied/);
 });
 
@@ -389,7 +390,7 @@ test('late destination appearance rolls back the whole completion move', async (
     assert.equal(result.outcome, 'needs_review');
     assert.equal(result.confirmed_revision, '0');
     assert.deepEqual(await items(), beforeItems);
-    assert.equal((await db.query('select confirmed_revision from public.shopping_contributions')).rows[0].confirmed_revision, 0);
+    assert.equal(String((await db.query('select confirmed_revision from public.shopping_contributions')).rows[0].confirmed_revision), '0');
   } finally {
     await db.exec('drop trigger inject_test_destination on public.manual_todos; drop function public.inject_test_destination();');
   }
@@ -415,3 +416,345 @@ for (const qty of [-1, 'NaN', 'Infinity', '-Infinity']) {
     assert.equal((await items())[0].quantity_value, 1);
   });
 }
+
+const nativeTest = (name, callback) => test(`native concurrency: ${name}`, { skip: !db.native, timeout: 20000 }, callback);
+const observed = promise => promise.then(value => ({ value }), error => ({ error }));
+async function expectSuccess(promise) {
+  const result = await promise;
+  if (result.error) throw result.error;
+  return result.value;
+}
+async function waitForBlocked(count = 1) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const { rows } = await db.query("select count(*)::integer as count from pg_stat_activity where datname = current_database() and state = 'active' and wait_event_type = 'Lock'");
+    if (rows[0].count >= count) return;
+    await delay(10);
+  }
+  throw new Error(`Expected ${count} database sessions to reach their lock barriers`);
+}
+async function withGate(lockQuery, params, callback) {
+  const gate = await db.connection();
+  try {
+    await gate.query(lockQuery, params);
+    await callback(() => gate.query('select pg_advisory_unlock_all()'));
+  } finally {
+    await gate.query('select pg_advisory_unlock_all()');
+    await gate.close();
+  }
+}
+async function withHelperBarrier(callback) {
+  const { rows } = await db.query("select pg_get_functiondef('public.record_shopping_contribution(uuid,jsonb)'::regprocedure) as definition");
+  const original = rows[0].definition;
+  const marker = '  if before_row.id is null then';
+  assert.equal(original.split(marker).length, 2);
+  // Instrument only the scheduling point, leaving target capture and mutation
+  // unchanged. Each competing write commits through a different connection.
+  await db.exec(original.replace(marker, `  perform pg_advisory_xact_lock(900000000001::bigint);\n${marker}`));
+  try {
+    await withGate('select pg_advisory_lock(900000000001::bigint)', [], callback);
+  } finally { await db.exec(original); }
+}
+
+nativeTest('two retries of the same add apply one contribution', async () => {
+  const op = randomUUID();
+  await withGate('select pg_advisory_lock(hashtext($1))', [`${project}:milk`], async release => {
+    const first = observed(add({ op }));
+    await waitForBlocked();
+    const second = observed(add({ op }));
+    await waitForBlocked(2);
+    await release();
+    const results = await Promise.all([expectSuccess(first), expectSuccess(second)]);
+    assert.deepEqual(results.map(result => result.outcome).sort(), ['already_applied', 'applied']);
+  });
+  assert.equal((await items()).length, 1);
+  assert.equal((await items())[0].quantity_value, 1);
+});
+
+nativeTest('two copies of a cancellation undo once', async () => {
+  await seed();
+  const added = await add();
+  const id = randomUUID();
+  await withGate('select pg_advisory_lock(hashtext($1))', [`${member}:${added.op}`], async release => {
+    const first = observed(intent(added.op, { id }));
+    const second = observed(intent(added.op, { id }));
+    await waitForBlocked(2);
+    await release();
+    const results = await Promise.all([expectSuccess(first), expectSuccess(second)]);
+    assert.deepEqual(results.map(result => result.replayed).sort(), [false, true]);
+  });
+  assert.equal((await items())[0].quantity_value, 2);
+});
+
+nativeTest('overlapping old cancellation and newer move converge on the newer intent', async () => {
+  const added = await add();
+  await withGate('select pg_advisory_lock(hashtext($1))', [`${member}:${added.op}`], async release => {
+    const newer = observed(intent(added.op, { revision: 3, cancel: false }));
+    const older = observed(intent(added.op, { revision: 2 }));
+    await waitForBlocked(2);
+    await release();
+    await Promise.all([expectSuccess(newer), expectSuccess(older)]);
+  });
+  assert.equal((await items()).length, 1);
+  assert.equal((await items())[0].title, 'Bread');
+  assert.equal((await add({ op: added.op })).confirmed_revision, '3');
+});
+
+nativeTest('same operation cannot be applied through both v2 and v3', async () => {
+  const op = randomUUID();
+  await withGate('select pg_advisory_lock(hashtext($1))', [`${member}:${op}`], async release => {
+    const v2 = observed(add({ op, version: 2 }));
+    const v3 = observed(add({ op }));
+    await waitForBlocked(2);
+    await release();
+    const results = await Promise.all([v2, v3]);
+    assert.equal(results.filter(result => result.value).length, 1);
+    const failure = results.find(result => result.error).error;
+    assert.match(failure.message, /SHOPPING_OPERATION_REQUIRES_V3|SHOPPING_LEGACY_OPERATION_NEEDS_REVIEW/);
+  });
+  assert.equal((await items())[0].quantity_value, 1);
+});
+
+nativeTest('different v2 and v3 adds merge without losing either contribution', async () => {
+  await withGate('select pg_advisory_lock(hashtext($1))', [`${project}:milk`], async release => {
+    const v2 = observed(add({ version: 2, user: owner }));
+    const v3 = observed(add());
+    await waitForBlocked(2);
+    await release();
+    await Promise.all([expectSuccess(v2), expectSuccess(v3)]);
+  });
+  assert.equal((await items()).length, 1);
+  assert.equal((await items())[0].quantity_value, 2);
+});
+
+nativeTest('opposite-title moves finish without deadlock or lost quantities', async () => {
+  const milk = await add();
+  const bread = await add({ title: 'Bread', unit: 'carton', user: owner });
+  await withGate('select pg_advisory_lock(least(hashtext($1), hashtext($2)))', [`${project}:milk`, `${project}:bread`], async release => {
+    const first = observed(intent(milk.op, { cancel: false, unit: 'carton' }));
+    const second = observed(intent(bread.op, { cancel: false, title: 'Milk', unit: 'carton', user: owner }));
+    await waitForBlocked(2);
+    await release();
+    const results = await Promise.all([expectSuccess(first), expectSuccess(second)]);
+    assert.deepEqual(results.map(result => result.outcome).sort(), ['applied', 'needs_review']);
+  });
+  assert.equal((await items()).reduce((sum, row) => sum + row.quantity_value, 0), 2);
+});
+
+nativeTest('direct insert after empty target capture never becomes an owned insertion', async () => {
+  let added;
+  let shared;
+  await withHelperBarrier(async release => {
+    const pending = observed(add());
+    await waitForBlocked();
+    shared = await seed({ qty: 7 });
+    await release();
+    added = await expectSuccess(pending);
+    assert.equal(added.contribution.kind, 'inserted');
+    assert.notEqual(added.contribution.row_id, shared.id);
+  });
+  await intent(added.op);
+  assert.deepEqual((await items()).map(row => [row.id, row.quantity_value]), [[shared.id, 7]]);
+});
+
+nativeTest('direct rename into the title cannot replace a captured merge target', async () => {
+  // The earlier row would win a second lookup once renamed into Milk.
+  const other = await seed({ title: 'Water', qty: 9 });
+  const target = await seed();
+  let added;
+  await withHelperBarrier(async release => {
+    const pending = observed(add());
+    await waitForBlocked();
+    await asUser(owner, "update public.manual_todos set title = 'Milk' where id = $1", [other.id]);
+    await release();
+    added = await expectSuccess(pending);
+    assert.equal(added.contribution.kind, 'merged');
+    assert.equal(added.contribution.row_id, target.id);
+    assert.equal(added.contribution.before.quantity_value, 2);
+  });
+  await intent(added.op);
+  const remaining = await items();
+  assert.equal(remaining.find(row => row.id === other.id).quantity_value, 9);
+  assert.equal(remaining.find(row => row.id === target.id).quantity_value, 2);
+});
+
+nativeTest('later direct update waits for the recorded row and prevents stale undo', async () => {
+  const target = await seed();
+  let added;
+  await withHelperBarrier(async release => {
+    const pending = observed(add());
+    await waitForBlocked();
+    const edited = observed(asUser(owner, 'update public.manual_todos set quantity_value = 12 where id = $1', [target.id]));
+    await waitForBlocked(2);
+    await release();
+    added = await expectSuccess(pending);
+    await expectSuccess(edited);
+  });
+  assert.equal((await intent(added.op)).outcome, 'needs_review');
+  assert.equal((await items())[0].quantity_value, 12);
+});
+
+nativeTest('revocation waits for an already-authorized add, then denies replay', async () => {
+  const op = randomUUID();
+  await withGate('select pg_advisory_lock(hashtext($1))', [`${project}:milk`], async release => {
+    const pending = observed(add({ op }));
+    await waitForBlocked();
+    const revocation = observed(asUser(owner, 'delete from public.project_members where project_id = $1', [project]));
+    await waitForBlocked(2);
+    assert.equal((await db.query('select count(*)::integer as count from public.project_members')).rows[0].count, 1);
+    await release();
+    await expectSuccess(pending);
+    await expectSuccess(revocation);
+  });
+  await assert.rejects(add({ op }), /PROJECT_ACCESS_REQUIRED/);
+  assert.equal((await items()).length, 1);
+});
+
+nativeTest('revocation winning before authority admission prevents the waiting add', async () => {
+  const gate = await db.connection();
+  try {
+    await gate.query('begin');
+    await gate.query('select id from public.projects where id = $1 for update', [project]);
+    const pending = observed(add());
+    await waitForBlocked();
+    await asUser(owner, 'delete from public.project_members where project_id = $1', [project]);
+    await gate.query('rollback');
+    const result = await pending;
+    assert.match(result.error?.message || '', /PROJECT_ACCESS_REQUIRED/);
+  } finally {
+    await gate.query('rollback');
+    await gate.close();
+  }
+  assert.equal((await items()).length, 0);
+});
+
+for (const operation of ['v2 replay', 'reconciliation']) {
+  nativeTest(`revocation is ordered after an admitted ${operation}`, async () => {
+    const added = await add({ version: operation === 'v2 replay' ? 2 : 3 });
+    const request = () => operation === 'v2 replay' ? add({ op: added.op, version: 2 }) : intent(added.op);
+    await withGate('select pg_advisory_lock(hashtext($1))', [`${member}:${added.op}`], async release => {
+      const pending = observed(request());
+      await waitForBlocked();
+      const revocation = observed(asUser(owner, 'delete from public.project_members where project_id = $1', [project]));
+      await waitForBlocked(2);
+      await release();
+      await expectSuccess(pending);
+      await expectSuccess(revocation);
+    });
+    await assert.rejects(request(), /PROJECT_ACCESS_REQUIRED/);
+  });
+}
+
+nativeTest('project deletion waits before cascading into an admitted operation', async () => {
+  await withGate('select pg_advisory_lock(hashtext($1))', [`${project}:milk`], async release => {
+    const pending = observed(add());
+    await waitForBlocked();
+    const deletion = observed(asUser(owner, 'delete from public.projects where id = $1', [project]));
+    await waitForBlocked(2);
+    await release();
+    await expectSuccess(pending);
+    await expectSuccess(deletion);
+  });
+  assert.equal((await items()).length, 0);
+  assert.equal((await db.query('select * from public.shopping_contributions')).rows.length, 0);
+});
+
+nativeTest('project deletion winning first denies the waiting operation without deadlock', async () => {
+  const gate = await db.connection();
+  try {
+    await gate.query('begin');
+    await gate.query('delete from public.projects where id = $1', [project]);
+    const pending = observed(add());
+    await waitForBlocked();
+    await gate.query('commit');
+    const result = await pending;
+    assert.match(result.error?.message || '', /PROJECT_ACCESS_REQUIRED/);
+  } finally {
+    await gate.query('rollback');
+    await gate.close();
+  }
+  assert.equal((await items()).length, 0);
+});
+
+nativeTest('ownership transfer waits for an admitted owner operation and then denies old owner', async () => {
+  const op = randomUUID();
+  await withGate('select pg_advisory_lock(hashtext($1))', [`${project}:milk`], async release => {
+    const pending = observed(add({ op, user: owner }));
+    await waitForBlocked();
+    const transfer = observed(db.transaction(tx => tx.query('update public.projects set user_id = $1 where id = $2', [outsider, project])));
+    await waitForBlocked(2);
+    await release();
+    await expectSuccess(pending);
+    await expectSuccess(transfer);
+  });
+  await assert.rejects(add({ op, user: owner }), /PROJECT_ACCESS_REQUIRED/);
+});
+
+nativeTest('caller deletion waits before receipt and item cascades', async () => {
+  await withGate('select pg_advisory_lock(hashtext($1))', [`${project}:milk`], async release => {
+    const pending = observed(add());
+    await waitForBlocked();
+    const deletion = observed(db.transaction(tx => tx.query('delete from auth.users where id = $1', [member])));
+    await waitForBlocked(2);
+    await release();
+    await expectSuccess(pending);
+    await expectSuccess(deletion);
+  });
+  assert.equal((await items()).length, 0);
+  assert.equal((await db.query('select * from public.shopping_contributions')).rows.length, 0);
+});
+
+nativeTest('caller deletion winning first denies a waiting operation', async () => {
+  const gate = await db.connection();
+  try {
+    await gate.query('begin');
+    await gate.query('delete from auth.users where id = $1', [member]);
+    const pending = observed(add());
+    await waitForBlocked();
+    await gate.query('commit');
+    const result = await pending;
+    assert.match(result.error?.message || '', /AUTHENTICATION_REQUIRED|PROJECT_ACCESS_REQUIRED/);
+  } finally {
+    await gate.query('rollback');
+    await gate.close();
+  }
+  assert.equal((await items()).length, 0);
+});
+
+nativeTest('ownership transfer winning first denies the waiting former owner', async () => {
+  const gate = await db.connection();
+  try {
+    await gate.query('begin');
+    await gate.query('update public.projects set user_id = $1 where id = $2', [outsider, project]);
+    const pending = observed(add({ user: owner }));
+    await waitForBlocked();
+    await gate.query('commit');
+    const result = await pending;
+    assert.match(result.error?.message || '', /PROJECT_ACCESS_REQUIRED/);
+  } finally {
+    await gate.query('rollback');
+    await gate.close();
+  }
+  assert.equal((await items()).length, 0);
+});
+
+nativeTest('backend loss between undo and replacement rolls back and permits the same intent retry', async () => {
+  await seed();
+  const added = await add();
+  const beforeItems = await items();
+  const id = randomUUID();
+  await withHelperBarrier(async release => {
+    const pending = observed(intent(added.op, { id, cancel: false }));
+    await waitForBlocked();
+    const { rows } = await db.query("select pid from pg_stat_activity where datname = current_database() and state = 'active' and wait_event_type = 'Lock'");
+    assert.equal(rows.length, 1);
+    await db.query('select pg_terminate_backend($1)', [rows[0].pid]);
+    assert.ok((await pending).error);
+    await release();
+  });
+  assert.deepEqual(await items(), beforeItems);
+  assert.equal((await db.query('select * from public.shopping_contribution_intents')).rows.length, 0);
+  assert.equal((await intent(added.op, { id, cancel: false })).outcome, 'applied');
+  assert.equal((await items()).find(row => row.title === 'Milk').quantity_value, 2);
+  assert.equal((await items()).find(row => row.title === 'Bread').quantity_value, 1);
+});

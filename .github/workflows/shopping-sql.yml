@@ -1,0 +1,38 @@
+name: Shopping SQL contract
+
+on:
+  push:
+    paths:
+      - 'scripts/sql/**'
+      - 'scripts/investigations/shopping-contribution-sql.test.mjs'
+      - 'scripts/investigations/shopping-test-database.mjs'
+      - '.github/workflows/shopping-sql.yml'
+  pull_request:
+    paths:
+      - 'scripts/sql/**'
+      - 'scripts/investigations/shopping-contribution-sql.test.mjs'
+      - 'scripts/investigations/shopping-test-database.mjs'
+      - '.github/workflows/shopping-sql.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shopping-sql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install isolated PostgreSQL runtime
+        run: npm install --prefix "$RUNNER_TEMP/pmw-sql-runtime" --no-audit --no-fund embedded-postgres@18.3.0-beta.17
+      - name: Execute SQL and multi-session regressions
+        env:
+          PMW_NATIVE_POSTGRES_MODULE: ${{ runner.temp }}/pmw-sql-runtime/node_modules/embedded-postgres/dist/index.js
+        run: node --test scripts/investigations/shopping-contribution-sql.test.mjs

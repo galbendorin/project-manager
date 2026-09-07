@@ -44,6 +44,32 @@ alter table public.shopping_contribution_intents enable row level security;
 revoke all on table public.shopping_contributions, public.shopping_contribution_intents
   from public, anon, authenticated;
 
+-- Acquire caller/authority before operation/receipt/title/item locks. A project
+-- deletion or membership revocation either wins first (deny this request), or
+-- waits until this already-authorized transaction finishes. FOR SHARE also
+-- prevents owner/member changes that do not alter the row's primary key.
+create or replace function public.lock_shopping_project_access(target_project_id uuid, subject_user uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare project_owner uuid;
+begin
+  if subject_user is null or subject_user is distinct from auth.uid()
+  then raise exception 'AUTHENTICATION_REQUIRED'; end if;
+  -- Receipts and inserted ToDos reference the caller. Lock this FK parent
+  -- before its cascade children so concurrent account deletion cannot invert
+  -- the order while this operation inserts a receipt.
+  perform 1 from auth.users where id = subject_user for key share;
+  if not found then raise exception 'AUTHENTICATION_REQUIRED'; end if;
+  select user_id into project_owner from public.projects
+    where id = target_project_id for share;
+  if not found then raise exception 'PROJECT_ACCESS_REQUIRED'; end if;
+  if project_owner = subject_user then return; end if;
+  perform 1 from public.project_members
+    where project_id = target_project_id and user_id = subject_user for share;
+  if not found then raise exception 'PROJECT_ACCESS_REQUIRED'; end if;
+end;
+$$;
+revoke all on function public.lock_shopping_project_access(uuid, uuid) from public, anon, authenticated;
+
 -- Private helper. Caller holds the normalized title lock. Record and mutate
 -- the exact same locked row: a second lookup could select a concurrent direct
 -- insert and incorrectly label somebody else's row as this operation's insert.
@@ -126,6 +152,7 @@ begin
   then raise exception 'SHOPPING_ITEM_INVALID'; end if;
   if not public.can_access_project(target_project_id, subject)
   then raise exception 'PROJECT_ACCESS_REQUIRED'; end if;
+  perform public.lock_shopping_project_access(target_project_id, subject);
 
   payload := jsonb_build_object('title', btrim(target_title),
     'quantity_value', target_quantity_value, 'quantity_unit', coalesce(target_quantity_unit, ''),
@@ -191,6 +218,7 @@ begin
   then raise exception 'SHOPPING_INTENT_INVALID'; end if;
   if not public.can_access_project(target_project_id, subject)
   then raise exception 'PROJECT_ACCESS_REQUIRED'; end if;
+  perform public.lock_shopping_project_access(target_project_id, subject);
   if not target_cancel and (public.normalize_shopping_title(target_title) = ''
     or target_status is null or target_status not in ('Open', 'Done')
     or (target_quantity_value is not null and (target_quantity_value < 0
@@ -343,6 +371,8 @@ begin
   if target_operation_id is null then
     raise exception using errcode = 'P0001', message = 'SHOPPING_OPERATION_ID_REQUIRED';
   end if;
+
+  perform public.lock_shopping_project_access(target_project_id, current_user_id);
 
   perform pg_advisory_xact_lock(hashtext(current_user_id::text || ':' || target_operation_id::text));
 
