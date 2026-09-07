@@ -231,10 +231,6 @@ export function useShoppingListOfflineSync({
 
       commitCurrentState();
 
-      for (const [projectId, itemTitles] of createdTitlesByProject.entries()) {
-        await notifyShoppingListSubscribers({ projectId, itemTitles });
-      }
-
       if (queue.length === 0) {
         setFailedTodoId('');
         setFailedTodoMessage('');
@@ -242,6 +238,12 @@ export function useShoppingListOfflineSync({
     } finally {
       syncingQueueRef.current = false;
       setSyncingQueue(false);
+    }
+
+    // Delivery may be slow. The queue is already persisted, so allow the next
+    // online/focus/retry trigger to sync new edits while notifications finish.
+    for (const [projectId, itemTitles] of createdTitlesByProject.entries()) {
+      await notifyShoppingListSubscribers({ projectId, itemTitles });
     }
   }, [
     currentUserId,

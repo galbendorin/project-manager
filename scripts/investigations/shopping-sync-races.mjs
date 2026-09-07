@@ -61,7 +61,7 @@ function reactHarness() {
   };
 }
 
-async function setup({ queue = [update], hold = 'update', failure = false } = {}) {
+async function setup({ queue = [update], hold = 'update', failure = false, onRequest = noop, notify = noop } = {}) {
   let server = [
     { id: 'item-a', project_id: project.id, title: 'Milk', status: 'Open' },
     { id: 'item-b', project_id: project.id, title: 'Bread', status: 'Open' },
@@ -78,6 +78,7 @@ async function setup({ queue = [update], hold = 'update', failure = false } = {}
   const requests = [];
   async function execute(request) {
     requests.push(copy(request));
+    await onRequest(request);
     if (!held && request.kind === hold) {
       held = true;
       entered.resolve(request);
@@ -142,7 +143,7 @@ async function setup({ queue = [update], hold = 'update', failure = false } = {}
     isProjectRelationMissingError: () => false,
   };
   const injected = { supabase, ...view, ...rows, ...queueFns, ...rpc,
-    isOfflineTempId, isLikelyNetworkError, notifyShoppingListSubscribers: noop,
+    isOfflineTempId, isLikelyNetworkError, notifyShoppingListSubscribers: notify,
     isFreshTimestamp: unexpected, createProjectWithLimits: unexpected,
     getProjectCreationErrorMessage: unexpected };
   async function renderer(name) {
@@ -222,6 +223,43 @@ test('Q03: a newer delete superseding an in-flight update reaches the server', {
   assert.equal(runtime.durableTitle('item-a'), undefined);
   assert.equal(runtime.snapshot().cache.queue.length, 0);
   assert.equal(runtime.snapshot().visible.some((todo) => todo._id === 'item-a'), false);
+});
+
+test('Q03: newer edits arriving across successive acknowledgements drain in order', { timeout: 3000 }, async () => {
+  let updates = 0;
+  const runtime = await setup({ onRequest: async (request) => {
+    if (request.kind === 'update' && ++updates === 2) await runtime.edit('item-a', 'Third edit');
+  } });
+  const syncing = runtime.sync().retryShoppingSync();
+  await runtime.entered;
+  await runtime.edit('item-a', 'Second edit');
+  runtime.release();
+  await syncing;
+  assert.equal(runtime.snapshot().server.find((row) => row.id === 'item-a').title, 'Third edit');
+  assert.equal(runtime.snapshot().cache.queue.length, 0);
+  assert.equal(updates, 3);
+});
+
+test('Q03: slow notification delivery does not block a subsequent sync trigger', { timeout: 3000 }, async () => {
+  const notifying = deferred();
+  const finishNotification = deferred();
+  const runtime = await setup({ queue: [create], hold: 'rpc', notify: async () => {
+    notifying.resolve();
+    await finishNotification.promise;
+  } });
+  const firstSync = runtime.sync().retryShoppingSync();
+  await runtime.entered;
+  runtime.release();
+  await notifying.promise;
+  try {
+    await runtime.edit('item-b', 'New bread');
+    await runtime.sync().retryShoppingSync();
+    assert.equal(runtime.snapshot().server.find((row) => row.id === 'item-b').title, 'New bread');
+    assert.equal(runtime.snapshot().cache.queue.length, 0);
+  } finally {
+    finishNotification.resolve();
+    await firstSync;
+  }
 });
 
 test('Q03: a mixed create/update queue preserves an unrelated edit made during the create', { timeout: 3000 }, async (t) => {

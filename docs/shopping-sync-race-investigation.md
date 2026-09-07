@@ -1,6 +1,14 @@
 # Q02 — Shopping sync race investigation
 
-Completed 6 September 2026 against production source `656d1a26486f101db8a5ae310fdda3c3664d5f57` (PR #51). Investigation and reproducible evidence only: no production fix, schema change, household data mutation or deployment.
+Q02 completed 6 September 2026 against production source `656d1a26486f101db8a5ae310fdda3c3664d5f57` (PR #51). The investigation itself made no production change. Q03 subsequently implements current-state acknowledgement in this branch; the historical findings below describe the Q02 baseline.
+
+## Q03 implementation update — 7 September 2026
+
+Each completed operation now commits against current storage. An update is removed only if the current patch still matches its submitted fields and values. Newer queued work stays present and is processed by the running drain. Failure refreshes overlay the latest queue. Notification delivery runs after releasing the sync lock, so slow delivery cannot block a subsequent sync trigger.
+
+The maintained CI entry `src/hooks/shoppingSyncConcurrency.test.js` runs ten controls/Q03 cases, including successive acknowledgements, a newer delete, a mixed create/update queue, and slow notification delivery. Q01's five matching-ID/empty/error/retry tests remain green. Full preflight passes 431 tests, lint, hook-import check and build. A reviewer found no new release blockers; real-device and authenticated household coverage remain separate.
+
+The standalone investigation command now has fifteen cases: ten pass and five Q04/Q05 assertions intentionally remain red. It is still outside normal CI. Existing temporary-item create/merge semantics remain for Q04; this patch does not claim to fix those or external loader/hydration races.
 
 ## Decision
 
@@ -17,7 +25,7 @@ node --test scripts/investigations/shopping-sync-races.mjs
 node --test --test-name-pattern='control:' scripts/investigations/shopping-sync-races.mjs
 ```
 
-The first command intentionally exits 1 on this baseline: 11 tests, 3 passing controls, 8 failing desired-behaviour assertions. These are reproduction tests, not a claim that the fixes pass. They live outside `src/**/*.test.js`, so ordinary release CI remains green. The second command runs only the passing controls. Later repairs should make the corresponding Q03/Q04/Q05 assertions pass, then promote them into maintained regression coverage.
+On the original Q02 baseline, the first command exited 1: 11 tests, 3 passing controls, 8 failing desired-behaviour assertions. See the Q03 update above for current counts. Known-failure reproductions live outside `src/**/*.test.js`; the new CI entry selects only repaired Q03 cases and controls. The second command runs only controls. Later repairs should promote the corresponding Q04/Q05 assertions into maintained regression coverage.
 
 The harness executes the actual sync, data and action hooks plus the real queue, view-state, mapping and RPC helpers. It replaces React scheduling, network responses and storage with controlled in-memory dependencies. A deferred promise holds a specific request; the real edit/delete callback runs; the response is released. No timing sleeps, database, browser session or Supabase credentials are needed. State slots persist across explicit rerenders. Refresh cases assert that the new edit is visible in the data hook before the delayed response arrives, to exclude a disconnected-test-state false positive.
 
