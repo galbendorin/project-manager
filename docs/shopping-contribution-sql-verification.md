@@ -1,6 +1,6 @@
 # Q04-B database contract: local verification
 
-7 September 2026. **Draft, not deployed.** No app client is using these RPCs. Base production remains Q03, PR #52 (`923e251`). The local native multi-session gate is now complete; client integration and staging remain unfinished.
+7 September 2026. **SQL source merged in PR #53; migration not applied.** Production source includes `15e1fb6`. No app client is using these RPCs. The native multi-session gate is complete; client integration and staging remain unfinished. Subsequent client adapter integration coverage brings the native suite to 71 cases; see [client boundary verification](shopping-client-boundary-verification.md).
 
 ## Implemented draft
 

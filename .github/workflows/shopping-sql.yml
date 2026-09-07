@@ -3,12 +3,14 @@ name: Shopping SQL contract
 on:
   push:
     paths:
+      - 'src/utils/shoppingContributionRpc*'
       - 'scripts/sql/**'
       - 'scripts/investigations/shopping-contribution-sql.test.mjs'
       - 'scripts/investigations/shopping-test-database.mjs'
       - '.github/workflows/shopping-sql.yml'
   pull_request:
     paths:
+      - 'src/utils/shoppingContributionRpc*'
       - 'scripts/sql/**'
       - 'scripts/investigations/shopping-contribution-sql.test.mjs'
       - 'scripts/investigations/shopping-test-database.mjs'

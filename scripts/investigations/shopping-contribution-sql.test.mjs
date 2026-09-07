@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { before, beforeEach, after, test } from 'node:test';
 import { createShoppingTestDatabase } from './shopping-test-database.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
+import { applyShoppingContribution, reconcileShoppingContribution } from '../../src/utils/shoppingContributionRpc.js';
 
 const db = await createShoppingTestDatabase();
 const owner = randomUUID();
@@ -76,6 +77,63 @@ async function seed({ title = 'Milk', qty = 2, unit = 'carton', meta = {}, sourc
   return rows[0];
 }
 const items = async () => (await db.query('select * from public.manual_todos order by title, id')).rows;
+
+// Exercise the production response validators against actual SQL JSON, with
+// the same named parameters sent through Supabase's RPC interface.
+const contributionClient = {
+  async rpc(name, args) {
+    assert.ok(['apply_shopping_list_add_v3', 'reconcile_shopping_contribution_v1'].includes(name));
+    const entries = Object.entries(args);
+    const named = entries.map(([key], index) => `${key} => $${index + 1}`).join(', ');
+    const { rows } = await asUser(member, `select public.${name}(${named}) as result`, entries.map(([, value]) => value));
+    return { data: rows[0].result, error: null };
+  },
+};
+
+test('client adapters accept real add, merge, move, cancel and historical replay responses', async () => {
+  await seed();
+  await seed({ title: 'Bread', qty: 4, unit: 'loaf' });
+  const operationId = randomUUID();
+  const request = { supabaseClient: contributionClient, operationId, projectId: project, userId: member,
+    item: { title: 'Milk', quantityValue: 1, quantityUnit: 'carton' } };
+  const added = await applyShoppingContribution(request);
+  assert.equal(added.error, null);
+  assert.equal(added.data.contribution.kind, 'merged');
+  const move = { supabaseClient: contributionClient, operationId, projectId: project, intentId: randomUUID(),
+    desiredRevision: '1', desired: { cancel: false, title: 'Bread', quantityValue: 1, quantityUnit: 'loaf' } };
+  const moved = await reconcileShoppingContribution(move);
+  assert.equal(moved.error, null);
+  assert.equal(moved.data.outcome, 'applied');
+  const cancelled = await reconcileShoppingContribution({ ...move, intentId: randomUUID(), desiredRevision: '2', desired: { cancel: true } });
+  assert.equal(cancelled.error, null);
+  assert.equal(cancelled.data.contribution, null);
+  const replay = await reconcileShoppingContribution(move);
+  assert.equal(replay.error, null);
+  assert.equal(replay.data.replayed, true);
+  assert.equal(replay.data.latest_confirmed_revision, '2');
+  const addReplay = await applyShoppingContribution(request);
+  assert.equal(addReplay.error, null);
+  assert.equal(addReplay.data.row_exists, false);
+  assert.deepEqual((await items()).map(row => row.quantity_value).sort(), [2, 4]);
+});
+
+test('client adapters retain real needs_review and superseded outcomes', async () => {
+  const operationId = randomUUID();
+  const added = await applyShoppingContribution({ supabaseClient: contributionClient, operationId,
+    projectId: project, userId: member, item: { title: 'Milk' } });
+  assert.equal(added.error, null);
+  assert.equal(added.data.contribution.kind, 'inserted');
+  await asUser(owner, 'update public.manual_todos set quantity_value = 9 where id = $1', [added.data.contribution.row_id]);
+  const request = { supabaseClient: contributionClient, operationId, projectId: project,
+    intentId: randomUUID(), desiredRevision: '2', desired: { cancel: true } };
+  const review = await reconcileShoppingContribution(request);
+  assert.equal(review.error, null);
+  assert.equal(review.data.outcome, 'needs_review');
+  const older = await reconcileShoppingContribution({ ...request, intentId: randomUUID(), desiredRevision: '1' });
+  assert.equal(older.error, null);
+  assert.equal(older.data.outcome, 'superseded');
+  assert.equal((await items())[0].quantity_value, 9);
+});
 
 test('migration can be applied twice without resetting recorded revisions', async () => {
   const original = await add();
