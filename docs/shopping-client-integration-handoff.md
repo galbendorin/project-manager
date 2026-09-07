@@ -1,6 +1,6 @@
 # Q04-C: next bounded implementation
 
-7 September 2026. Q04-B native SQL and CI are verified in draft PR #53. The Shopping client still uses v2 and still has the five Q04 failures in the actual-hook investigation. This is a source-grounded implementation handoff, not completed client code.
+7 September 2026. Q04-B SQL source and CI were merged in PR #53; the migration has not been applied. The independent journal and RPC adapters are now implemented and verified; see [client boundary verification](shopping-client-boundary-verification.md). The Shopping client still uses v2 and still has the five Q04 failures in the actual-hook investigation. Continue with the intent state machine and actions/sync integration described below.
 
 ## Start with durable submission evidence
 
