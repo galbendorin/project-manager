@@ -1,6 +1,6 @@
 # Q04 — pending grocery edits and cancellations
 
-Contract proposal and client evidence, 7 September 2026, based on production `923e251` (Q03 / PR #52). Q04 is not implemented or ready to deploy. The purpose of this artifact is to make the next implementation bounded and testable.
+Contract proposal and client evidence, 7 September 2026, based on production `923e251` (Q03 / PR #52). Q04-B now has an executable local SQL draft; the client remains unchanged and Q04 is not ready to deploy. See `shopping-contribution-sql-verification.md` for the exact APIs, test evidence and remaining gates.
 
 ## User outcome
 
@@ -42,11 +42,11 @@ An old acknowledgement must not replace the current envelope. Keep the item loca
 
 ## Proposed server contract
 
-Use a new versioned RPC/receipt contract so old clients keep their current behaviour. Names and schema below are proposals, not deployed APIs.
+Use a new versioned RPC/receipt contract. The draft preserves authorized v2 merge behavior, hardens its replay access checks, and rejects attempts to replay v3 operations through v2. Names and schema below are not deployed APIs.
 
 **Apply-add outcome** needs: original operation ID and authenticated owner/project; outcome `inserted` or `merged`; affected item ID; before and after contribution-relevant state; server-maintained item revision; whether the item currently exists; and an idempotent result snapshot. Keep receipt tables inaccessible directly to browser clients.
 
-**Reconcile pending add** accepts the original operation ID, desired revision, idempotency key for that revision, and desired title/quantity/status or cancellation. It returns `applied`, `already_applied`, `needs_review` or an authorization/validation failure, plus affected current rows and the confirmed desired revision. One transaction must either apply the complete change or leave all rows unchanged.
+**Reconcile pending add** accepts the original operation ID, desired revision, idempotency key for that revision, and desired title/quantity/status or cancellation. The draft returns `applied`, `superseded`, `needs_review` or an authorization/validation failure; retries retain the original outcome with `replayed: true`. It includes affected transaction images and confirmed/latest received revisions. Those images are historical on replay and must never blindly replace newer client state. One transaction must either apply the complete change or leave all rows unchanged. A newer unresolved intent also supersedes older requests, without pretending the newer intent was confirmed.
 
 Required ordering and safety:
 
