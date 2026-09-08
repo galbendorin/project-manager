@@ -18,7 +18,7 @@ export function useShoppingListActions({
   currentUserId,
   isOnline,
   selectedProject,
-  todos,
+  todos: displayedTodos,
   setTodos,
   setTodoError,
   loadShoppingOfflineState,
@@ -32,7 +32,9 @@ export function useShoppingListActions({
   mapManualTodoRow,
   manualTodoSelect,
   shoppingExtraFields = [],
+  durableCreates = null,
 }) {
+  const todos = displayedTodos.filter(todo => !todo._shoppingOperationId);
   const [savingItems, setSavingItems] = useState(false);
   const [pendingCompleteId, setPendingCompleteId] = useState('');
   const [pendingCompleteSeconds, setPendingCompleteSeconds] = useState(1);
@@ -238,6 +240,19 @@ export function useShoppingListActions({
 
     if (!selectedProject?.id || normalizedItems.length === 0) return;
 
+    if (durableCreates?.enabled) {
+      setSavingItems(true);
+      setTodoError('');
+      try {
+        const result = await durableCreates.add(normalizedItems);
+        if (result.failedItems.length) setTodoError('Some groceries could not be saved on this device. They are still in the entry box.');
+        return result;
+      } catch {
+        setTodoError('Unable to save on this device. Your draft is still available; please try again.');
+        return { addedCount: 0, mergedCount: 0, queuedCount: 0, failedItems: normalizedItems };
+      } finally { setSavingItems(false); }
+    }
+
     const initialPlan = planShoppingListAdds({
       existingTodos: todos,
       incomingItems: normalizedItems,
@@ -398,6 +413,7 @@ export function useShoppingListActions({
     return addPlan;
   }, [
     currentUserId,
+    durableCreates,
     isOnline,
     lastSyncedAt,
     loadLatestOpenTodos,
@@ -414,6 +430,18 @@ export function useShoppingListActions({
 
   const toggleTodoStatus = useCallback(async (todo) => {
     const nextStatus = todo.status === 'Done' ? 'Open' : 'Done';
+    if (todo._shoppingOperationId) {
+      const result = await durableCreates.edit(todo, { status: nextStatus });
+      if (result.cancelled) return;
+      setFailedTodoId(result.ok ? '' : todo._id);
+      setFailedTodoMessage(result.message || '');
+      return;
+    }
+    if (durableCreates?.enabled && isOfflineTempId(todo._id)) {
+      setFailedTodoId(todo._id);
+      setFailedTodoMessage('This older addition must finish syncing before it can be changed.');
+      return;
+    }
     const completedAt = nextStatus === 'Done' ? new Date().toISOString() : null;
     const updatedAt = new Date().toISOString();
     const actionLabel = nextStatus === 'Done' ? 'complete' : 'reopen';
@@ -525,6 +553,7 @@ export function useShoppingListActions({
     setFailedTodoMessage('');
   }, [
     currentUserId,
+    durableCreates,
     getSelectClause,
     isMissingSchemaFieldError,
     isOnline,
@@ -541,6 +570,17 @@ export function useShoppingListActions({
   ]);
 
   const deleteTodo = useCallback(async (todoId) => {
+    const pendingTodo = displayedTodos.find(item => item._id === todoId);
+    if (pendingTodo?._shoppingOperationId) {
+      clearPendingCompletion();
+      const result = await durableCreates.edit(pendingTodo, { cancel: true });
+      if (!result.ok) setTodoError(result.message);
+      return;
+    }
+    if (durableCreates?.enabled && isOfflineTempId(todoId)) {
+      setTodoError('This older addition must finish syncing before it can be removed.');
+      return;
+    }
     if (pendingCompleteId === todoId) {
       clearPendingCompletion();
     }
@@ -611,6 +651,8 @@ export function useShoppingListActions({
   }, [
     clearPendingCompletion,
     currentUserId,
+    durableCreates,
+    displayedTodos,
     failedTodoId,
     isOnline,
     loadShoppingOfflineState,
@@ -629,6 +671,10 @@ export function useShoppingListActions({
     }
     if (!title) {
       return { ok: false, message: 'Enter a grocery name before saving.' };
+    }
+    if (todo._shoppingOperationId) return durableCreates.edit(todo, { title });
+    if (durableCreates?.enabled && isOfflineTempId(todo._id)) {
+      return { ok: false, message: 'This older addition must finish syncing before it can be changed.' };
     }
     if (title === todo.title) {
       return { ok: true };
@@ -730,6 +776,7 @@ export function useShoppingListActions({
     return { ok: true };
   }, [
     currentUserId,
+    durableCreates,
     getSelectClause,
     isMissingSchemaFieldError,
     isOnline,

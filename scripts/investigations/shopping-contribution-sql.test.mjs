@@ -12,6 +12,7 @@ import { applyShoppingContribution, reconcileShoppingContribution } from '../../
 import { IDBFactory } from 'fake-indexeddb';
 import { createShoppingCreateJournal } from '../../src/utils/shoppingCreateJournal.js';
 import { createShoppingCreateOperations } from '../../src/utils/shoppingCreateOperation.js';
+import { createShoppingCreateWorkspace, projectShoppingCreates } from '../../src/utils/shoppingCreateWorkspace.js';
 
 const db = await createShoppingTestDatabase();
 const owner = randomUUID();
@@ -112,6 +113,28 @@ const signal = () => {
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 };
+
+for (const patch of [{ title: 'Oat milk' }, { cancel: true }]) {
+  test(`workspace retains captured pending contribution after a real SQL acknowledgement: ${JSON.stringify(patch)}`, async t => {
+    await seed();
+    const journal = createShoppingCreateJournal({ userId: member, getCurrentUserId: () => member, indexedDB: new IDBFactory() });
+    let online = false, snapshot = { records: [] }, currentRows = [];
+    const workspace = createShoppingCreateWorkspace({ journal,
+      transport: { ...contributionClient, readProject: async () => (await asUser(member, 'select * from public.manual_todos where project_id = $1', [project])).rows },
+      getCurrentUserId: () => member, isOnline: () => online,
+      onChange: value => { snapshot = value; }, onRefresh: async (_projectId, rows) => { currentRows = rows; } });
+    t.after(() => workspace.close());
+    await workspace.add(project, [{ title: 'Milk', quantityValue: 1, quantityUnit: 'carton' }]);
+    const captured = projectShoppingCreates({ todos: [], records: snapshot.records, projectId: project })[0];
+    online = true; await workspace.sync();
+    assert.equal(currentRows[0].quantity_value, 3);
+    online = false; await workspace.edit(captured, patch);
+    online = true; await workspace.sync();
+    assert.equal(currentRows.find(row => row.title === 'Milk').quantity_value, 2);
+    assert.equal(currentRows.length, patch.cancel ? 1 : 2);
+    if (!patch.cancel) assert.equal(currentRows.find(row => row.title === 'Oat milk').quantity_value, 1);
+  });
+}
 
 for (const change of [{ title: 'Oat milk' }, { cancel: true }]) {
   test(`durable controller preserves a later draft after a real merged add: ${JSON.stringify(change)}`, async t => {

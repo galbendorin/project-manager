@@ -1,4 +1,4 @@
-import { isOfflineTempId } from './offlineState';
+import { isOfflineTempId } from './offlineState.js';
 
 export const enqueueCreate = (queue, record) => [
   ...(Array.isArray(queue) ? queue : []),
