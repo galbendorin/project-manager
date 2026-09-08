@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatShoppingAddSummary } from '../utils/shoppingListViewState';
 
 const VOICE_GRACE_PERIOD_MS = 2000;
@@ -140,7 +140,11 @@ const splitVoiceTranscript = (value = '') => {
   return { items: [], confident: false, reviewText: cleaned };
 };
 
-export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
+export function useShoppingListVoiceCapture({ addItems, setDraftTitle, currentUserId = '', sessionKey = null }) {
+  const scope = useMemo(() => ({ active: true }), [currentUserId, sessionKey]);
+  const ownerRef = useRef(scope);
+  ownerRef.current = scope;
+  const isCurrent = useCallback(() => scope.active && ownerRef.current === scope, [scope]);
   const [isListening, setIsListening] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [voiceMessage, setVoiceMessage] = useState('');
@@ -167,6 +171,7 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
   }, []);
 
   const handleVoiceItems = useCallback(async (transcript) => {
+    if (!isCurrent()) return;
     const { items, confident, reviewText } = splitVoiceTranscript(transcript);
     if (items.length === 0) {
       setDraftTitle(transcript);
@@ -181,10 +186,12 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
     }
 
     const summary = await addItems(items);
-    setVoiceMessage(formatShoppingAddSummary(summary));
-  }, [addItems, setDraftTitle]);
+    if (!isCurrent() || summary?.cancelled) return;
+    setVoiceMessage(summary ? formatShoppingAddSummary(summary) : 'Unable to add these groceries. Please review the entry box.');
+  }, [addItems, setDraftTitle, isCurrent]);
 
   const finalizeVoiceCapture = useCallback(async () => {
+    if (!isCurrent()) return;
     clearVoiceTimers();
     recognitionRef.current = null;
     voiceSessionActiveRef.current = false;
@@ -201,9 +208,10 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
     } else if (!voiceMessage) {
       setVoiceMessage('Voice input stopped.');
     }
-  }, [clearVoiceTimers, handleVoiceItems, voiceMessage]);
+  }, [clearVoiceTimers, handleVoiceItems, voiceMessage, isCurrent]);
 
   const scheduleVoiceFinalize = useCallback(() => {
+    if (!isCurrent()) return;
     if (!voiceSessionActiveRef.current) return;
     if (voiceFinalizeTimeoutRef.current) {
       window.clearTimeout(voiceFinalizeTimeoutRef.current);
@@ -211,9 +219,10 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
     voiceFinalizeTimeoutRef.current = window.setTimeout(() => {
       void finalizeVoiceCapture();
     }, VOICE_GRACE_PERIOD_MS);
-  }, [finalizeVoiceCapture]);
+  }, [finalizeVoiceCapture, isCurrent]);
 
   const startRecognitionSession = useCallback(() => {
+    if (!isCurrent()) return false;
     const recognition = getSpeechRecognition();
     if (!recognition) return false;
 
@@ -222,6 +231,7 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
     recognitionRef.current = recognition;
 
     recognition.onresult = (event) => {
+      if (!isCurrent()) return;
       let interim = '';
       let finalTranscript = '';
 
@@ -248,6 +258,7 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
     };
 
     recognition.onerror = (event) => {
+      if (!isCurrent()) return;
       if (manualVoiceStopRef.current || !voiceSessionActiveRef.current) {
         return;
       }
@@ -260,6 +271,7 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
     };
 
     recognition.onend = () => {
+      if (!isCurrent()) return;
       recognitionRef.current = null;
 
       if (manualVoiceStopRef.current || !voiceSessionActiveRef.current) {
@@ -298,9 +310,10 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
     } catch {
       return false;
     }
-  }, [finalizeVoiceCapture, scheduleVoiceFinalize]);
+  }, [finalizeVoiceCapture, scheduleVoiceFinalize, isCurrent]);
 
   const startListening = useCallback(() => {
+    if (!isCurrent()) return;
     clearVoiceTimers();
     pendingVoiceTranscriptRef.current = '';
     manualVoiceStopRef.current = false;
@@ -318,9 +331,10 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
       setIsListening(false);
       setVoiceMessage('Voice input is unavailable right now. Please try again.');
     }
-  }, [clearVoiceTimers, startRecognitionSession]);
+  }, [clearVoiceTimers, startRecognitionSession, isCurrent]);
 
   const stopListening = useCallback(() => {
+    if (!isCurrent()) return;
     manualVoiceStopRef.current = true;
     clearVoiceTimers();
     if (recognitionRef.current) {
@@ -329,14 +343,27 @@ export function useShoppingListVoiceCapture({ addItems, setDraftTitle }) {
       void finalizeVoiceCapture();
     }
     setVoiceMessage('Voice input stopped.');
-  }, [clearVoiceTimers, finalizeVoiceCapture]);
+  }, [clearVoiceTimers, finalizeVoiceCapture, isCurrent]);
 
   useEffect(() => {
+    scope.active = true;
+    setIsListening(false);
+    setInterimText('');
+    setVoiceMessage('');
     return () => {
+      scope.active = false;
+      if (recognitionRef.current) {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+      }
       recognitionRef.current?.abort();
+      recognitionRef.current = null;
+      pendingVoiceTranscriptRef.current = '';
+      voiceSessionActiveRef.current = false;
       clearVoiceTimers();
     };
-  }, [clearVoiceTimers]);
+  }, [clearVoiceTimers, scope]);
 
   return {
     isListening,

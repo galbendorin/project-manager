@@ -12,6 +12,7 @@ import {
   mapManualTodoRow,
 } from '../hooks/projectData/manualTodoUtils';
 import { useShoppingListActions } from '../hooks/useShoppingListActions';
+import { useShoppingDurableCreates } from '../hooks/useShoppingDurableCreates';
 import { useShoppingListData } from '../hooks/useShoppingListData';
 import { useShoppingListLiveUpdates } from '../hooks/useShoppingListLiveUpdates';
 import { useShoppingListOfflineSync } from '../hooks/useShoppingListOfflineSync';
@@ -46,11 +47,15 @@ import ShoppingListPageHeader from './ShoppingListPageHeader';
 import ProjectShareModal from './ProjectShareModal';
 import ShoppingListQuickAdd from './ShoppingListQuickAdd';
 import ShoppingListSidebar from './ShoppingListSidebar';
+import ShoppingPendingAdds from './ShoppingPendingAdds';
+import { createShoppingAddEntry } from '../utils/shoppingAddEntry';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const SHOPPING_UI_PREFS_KEY = 'pmworkspace:shopping-ui:v1';
 const SHOPPING_DRAFT_KEY_PREFIX = 'pmworkspace:shopping-draft:v1';
 const MOBILE_COMPLETE_DELAY_MS = 1000;
+// Enable only after staging the contribution SQL and integrated account checks.
+const DURABLE_CREATES_ENABLED = import.meta.env.VITE_SHOPPING_DURABLE_CREATES === 'true';
 
 const buildShoppingDraftKey = (userId) => `${SHOPPING_DRAFT_KEY_PREFIX}:${userId || 'anonymous'}`;
 
@@ -168,6 +173,8 @@ export default function ShoppingListView({ currentUserId }) {
   const [editingTodoId, setEditingTodoId] = useState('');
   const [editingTitle, setEditingTitle] = useState('');
   const [editingError, setEditingError] = useState('');
+  const [editingTodoSnapshot, setEditingTodoSnapshot] = useState(null);
+  const failedAddDraftRef = useRef(null);
   const [desktopCompact, setDesktopCompact] = useState(() => {
     const prefs = readLocalJson(SHOPPING_UI_PREFS_KEY, {});
     return prefs?.desktopCompact ?? true;
@@ -193,7 +200,7 @@ export default function ShoppingListView({ currentUserId }) {
 
   const {
     loadProjects,
-    loadTodos,
+    loadTodos: loadBaseTodos,
     loadingProjects,
     loadingTodos,
     offlineStateHydrated,
@@ -205,7 +212,7 @@ export default function ShoppingListView({ currentUserId }) {
     setTodoError,
     setTodos,
     todoError,
-    todos,
+    todos: baseTodos,
   } = useShoppingListData({
     canCreateProject,
     createEmptyProjectSnapshot,
@@ -231,6 +238,25 @@ export default function ShoppingListView({ currentUserId }) {
     supportsProjectMembersRef,
     ensuringProjectRef,
   });
+  const durableCreates = useShoppingDurableCreates({ currentUserId, isOnline, enabled: DURABLE_CREATES_ENABLED,
+    selectedProjectId, baseTodos, setTodos, persistOfflineState });
+  const { refresh: refreshDurable, retry: retryDurable } = durableCreates;
+  const addScope = useMemo(() => ({ owner: currentUserId, project: selectedProjectId, workspace: durableCreates.sessionKey }),
+    [currentUserId, selectedProjectId, durableCreates.sessionKey]);
+  const addScopeRef = useRef(addScope);
+  addScopeRef.current = addScope;
+  const setActionError = useCallback(message => { if (addScopeRef.current === addScope) setTodoError(message); }, [addScope, setTodoError]);
+  const todos = useMemo(() => {
+    const projected = durableCreates.todos;
+    return editingTodoSnapshot?._shoppingOperationId && editingTodoSnapshot.projectId === selectedProjectId
+      && !projected.some(todo => todo._id === editingTodoSnapshot._id)
+      ? [...projected, editingTodoSnapshot] : projected;
+  }, [durableCreates.todos, editingTodoSnapshot, selectedProjectId]);
+  const setSharedTodos = useCallback(next => setTodos(previous => {
+    const rows = typeof next === 'function' ? next(previous) : next;
+    return rows.filter(todo => !todo._shoppingOperationId);
+  }), [setTodos]);
+  const loadTodos = useCallback(() => Promise.all([loadBaseTodos(), refreshDurable()]), [loadBaseTodos, refreshDurable]);
   const openTodos = useMemo(() => todos.filter((todo) => todo.status !== 'Done'), [todos]);
   const completedTodos = useMemo(() => todos.filter((todo) => todo.status === 'Done'), [todos]);
   const completedTodoGroups = useMemo(
@@ -250,6 +276,8 @@ export default function ShoppingListView({ currentUserId }) {
 
   useEffect(() => {
     setDraftTitle(readLocalJson(draftStorageKey, ''));
+    failedAddDraftRef.current = null;
+    setEditingTodoSnapshot(null);
   }, [draftStorageKey]);
 
   useEffect(() => {
@@ -295,14 +323,14 @@ export default function ShoppingListView({ currentUserId }) {
       todosByProject: selectedProjectId
         ? {
           ...(cachedState.todosByProject || {}),
-          [selectedProjectId]: todos,
+          [selectedProjectId]: baseTodos,
         }
         : (cachedState.todosByProject || {}),
     });
-  }, [currentUserId, offlineStateHydrated, persistOfflineState, projects, selectedProjectId, todos]);
+  }, [currentUserId, offlineStateHydrated, persistOfflineState, projects, selectedProjectId, baseTodos]);
 
   const {
-    addItems,
+    addItems: addRawItems,
     clearPendingCompletion,
     completionIntervalRef,
     completionTimeoutRef,
@@ -322,12 +350,13 @@ export default function ShoppingListView({ currentUserId }) {
     toggleTodoStatus,
     updateTodoTitle,
   } = useShoppingListActions({
+    durableCreates,
     currentUserId,
     isOnline,
     selectedProject,
     todos,
-    setTodos,
-    setTodoError,
+    setTodos: setSharedTodos,
+    setTodoError: setActionError,
     loadShoppingOfflineState,
     persistOfflineState,
     sortTodos,
@@ -340,6 +369,16 @@ export default function ShoppingListView({ currentUserId }) {
     manualTodoSelect: SHOPPING_MANUAL_TODO_SELECT,
     shoppingExtraFields: SHOPPING_MANUAL_TODO_EXTRA_FIELDS,
   });
+  const addItems = useMemo(() => createShoppingAddEntry({ addItems: addRawItems,
+    isCurrent: () => addScopeRef.current === addScope,
+    restoreFailed: failedItems => setDraftTitle(current => {
+      if (addScopeRef.current !== addScope) return current;
+      const failedText = failedItems.map(item => item.title).join('\n');
+      const text = current.trim() ? `${current}\n${failedText}` : failedText;
+      failedAddDraftRef.current = { text, items: [...splitTypedGroceries(current), ...failedItems] };
+      return text;
+    }),
+  }), [addRawItems, addScope]);
   const {
     isListening,
     interimText,
@@ -351,21 +390,30 @@ export default function ShoppingListView({ currentUserId }) {
   } = useShoppingListVoiceCapture({
     addItems,
     setDraftTitle,
+    currentUserId,
+    sessionKey: addScope,
   });
 
   const handleAddSubmit = useCallback(async (event) => {
     event.preventDefault();
-    const items = splitTypedGroceries(draftTitle);
+    const items = failedAddDraftRef.current?.text === draftTitle
+      ? failedAddDraftRef.current.items : splitTypedGroceries(draftTitle);
     if (items.length === 0) return;
     const submittedTitle = draftTitle;
     setDraftTitle('');
     setVoiceMessage(items.length === 1 ? `Adding ${items[0].title || items[0]}...` : `Adding ${items.length} groceries...`);
     const summary = await addItems(items);
+    if (summary?.cancelled) return;
+    if (summary?.failedItems?.length) {
+      setVoiceMessage(`${summary.addedCount} saved on this device. The remaining groceries are still in the entry box.`);
+      return;
+    }
     if (!summary) {
-      setDraftTitle(submittedTitle);
+      setDraftTitle(current => current.trim() ? `${current}\n${submittedTitle}` : submittedTitle);
       setVoiceMessage('Unable to add right now. Please try again.');
       return;
     }
+    failedAddDraftRef.current = null;
     setVoiceMessage(formatShoppingAddSummary(summary));
   }, [addItems, draftTitle, setVoiceMessage]);
 
@@ -378,18 +426,21 @@ export default function ShoppingListView({ currentUserId }) {
       sourceBatchId: null,
       meta: {},
     }]);
+    if (summary?.cancelled) return;
     setVoiceMessage(formatShoppingAddSummary(summary));
   }, [addItems, setVoiceMessage]);
 
   const handleStartEditingTodo = useCallback((todo) => {
     clearPendingCompletion();
     setEditingTodoId(todo._id);
+    setEditingTodoSnapshot(todo);
     setEditingTitle(todo.title || '');
     setEditingError('');
   }, [clearPendingCompletion]);
 
   const handleCancelEditingTodo = useCallback(() => {
     setEditingTodoId('');
+    setEditingTodoSnapshot(null);
     setEditingTitle('');
     setEditingError('');
   }, []);
@@ -402,7 +453,8 @@ export default function ShoppingListView({ currentUserId }) {
   }, [editingError]);
 
   const handleSaveEditingTodo = useCallback(async (todo) => {
-    const result = await updateTodoTitle(todo, editingTitle);
+    const result = await updateTodoTitle(editingTodoSnapshot?._id === todo._id ? editingTodoSnapshot : todo, editingTitle);
+    if (result?.cancelled || addScopeRef.current !== addScope) return;
     if (result?.ok) {
       const label = String(editingTitle || '').trim() || todo.title;
       setVoiceMessage(`Updated ${label}.`);
@@ -410,7 +462,7 @@ export default function ShoppingListView({ currentUserId }) {
       return;
     }
     setEditingError(result?.message || 'Unable to update this grocery right now.');
-  }, [editingTitle, handleCancelEditingTodo, setVoiceMessage, updateTodoTitle]);
+  }, [editingTitle, editingTodoSnapshot, handleCancelEditingTodo, setVoiceMessage, updateTodoTitle, addScope]);
 
   useEffect(() => {
     if (!editingTodoId) return;
@@ -472,11 +524,11 @@ export default function ShoppingListView({ currentUserId }) {
   ]);
 
   const {
-    syncingQueue,
-    queuedTodoIds,
-    retryShoppingSync,
-    shoppingSyncSummary,
-    syncCenterItems,
+    syncingQueue: legacySyncingQueue,
+    queuedTodoIds: legacyQueuedTodoIds,
+    retryShoppingSync: retryLegacyShoppingSync,
+    shoppingSyncSummary: legacyShoppingSyncSummary,
+    syncCenterItems: legacySyncCenterItems,
   } = useShoppingListOfflineSync({
     currentUserId,
     isOnline,
@@ -495,6 +547,18 @@ export default function ShoppingListView({ currentUserId }) {
     retryTodoAction,
     formatSyncTimeLabel,
   });
+  const syncingQueue = legacySyncingQueue || durableCreates.busy;
+  const queuedTodoIds = useMemo(() => new Set([...legacyQueuedTodoIds, ...durableCreates.records.map(record => record.localId)]),
+    [legacyQueuedTodoIds, durableCreates.records]);
+  const retryShoppingSync = useCallback(() => Promise.all([retryLegacyShoppingSync(), retryDurable()]), [retryLegacyShoppingSync, retryDurable]);
+  const shoppingSyncSummary = durableCreates.records.length
+    ? `${durableCreates.records.length} addition${durableCreates.records.length === 1 ? '' : 's'} saved on this device`
+    : legacyShoppingSyncSummary;
+  const syncCenterItems = durableCreates.records.length ? [...legacySyncCenterItems, {
+    id: 'durable-additions', label: 'Pending additions', detail: 'Edits and cancellations stay saved until confirmed.',
+    status: durableCreates.busy ? 'syncing' : 'queue', statusLabel: durableCreates.busy ? 'Syncing' : 'Saved on device',
+    actionLabel: 'Retry sync', onAction: durableCreates.retry,
+  }] : legacySyncCenterItems;
   const quickAddSyncState = useMemo(() => getShoppingQuickAddSyncState({
     isOnline,
     queueCount: offlineQueue.length,
@@ -624,7 +688,7 @@ export default function ShoppingListView({ currentUserId }) {
                   interimText={interimText}
                   isListening={isListening}
                   isMobile={isMobile}
-                  savingItems={savingItems}
+                  savingItems={savingItems || (durableCreates.enabled && !durableCreates.ready)}
                   selectedProject={selectedProject}
                   setDraftTitle={setDraftTitle}
                   startListening={startListening}
@@ -634,11 +698,14 @@ export default function ShoppingListView({ currentUserId }) {
                   voiceSupported={voiceSupported}
                 />
 
-                {todoError ? (
+                {todoError || durableCreates.error ? (
                   <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                    {todoError}
+                    {todoError || durableCreates.error}
                   </div>
                 ) : null}
+
+                <ShoppingPendingAdds records={durableCreates.records} errors={durableCreates.errors}
+                  busy={durableCreates.busy} onRetry={durableCreates.retry} onEdit={durableCreates.edit} />
 
                 {liveUpdateMessage ? (
                   <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700 shadow-sm">

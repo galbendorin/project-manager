@@ -339,7 +339,8 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
   };
 };
 
-export const formatShoppingAddSummary = ({ addedCount = 0, mergedCount = 0, queuedCount = 0 } = {}) => {
+export const formatShoppingAddSummary = ({ addedCount = 0, mergedCount = 0, queuedCount = 0, failedItems = [] } = {}) => {
+  if (failedItems.length) return `${addedCount} saved on this device. ${failedItems.length} still in the entry box to retry.`;
   if (queuedCount > 0) {
     return queuedCount === 1
       ? 'Saved 1 grocery change offline. It will sync automatically.'

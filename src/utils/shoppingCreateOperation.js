@@ -171,7 +171,7 @@ export function createShoppingCreateOperations({ journal, supabaseClient, getCur
         revision: '0', reviewedServerRevision: '0', draft, source: { sourceType: item.sourceType ?? '', sourceBatchId: item.sourceBatchId ?? null,
           meta: item.meta ?? {} }, addResult: null, intents: [] } });
     },
-    edit: (operationId, expectedRevision, patch) => {
+    edit: (operationId, expectedRevision, patch, { fromPendingView = false } = {}) => {
       if (!revision(expectedRevision) || !object(patch) || Object.keys(patch).some(key => !DRAFT_FIELDS.includes(key))) {
         fail('SHOPPING_DRAFT_INVALID');
       }
@@ -183,7 +183,8 @@ export function createShoppingCreateOperations({ journal, supabaseClient, getCur
         const state = stateOf(record);
         reviewedAtStart ??= observedRevision(state);
         if (state.revision !== expectedRevision) fail('SHOPPING_DESIRED_CONFLICT');
-        if (['settled', 'local_cancelled'].includes(shoppingCreateProgress(record).status)) fail('SHOPPING_OPERATION_SETTLED');
+        const status = shoppingCreateProgress(record).status;
+        if (status === 'local_cancelled' || (status === 'settled' && !fromPendingView)) fail('SHOPPING_OPERATION_SETTLED');
         const draft = validateDraft({ ...state.draft, ...savedPatch });
         if (DRAFT_FIELDS.every(key => draft[key] === state.draft[key])) return null;
         const previousRevision = maxRevision(state.revision, observedRevision(state));

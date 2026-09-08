@@ -328,7 +328,7 @@ export default function ShoppingListItemsPanel({
                                   ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
                                   : 'border-amber-200 bg-amber-50 text-amber-700'
                               }`}>
-                                {syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
+                                {todo._shoppingOperationId ? (todo._shoppingReadOnly ? 'Refresh needed' : todo._shoppingStatus === 'needs_review' ? 'Needs review' : 'Pending addition') : syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
                               </span>
                             ) : null}
                           </div>
@@ -600,7 +600,7 @@ export default function ShoppingListItemsPanel({
                                   ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
                                   : 'border-amber-200 bg-amber-50 text-amber-700'
                               }`}>
-                                {syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
+                                {todo._shoppingOperationId ? (todo._shoppingReadOnly ? 'Refresh needed' : todo._shoppingStatus === 'needs_review' ? 'Needs review' : 'Pending addition') : syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
                               </span>
                             ) : null}
                           </div>
