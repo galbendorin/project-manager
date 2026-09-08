@@ -52,19 +52,24 @@ export function applyShoppingContribution({ supabaseClient, operationId, project
     target_source_type: item.sourceType || '',
     target_source_batch_id: item.sourceBatchId || null,
     target_meta: item.meta || {},
-  }, data => {
-    requireCondition(['applied', 'already_applied'].includes(data.outcome), 'Shopping returned an unknown add outcome.');
-    requireCondition(data.operation_id === operationId && data.project_id === projectId && data.user_id === userId,
-      'Shopping confirmed a different operation, list or user.');
-    requireCondition(isRevision(data.confirmed_revision), 'Shopping returned an invalid confirmed revision.');
-    if (data.contribution !== null) validateContribution(data.contribution, projectId);
-    else requireCondition(data.outcome === 'already_applied' && BigInt(data.confirmed_revision) > 0n,
-      'Shopping omitted the original contribution.');
-    requireCondition(typeof data.row_exists === 'boolean', 'Shopping did not confirm whether the grocery exists.');
-    requireCondition(data.row_exists
-      ? isObject(data.current_item) && data.current_item.id === data.contribution?.row_id && data.current_item.project_id === projectId
-      : data.current_item === null, 'Shopping returned an inconsistent current grocery.');
-  });
+  }, data => validateShoppingAddAcknowledgement(data, { operationId, projectId, userId }));
+}
+
+// The same decoder validates persisted receipts when the operation is reopened.
+export function validateShoppingAddAcknowledgement(data, { operationId, projectId, userId }) {
+  requireCondition(isObject(data), 'Shopping did not confirm this operation.');
+  requireCondition(['applied', 'already_applied'].includes(data.outcome), 'Shopping returned an unknown add outcome.');
+  requireCondition(data.operation_id === operationId && data.project_id === projectId && data.user_id === userId,
+    'Shopping confirmed a different operation, list or user.');
+  requireCondition(isRevision(data.confirmed_revision), 'Shopping returned an invalid confirmed revision.');
+  if (data.contribution !== null) validateContribution(data.contribution, projectId);
+  else requireCondition(data.outcome === 'already_applied' && BigInt(data.confirmed_revision) > 0n,
+    'Shopping omitted the original contribution.');
+  requireCondition(typeof data.row_exists === 'boolean', 'Shopping did not confirm whether the grocery exists.');
+  requireCondition(data.row_exists
+    ? isObject(data.current_item) && data.current_item.id === data.contribution?.row_id && data.current_item.project_id === projectId
+    : data.current_item === null, 'Shopping returned an inconsistent current grocery.');
+  return data;
 }
 
 export function reconcileShoppingContribution({
@@ -84,26 +89,30 @@ export function reconcileShoppingContribution({
     target_quantity_value: desired.quantityValue ?? null,
     target_quantity_unit: desired.quantityUnit || '',
     target_status: desired.status || 'Open',
-  }, data => {
-    requireCondition(['applied', 'superseded', 'needs_review'].includes(data.outcome), 'Shopping returned an unknown reconciliation outcome.');
-    requireCondition(data.operation_id === operationId && data.desired_revision === desiredRevision,
-      'Shopping confirmed a different operation or intent revision.');
-    requireCondition(isRevision(data.confirmed_revision) && isRevision(data.latest_received_revision)
-      && BigInt(data.latest_received_revision) >= BigInt(desiredRevision)
-      && typeof data.replayed === 'boolean', 'Shopping returned invalid reconciliation revisions.');
-    if (data.replayed) requireCondition(isRevision(data.latest_confirmed_revision)
-      && BigInt(data.latest_confirmed_revision) >= BigInt(data.confirmed_revision), 'Shopping returned an invalid replay revision.');
-    if (data.outcome === 'applied') {
-      requireCondition(data.confirmed_revision === desiredRevision, 'Shopping did not confirm the submitted intent.');
-      if (desired.cancel) requireCondition(data.contribution === null, 'Shopping did not confirm the cancellation.');
-      else validateContribution(data.contribution, projectId);
-      requireCondition(Array.isArray(data.affected_items) && data.affected_items.every(row => isObject(row)
-        && typeof row.id === 'string' && row.project_id === projectId)
-        && Array.isArray(data.removed_row_ids) && data.removed_row_ids.every(id => typeof id === 'string'),
-      'Shopping returned invalid affected groceries.');
-    }
-    // needs_review and superseded remain distinct, non-success outcomes. All
-    // returned row images remain historical when replayed; do not hydrate from
-    // them without reconciling against the latest local desired revision.
-  });
+  }, data => validateShoppingIntentAcknowledgement(data, { operationId, projectId, desiredRevision, desired }));
+}
+
+export function validateShoppingIntentAcknowledgement(data, { operationId, projectId, desiredRevision, desired }) {
+  requireCondition(isObject(data), 'Shopping did not confirm this operation.');
+  requireCondition(['applied', 'superseded', 'needs_review'].includes(data.outcome), 'Shopping returned an unknown reconciliation outcome.');
+  requireCondition(data.operation_id === operationId && data.desired_revision === desiredRevision,
+    'Shopping confirmed a different operation or intent revision.');
+  requireCondition(isRevision(data.confirmed_revision) && isRevision(data.latest_received_revision)
+    && BigInt(data.latest_received_revision) >= BigInt(desiredRevision)
+    && typeof data.replayed === 'boolean', 'Shopping returned invalid reconciliation revisions.');
+  if (data.replayed) requireCondition(isRevision(data.latest_confirmed_revision)
+    && BigInt(data.latest_confirmed_revision) >= BigInt(data.confirmed_revision), 'Shopping returned an invalid replay revision.');
+  if (data.outcome === 'applied') {
+    requireCondition(data.confirmed_revision === desiredRevision, 'Shopping did not confirm the submitted intent.');
+    if (desired.cancel) requireCondition(data.contribution === null, 'Shopping did not confirm the cancellation.');
+    else validateContribution(data.contribution, projectId);
+    requireCondition(Array.isArray(data.affected_items) && data.affected_items.every(row => isObject(row)
+      && typeof row.id === 'string' && row.project_id === projectId)
+      && Array.isArray(data.removed_row_ids) && data.removed_row_ids.every(id => typeof id === 'string'),
+    'Shopping returned invalid affected groceries.');
+  }
+  // needs_review and superseded remain distinct, non-success outcomes. All
+  // returned row images remain historical when replayed; do not hydrate from
+  // them without reconciling against the latest local desired revision.
+  return data;
 }

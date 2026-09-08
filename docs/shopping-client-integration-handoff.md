@@ -1,6 +1,6 @@
 # Q04-C: next bounded implementation
 
-7 September 2026. Q04-B SQL source and CI were merged in PR #53; the migration has not been applied. The independent journal and RPC adapters are now implemented and verified; see [client boundary verification](shopping-client-boundary-verification.md). The Shopping client still uses v2 and still has the five Q04 failures in the actual-hook investigation. Continue with the intent state machine and actions/sync integration described below.
+8 September 2026. Q04-B SQL source and CI were merged in PR #53; the migration has not been applied. C1/C2 boundaries were published in PR #54. C3 now implements and verifies the durable intent controller; see [operation verification](shopping-operation-verification.md). The Shopping client still uses v2 and still has the five Q04 failures in the actual-hook investigation. Continue with actions/sync integration described below.
 
 ## Start with durable submission evidence
 
@@ -40,4 +40,4 @@ Decide and test the recoverable legacy path before enabling v3 for existing queu
 3. Exercise online first submission, partial multi-add success, same-intent retry, a newer edit during acknowledgement/reconciliation, row disappearance, needs_review, revoked access and unavailable RPC. Test legacy migration/downgrade explicitly.
 4. Verify actual React components at phone and desktop widths, including a hidden pending cancellation and an understandable conflict/retry state. Run app preflight and the native SQL workflow before staging. Real household/deployed-schema and physical iPhone checks remain Q04-D gates.
 
-Next action: implement the durable Shopping journal boundary with focused failure/recovery tests, then integrate create actions and sync in a separate reviewable slice. Keep PR #53 draft until client/staging requirements are met; the owner has already authorized publishing after successful verification.
+Next action: integrate create actions, desired-state projection and sync using the verified controller. PRs #53 and #54 already published the foundations without activating them. The owner authorizes publishing after successful verification; keep the full Q04 behavior disabled until client/staging requirements pass.
