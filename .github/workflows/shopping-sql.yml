@@ -4,6 +4,9 @@ on:
   push:
     paths:
       - 'src/utils/shoppingContributionRpc*'
+      - 'src/utils/shoppingCreate*'
+      - 'package.json'
+      - 'package-lock.json'
       - 'scripts/sql/**'
       - 'scripts/investigations/shopping-contribution-sql.test.mjs'
       - 'scripts/investigations/shopping-test-database.mjs'
@@ -11,6 +14,9 @@ on:
   pull_request:
     paths:
       - 'src/utils/shoppingContributionRpc*'
+      - 'src/utils/shoppingCreate*'
+      - 'package.json'
+      - 'package-lock.json'
       - 'scripts/sql/**'
       - 'scripts/investigations/shopping-contribution-sql.test.mjs'
       - 'scripts/investigations/shopping-test-database.mjs'
@@ -32,6 +38,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install locked client test dependencies
+        run: npm ci --no-audit --no-fund
       - name: Install isolated PostgreSQL runtime
         run: npm install --prefix "$RUNNER_TEMP/pmw-sql-runtime" --no-audit --no-fund embedded-postgres@18.3.0-beta.17
       - name: Execute SQL and multi-session regressions

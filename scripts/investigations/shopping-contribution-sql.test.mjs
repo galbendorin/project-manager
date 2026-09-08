@@ -9,6 +9,9 @@ import { before, beforeEach, after, test } from 'node:test';
 import { createShoppingTestDatabase } from './shopping-test-database.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { applyShoppingContribution, reconcileShoppingContribution } from '../../src/utils/shoppingContributionRpc.js';
+import { IDBFactory } from 'fake-indexeddb';
+import { createShoppingCreateJournal } from '../../src/utils/shoppingCreateJournal.js';
+import { createShoppingCreateOperations } from '../../src/utils/shoppingCreateOperation.js';
 
 const db = await createShoppingTestDatabase();
 const owner = randomUUID();
@@ -89,6 +92,124 @@ const contributionClient = {
     return { data: rows[0].result, error: null };
   },
 };
+
+function operationFixture(t, rpc = contributionClient.rpc.bind(contributionClient)) {
+  const indexedDB = new IDBFactory();
+  const journals = [];
+  const operationId = randomUUID();
+  const make = () => {
+    const journal = createShoppingCreateJournal({ userId: member, getCurrentUserId: () => member, indexedDB });
+    journals.push(journal);
+    return { journal, controller: createShoppingCreateOperations({ journal, supabaseClient: { rpc },
+      getCurrentUserId: () => member, createIntentId: randomUUID }) };
+  };
+  t.after(() => journals.forEach(journal => journal.close()));
+  return { make, operationId, create: controller => controller.create({ operationId, projectId: project,
+    localId: `offline-${operationId}`, item: { title: 'Milk', quantityValue: 1, quantityUnit: 'carton' } }) };
+}
+const signal = () => {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+};
+
+for (const change of [{ title: 'Oat milk' }, { cancel: true }]) {
+  test(`durable controller preserves a later draft after a real merged add: ${JSON.stringify(change)}`, async t => {
+    await seed();
+    const committed = signal();
+    const release = signal();
+    const fixture = operationFixture(t, async (name, args) => {
+      const response = await contributionClient.rpc(name, args);
+      if (name.endsWith('_v3')) { committed.resolve(); await release.promise; }
+      return response;
+    });
+    const { controller } = fixture.make();
+    await fixture.create(controller);
+    const pending = controller.syncOnce(fixture.operationId);
+    await committed.promise;
+    assert.equal((await items())[0].quantity_value, 3);
+    await controller.edit(fixture.operationId, '0', change);
+    release.resolve();
+    assert.equal((await pending).progress.status, 'pending_change');
+    const reconciled = await controller.syncOnce(fixture.operationId);
+    assert.equal(reconciled.error, null);
+    assert.equal(reconciled.progress.status, 'settled');
+    const rows = await items();
+    assert.equal(rows.find(row => row.title === 'Milk').quantity_value, 2);
+    assert.equal(rows.length, change.cancel ? 1 : 2);
+    if (!change.cancel) assert.equal(rows.find(row => row.title === change.title).quantity_value, 1);
+  });
+}
+
+test('durable controller reopens after lost real add and move responses without duplicate quantity', async t => {
+  await seed();
+  await seed({ title: 'Bread', qty: 4, unit: 'loaf' });
+  let loseAdd = true;
+  let loseIntent = true;
+  const fixture = operationFixture(t, async (name, args) => {
+    const response = await contributionClient.rpc(name, args);
+    if (name.endsWith('_v3') && loseAdd) { loseAdd = false; throw new Error('lost committed add'); }
+    if (name.endsWith('_v1') && loseIntent) { loseIntent = false; throw new Error('lost committed move'); }
+    return response;
+  });
+  const first = fixture.make();
+  await fixture.create(first.controller);
+  assert.ok((await first.controller.syncOnce(fixture.operationId)).error);
+  await first.controller.edit(fixture.operationId, '0', { title: 'Bread', quantityUnit: 'loaf' });
+  first.journal.close();
+  const second = fixture.make();
+  assert.equal((await second.controller.syncOnce(fixture.operationId)).progress.status, 'pending_change');
+  assert.equal((await items()).find(row => row.title === 'Milk').quantity_value, 3);
+  assert.ok((await second.controller.syncOnce(fixture.operationId)).error);
+  assert.equal((await items()).find(row => row.title === 'Bread').quantity_value, 5);
+  await second.controller.edit(fixture.operationId, '1', { cancel: true });
+  second.journal.close();
+  const third = fixture.make().controller;
+  assert.equal((await third.syncOnce(fixture.operationId)).progress.status, 'pending_change');
+  assert.equal((await items()).find(row => row.title === 'Bread').quantity_value, 5);
+  assert.equal((await third.syncOnce(fixture.operationId)).progress.status, 'settled');
+  assert.deepEqual((await items()).map(row => row.quantity_value).sort(), [2, 4]);
+  const receipts = await db.query('select count(*)::integer as count from public.shopping_contribution_intents');
+  assert.equal(receipts.rows[0].count, 2);
+});
+
+test('durable controller retains conflict after a household member changes the contribution', async t => {
+  const fixture = operationFixture(t, async (name, args) => {
+    const response = await contributionClient.rpc(name, args);
+    if (name.endsWith('_v3')) throw new Error('lost add response');
+    return response;
+  });
+  const first = fixture.make();
+  await fixture.create(first.controller);
+  await first.controller.syncOnce(fixture.operationId);
+  await first.controller.edit(fixture.operationId, '0', { cancel: true });
+  const replay = createShoppingCreateOperations({ journal: first.journal, supabaseClient: contributionClient,
+    getCurrentUserId: () => member, createIntentId: randomUUID });
+  await replay.syncOnce(fixture.operationId);
+  const [row] = await items();
+  await asUser(owner, 'update public.manual_todos set quantity_value = 9 where id = $1', [row.id]);
+  const conflict = await replay.syncOnce(fixture.operationId);
+  assert.equal(conflict.error, null);
+  assert.equal(conflict.progress.reason, 'needs_review');
+  assert.equal(conflict.progress.desired.cancel, true);
+  assert.equal((await replay.syncOnce(fixture.operationId)).sent, false);
+  assert.equal((await items())[0].quantity_value, 9);
+});
+
+for (const shared of [false, true]) {
+  test(`durable controller reconciles pre-send Done without completing a shared row (shared=${shared})`, async t => {
+    if (shared) await seed();
+    const fixture = operationFixture(t);
+    const { controller } = fixture.make();
+    await fixture.create(controller);
+    await controller.edit(fixture.operationId, '0', { status: 'Done' });
+    assert.equal((await controller.syncOnce(fixture.operationId)).progress.status, 'pending_change');
+    const result = await controller.syncOnce(fixture.operationId);
+    assert.equal(result.error, null);
+    assert.equal(result.progress.status, shared ? 'needs_review' : 'settled');
+    assert.equal((await items())[0].status, shared ? 'Open' : 'Done');
+  });
+}
 
 test('client adapters accept real add, merge, move, cancel and historical replay responses', async () => {
   await seed();
