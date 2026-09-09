@@ -207,7 +207,7 @@ export function useShoppingListActions({
     selectedProject?.id,
   ]);
 
-  const addItems = useCallback(async (titles) => {
+  const addItems = useCallback(async (titles, options = {}) => {
     const normalizedItems = (titles || [])
       .map((item) => {
         if (typeof item === 'string') {
@@ -244,7 +244,7 @@ export function useShoppingListActions({
       setSavingItems(true);
       setTodoError('');
       try {
-        const result = await durableCreates.add(normalizedItems);
+        const result = await durableCreates.add(normalizedItems, options);
         if (result.failedItems.length) setTodoError('Some groceries could not be saved on this device. They are still in the entry box.');
         return result;
       } catch {

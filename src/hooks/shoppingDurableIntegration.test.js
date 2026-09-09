@@ -8,6 +8,8 @@ import { createShoppingCreateWorkspace, projectShoppingCreates } from '../utils/
 import { isOfflineTempId } from '../utils/offlineState.js';
 import { planShoppingListAdds, createOfflineShoppingTodo, sortTodos } from '../utils/shoppingListViewState.js';
 import { enqueueCreate, enqueueDelete, enqueueUpdate } from '../utils/offlineQueue.js';
+import { createShoppingInputBatches } from '../utils/shoppingInputBatches.js';
+import { memoryStorage } from '../../scripts/investigations/shopping-input-test-fixture.mjs';
 
 const defer = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { resolve, promise }; };
 const tick = () => new Promise(setImmediate);
@@ -27,6 +29,7 @@ function setup(t, { shared = false, loseAdd = false, holdAdd = false, offline = 
   let firstAdd = true, online = !offline, serial = 0, error = '';
   let base = server.map(map), snapshot = { records: [], refreshed: new Set(), busy: false, errors: new Map() };
   let cache = { queue: [], todosByProject: {} };
+  const batchStorage = memoryStorage();
   const journal = createShoppingCreateJournal({ userId: 'user-a', getCurrentUserId: () => 'user-a', indexedDB: new IDBFactory() });
   const transport = { readProject: async () => structuredClone(server), rpc: async (name, args) => {
     calls.push({ name, args: structuredClone(args) });
@@ -69,6 +72,7 @@ function setup(t, { shared = false, loseAdd = false, holdAdd = false, offline = 
     return { data: structuredClone(result) };
   } };
   const workspace = createShoppingCreateWorkspace({ journal: journalWrap ? journalWrap(journal) : journal, transport,
+    inputBatches: createShoppingInputBatches({ userId: 'user-a', getCurrentUserId: () => 'user-a', storage: () => batchStorage }),
     getCurrentUserId: () => 'user-a', isOnline: () => online, createId: () => `id-${++serial}`,
     onChange: next => { snapshot = next; }, onRefresh: async (_projectId, rows) => { base = rows.map(map); } });
   t.after(() => workspace.close());
@@ -84,7 +88,7 @@ function setup(t, { shared = false, loseAdd = false, holdAdd = false, offline = 
     selectedProject: { id: 'project-a' }, todos: visible(),
     setTodos: allowLegacy ? value => { base = value; } : unexpected, setTodoError: value => { error = value; },
     loadShoppingOfflineState: () => cache, persistOfflineState: value => { cache = value; }, sortTodos, createOfflineShoppingTodo,
-    durableCreates: { enabled, add: items => workspace.add('project-a', structuredClone(items)), edit: async (todo, patch) => {
+    durableCreates: { enabled, add: (items, options) => workspace.add('project-a', structuredClone(items), options), edit: async (todo, patch) => {
       try { await workspace.edit(todo, structuredClone(patch)); return { ok: true }; } catch (cause) { return { ok: false, message: cause.code }; }
     } } });
   const idle = async () => {
@@ -129,18 +133,17 @@ test('an online addition is durably recorded before its first request, with no l
   fixture.release(); await fixture.idle();
 });
 
-test('partial batch storage failure preserves only failed inputs with stable operation IDs', async t => {
+test('partial journal failure retains a complete batch and resumes stable IDs without a fresh input', async t => {
   let blocked = true;
   const fixture = setup(t, { journalWrap: journal => ({ ...journal, create: entry => {
     if (blocked && entry.desired.draft.title === 'Bread') throw new Error('quota');
     return journal.create(entry);
   } }) });
   const first = await fixture.actions().addItems(['Milk', 'Bread']);
-  assert.equal(first.addedCount, 1); assert.equal(first.failedItems.length, 1);
-  const operationId = first.failedItems[0].operationId;
+  assert.equal(first.addedCount, 2); assert.equal(first.failedItems.length, 0);
+  const operationId = fixture.snapshot().batches[0].items[1].operationId;
   blocked = false;
-  const second = await fixture.actions().addItems(first.failedItems);
-  assert.equal(second.addedCount, 1);
+  await fixture.workspace.sync();
   const records = await fixture.journal.list();
   assert.equal(records.length, 2); assert.ok(records.some(record => record.operationId === operationId));
 });

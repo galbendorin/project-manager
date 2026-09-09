@@ -13,6 +13,8 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createShoppingCreateJournal } from '../../src/utils/shoppingCreateJournal.js';
 import { createShoppingCreateOperations } from '../../src/utils/shoppingCreateOperation.js';
 import { createShoppingCreateWorkspace, projectShoppingCreates } from '../../src/utils/shoppingCreateWorkspace.js';
+import { createShoppingInputBatches } from '../../src/utils/shoppingInputBatches.js';
+import { memoryStorage } from './shopping-input-test-fixture.mjs';
 
 const db = await createShoppingTestDatabase();
 const owner = randomUUID();
@@ -119,7 +121,9 @@ for (const patch of [{ title: 'Oat milk' }, { cancel: true }]) {
     await seed();
     const journal = createShoppingCreateJournal({ userId: member, getCurrentUserId: () => member, indexedDB: new IDBFactory() });
     let online = false, snapshot = { records: [] }, currentRows = [];
+    const inputStorage = memoryStorage();
     const workspace = createShoppingCreateWorkspace({ journal,
+      inputBatches: createShoppingInputBatches({ userId: member, getCurrentUserId: () => member, storage: () => inputStorage }),
       transport: { ...contributionClient, readProject: async () => (await asUser(member, 'select * from public.manual_todos where project_id = $1', [project])).rows },
       getCurrentUserId: () => member, isOnline: () => online,
       onChange: value => { snapshot = value; }, onRefresh: async (_projectId, rows) => { currentRows = rows; } });

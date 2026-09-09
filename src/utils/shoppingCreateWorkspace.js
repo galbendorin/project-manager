@@ -1,5 +1,6 @@
 import { createShoppingCreateOperations, shoppingCreateProgress } from './shoppingCreateOperation.js';
 import { isMissingShoppingContributionRpc } from './shoppingContributionRpc.js';
+import { createShoppingInputBatches } from './shoppingInputBatches.js';
 
 export function shoppingCreateErrorMessage(error) {
   if (isMissingShoppingContributionRpc(error)) return 'Shopping sync is being updated. Your saved additions will stay on this device. Try again later.';
@@ -33,9 +34,11 @@ export function projectShoppingCreates({ todos, records, projectId, refreshed = 
 }
 
 export function createShoppingCreateWorkspace({ journal, transport, getCurrentUserId, isOnline,
-  onChange, onRefresh, createId = () => globalThis.crypto.randomUUID(), broadcast = () => {} }) {
+  onChange, onRefresh, createId = () => globalThis.crypto.randomUUID(), broadcast = () => {},
+  inputBatches = createShoppingInputBatches({ userId: getCurrentUserId(), getCurrentUserId }) }) {
   const controller = createShoppingCreateOperations({ journal, supabaseClient: transport, getCurrentUserId, createIntentId: createId });
   let records = [];
+  let batches = [];
   let closed = false;
   let busy = false;
   let requested = false;
@@ -44,7 +47,7 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
   const refreshNeeded = new Set();
   const refreshTickets = new Map();
   const publish = () => {
-    if (!closed) onChange({ records: structuredClone(records), errors: new Map(errors), refreshed: new Set(refreshed), busy });
+    if (!closed) onChange({ records: structuredClone(records), batches: structuredClone(batches), errors: new Map(errors), refreshed: new Set(refreshed), busy });
   };
   const reload = async () => {
     const stored = await journal.list();
@@ -58,7 +61,36 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
     }
     records = [...latest.values()];
     errors.delete('storage');
+    try { batches = inputBatches.list(); errors.delete('inputs'); }
+    catch (error) { errors.set('inputs', shoppingCreateErrorMessage(error)); }
     publish();
+  };
+  const recoverInputs = async () => {
+    let pending;
+    try { pending = inputBatches.list(); }
+    catch (error) { errors.set('inputs', shoppingCreateErrorMessage(error)); return; }
+    for (const batch of pending) {
+      let complete = true;
+      for (const item of batch.items) {
+        if (closed) return;
+        try {
+          // Exact creation replay checks immutable initialDesired and returns
+          // the latest record even after another tab has edited or synced it.
+          await controller.create({ operationId: item.operationId, projectId: batch.projectId,
+            localId: `offline-${item.operationId}`, item });
+        } catch (error) {
+          if (closed || error.code === 'JOURNAL_OWNER_CHANGED') throw error;
+          complete = false;
+          errors.set(`batch:${batch.id}`, 'These groceries are saved on this device. Retry to finish adding them.');
+          // A storage outage must not spend one timeout per remaining item.
+          break;
+        }
+      }
+      if (complete) {
+        try { inputBatches.remove(batch); errors.delete(`batch:${batch.id}`); }
+        catch (error) { errors.set(`batch:${batch.id}`, shoppingCreateErrorMessage(error)); }
+      }
+    }
   };
   const refresh = async projectId => {
     // Read current rows only. Capture terminal versions before the request;
@@ -76,14 +108,16 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
     publish();
   };
   const sync = async (attemptedFailures = new Set()) => {
-    if (closed || !isOnline()) return;
+    if (closed) return;
     if (busy) { requested = true; return; }
     busy = true;
     requested = false;
     publish();
     let continueBatch = false;
     try {
+      await recoverInputs();
       await reload();
+      if (!isOnline()) return;
       for (let steps = 0; steps < 100 && !closed && isOnline(); steps++) {
         const record = records.find(item => !attemptedFailures.has(item.operationId)
           && ['pending_add', 'pending_change'].includes(shoppingCreateProgress(item).status));
@@ -135,23 +169,21 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
   };
   return {
     reload, sync, refresh,
-    add: async (projectId, items) => {
-      let savedCount = 0;
-      const failedItems = [];
-      for (const item of items) {
-        try {
-          const operationId = item.operationId || createId();
-          await controller.create({ operationId, projectId, localId: `offline-${operationId}`, item });
-          savedCount++;
-        } catch { failedItems.push(item); }
-      }
+    add: async (projectId, items, { onAccepted = () => {}, draftGeneration = null } = {}) => {
+      const prepared = items.map(item => ({ ...item, operationId: item.operationId || createId() }));
+      inputBatches.save(projectId, prepared, { draftGeneration });
+      // Synchronous handoff occurs before any journal await or input clearing.
+      // From here failures retain the full batch, never restore a fresh add.
+      try { onAccepted(); } catch { /* The accepted batch must never become a fresh failed input. */ }
+      try { await recoverInputs(); }
+      catch (error) { errors.set('inputs', shoppingCreateErrorMessage(error)); }
       try { await changed(); }
       catch (error) {
         // A failed display reload cannot turn already committed journal writes
         // back into unsaved inputs. Keep the exact per-item write outcomes.
         errors.set('storage', shoppingCreateErrorMessage(error)); publish();
       }
-      return { addedCount: savedCount, mergedCount: 0, queuedCount: savedCount, failedItems };
+      return { addedCount: prepared.length, mergedCount: 0, queuedCount: prepared.length, failedItems: [] };
     },
     edit: async (todo, patch) => {
       // A user may start editing a pending row just before its reply arrives.
@@ -161,6 +193,6 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
       errors.delete(todo._shoppingOperationId);
       await changed();
     },
-    close: () => { closed = true; records = []; errors.clear(); journal.close(); },
+    close: () => { closed = true; records = []; batches = []; errors.clear(); journal.close(); inputBatches.close(); },
   };
 }

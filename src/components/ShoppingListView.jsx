@@ -13,12 +13,13 @@ import {
 } from '../hooks/projectData/manualTodoUtils';
 import { useShoppingListActions } from '../hooks/useShoppingListActions';
 import { useShoppingDurableCreates } from '../hooks/useShoppingDurableCreates';
+import { useShoppingTypedDraft } from '../hooks/useShoppingTypedDraft';
 import { useShoppingListData } from '../hooks/useShoppingListData';
 import { useShoppingListLiveUpdates } from '../hooks/useShoppingListLiveUpdates';
 import { useShoppingListOfflineSync } from '../hooks/useShoppingListOfflineSync';
 import { useShoppingListVoiceCapture } from '../hooks/useShoppingListVoiceCapture';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { readLocalJson, removeLocalJson, writeLocalJson } from '../utils/offlineState';
+import { readLocalJson, writeLocalJson } from '../utils/offlineState';
 import { normalizeProjectRecord } from '../utils/projectSharing';
 import {
   createOfflineShoppingTodo,
@@ -52,12 +53,10 @@ import { createShoppingAddEntry } from '../utils/shoppingAddEntry';
 
 const SHOPPING_PROJECT_NAME = 'Shopping List';
 const SHOPPING_UI_PREFS_KEY = 'pmworkspace:shopping-ui:v1';
-const SHOPPING_DRAFT_KEY_PREFIX = 'pmworkspace:shopping-draft:v1';
 const MOBILE_COMPLETE_DELAY_MS = 1000;
 // Enable only after staging the contribution SQL and integrated account checks.
 const DURABLE_CREATES_ENABLED = import.meta.env.VITE_SHOPPING_DURABLE_CREATES === 'true';
 
-const buildShoppingDraftKey = (userId) => `${SHOPPING_DRAFT_KEY_PREFIX}:${userId || 'anonymous'}`;
 
 const IconBase = ({ children, className = '', viewBox = '0 0 24 24' }) => (
   <svg
@@ -166,8 +165,6 @@ export default function ShoppingListView({ currentUserId }) {
   const { canCreateProject, limits, refreshProjectCount } = usePlan();
   const isMobile = useMediaQuery('(max-width: 768px)');
   const isOnline = useOnlineStatus();
-  const draftStorageKey = useMemo(() => buildShoppingDraftKey(currentUserId), [currentUserId]);
-  const [draftTitle, setDraftTitle] = useState(() => readLocalJson(draftStorageKey, ''));
   const [shareOpen, setShareOpen] = useState(false);
   const [showBought, setShowBought] = useState(false);
   const [editingTodoId, setEditingTodoId] = useState('');
@@ -240,6 +237,8 @@ export default function ShoppingListView({ currentUserId }) {
   });
   const durableCreates = useShoppingDurableCreates({ currentUserId, isOnline, enabled: DURABLE_CREATES_ENABLED,
     selectedProjectId, baseTodos, setTodos, persistOfflineState });
+  const { value: draftTitle, set: setDraftTitle, prepare: prepareDraft, clearAccepted: clearAcceptedDraft,
+    restoreFailed: restoreFailedDraft, error: draftError } = useShoppingTypedDraft({ userId: currentUserId, projectId: selectedProjectId, enabled: DURABLE_CREATES_ENABLED });
   const { refresh: refreshDurable, retry: retryDurable } = durableCreates;
   const addScope = useMemo(() => ({ owner: currentUserId, project: selectedProjectId, workspace: durableCreates.sessionKey }),
     [currentUserId, selectedProjectId, durableCreates.sessionKey]);
@@ -275,20 +274,9 @@ export default function ShoppingListView({ currentUserId }) {
   }, [desktopCompact]);
 
   useEffect(() => {
-    setDraftTitle(readLocalJson(draftStorageKey, ''));
     failedAddDraftRef.current = null;
     setEditingTodoSnapshot(null);
-  }, [draftStorageKey]);
-
-  useEffect(() => {
-    if (!currentUserId) return;
-    const nextDraft = String(draftTitle || '');
-    if (nextDraft.trim()) {
-      writeLocalJson(draftStorageKey, nextDraft);
-      return;
-    }
-    removeLocalJson(draftStorageKey);
-  }, [currentUserId, draftStorageKey, draftTitle]);
+  }, [currentUserId, selectedProjectId]);
 
   const {
     liveUpdateMessage,
@@ -371,14 +359,17 @@ export default function ShoppingListView({ currentUserId }) {
   });
   const addItems = useMemo(() => createShoppingAddEntry({ addItems: addRawItems,
     isCurrent: () => addScopeRef.current === addScope,
-    restoreFailed: failedItems => setDraftTitle(current => {
+    restoreFailed: failedItems => {
+      if (DURABLE_CREATES_ENABLED) { restoreFailedDraft(failedItems); return; }
+      setDraftTitle(current => {
       if (addScopeRef.current !== addScope) return current;
       const failedText = failedItems.map(item => item.title).join('\n');
       const text = current.trim() ? `${current}\n${failedText}` : failedText;
       failedAddDraftRef.current = { text, items: [...splitTypedGroceries(current), ...failedItems] };
       return text;
-    }),
-  }), [addRawItems, addScope]);
+      });
+    },
+  }), [addRawItems, addScope, setDraftTitle, restoreFailedDraft]);
   const {
     isListening,
     interimText,
@@ -396,26 +387,34 @@ export default function ShoppingListView({ currentUserId }) {
 
   const handleAddSubmit = useCallback(async (event) => {
     event.preventDefault();
-    const items = failedAddDraftRef.current?.text === draftTitle
+    let items = failedAddDraftRef.current?.text === draftTitle
       ? failedAddDraftRef.current.items : splitTypedGroceries(draftTitle);
     if (items.length === 0) return;
+    let generation = null;
+    if (DURABLE_CREATES_ENABLED) {
+      try { const draft = prepareDraft(); items = draft.items; generation = draft.generation; }
+      catch { setVoiceMessage('Unable to save this draft on your device. Keep the page open and retry.'); return; }
+    }
     const submittedTitle = draftTitle;
-    setDraftTitle('');
     setVoiceMessage(items.length === 1 ? `Adding ${items[0].title || items[0]}...` : `Adding ${items.length} groceries...`);
-    const summary = await addItems(items);
+    const summary = await addItems(items, { restoreFailed: false, draftGeneration: generation, onAccepted: () => {
+      if (addScopeRef.current !== addScope) return;
+      clearAcceptedDraft(generation);
+      failedAddDraftRef.current = null;
+    } });
     if (summary?.cancelled) return;
     if (summary?.failedItems?.length) {
-      setVoiceMessage(`${summary.addedCount} saved on this device. The remaining groceries are still in the entry box.`);
+      setVoiceMessage('Unable to save on this device. Your groceries are still in the entry box.');
       return;
     }
     if (!summary) {
-      setDraftTitle(current => current.trim() ? `${current}\n${submittedTitle}` : submittedTitle);
       setVoiceMessage('Unable to add right now. Please try again.');
       return;
     }
     failedAddDraftRef.current = null;
+    if (!DURABLE_CREATES_ENABLED) setDraftTitle(current => current === submittedTitle ? '' : current);
     setVoiceMessage(formatShoppingAddSummary(summary));
-  }, [addItems, draftTitle, setVoiceMessage]);
+  }, [addItems, draftTitle, setVoiceMessage, addScope, prepareDraft, clearAcceptedDraft, setDraftTitle]);
 
   const handleAddAgainTodo = useCallback(async (todo) => {
     const summary = await addItems([{
@@ -698,13 +697,13 @@ export default function ShoppingListView({ currentUserId }) {
                   voiceSupported={voiceSupported}
                 />
 
-                {todoError || durableCreates.error ? (
+                {todoError || durableCreates.error || draftError ? (
                   <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                    {todoError || durableCreates.error}
+                    {todoError || durableCreates.error || draftError}
                   </div>
                 ) : null}
 
-                <ShoppingPendingAdds records={durableCreates.records} errors={durableCreates.errors}
+                <ShoppingPendingAdds records={durableCreates.records} batches={durableCreates.batches} errors={durableCreates.errors}
                   busy={durableCreates.busy} onRetry={durableCreates.retry} onEdit={durableCreates.edit} />
 
                 {liveUpdateMessage ? (

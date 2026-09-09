@@ -78,9 +78,9 @@ export function useShoppingDurableCreates({ currentUserId, isOnline, enabled, se
     if ((!enabled && !hasProjectRecords) || !selectedProjectId || !isOnline || !ready || !isCurrent()) return;
     try { await workspace.refresh(selectedProjectId); } catch { /* Existing list loader reports its own refresh failure. */ }
   }, [enabled, hasProjectRecords, selectedProjectId, isOnline, ready, isCurrent, workspace]);
-  const add = useCallback(async items => {
+  const add = useCallback(async (items, options) => {
     if (!ready || !isCurrent() || !selectedProjectId) throw new Error('Shopping is still opening. Please try again.');
-    return workspace.add(selectedProjectId, items);
+    return workspace.add(selectedProjectId, items, options);
   }, [ready, selectedProjectId, isCurrent, workspace]);
   const edit = useCallback(async (todo, patch) => {
     try {
@@ -95,6 +95,9 @@ export function useShoppingDurableCreates({ currentUserId, isOnline, enabled, se
   }, [ready, isCurrent, workspace]);
   const pendingRecords = records.filter(record => record.projectId === selectedProjectId
     && !['settled', 'local_cancelled'].includes(shoppingCreateProgress(record).status));
-  return { enabled, ready, todos, sessionKey: workspace, records: pendingRecords, add, edit, retry, refresh,
-    busy: ownsSnapshot && snapshot.busy, error: enabled || records.length ? error : '', errors: ownsSnapshot ? snapshot.errors : new Map() };
+  const batches = ownsSnapshot ? (snapshot.batches || []).filter(batch => batch.projectId === selectedProjectId) : [];
+  const showErrors = enabled || records.length || batches.length;
+  return { enabled, ready, todos, sessionKey: workspace, records: pendingRecords,
+    batches, add, edit, retry, refresh,
+    busy: ownsSnapshot && snapshot.busy, error: showErrors ? error : '', errors: ownsSnapshot && showErrors ? snapshot.errors : new Map() };
 }
