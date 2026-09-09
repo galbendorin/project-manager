@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
 import { shoppingCreateProgress } from '../utils/shoppingCreateOperation';
 
-export default function ShoppingPendingAdds({ records, errors, busy, onRetry, onEdit }) {
+export default function ShoppingPendingAdds({ records, batches = [], errors, busy, onRetry, onEdit }) {
   const [actionError, setActionError] = useState('');
   const visible = records.filter(record => record.desired.draft.cancel
     || shoppingCreateProgress(record).status === 'needs_review' || errors.has(record.operationId));
-  const refreshErrors = [...errors.entries()].filter(([id]) => id.startsWith('refresh:') || id === 'storage');
-  if (!visible.length && !refreshErrors.length) return null;
+  const refreshErrors = [...errors.entries()].filter(([id]) => id.startsWith('refresh:') || id === 'storage' || id === 'inputs');
+  if (!visible.length && !refreshErrors.length && !batches.length) return null;
   return <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" aria-label="Pending grocery changes">
     <h3 className="font-semibold">Pending grocery changes</h3>
+    {batches.map(batch => <div key={batch.id} className="mt-3">
+      <p className="font-medium">Finishing saved groceries</p>
+      <p className="mt-1">{batch.items.map(item => item.title).join(', ')}</p>
+      <p className="mt-1">These groceries are saved on this device. Retry to finish adding them.</p>
+    </div>)}
     {visible.map(record => {
       const cancelled = record.desired.draft.cancel;
       const review = shoppingCreateProgress(record).status === 'needs_review';

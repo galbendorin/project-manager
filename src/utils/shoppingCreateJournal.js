@@ -188,13 +188,15 @@ export function createShoppingCreateJournal({
   const journal = {
     create: ({ operationId, projectId, localId, desired }) => {
       [operationId, projectId, localId].forEach(requiredId);
+      const initialDesired = canonicalJson(desired);
       const entry = { schemaVersion: 1, userId, operationId, projectId, localId,
-        desired: canonicalJson(desired), submission: null, recordVersion: 1 };
+        initialDesired, desired: initialDesired, submission: null, recordVersion: 1 };
       return transact('readwrite', (store, watch, done) => {
         watch(store.get([userId, operationId]), existing => {
           if (existing) {
             checkRecord(existing);
-            if (existing.projectId !== projectId || existing.localId !== localId || !sameJson(existing.desired, entry.desired)) {
+            if (existing.projectId !== projectId || existing.localId !== localId
+              || !sameJson(existing.initialDesired ?? existing.desired, entry.initialDesired)) {
               throw failure('JOURNAL_OPERATION_EXISTS');
             }
             done(existing);
