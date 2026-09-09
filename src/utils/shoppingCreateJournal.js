@@ -1,3 +1,5 @@
+import { createShoppingDraftRepository, SHOPPING_DRAFT_STORE, SHOPPING_DRAFT_BATCH_STORE } from './shoppingDraftRepository.js';
+
 const DATABASE = 'pmworkspace-shopping-create-journal';
 const STORE = 'operations';
 
@@ -48,6 +50,7 @@ export function createShoppingCreateJournal({
   getCurrentUserId,
   indexedDB = browserIndexedDb(),
   timeoutMs = 1500,
+  includeDrafts = false,
 } = {}) {
   requiredId(userId);
   if (typeof getCurrentUserId !== 'function') throw failure('JOURNAL_OWNER_GUARD_REQUIRED');
@@ -87,13 +90,26 @@ export function createShoppingCreateJournal({
       const timer = setTimeout(() => finish(failure('JOURNAL_STORAGE_TIMEOUT')), timeoutMs);
       cancelOpen = () => finish(failure('JOURNAL_OWNER_CHANGED'));
       try {
-        const request = indexedDB.open(DATABASE, 1);
+        // Only the opt-in repository initiates v2. Normal operation clients
+        // can reopen the latest schema after another connection upgrades it.
+        const request = includeDrafts ? indexedDB.open(DATABASE, 2) : indexedDB.open(DATABASE);
         request.onupgradeneeded = () => {
+          if (settled) { request.transaction?.abort(); return; }
           try {
             assertOwner();
-            const store = request.result.createObjectStore(STORE, { keyPath: ['userId', 'operationId'] });
-            store.createIndex('owner', 'userId');
-            store.createIndex('local', ['userId', 'localId'], { unique: true });
+            const db = request.result;
+            if (!db.objectStoreNames.contains(STORE)) {
+              const store = db.createObjectStore(STORE, { keyPath: ['userId', 'operationId'] });
+              store.createIndex('owner', 'userId');
+              store.createIndex('local', ['userId', 'localId'], { unique: true });
+            }
+            if (includeDrafts) {
+              for (const name of [SHOPPING_DRAFT_STORE, SHOPPING_DRAFT_BATCH_STORE]) {
+                const store = db.createObjectStore(name, { keyPath: ['userId', 'projectId', 'draftId'] });
+                store.createIndex('owner_project', ['userId', 'projectId']);
+                if (name === SHOPPING_DRAFT_BATCH_STORE) store.createIndex('operations', 'operationKeys', { unique: true, multiEntry: true });
+              }
+            }
           } catch (error) {
             request.transaction?.abort();
             finish(error);
@@ -117,7 +133,7 @@ export function createShoppingCreateJournal({
     try { return await pending; } finally { if (opening === pending) opening = null; }
   };
 
-  const transact = async (mode, action) => {
+  const transact = async (mode, action, storeNames = STORE) => {
     const db = await open();
     assertOwner();
     return new Promise((resolve, reject) => {
@@ -140,14 +156,16 @@ export function createShoppingCreateJournal({
       };
       const timer = setTimeout(() => abort(failure('JOURNAL_STORAGE_TIMEOUT')), timeoutMs);
       try {
-        transaction = db.transaction(STORE, mode, mode === 'readwrite' ? { durability: 'strict' } : undefined);
+        transaction = db.transaction(storeNames, mode, mode === 'readwrite' ? { durability: 'strict' } : undefined);
         transactions.set(transaction, abort);
         transaction.onabort = () => finish(abortReason || failure('JOURNAL_STORAGE_ABORTED', transaction.error));
         transaction.onerror = () => { abortReason ||= failure('JOURNAL_STORAGE_FAILED', transaction.error); };
         transaction.oncomplete = () => {
           try { assertOwner(); finish(); } catch (error) { finish(error); }
         };
-        const store = transaction.objectStore(STORE);
+        const store = Array.isArray(storeNames)
+          ? Object.fromEntries(storeNames.map(name => [name, transaction.objectStore(name)]))
+          : transaction.objectStore(storeNames);
         const watch = (request, callback) => {
           request.onsuccess = () => {
             try {
@@ -236,5 +254,6 @@ export function createShoppingCreateJournal({
       connection = null;
     },
   };
+  if (includeDrafts) journal.drafts = createShoppingDraftRepository({ userId, transact, canonicalJson, failure });
   return journal;
 }
