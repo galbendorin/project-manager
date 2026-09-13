@@ -1,0 +1,18 @@
+# R1b: safe compaction of accepted draft heads
+
+13 September 2026. Implemented `journal.drafts.compactAccepted({ projectId, draftId, expectedVersion })` as a targeted, opt-in operation. It is not called by the app. No schema, UI, SQL, import or rollout flag changed.
+
+The method checks one accepted head and its retained batch in the same IndexedDB transaction. Owner/project/draft identity, accepted version, payload equality and operation reservations must agree. Only then does it replace the head's duplicate initial/current payloads with a permanent compact marker. The immutable accepted batch and its unique operation reservations remain intact. Unsent and newer heads are never touched. There is no age-based sweep, key scan, batch deletion or journal deletion; each call handles one explicitly selected head, so there is no scanner bookmark or first-page starvation problem.
+
+The marker retains the logical accepted recordVersion. Exact acceptance replay still returns the original batch. An old create request receives `JOURNAL_DRAFT_RETIRED`; an update remains rejected. Future callers must treat this as an already-accepted identity and recover through its batch, never restore the text with fresh IDs. Read/list understand compact markers and continue exposing other unsent drafts.
+
+Validation: **574 application tests**, hooks, lint and production build pass, including **31 draft-repository cases** (14 added for compaction). New tests cover stale create/update, reserved IDs, newer unsent input, concurrent compactors and acceptance, stale versions, owner/project isolation, abort rollback, lost completion/reopen, and missing/mismatched/invalid recovery evidence. Independent review found no code blocker; its requested additional mismatch coverage is included. Local log: `/private/tmp/pmw-r1b-preflight.log`.
+
+A native browser fixture compacted accepted Milk, retained unsent Bread, reloaded the page, rejected old Milk creation, and replayed acceptance twice into the original single batch. The marker had no initial/value payloads; quantity and metadata remained in the batch. The temporary tab and server were closed; synthetic data remains only on dedicated localhost port52222. No product UI changed; no physical iPhone or authenticated household test is claimed. Existing SQL/operation logic is unchanged; SQL CI is checked during release rather than rerunning the local native suite without a SQL change.
+
+## Retention and activation limits
+
+- This removes two redundant payload copies per accepted head. It deliberately retains one full accepted batch and a small marker per accepted draft lifetime. Total storage is not capped across all lifetimes. Those records remain necessary for recovery and deduplication until a later design proves transfer to the operation journal and safe retirement of its replay evidence.
+- Unsent draft heads remain discoverable and are never expired merely because a tab is old. The legacy localStorage protocol is unchanged; its two investigation failures remain expected until integration/migration.
+- R1a-only draft readers do not understand compacted heads and fail closed. Deploy compatible readers before enabling compaction; rollback must use a compatible build. Never delete the database to make an older build work.
+- The next bounded task is **R2: wire transactional draft saving, acceptance recovery and saved-draft selection into the existing entry flow**, with asynchronous completion and owner/list/voice fencing. Migration, mixed-version testing, staged SQL/permissions and physical iPhone lifecycle evidence still gate activation. Keep the new-create flag OFF.

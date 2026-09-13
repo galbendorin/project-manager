@@ -27,7 +27,21 @@ export function createShoppingDraftRepository({ userId, transact, canonicalJson,
     if (!record || record.schemaVersion !== 1 || record.userId !== userId || record.projectId !== projectId
       || !Number.isSafeInteger(record.recordVersion) || record.recordVersion < 1
       || !['editing', 'accepted'].includes(record.state)) throw failure('JOURNAL_DRAFT_INVALID');
-    id(record.draftId); snapshot(record.initial); snapshot(record.value);
+    id(record.draftId);
+    if (Object.hasOwn(record, 'compacted') && record.compacted !== true) throw failure('JOURNAL_DRAFT_INVALID');
+    if (record.compacted === true) {
+      if (record.state !== 'accepted' || record.recordVersion < 2
+        || Object.hasOwn(record, 'initial') || Object.hasOwn(record, 'value')) throw failure('JOURNAL_DRAFT_INVALID');
+    } else { snapshot(record.initial); snapshot(record.value); }
+    return record;
+  };
+  const checkBatch = (record, projectId, draftId) => {
+    if (!record || record.schemaVersion !== 1 || record.userId !== userId || record.projectId !== projectId
+      || (draftId !== undefined && record.draftId !== draftId)) throw failure('JOURNAL_DRAFT_INVALID');
+    id(record.draftId); version(record.draftVersion); snapshot(record.value);
+    if (!record.value.items.length || !same(record.operationKeys, record.value.items.map(item => [userId, item.operationId]))) {
+      throw failure('JOURNAL_DRAFT_INVALID');
+    }
     return record;
   };
   const key = (projectId, draftId) => [userId, id(projectId), id(draftId)];
@@ -44,6 +58,7 @@ export function createShoppingDraftRepository({ userId, transact, canonicalJson,
         watch(store.get(recordKey), existing => {
           if (existing) {
             check(existing, projectId);
+            if (existing.compacted) throw failure('JOURNAL_DRAFT_RETIRED');
             if (!same(existing.initial, initial)) throw failure('JOURNAL_DRAFT_EXISTS');
             // An exact create retry returns current state, never its old input.
             done(existing);
@@ -87,8 +102,10 @@ export function createShoppingDraftRepository({ userId, transact, canonicalJson,
           check(record, projectId);
           watch(batches.get(recordKey), existing => {
             if (existing) {
+              checkBatch(existing, projectId, draftId);
               if (record.state !== 'accepted' || existing.draftVersion !== expected
-                || record.recordVersion !== expected + 1 || !same(existing.value, record.value)) throw failure('JOURNAL_DRAFT_CONFLICT');
+                || record.recordVersion !== expected + 1
+                || (!record.compacted && !same(existing.value, record.value))) throw failure('JOURNAL_DRAFT_CONFLICT');
               done(existing); return;
             }
             if (record.state !== 'editing' || record.recordVersion !== expected) throw failure('JOURNAL_DRAFT_CONFLICT');
@@ -104,14 +121,36 @@ export function createShoppingDraftRepository({ userId, transact, canonicalJson,
         });
       }, [SHOPPING_DRAFT_STORE, SHOPPING_DRAFT_BATCH_STORE]);
     },
+    compactAccepted: ({ projectId, draftId, expectedVersion }) => {
+      const recordKey = key(projectId, draftId), expected = version(expectedVersion);
+      // One explicitly selected head per transaction. The batch and operation
+      // reservations remain recovery authority; this is not history eviction.
+      return transact('readwrite', (stores, watch, done) => {
+        const drafts = stores[SHOPPING_DRAFT_STORE], batches = stores[SHOPPING_DRAFT_BATCH_STORE];
+        watch(drafts.get(recordKey), record => {
+          if (!record) throw failure('JOURNAL_DRAFT_MISSING');
+          check(record, projectId);
+          if (record.state !== 'accepted' || record.recordVersion !== expected) throw failure('JOURNAL_DRAFT_CONFLICT');
+          watch(batches.get(recordKey), batch => {
+            checkBatch(batch, projectId, draftId);
+            if (batch.draftVersion !== expected - 1
+              || (!record.compacted && !same(batch.value, record.value))) throw failure('JOURNAL_DRAFT_CONFLICT');
+            if (record.compacted) { done(record); return; }
+            // Retain identity and logical accepted version permanently. An
+            // old create can no longer validate its initial payload, so it
+            // must fail closed instead of restoring a fresh editable draft.
+            const marker = { schemaVersion: 1, userId, projectId, draftId,
+              recordVersion: expected, state: 'accepted', compacted: true };
+            watch(drafts.put(marker), () => done(marker));
+          });
+        });
+      }, [SHOPPING_DRAFT_STORE, SHOPPING_DRAFT_BATCH_STORE]);
+    },
     listAccepted: projectId => {
       id(projectId);
       return transact('readonly', (store, watch, done) => {
         watch(store.index('owner_project').getAll([userId, projectId]), records => {
-          for (const record of records) {
-            if (record.schemaVersion !== 1 || record.userId !== userId || record.projectId !== projectId) throw failure('JOURNAL_DRAFT_INVALID');
-            id(record.draftId); version(record.draftVersion); snapshot(record.value);
-          }
+          records.forEach(record => checkBatch(record, projectId));
           done(records);
         });
       }, SHOPPING_DRAFT_BATCH_STORE);
