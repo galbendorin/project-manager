@@ -8,6 +8,7 @@ const value = title => ({ text: title, items: [{ operationId: `id-${title}`, tit
 const initial = value('Milk');
 const create = { projectId: 'p', draftId: 'd', value: initial };
 const target = { projectId: 'p', draftId: 'd', expectedVersion: 1 };
+const compactTarget = { ...target, expectedVersion: 2 };
 
 function fixture(t) {
   const indexedDB = new IDBFactory(), connections = [];
@@ -244,3 +245,144 @@ test('invalid or lossy values, duplicate identities and empty acceptance fail wi
   await assert.rejects(drafts.accept(target), { code: 'JOURNAL_DRAFT_EMPTY' });
   assert.throws(() => drafts.update({ ...target, expectedVersion: Number.MAX_SAFE_INTEGER, value: initial }), { code: 'JOURNAL_DRAFT_VERSION_INVALID' });
 });
+
+test('compaction removes duplicate payloads but preserves exact batch recovery after reopening', async t => {
+  const f = fixture(t), drafts = f.open().drafts;
+  await drafts.create(create); const batch = await drafts.accept(target);
+  const marker = await drafts.compactAccepted(compactTarget);
+  assert.deepEqual(Object.keys(marker).sort(), ['compacted', 'draftId', 'projectId', 'recordVersion', 'schemaVersion', 'state', 'userId']);
+  const reopened = f.open().drafts;
+  assert.deepEqual(await reopened.read('p', 'd'), marker);
+  assert.deepEqual(await reopened.accept(target), batch);
+  assert.deepEqual(await reopened.listAccepted('p'), [batch]);
+  assert.deepEqual(await reopened.list('p'), []);
+  assert.deepEqual(await reopened.compactAccepted(compactTarget), marker);
+});
+
+test('sleeping tabs cannot recreate or edit a compacted accepted draft', async t => {
+  const f = fixture(t), a = f.open().drafts, sleeping = f.open().drafts;
+  const captured = await a.create(create);
+  await a.accept(target); await a.compactAccepted(compactTarget);
+  await assert.rejects(sleeping.create({ ...create, value: captured.value }), { code: 'JOURNAL_DRAFT_RETIRED' });
+  await assert.rejects(sleeping.update({ ...target, value: value('Bread') }), { code: 'JOURNAL_DRAFT_ACCEPTED' });
+  await assert.rejects(sleeping.accept({ ...target, expectedVersion: 2 }), { code: 'JOURNAL_DRAFT_CONFLICT' });
+  assert.equal((await sleeping.listAccepted('p')).length, 1);
+});
+
+test('compacted batches continue reserving operation IDs against acceptance by a fresh draft', async t => {
+  const drafts = fixture(t).open().drafts;
+  await drafts.create(create); await drafts.accept(target); await drafts.compactAccepted(compactTarget);
+  await drafts.create({ ...create, draftId: 'new-draft' });
+  await assert.rejects(drafts.accept({ ...target, draftId: 'new-draft' }));
+  assert.equal((await drafts.read('p', 'new-draft')).state, 'editing');
+  assert.equal((await drafts.listAccepted('p')).length, 1);
+});
+
+test('compaction never removes unsent drafts, including newer identical text in another head', async t => {
+  const drafts = fixture(t).open().drafts;
+  await drafts.create(create);
+  await assert.rejects(drafts.compactAccepted(target), { code: 'JOURNAL_DRAFT_CONFLICT' });
+  await drafts.accept(target);
+  const newer = await drafts.create({ ...create, draftId: 'newer' });
+  await drafts.compactAccepted(compactTarget);
+  assert.deepEqual(await drafts.list('p'), [newer]);
+});
+
+test('two cleanup callers and an exact acceptance retry serialize without losing recovery', async t => {
+  const f = fixture(t), a = f.open().drafts, b = f.open().drafts;
+  await a.create(create); const batch = await a.accept(target);
+  const [first, second, replay] = await Promise.all([a.compactAccepted(compactTarget), b.compactAccepted(compactTarget), b.accept(target)]);
+  assert.deepEqual(first, second); assert.deepEqual(replay, batch);
+});
+
+for (const cleanupFirst of [true, false]) {
+  test(`cleanup racing acceptance is atomic (cleanup initiated first=${cleanupFirst})`, async t => {
+    const f = fixture(t), a = f.open().drafts, b = f.open().drafts;
+    await a.create(create); await b.read('p', 'd');
+    const cleanup = () => b.compactAccepted(compactTarget), accept = () => a.accept(target);
+    await Promise.allSettled(cleanupFirst ? [cleanup(), accept()] : [accept(), cleanup()]);
+    assert.equal((await a.listAccepted('p')).length, 1);
+    assert.equal((await a.read('p', 'd')).state, 'accepted');
+    await a.compactAccepted(compactTarget);
+    assert.deepEqual((await a.accept(target)).value, initial);
+  });
+}
+
+test('stale cleanup cannot remove a newer edit or cross owner/project scope', async t => {
+  const f = fixture(t), drafts = f.open().drafts;
+  await drafts.create(create);
+  const edited = await drafts.update({ ...target, value: value('Bread') });
+  await assert.rejects(drafts.compactAccepted(compactTarget), { code: 'JOURNAL_DRAFT_CONFLICT' });
+  assert.deepEqual(await drafts.read('p', 'd'), edited);
+  await drafts.accept({ ...target, expectedVersion: 2 });
+  await assert.rejects(drafts.compactAccepted(compactTarget), { code: 'JOURNAL_DRAFT_CONFLICT' });
+  await assert.rejects(drafts.compactAccepted({ ...compactTarget, projectId: 'q' }), { code: 'JOURNAL_DRAFT_MISSING' });
+  f.setOwner('b');
+  await assert.rejects(drafts.compactAccepted({ ...compactTarget, expectedVersion: 3 }), { code: 'JOURNAL_OWNER_CHANGED' });
+  await assert.rejects(f.open().drafts.compactAccepted(compactTarget), { code: 'JOURNAL_DRAFT_MISSING' });
+});
+
+test('aborted compaction preserves the original head and batch', async t => {
+  const f = fixture(t); let abort = false;
+  const indexedDB = intercept(f.indexedDB, tx => {
+    const objectStore = tx.objectStore.bind(tx);
+    tx.objectStore = name => {
+      const store = objectStore(name), put = store.put.bind(store);
+      store.put = record => {
+        const request = put(record);
+        request.addEventListener('success', () => { if (abort && record.compacted) tx.abort(); });
+        return request;
+      }; return store;
+    };
+  });
+  const drafts = f.open({ indexedDB }).drafts;
+  await drafts.create(create); const batch = await drafts.accept(target), before = await drafts.read('p', 'd');
+  abort = true;
+  await assert.rejects(drafts.compactAccepted(compactTarget), { code: 'JOURNAL_STORAGE_ABORTED' });
+  assert.deepEqual(await drafts.read('p', 'd'), before);
+  assert.deepEqual(await drafts.accept(target), batch);
+});
+
+test('lost cleanup completion recovers its committed marker without restoring payloads', async t => {
+  const f = fixture(t); let hide = false;
+  const indexedDB = intercept(f.indexedDB, (tx, [, mode]) => {
+    tx.addEventListener('complete', event => { if (hide && mode === 'readwrite') event.stopImmediatePropagation(); });
+  });
+  const drafts = f.open({ indexedDB, timeoutMs: 80 }).drafts;
+  await drafts.create(create); const batch = await drafts.accept(target); hide = true;
+  await assert.rejects(drafts.compactAccepted(compactTarget), { code: 'JOURNAL_STORAGE_TIMEOUT' });
+  const next = f.open().drafts;
+  assert.equal((await next.compactAccepted(compactTarget)).compacted, true);
+  assert.deepEqual(await next.accept(target), batch);
+  await assert.rejects(next.create(create), { code: 'JOURNAL_DRAFT_RETIRED' });
+});
+
+for (const fault of ['missing', 'payload mismatch', 'invalid schema', 'invalid reservations']) {
+test(`${fault} in recovery batch prevents compaction and preserves the head`, async t => {
+  const f = fixture(t), drafts = f.open().drafts;
+  await drafts.create(create); const batch = await drafts.accept(target);
+  const before = await drafts.read('p', 'd');
+  // Simulate corruption by removing the retained authority, only in the test DB.
+  await new Promise((resolve, reject) => {
+    const request = f.indexedDB.open('pmworkspace-shopping-create-journal');
+    request.onsuccess = () => {
+      const db = request.result, tx = db.transaction('accepted_draft_batches', 'readwrite');
+      const store = tx.objectStore('accepted_draft_batches');
+      if (fault === 'missing') store.delete(['a', 'p', 'd']);
+      else {
+        const corrupted = structuredClone(batch);
+        if (fault === 'payload mismatch') corrupted.value.text = 'Changed text';
+        if (fault === 'invalid schema') corrupted.schemaVersion = 99;
+        if (fault === 'invalid reservations') corrupted.operationKeys = [];
+        store.put(corrupted);
+      }
+      tx.oncomplete = () => { db.close(); resolve(); }; tx.onabort = () => { db.close(); reject(tx.error); };
+    };
+    request.onerror = () => reject(request.error);
+  });
+  await assert.rejects(drafts.compactAccepted(compactTarget), {
+    code: fault === 'payload mismatch' ? 'JOURNAL_DRAFT_CONFLICT' : 'JOURNAL_DRAFT_INVALID',
+  });
+  assert.deepEqual(await drafts.read('p', 'd'), before);
+});
+}
