@@ -40,6 +40,9 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
   let records = [];
   let batches = [];
   let closed = false;
+  const ownerId = getCurrentUserId();
+  const isCurrent = () => !closed && getCurrentUserId() === ownerId;
+  let reloadTicket = 0;
   let busy = false;
   let requested = false;
   const errors = new Map();
@@ -47,11 +50,18 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
   const refreshNeeded = new Set();
   const refreshTickets = new Map();
   const publish = () => {
-    if (!closed) onChange({ records: structuredClone(records), batches: structuredClone(batches), errors: new Map(errors), refreshed: new Set(refreshed), busy });
+    if (isCurrent()) onChange({ records: structuredClone(records), batches: structuredClone(batches), errors: new Map(errors), refreshed: new Set(refreshed), busy });
   };
   const reload = async () => {
+    const ticket = ++reloadTicket;
     const stored = await journal.list();
-    if (closed) return;
+    if (!isCurrent()) return;
+    let storedBatches, inputError;
+    try { storedBatches = await inputBatches.list(); }
+    catch (error) { inputError = error; }
+    // A delayed input read must not resurrect batches removed by a newer
+    // reload, or publish into a closed/replaced account session.
+    if (!isCurrent() || ticket !== reloadTicket) return;
     // Concurrent reads may finish out of order. A journal never removes these
     // records; retain the largest observed recordVersion for each operation.
     const latest = new Map(records.map(record => [record.operationId, record]));
@@ -61,18 +71,19 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
     }
     records = [...latest.values()];
     errors.delete('storage');
-    try { batches = inputBatches.list(); errors.delete('inputs'); }
-    catch (error) { errors.set('inputs', shoppingCreateErrorMessage(error)); }
+    if (inputError) errors.set('inputs', shoppingCreateErrorMessage(inputError));
+    else { batches = storedBatches; errors.delete('inputs'); }
     publish();
   };
   const recoverInputs = async () => {
     let pending;
-    try { pending = inputBatches.list(); }
-    catch (error) { errors.set('inputs', shoppingCreateErrorMessage(error)); return; }
+    try { pending = await inputBatches.list(); }
+    catch (error) { if (isCurrent()) errors.set('inputs', shoppingCreateErrorMessage(error)); return; }
+    if (!isCurrent()) return;
     for (const batch of pending) {
       let complete = true;
       for (const item of batch.items) {
-        if (closed) return;
+        if (!isCurrent()) return;
         try {
           // Exact creation replay checks immutable initialDesired and returns
           // the latest record even after another tab has edited or synced it.
@@ -87,7 +98,12 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
         }
       }
       if (complete) {
-        try { inputBatches.remove(batch); errors.delete(`batch:${batch.id}`); }
+        if (!isCurrent()) return;
+        try {
+          await inputBatches.remove(batch);
+          if (!isCurrent()) return;
+          errors.delete(`batch:${batch.id}`);
+        }
         catch (error) { errors.set(`batch:${batch.id}`, shoppingCreateErrorMessage(error)); }
       }
     }
@@ -164,15 +180,20 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
   };
   const changed = async () => {
     await reload();
+    if (!isCurrent()) return;
     broadcast();
     if (isOnline()) { requested = true; void sync().catch(() => {}); }
   };
   return {
     reload, sync, refresh,
     add: async (projectId, items, { onAccepted = () => {}, draftGeneration = null } = {}) => {
+      if (!isCurrent()) throw Object.assign(new Error('Shopping session changed.'), { code: 'JOURNAL_OWNER_CHANGED' });
       const prepared = items.map(item => ({ ...item, operationId: item.operationId || createId() }));
-      inputBatches.save(projectId, prepared, { draftGeneration });
-      // Synchronous handoff occurs before any journal await or input clearing.
+      await inputBatches.save(projectId, prepared, { draftGeneration });
+      // Both synchronous and transactional stores must confirm acceptance
+      // before input clearing or operation creation. Storage adapters retain
+      // exact identities through uncertain completion; they must not re-key.
+      if (!isCurrent()) return { cancelled: true, addedCount: 0, mergedCount: 0, queuedCount: 0, failedItems: [] };
       // From here failures retain the full batch, never restore a fresh add.
       try { onAccepted(); } catch { /* The accepted batch must never become a fresh failed input. */ }
       try { await recoverInputs(); }
