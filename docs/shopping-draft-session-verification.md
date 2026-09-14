@@ -1,0 +1,30 @@
+# R2b — transactional draft session and React hook
+
+14 September 2026, based on production `bb27dae7` / PR #60.
+
+## Implemented scope
+
+`createShoppingDraftSession` owns one owner/project/draft lineage over an injected `journal.drafts` repository. `useShoppingDraftSession` provides a React lifecycle adapter; neither is imported by the production Shopping View. The hook never opens or upgrades a database itself. Existing Actions, typed hook, legacy localStorage and workspace acceptance remain unchanged. The new-create flag stays OFF; SQL remains unapplied.
+
+The controller serializes writes, coalesces newer unsent text and retains each in-flight request's exact identity, expected version and complete JSON payload through a failed or uncertain save. Submitting locks the clicked input before awaiting storage. Acceptance only starts after that revision is saved. Unknown acceptance is `acceptance_unknown`, with an immutable submission reference and a locked editor; it never returns `failedItems` or allocates replacement operation IDs. Retry repeats the same acceptance version. Compacted accepted heads reopen through their retained batch. Missing/conflicting records cannot be silently recreated or rebased.
+
+Save failure before acceptance returns `not_submitted` while preserving editable RAM input and the pending write request. Once acceptance is attempted, storage errors conservatively keep the decision unresolved; even an abort does not automatically convert the submitted text to fresh input. Conflict and recovery failures are distinct states. Recovery retries the selected identity. Accepted state is terminal for this editor: genuinely independent new input belongs to a separate session, never an automatic copy of the submitted text.
+
+Owner/project/session replacement closes the hook's old controller. Late acknowledgements cannot publish into the new scope. The controller preserves rich JSON fields and item operation IDs supplied by its caller; the caller must normalize them consistently before this boundary. Canonical JSON validation is reused from the operation journal via a named export; no schema or journal behavior changes.
+
+## Verification
+
+- 602 application tests, hooks, lint and production build pass. There are 20 new session cases; only the existing voice-hook dependency lint warning remains. Final log: `/private/tmp/pmw-r2b-preflight.log`.
+- Tests use the actual repository and fake-indexeddb transaction implementation, injecting delayed or lost completion around repository calls. They cover coalescing100 edits; committed create/update timeouts with newer RAM text; submission barriers; uncertain acceptance/exact retries; compaction/reopen; duplicate tabs; rich payload mutation/validation; recovery retry; owner closure; and two completion-order races.
+- Independent review identified a saved-observer race and a related microtask gap: newer Bread could remain unwritten while submission accepted the preceding Milk record. Both were reproduced as failing regressions before repair (`/private/tmp/pmw-r2b-observer-before.log`, `/private/tmp/pmw-r2b-drain-before.log`). Completion now releases its flight before notifying observers and drains any intervening edit before reporting completion.
+- Final independent review confirmed both reported blockers are addressed, with no remaining blocker in this bounded scope. The reviewer did not rerun the full test suite.
+- Real React18 StrictMode hook tested in the in-app browser using native IndexedDB at isolated localhost52224. Held saves retained newer text; committed acceptance with injected lost confirmation locked the editor; exact retry succeeded after compaction; full reload recovered the accepted batch with quantities/metadata/IDs intact; unmounting a held editor preserved its stored draft without replacing an independently mounted editor's input. The recovered accepted state reports saved locally. Synthetic fixture data may remain on that local origin.
+- The reusable fixture is `scripts/investigations/shopping-draft-session-browser/`; start with `node scripts/investigations/shopping-draft-session-browser/server.mjs`. Its controls intentionally inject faults. It is not product UI. Browser fixture/server are closed after verification. No hosted authenticated Shopping journey, phone/desktop product layout or physical iPhone pass is claimed. Public smoke from R2a is prior baseline evidence and was not repeated for this unused module.
+
+## R2c is still required before integration or activation
+
+1. Wire the controller/hook into typed entry and route accepted batches to exact operation-journal recovery. Avoid a second legacy input acceptance after the transactional decision. Retained accepted batches need owner/project-scoped discovery and a verified handoff path; keep their identity evidence.
+2. Change Actions/View handling so `acceptance_unknown`, `conflict` and `not_submitted` have distinct copy/actions. Never route uncertain text through failed-item restoration or generate fresh IDs. Disable editing/submission of unresolved snapshots; preserve independently new input separately. Normalize quantities/units/source/metadata consistently before freezing the submission, including non-typed entrypoints.
+3. Add saved-draft selection with stable selected identity, useful loading/retry/conflict states and explicit handling of older unsent drafts. An unsaved or conflicted RAM draft must not disappear when choosing another one. Do not automatically import historic localStorage keystrokes as independent drafts.
+4. Require an actual Shopping View/Actions regression for commit-then-timeout, background recovery, edit/resubmit and reload. This R2b hook/controller test does not satisfy that integration gate. Verify phone and desktop UX, keyboard and rich inputs.
+5. Preserve R3 gates: mixed-version migration and rollback, staging SQL/household permissions, pending-count/projection UX, authenticated smoke and physical iPhone Safari/Home Screen launch/update/resume. Source publication is separate from enabling the flow. Full batch retirement remains deferred.

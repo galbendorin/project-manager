@@ -38,6 +38,7 @@ const canonicalJson = (value, ancestors = new Set()) => {
   return result;
 };
 const sameJson = (left, right) => JSON.stringify(canonicalJson(left)) === JSON.stringify(canonicalJson(right));
+export { canonicalJson as canonicalShoppingJournalJson };
 const browserIndexedDb = () => {
   try { return globalThis.indexedDB; } catch { return null; }
 };
