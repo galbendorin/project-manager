@@ -21,6 +21,17 @@ function validateDraft(draft) {
   return draft;
 }
 
+// One canonical initial payload for creation and accepted-batch handoff checks.
+// Compare this immutable state, never the user's subsequently edited desired state.
+export function shoppingCreateInitialDesired(item) {
+  if (!object(item) || (item.status !== undefined && item.status !== 'Open')) fail('SHOPPING_DRAFT_INVALID');
+  const draft = validateDraft({ title: item.title, quantityValue: item.quantityValue ?? null,
+    quantityUnit: item.quantityUnit ?? '', status: 'Open', cancel: false });
+  return { protocolVersion: 1, revision: '0', reviewedServerRevision: '0', draft,
+    source: { sourceType: item.sourceType ?? '', sourceBatchId: item.sourceBatchId ?? null, meta: item.meta ?? {} },
+    addResult: null, intents: [] };
+}
+
 function stateOf(record) {
   const state = record?.desired;
   if (!state || state.protocolVersion !== 1 || !revision(state.revision) || !revision(state.reviewedServerRevision) || !Array.isArray(state.intents)
@@ -164,12 +175,7 @@ export function createShoppingCreateOperations({ journal, supabaseClient, getCur
   return {
     read,
     create: ({ operationId, projectId, localId, item }) => {
-      if (!object(item) || (item.status !== undefined && item.status !== 'Open')) fail('SHOPPING_DRAFT_INVALID');
-      const draft = validateDraft({ title: item.title, quantityValue: item.quantityValue ?? null,
-        quantityUnit: item.quantityUnit ?? '', status: 'Open', cancel: false });
-      return journal.create({ operationId, projectId, localId, desired: { protocolVersion: 1,
-        revision: '0', reviewedServerRevision: '0', draft, source: { sourceType: item.sourceType ?? '', sourceBatchId: item.sourceBatchId ?? null,
-          meta: item.meta ?? {} }, addResult: null, intents: [] } });
+      return journal.create({ operationId, projectId, localId, desired: shoppingCreateInitialDesired(item) });
     },
     edit: (operationId, expectedRevision, patch, { fromPendingView = false } = {}) => {
       if (!revision(expectedRevision) || !object(patch) || Object.keys(patch).some(key => !DRAFT_FIELDS.includes(key))) {

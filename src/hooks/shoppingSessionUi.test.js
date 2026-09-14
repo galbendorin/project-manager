@@ -97,6 +97,30 @@ test('retained durable callbacks cannot target a replacement account or a later 
   assert.equal(workspaces.length, 3);
 });
 
+test('flag-off draft recovery wakes for the selected project and exposes errors without operations', async t => {
+  const projects = [];
+  const harness = await hookHarness('./useShoppingDurableCreates.js', 'useShoppingDurableCreates', {
+    AbortController, Map, Set, window: { addEventListener() {}, removeEventListener() {} },
+    supabase: { auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) } },
+    createShoppingCreateJournal: () => ({}), createShoppingSessionTransport: () => ({}),
+    shoppingCreateProgress: () => ({ status: 'pending_add' }), shoppingCreateErrorMessage: () => 'Failure',
+    sortTodos: items => items, projectShoppingCreates: ({ todos }) => todos,
+    createShoppingCreateWorkspace: options => ({ close() {},
+      reload: async () => options.onChange({ records: [], batches: [], errors: new Map([['drafts', 'Saved draft conflict']]), refreshed: new Set(), busy: false }),
+      sync: async () => { projects.push(options.getSelectedProjectId()); },
+    }),
+  });
+  t.after(harness.close);
+  const props = { currentUserId: 'a', enabled: false, isOnline: false, selectedProjectId: 'p', baseTodos: [] };
+  harness.render(props); await Promise.resolve();
+  const opened = harness.render(props);
+  assert.equal(opened.records.length, 0); assert.equal(opened.batches.length, 0);
+  assert.equal(opened.errors.get('drafts'), 'Saved draft conflict'); assert.ok(projects.includes('p'));
+  const calls = projects.length;
+  harness.render({ ...props, selectedProjectId: 'q' });
+  assert.equal(projects.length, calls + 1); assert.equal(projects.at(-1), 'q');
+});
+
 test('voice partial failure uses the common recovery and old recognition callbacks stay fenced after A to B to A', async t => {
   const recognitions = [], restored = [], drafts = [];
   class Recognition {

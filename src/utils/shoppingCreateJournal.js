@@ -255,6 +255,15 @@ export function createShoppingCreateJournal({
       connection = null;
     },
   };
-  if (includeDrafts) journal.drafts = createShoppingDraftRepository({ userId, transact, canonicalJson, failure });
+  const draftRepository = createShoppingDraftRepository({ userId, transact, canonicalJson, failure });
+  // Rollback must still recover existing v2 batches. Normal clients open the
+  // current database version and never initiate a draft-store upgrade here.
+  journal.readAcceptedDrafts = async projectId => {
+    requiredId(projectId);
+    const db = await open(); assertOwner();
+    if (!db.objectStoreNames.contains(SHOPPING_DRAFT_BATCH_STORE)) return [];
+    return draftRepository.listAccepted(projectId);
+  };
+  if (includeDrafts) journal.drafts = draftRepository;
   return journal;
 }

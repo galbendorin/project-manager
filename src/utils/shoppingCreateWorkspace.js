@@ -1,6 +1,7 @@
 import { createShoppingCreateOperations, shoppingCreateProgress } from './shoppingCreateOperation.js';
 import { isMissingShoppingContributionRpc } from './shoppingContributionRpc.js';
 import { createShoppingInputBatches } from './shoppingInputBatches.js';
+import { listShoppingDraftHandoffs } from './shoppingDraftBatchRecovery.js';
 
 export function shoppingCreateErrorMessage(error) {
   if (isMissingShoppingContributionRpc(error)) return 'Shopping sync is being updated. Your saved additions will stay on this device. Try again later.';
@@ -8,6 +9,7 @@ export function shoppingCreateErrorMessage(error) {
   if (error?.code === 'SHOPPING_OPERATION_SETTLED') return 'This addition has finished saving. Refresh the list before changing it.';
   if (String(error?.code || '').startsWith('JOURNAL_STORAGE')) return 'Unable to save on this device. Keep your draft and try again.';
   if (error?.code === 'JOURNAL_OWNER_CHANGED') return 'Your session changed. Sign in again to sync your groceries.';
+  if (error?.code === 'JOURNAL_DRAFT_HANDOFF_CONFLICT') return 'A saved draft conflicts with an existing addition. Its saved details are preserved; it has not been added again.';
   return 'Unable to sync this addition. It remains saved on this device; try again when your connection returns.';
 }
 
@@ -35,6 +37,7 @@ export function projectShoppingCreates({ todos, records, projectId, refreshed = 
 
 export function createShoppingCreateWorkspace({ journal, transport, getCurrentUserId, isOnline,
   onChange, onRefresh, createId = () => globalThis.crypto.randomUUID(), broadcast = () => {},
+  getSelectedProjectId = () => null,
   inputBatches = createShoppingInputBatches({ userId: getCurrentUserId(), getCurrentUserId }) }) {
   const controller = createShoppingCreateOperations({ journal, supabaseClient: transport, getCurrentUserId, createIntentId: createId });
   let records = [];
@@ -47,10 +50,11 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
   let requested = false;
   const errors = new Map();
   const refreshed = new Set();
+  let draftBatches = [];
   const refreshNeeded = new Set();
   const refreshTickets = new Map();
   const publish = () => {
-    if (isCurrent()) onChange({ records: structuredClone(records), batches: structuredClone(batches), errors: new Map(errors), refreshed: new Set(refreshed), busy });
+    if (isCurrent()) onChange({ records: structuredClone(records), batches: structuredClone([...batches, ...draftBatches]), errors: new Map(errors), refreshed: new Set(refreshed), busy });
   };
   const reload = async () => {
     const ticket = ++reloadTicket;
@@ -59,6 +63,10 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
     let storedBatches, inputError;
     try { storedBatches = await inputBatches.list(); }
     catch (error) { inputError = error; }
+    const projectId = getSelectedProjectId();
+    let storedDrafts, draftError;
+    try { storedDrafts = await listShoppingDraftHandoffs({ journal, userId: ownerId, projectId, getCurrentUserId }); }
+    catch (error) { draftError = error; }
     // A delayed input read must not resurrect batches removed by a newer
     // reload, or publish into a closed/replaced account session.
     if (!isCurrent() || ticket !== reloadTicket) return;
@@ -73,7 +81,34 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
     errors.delete('storage');
     if (inputError) errors.set('inputs', shoppingCreateErrorMessage(inputError));
     else { batches = storedBatches; errors.delete('inputs'); }
+    if (projectId === getSelectedProjectId()) {
+      if (draftError) errors.set('drafts', shoppingCreateErrorMessage(draftError));
+      else { draftBatches = storedDrafts; errors.delete('drafts'); }
+    }
     publish();
+  };
+  const recoverDrafts = async () => {
+    const projectId = getSelectedProjectId();
+    let pending;
+    try { pending = await listShoppingDraftHandoffs({ journal, userId: ownerId, projectId, getCurrentUserId }); }
+    catch (error) { if (isCurrent()) errors.set('drafts', shoppingCreateErrorMessage(error)); return false; }
+    if (!isCurrent()) return false;
+    let steps = 0;
+    for (const batch of pending) {
+      for (const item of batch.items) {
+        if (!isCurrent()) return false;
+        if (steps++ >= 100) return true;
+        try {
+          await controller.create({ operationId: item.operationId, projectId: batch.projectId,
+            localId: `offline-${item.operationId}`, item });
+        } catch (error) {
+          if (isCurrent()) errors.set('drafts', shoppingCreateErrorMessage(error));
+          return false; // Retain the complete batch; explicit retry resumes it.
+        }
+      }
+    }
+    if (isCurrent()) errors.delete('drafts');
+    return false;
   };
   const recoverInputs = async () => {
     let pending;
@@ -132,6 +167,7 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
     let continueBatch = false;
     try {
       await recoverInputs();
+      continueBatch = await recoverDrafts();
       await reload();
       if (!isOnline()) return;
       for (let steps = 0; steps < 100 && !closed && isOnline(); steps++) {
@@ -214,6 +250,6 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
       errors.delete(todo._shoppingOperationId);
       await changed();
     },
-    close: () => { closed = true; records = []; batches = []; errors.clear(); journal.close(); inputBatches.close(); },
+    close: () => { closed = true; records = []; batches = []; draftBatches = []; errors.clear(); journal.close(); inputBatches.close(); },
   };
 }

@@ -5,7 +5,7 @@ export default function ShoppingPendingAdds({ records, batches = [], errors, bus
   const [actionError, setActionError] = useState('');
   const visible = records.filter(record => record.desired.draft.cancel
     || shoppingCreateProgress(record).status === 'needs_review' || errors.has(record.operationId));
-  const refreshErrors = [...errors.entries()].filter(([id]) => id.startsWith('refresh:') || id === 'storage' || id === 'inputs');
+  const refreshErrors = [...errors.entries()].filter(([id]) => id.startsWith('refresh:') || id === 'storage' || id === 'inputs' || id === 'drafts');
   if (!visible.length && !refreshErrors.length && !batches.length) return null;
   return <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" aria-label="Pending grocery changes">
     <h3 className="font-semibold">Pending grocery changes</h3>

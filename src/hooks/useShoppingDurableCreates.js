@@ -27,6 +27,7 @@ export function useShoppingDurableCreates({ currentUserId, isOnline, enabled, se
       getCurrentUserId: owner, url: import.meta.env.VITE_SUPABASE_URL, anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY, signal: abort.signal });
     const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(`pmworkspace:shopping-creates:${currentUserId}`) : null;
     const workspace = createShoppingCreateWorkspace({ journal, transport, getCurrentUserId: owner,
+      getSelectedProjectId: () => active ? live.current.selectedProjectId : null,
       isOnline: () => active && live.current.isOnline,
       onChange: next => { if (owner()) setSnapshot({ owner: currentUserId, ready: true, ...next }); },
       broadcast: () => channel?.postMessage('changed'),
@@ -59,6 +60,13 @@ export function useShoppingDurableCreates({ currentUserId, isOnline, enabled, se
       if (runtime.current === workspace) runtime.current = null;
     };
   }, [currentUserId]);
+
+  useEffect(() => {
+    // Recovery of already accepted v2 drafts remains enabled after rollback.
+    // This does not open a v2 writer or enable new transactional submissions.
+    const workspace = runtime.current;
+    if (workspace && selectedProjectId) void workspace.sync().catch(() => {});
+  }, [currentUserId, selectedProjectId]);
 
   const ownsSnapshot = snapshot.owner === currentUserId;
   const records = useMemo(() => ownsSnapshot ? snapshot.records : [], [ownsSnapshot, snapshot.records]);
@@ -96,7 +104,7 @@ export function useShoppingDurableCreates({ currentUserId, isOnline, enabled, se
   const pendingRecords = records.filter(record => record.projectId === selectedProjectId
     && !['settled', 'local_cancelled'].includes(shoppingCreateProgress(record).status));
   const batches = ownsSnapshot ? (snapshot.batches || []).filter(batch => batch.projectId === selectedProjectId) : [];
-  const showErrors = enabled || records.length || batches.length;
+  const showErrors = enabled || records.length || batches.length || (ownsSnapshot && snapshot.errors.has('drafts'));
   return { enabled, ready, todos, sessionKey: workspace, records: pendingRecords,
     batches, add, edit, retry, refresh,
     busy: ownsSnapshot && snapshot.busy, error: showErrors ? error : '', errors: ownsSnapshot && showErrors ? snapshot.errors : new Map() };
