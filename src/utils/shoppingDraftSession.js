@@ -153,6 +153,9 @@ export function createShoppingDraftSession({ repository, userId, projectId, getC
     },
     flush, submit,
     retry: () => phase === 'recovery_failed' ? recover(draftId, true) : submission ? submit() : flush(),
-    close: () => { closed = true; value = { text: '', items: [] }; record = null; batch = null; },
+    close: () => {
+      closed = true; value = { text: '', items: [] }; record = null; batch = null;
+      pendingWrite = null; submission = null; draftId = null; error = null;
+    },
   };
 }
