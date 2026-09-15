@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { clearAiSettings } from '../utils/aiSettings';
 import { startAuthBootstrap } from '../utils/authBootstrap';
+import { createShoppingDraftOwner } from '../utils/shoppingDraftOwner';
 import {
   clearCachedOfflineUser,
   clearOfflineDataForUser,
@@ -86,6 +87,18 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(() => !initialOfflineUser);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => isPasswordRecoveryUrl());
   const activeUserIdRef = useRef(initialOfflineUser?.id || null);
+  const shoppingDraftOwnerRef = useRef(null);
+  if (!shoppingDraftOwnerRef.current) {
+    // Construction is storage-free, including StrictMode's discarded render.
+    // Only an opt-in consumer's capability.acquire() creates a draft writer.
+    shoppingDraftOwnerRef.current = createShoppingDraftOwner({
+      enabled: import.meta.env.VITE_SHOPPING_DURABLE_CREATES === 'true', initialUserId: initialOfflineUser?.id || null,
+    });
+  }
+  const [shoppingDraftScope, setShoppingDraftScope] = useState(() => shoppingDraftOwnerRef.current.getScope());
+  const setDraftOwner = useCallback(userId => {
+    setShoppingDraftScope(shoppingDraftOwnerRef.current.setOwner(userId));
+  }, []);
 
   const normalizeFullName = (value) => {
     if (typeof value === 'string') return value.trim();
@@ -97,12 +110,15 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let isActive = true;
+    // Publish a fresh capability after StrictMode effect cleanup/replay.
+    setDraftOwner(activeUserIdRef.current);
 
     const applyOfflineUser = () => {
       const cachedUser = cachedOfflineUserRef.current || loadCachedOfflineUser();
       if (!cachedUser || !isActive) return false;
       cachedOfflineUserRef.current = cachedUser;
       activeUserIdRef.current = cachedUser.id;
+      setDraftOwner(cachedUser.id);
       setUser(cachedUser);
       return true;
     };
@@ -111,6 +127,7 @@ export const AuthProvider = ({ children }) => {
       if (!sessionUser || !isActive) return false;
       cachedOfflineUserRef.current = sessionUser;
       activeUserIdRef.current = sessionUser.id;
+      setDraftOwner(sessionUser.id);
       saveCachedOfflineUser(sessionUser);
       setUser(sessionUser);
       return true;
@@ -152,6 +169,7 @@ export const AuthProvider = ({ children }) => {
         if (!acceptedSession) {
           activeUserIdRef.current = null;
           if (!browserStartsOffline() || !applyOfflineUser()) {
+            setDraftOwner(null);
             setUser(null);
           }
         }
@@ -163,6 +181,7 @@ export const AuthProvider = ({ children }) => {
         console.warn('Unable to load initial Supabase session:', error);
         if (!isActive) return;
         if (!applyOfflineUser()) {
+          setDraftOwner(null);
           setUser(null);
         }
         setIsPasswordRecovery(isPasswordRecoveryUrl());
@@ -172,12 +191,16 @@ export const AuthProvider = ({ children }) => {
       onAuthStateChange: (event, session) => {
         if (!isActive) return;
         const previousUserId = activeUserIdRef.current;
+        // Revoke immediately, before asynchronous device cleanup and before
+        // React can batch a subsequent sign-in to the same account.
+        if (event === 'SIGNED_OUT') setDraftOwner(null);
         activeUserIdRef.current = session?.user?.id || null;
         if (session?.user) {
           acceptSessionUser(session.user);
         } else if (event !== 'SIGNED_OUT' && browserStartsOffline()) {
           applyOfflineUser();
         } else {
+          setDraftOwner(null);
           setUser(null);
         }
         if (event === 'PASSWORD_RECOVERY') {
@@ -197,8 +220,9 @@ export const AuthProvider = ({ children }) => {
     return () => {
       isActive = false;
       stopBootstrap();
+      shoppingDraftOwnerRef.current.close();
     };
-  }, []);
+  }, [setDraftOwner]);
 
   const signUp = async (email, password, fullNameInput) => {
     const fullName = normalizeFullName(fullNameInput);
@@ -247,11 +271,17 @@ export const AuthProvider = ({ children }) => {
 
   const signOut = async () => {
     const signedOutUserId = activeUserIdRef.current || user?.id || null;
+    const signingOutScope = shoppingDraftOwnerRef.current.getScope();
     const { error } = await supabase.auth.signOut();
     if (!error) {
+      // A delayed sign-out response must not revoke an intervening sign-in.
+      const currentScope = shoppingDraftOwnerRef.current.getScope();
+      if (currentScope && currentScope !== signingOutScope) return { error };
+      setDraftOwner(null);
       activeUserIdRef.current = null;
       cachedOfflineUserRef.current = null;
       await clearSignedOutDeviceState(signedOutUserId);
+      if (shoppingDraftOwnerRef.current.getScope()) return { error };
       setUser(null);
       setIsPasswordRecovery(false);
       clearRecoveryUrl();
@@ -268,11 +298,16 @@ export const AuthProvider = ({ children }) => {
     }
 
     const signedOutUserId = activeUserIdRef.current || user?.id || null;
+    const signingOutScope = shoppingDraftOwnerRef.current.getScope();
     const { error } = await supabase.auth.signOut();
     if (!error) {
+      const currentScope = shoppingDraftOwnerRef.current.getScope();
+      if (currentScope && currentScope !== signingOutScope) return { error };
+      setDraftOwner(null);
       activeUserIdRef.current = null;
       cachedOfflineUserRef.current = null;
       await clearSignedOutDeviceState(signedOutUserId);
+      if (shoppingDraftOwnerRef.current.getScope()) return { error };
       setUser(null);
     }
     return { error };
@@ -280,6 +315,7 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    shoppingDraftScope: shoppingDraftScope?.userId === user?.id ? shoppingDraftScope : null,
     loading,
     signUp,
     signIn,
