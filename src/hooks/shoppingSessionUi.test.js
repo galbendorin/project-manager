@@ -127,6 +127,38 @@ test('actual draft hook shows attachment failure and auth closure without leakin
   assert.equal(unavailable.canEdit, false); assert.equal(unavailable.value.text, '');
 });
 
+test('runtime hook acquires only enabled scope, retains owner runtime on unmount, and fences old callbacks', async t => {
+  let closes = 0, acquisitions = 0;
+  const runtime = { registry: { close: () => closes++ }, repository: {} };
+  const first = { userId: 'a', enabled: true, acquire: () => { acquisitions++; return runtime; } };
+  let scope = { userId: 'a', enabled: false, acquire: () => { throw new Error('Disabled acquisition'); } };
+  const harness = await hookHarness('./useShoppingDraftRuntime.js', 'useShoppingDraftRuntime', {
+    useAuth: () => ({ shoppingDraftScope: scope }),
+  });
+  t.after(harness.close);
+  harness.render(); assert.equal(harness.render().ready, false); assert.equal(acquisitions, 0);
+  scope = first; harness.render(); const opened = harness.render(); assert.equal(opened.registry, runtime.registry);
+  scope = { userId: 'b', enabled: true, acquire: () => ({ registry: {}, repository: {} }) }; harness.render();
+  assert.throws(() => opened.retry(), { code: 'JOURNAL_OWNER_CHANGED' });
+  scope = first; harness.render(); assert.equal(harness.render().registry, runtime.registry);
+  const retry = harness.render().retry; harness.close(); assert.equal(closes, 0);
+  assert.throws(() => retry(), { code: 'JOURNAL_OWNER_CHANGED' });
+});
+
+test('runtime acquisition failure stays disabled and explicit retry can recover in the same owner scope', async t => {
+  let failing = true;
+  const scope = { enabled: true, acquire: () => {
+    if (failing) throw Object.assign(new Error('Unavailable'), { code: 'JOURNAL_STORAGE_UNAVAILABLE' });
+    return { registry: {}, repository: {} };
+  } };
+  const harness = await hookHarness('./useShoppingDraftRuntime.js', 'useShoppingDraftRuntime', {
+    useAuth: () => ({ shoppingDraftScope: scope }),
+  });
+  t.after(harness.close); harness.render(); const failed = harness.render();
+  assert.equal(failed.ready, false); assert.equal(failed.error, 'JOURNAL_STORAGE_UNAVAILABLE');
+  failing = false; failed.retry(); assert.equal(harness.render().ready, true); assert.equal(harness.render().error, '');
+});
+
 test('all add entrypoints restore only failed inputs and discard late results after session replacement', async () => {
   let active = true, restored = [], finish, calls = 0;
   const failures = [{ title: 'Bread', operationId: 'stable-bread' }];
