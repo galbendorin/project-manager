@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createShoppingCreateJournal } from '../../../src/utils/shoppingCreateJournal.js';
 import { useShoppingDraftSession } from '../../../src/hooks/useShoppingDraftSession.js';
+import { createShoppingDraftRegistry } from '../../../src/utils/shoppingDraftRegistry.js';
 
 const userId = 'r2b-synthetic-owner', projectId = 'r2b-synthetic-project';
 const journal = createShoppingCreateJournal({ userId, getCurrentUserId: () => userId, includeDrafts: true });
@@ -18,10 +19,11 @@ const repository = { ...journal.drafts,
     return batch;
   },
 };
+const registry = createShoppingDraftRegistry({ repository, userId, getCurrentUserId: () => userId });
 const grocery = (text, draftId) => ({ text, items: text.trim() ? [{ title: text, operationId: `fixture-${draftId}`,
   quantityValue: 2, quantityUnit: 'carton', meta: { note: 'preserved' } }] : [] });
 function Editor({ existingId }) {
-  const draft = useShoppingDraftSession({ repository, userId, projectId, draftId: existingId });
+  const draft = useShoppingDraftSession({ registry, userId, projectId, draftId: existingId });
   const [result, setResult] = useState('');
   useEffect(() => {
     if (draft.draftId) history.replaceState(null, '', `?draft=${encodeURIComponent(draft.draftId)}`);

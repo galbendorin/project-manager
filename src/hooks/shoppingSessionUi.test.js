@@ -7,6 +7,9 @@ import { formatShoppingAddSummary } from '../utils/shoppingListViewState.js';
 import { splitTypedGroceries } from '../utils/shoppingListViewState.js';
 import { createShoppingInputBatches } from '../utils/shoppingInputBatches.js';
 import { memoryStorage } from '../../scripts/investigations/shopping-input-test-fixture.mjs';
+import { IDBFactory } from 'fake-indexeddb';
+import { createShoppingCreateJournal } from '../utils/shoppingCreateJournal.js';
+import { createShoppingDraftRegistry } from '../utils/shoppingDraftRegistry.js';
 
 // Execute the actual hook bodies with deterministic hook slots, effect cleanup,
 // speech callbacks and auth transitions. No browser storage or real account.
@@ -46,6 +49,83 @@ async function hookHarness(file, name, bindings) {
     close: () => slots.forEach(slot => slot.cleanup?.()),
   };
 }
+
+async function retainedDraftFixture(t, wrap = repository => repository) {
+  const journal = createShoppingCreateJournal({ userId: 'a', getCurrentUserId: () => 'a',
+    indexedDB: new IDBFactory(), includeDrafts: true });
+  let sequence = 0;
+  const registry = createShoppingDraftRegistry({ repository: wrap(journal.drafts), userId: 'a',
+    getCurrentUserId: () => 'a', createId: () => `draft-${++sequence}` });
+  const harnesses = [];
+  const mount = async () => {
+    const harness = await hookHarness('./useShoppingDraftSession.js', 'useShoppingDraftSession', {});
+    harnesses.push(harness); return harness;
+  };
+  t.after(() => { harnesses.forEach(harness => harness.close()); registry.close(); journal.close(); });
+  return { registry, journal, mount, props: { registry, userId: 'a', projectId: 'p' } };
+}
+const draftValue = text => ({ text, items: [{ title: text, operationId: 'original-id' }] });
+
+test('actual draft hook retains failed RAM across project changes and a full component remount', async t => {
+  let failing = true;
+  const f = await retainedDraftFixture(t, repo => ({ ...repo, create: request => {
+    if (failing) throw new Error('Storage unavailable'); return repo.create(request);
+  } }));
+  const a = await f.mount(); a.render(f.props); let draft = a.render(f.props);
+  draft.edit(draftValue('Milk')); await assert.rejects(draft.flush());
+  a.render({ ...f.props, projectId: 'q' });
+  assert.throws(() => draft.edit(draftValue('Old action')), { code: 'JOURNAL_OWNER_CHANGED' });
+  a.render(f.props); draft = a.render(f.props);
+  assert.equal(draft.value.text, 'Milk'); assert.equal(draft.phase, 'save_failed');
+  const id = draft.draftId; a.close();
+  const b = await f.mount(); b.render(f.props); const restored = b.render(f.props);
+  assert.equal(restored.draftId, id); assert.equal(restored.value.text, 'Milk');
+  assert.throws(() => draft.retry(), { code: 'JOURNAL_OWNER_CHANGED' });
+  failing = false; await restored.retry(); assert.equal(b.render(f.props).saved, true);
+  assert.equal((await f.journal.drafts.list('p')).length, 1);
+});
+
+test('actual draft hook keeps uncertain submission identity through picker changes and remount', async t => {
+  let lose = true; const requests = [];
+  const f = await retainedDraftFixture(t, repo => ({ ...repo, accept: async request => {
+    requests.push(structuredClone(request)); const result = await repo.accept(request);
+    if (lose) { lose = false; throw new Error('Lost completion'); } return result;
+  } }));
+  const a = await f.mount(); a.render(f.props); const draft = a.render(f.props);
+  draft.edit(draftValue('Milk')); assert.equal((await draft.submit()).status, 'acceptance_unknown');
+  const frozen = a.render(f.props).submission;
+  const otherId = f.registry.startNew('p');
+  a.render({ ...f.props, draftId: otherId });
+  a.render({ ...f.props, draftId: frozen.draftId });
+  assert.equal(a.render({ ...f.props, draftId: frozen.draftId }).canEdit, false);
+  a.close(); const b = await f.mount(); b.render(f.props); const recovered = b.render(f.props);
+  assert.deepEqual(recovered.submission, frozen);
+  assert.equal((await recovered.retry()).status, 'accepted'); assert.deepEqual(requests[0], requests[1]);
+});
+
+test('actual draft hook rejects late UI completion after navigation while retained storage finishes', async t => {
+  let finish, enter;
+  const held = new Promise(resolve => { finish = resolve; });
+  const entered = new Promise(resolve => { enter = resolve; });
+  const f = await retainedDraftFixture(t, repo => ({ ...repo, accept: async request => {
+    const batch = await repo.accept(request); enter(); await held; return batch;
+  } }));
+  const a = await f.mount(); a.render(f.props); const draft = a.render(f.props); draft.edit(draftValue('Milk'));
+  const sending = draft.submit(); const rejection = assert.rejects(sending, { code: 'JOURNAL_OWNER_CHANGED' });
+  await entered; a.render({ ...f.props, projectId: 'q' }); finish(); await rejection;
+  a.render(f.props); assert.equal(a.render(f.props).phase, 'accepted');
+  assert.equal((await f.journal.drafts.listAccepted('p')).length, 1);
+});
+
+test('actual draft hook shows attachment failure and auth closure without leaking old editor text', async t => {
+  const f = await retainedDraftFixture(t); const a = await f.mount();
+  a.render(f.props); const draft = a.render(f.props); draft.edit(draftValue('Private grocery')); await draft.flush();
+  f.registry.close(); assert.equal(a.render(f.props).value.text, ''); assert.equal(a.render(f.props).phase, 'closed');
+  assert.throws(() => draft.edit(draftValue('Stale')), { code: 'JOURNAL_OWNER_CHANGED' });
+  const b = await f.mount(); b.render(f.props); const unavailable = b.render(f.props);
+  assert.equal(unavailable.phase, 'unavailable'); assert.equal(unavailable.error, 'JOURNAL_OWNER_CHANGED');
+  assert.equal(unavailable.canEdit, false); assert.equal(unavailable.value.text, '');
+});
 
 test('all add entrypoints restore only failed inputs and discard late results after session replacement', async () => {
   let active = true, restored = [], finish, calls = 0;
