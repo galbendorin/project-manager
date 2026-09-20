@@ -16,6 +16,7 @@ export default function ShoppingListQuickAdd({
   MicIcon,
   MicOffIcon,
   draftTitle,
+  draftEditable = true,
   handleAddSubmit,
   interimText,
   isListening,
@@ -49,6 +50,8 @@ export default function ShoppingListQuickAdd({
           <input
             type="text"
             value={draftTitle}
+            disabled={!draftEditable}
+            aria-label="Groceries"
             onChange={(event) => setDraftTitle(event.target.value)}
             placeholder="Milk, eggs, tomatoes..."
             className="pm-input w-full rounded-2xl px-4 py-3 text-base text-slate-900 placeholder-slate-400 sm:text-sm"

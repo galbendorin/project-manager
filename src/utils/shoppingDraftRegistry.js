@@ -49,7 +49,16 @@ export function createShoppingDraftRegistry({ repository, userId, getCurrentUser
       if (existingId === null) fail('JOURNAL_DRAFT_EXISTS');
       return entries.get(key);
     }
-    // Never evict failed/uncertain input to make room for another editor.
+    // Accepted, detached sessions can be recovered from their immutable batch.
+    // Release only their RAM; never evict failed/uncertain or unsent input.
+    if (entries.size >= maxSessions) {
+      for (const [oldKey, entry] of entries) {
+        if (!entry.listeners.size && entry.session.snapshot().phase === 'accepted') {
+          entry.session.close(); entries.delete(oldKey);
+          if (entries.size < maxSessions) break;
+        }
+      }
+    }
     if (entries.size >= maxSessions) fail('JOURNAL_DRAFT_LIMIT');
     const listeners = new Set();
     let publication = 0;

@@ -47,6 +47,7 @@ import ShoppingListMobileControls from './ShoppingListMobileControls';
 import ShoppingListPageHeader from './ShoppingListPageHeader';
 import ProjectShareModal from './ProjectShareModal';
 import ShoppingListQuickAdd from './ShoppingListQuickAdd';
+import ShoppingTransactionalEntry from './ShoppingTransactionalEntry';
 import ShoppingListSidebar from './ShoppingListSidebar';
 import ShoppingPendingAdds from './ShoppingPendingAdds';
 import { createShoppingAddEntry } from '../utils/shoppingAddEntry';
@@ -56,6 +57,7 @@ const SHOPPING_UI_PREFS_KEY = 'pmworkspace:shopping-ui:v1';
 const MOBILE_COMPLETE_DELAY_MS = 1000;
 // Enable only after staging the contribution SQL and integrated account checks.
 const DURABLE_CREATES_ENABLED = import.meta.env.VITE_SHOPPING_DURABLE_CREATES === 'true';
+const ShoppingEntry = DURABLE_CREATES_ENABLED ? ShoppingTransactionalEntry : ShoppingListQuickAdd;
 
 
 const IconBase = ({ children, className = '', viewBox = '0 0 24 24' }) => (
@@ -237,8 +239,10 @@ export default function ShoppingListView({ currentUserId }) {
   });
   const durableCreates = useShoppingDurableCreates({ currentUserId, isOnline, enabled: DURABLE_CREATES_ENABLED,
     selectedProjectId, baseTodos, setTodos, persistOfflineState });
+  const transactionalEntryRef = useRef(null);
   const { value: draftTitle, set: setDraftTitle, prepare: prepareDraft, clearAccepted: clearAcceptedDraft,
-    restoreFailed: restoreFailedDraft, error: draftError } = useShoppingTypedDraft({ userId: currentUserId, projectId: selectedProjectId, enabled: DURABLE_CREATES_ENABLED });
+    restoreFailed: restoreFailedDraft, error: draftError } = useShoppingTypedDraft({ userId: currentUserId, projectId: selectedProjectId,
+    enabled: false, active: !DURABLE_CREATES_ENABLED });
   const { refresh: refreshDurable, retry: retryDurable } = durableCreates;
   const addScope = useMemo(() => ({ owner: currentUserId, project: selectedProjectId, workspace: durableCreates.sessionKey }),
     [currentUserId, selectedProjectId, durableCreates.sessionKey]);
@@ -357,7 +361,8 @@ export default function ShoppingListView({ currentUserId }) {
     manualTodoSelect: SHOPPING_MANUAL_TODO_SELECT,
     shoppingExtraFields: SHOPPING_MANUAL_TODO_EXTRA_FIELDS,
   });
-  const addItems = useMemo(() => createShoppingAddEntry({ addItems: addRawItems,
+  const addItems = useMemo(() => createShoppingAddEntry({ addItems: (items, options) => DURABLE_CREATES_ENABLED
+    ? (transactionalEntryRef.current?.add(items) || Promise.resolve({ status: 'not_submitted' })) : addRawItems(items, options),
     isCurrent: () => addScopeRef.current === addScope,
     restoreFailed: failedItems => {
       if (DURABLE_CREATES_ENABLED) { restoreFailedDraft(failedItems); return; }
@@ -380,7 +385,10 @@ export default function ShoppingListView({ currentUserId }) {
     stopListening,
   } = useShoppingListVoiceCapture({
     addItems,
-    setDraftTitle,
+    setDraftTitle: useCallback(text => {
+      if (DURABLE_CREATES_ENABLED) void transactionalEntryRef.current?.review(text);
+      else setDraftTitle(text);
+    }, [setDraftTitle]),
     currentUserId,
     sessionKey: addScope,
   });
@@ -677,7 +685,11 @@ export default function ShoppingListView({ currentUserId }) {
                   />
                 ) : null}
 
-                <ShoppingListQuickAdd
+                <ShoppingEntry
+                  key={`${currentUserId}:${selectedProjectId}`}
+                  entryRef={transactionalEntryRef}
+                  projectId={selectedProjectId}
+                  onAccepted={retryDurable}
                   AddIcon={Plus}
                   LoaderIcon={Loader2}
                   MicIcon={Mic}

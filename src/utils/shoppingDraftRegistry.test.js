@@ -4,7 +4,12 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createShoppingCreateJournal } from './shoppingCreateJournal.js';
 import { createShoppingDraftRegistry } from './shoppingDraftRegistry.js';
 
-const value = (text, operationId = 'milk-id') => ({ text, items: [{ title: text, operationId,
+const identities = new Map();
+const itemId = label => {
+  if (!identities.has(label)) identities.set(label, `00000000-0000-4000-8000-${String(identities.size + 1).padStart(12, '0')}`);
+  return identities.get(label);
+};
+const value = (text, operationId = 'milk-id') => ({ text, items: [{ title: text, operationId: itemId(operationId),
   quantityValue: 2, quantityUnit: 'carton', meta: { note: 'keep' } }] });
 const timeout = () => Object.assign(new Error('Lost confirmation'), { code: 'JOURNAL_STORAGE_TIMEOUT' });
 const tick = () => new Promise(setImmediate);
@@ -102,6 +107,30 @@ test('navigation while acceptance is in flight retains its result without detach
   const same = b.submit(); assert.equal(same, sending); held.resolve();
   assert.equal((await same).status, 'accepted'); assert.equal(changes, before); assert.equal(accepts, 1);
   assert.equal(b.snapshot().phase, 'accepted');
+});
+
+test('capacity releases detached accepted RAM while preserving immutable replay evidence', async t => {
+  const f = fixture(t, { maxSessions: 2 });
+  const first = f.attach(); first.edit(value('Milk')); await first.submit();
+  const acceptedId = first.snapshot().draftId; first.detach();
+  f.registry.startNew('p'); const second = f.attach(); second.edit(value('Bread', 'bread-cap')); await second.flush();
+  const unsentId = second.snapshot().draftId; second.detach();
+  const thirdId = f.registry.startNew('p');
+  assert.deepEqual(f.registry.list('p').map(draft => draft.draftId), [unsentId, thirdId]);
+  assert.equal((await f.journal.drafts.listAccepted('p'))[0].draftId, acceptedId);
+  assert.equal((await f.journal.drafts.read('p', unsentId)).value.text, 'Bread');
+  assert.throws(() => f.registry.startNew('p'), { code: 'JOURNAL_DRAFT_LIMIT' });
+});
+
+test('capacity never evicts an uncertain accepted submission or its frozen identity', async t => {
+  const f = fixture(t, { maxSessions: 1, wrap: repo => ({ ...repo, accept: async request => {
+    await repo.accept(request); throw timeout();
+  } }) });
+  const first = f.attach(); first.edit(value('Milk'));
+  assert.equal((await first.submit()).status, 'acceptance_unknown');
+  const frozen = first.snapshot().submission; first.detach();
+  assert.throws(() => f.registry.startNew('p'), { code: 'JOURNAL_DRAFT_LIMIT' });
+  assert.deepEqual(f.attach().snapshot().submission, frozen);
 });
 
 test('default and explicit selection share one session and separately detached observers', async t => {

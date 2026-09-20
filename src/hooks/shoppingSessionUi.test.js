@@ -64,7 +64,7 @@ async function retainedDraftFixture(t, wrap = repository => repository) {
   t.after(() => { harnesses.forEach(harness => harness.close()); registry.close(); journal.close(); });
   return { registry, journal, mount, props: { registry, userId: 'a', projectId: 'p' } };
 }
-const draftValue = text => ({ text, items: [{ title: text, operationId: 'original-id' }] });
+const draftValue = text => ({ text, items: [{ title: text, operationId: '00000000-0000-4000-8000-000000000001' }] });
 
 test('actual draft hook retains failed RAM across project changes and a full component remount', async t => {
   let failing = true;
@@ -281,6 +281,21 @@ async function typedDraftHarness(storage, tabStorage) {
     removeLocalJson: key => storage.removeItem(key),
   });
 }
+
+test('inactive legacy editor does not read, import or mutate storage and fences previously active callbacks', async t => {
+  const storage = memoryStorage(), tabStorage = memoryStorage();
+  const harness = await typedDraftHarness(storage, tabStorage); t.after(harness.close);
+  const props = { userId: 'a', projectId: 'p', enabled: false };
+  harness.render(props); const before = harness.render(props); before.set('Keep legacy draft');
+  let touches = 0;
+  for (const method of ['getItem', 'setItem', 'removeItem']) storage[method] = () => { touches++; throw new Error('Inactive storage access'); };
+  harness.render({ ...props, active: false }); const inactive = harness.render({ ...props, active: false });
+  assert.equal(inactive.value, '');
+  before.set('Stale'); before.restoreFailed([{ title: 'Stale' }]); before.clearAccepted(undefined);
+  inactive.set('New'); inactive.restoreFailed([{ title: 'New' }]); inactive.clearAccepted(undefined);
+  assert.throws(() => inactive.prepare()); assert.throws(() => before.prepare());
+  assert.equal(touches, 0);
+});
 
 for (const drained of [false, true]) {
   test(`persisted View draft does not reappear after accepted batch, before React clear (drained=${drained})`, async t => {

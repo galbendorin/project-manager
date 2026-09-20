@@ -4,8 +4,13 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createShoppingCreateJournal } from './shoppingCreateJournal.js';
 import { createShoppingDraftSession } from './shoppingDraftSession.js';
 
-const value = (title, operationId = 'milk-id') => ({ text: title, items: [{ title, operationId,
-  quantityValue: 2, quantityUnit: 'carton', sourceType: 'meal', sourceBatchId: 'meal-a', meta: { note: 'keep' } }] });
+const identities = new Map();
+const itemId = label => {
+  if (!identities.has(label)) identities.set(label, `00000000-0000-4000-8000-${String(identities.size + 1).padStart(12, '0')}`);
+  return identities.get(label);
+};
+const value = (title, operationId = 'milk-id') => ({ text: title, items: [{ title, operationId: itemId(operationId),
+  quantityValue: 2, quantityUnit: 'carton', sourceType: 'meal', sourceBatchId: '11111111-1111-4111-8111-111111111111', meta: { note: 'keep' } }] });
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
