@@ -339,7 +339,11 @@ export const planShoppingListAdds = ({ existingTodos = [], incomingItems = [] })
   };
 };
 
-export const formatShoppingAddSummary = ({ addedCount = 0, mergedCount = 0, queuedCount = 0, failedItems = [] } = {}) => {
+export const formatShoppingAddSummary = ({ status, addedCount = 0, mergedCount = 0, queuedCount = 0, failedItems = [] } = {}) => {
+  if (status === 'accepted') return 'Saved on this device. Your groceries will sync automatically.';
+  if (status === 'acceptance_unknown') return 'Confirmation is delayed. Your draft is kept; retry to check it safely.';
+  if (status === 'conflict') return 'This draft changed elsewhere. Its details are kept for review.';
+  if (status === 'not_submitted') return 'Not submitted. Review the draft and retry.';
   if (failedItems.length) return `${addedCount} saved on this device. ${failedItems.length} still in the entry box to retry.`;
   if (queuedCount > 0) {
     return queuedCount === 1

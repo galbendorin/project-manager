@@ -20,7 +20,7 @@ const repository = { ...journal.drafts,
   },
 };
 const registry = createShoppingDraftRegistry({ repository, userId, getCurrentUserId: () => owner });
-const grocery = (text, draftId) => ({ text, items: text.trim() ? [{ title: text, operationId: `item-${draftId}`,
+const grocery = (text, draftId) => ({ text, items: text.trim() ? [{ title: text, operationId: draftId,
   quantityValue: 2, quantityUnit: 'carton', meta: { note: 'preserved' } }] : [] });
 
 function Editor({ projectId, draftId }) {

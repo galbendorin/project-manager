@@ -20,7 +20,7 @@ const repository = { ...journal.drafts,
   },
 };
 const registry = createShoppingDraftRegistry({ repository, userId, getCurrentUserId: () => userId });
-const grocery = (text, draftId) => ({ text, items: text.trim() ? [{ title: text, operationId: `fixture-${draftId}`,
+const grocery = (text, draftId) => ({ text, items: text.trim() ? [{ title: text, operationId: draftId,
   quantityValue: 2, quantityUnit: 'carton', meta: { note: 'preserved' } }] : [] });
 function Editor({ existingId }) {
   const draft = useShoppingDraftSession({ registry, userId, projectId, draftId: existingId });

@@ -1,4 +1,5 @@
 import { canonicalShoppingJournalJson as json, ShoppingJournalError } from './shoppingCreateJournal.js';
+import { validateShoppingDraftItems } from './shoppingDraftInput.js';
 
 const same = (a, b) => JSON.stringify(json(a)) === JSON.stringify(json(b));
 const fail = code => { throw new ShoppingJournalError(code); };
@@ -93,6 +94,13 @@ export function createShoppingDraftSession({ repository, userId, projectId, getC
       return Promise.resolve({ status: 'conflict' });
     }
     if (!submission && !value.items.length) return Promise.resolve({ status: 'empty' });
+    if (!submission) {
+      try { validateShoppingDraftItems(value.items); }
+      catch (cause) {
+        error = cause?.code || 'SHOPPING_DRAFT_INVALID'; publish();
+        return Promise.resolve({ status: 'not_submitted', error });
+      }
+    }
     // Freeze the clicked input before the first await. This editor is locked
     // until the decision resolves; independent new input needs its own session.
     barrier = true; phase = 'submitting'; error = null;
