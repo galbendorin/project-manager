@@ -1,5 +1,6 @@
 import { createShoppingCreateJournal, ShoppingJournalError } from './shoppingCreateJournal.js';
 import { createShoppingDraftRegistry } from './shoppingDraftRegistry.js';
+import { createShoppingLegacyRecovery } from './shoppingLegacyRecovery.js';
 
 // AuthProvider owns this manager above all routes. Each accepted owner lineage
 // gets an immutable capability; a stale consumer cannot acquire a later user's
@@ -33,7 +34,9 @@ export function createShoppingDraftOwner({ enabled = false, initialUserId = null
           const registry = createRegistry({ repository: journal.drafts, userId,
             getCurrentUserId: () => current === scope ? userId : '' });
           if (current !== scope) { registry.close(); invalid(); }
-          runtime = { journal, registry, public: Object.freeze({ registry, repository: journal.drafts }) };
+          const legacyRecovery = createShoppingLegacyRecovery({ userId,
+            getCurrentUserId: () => current === scope ? userId : '', journal, repository: journal.drafts });
+          runtime = { journal, registry, public: Object.freeze({ registry, repository: journal.drafts, legacyRecovery }) };
           return runtime.public;
         } catch (cause) { journal?.close(); throw cause; }
       },

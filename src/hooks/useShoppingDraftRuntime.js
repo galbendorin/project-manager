@@ -27,5 +27,6 @@ export function useShoppingDraftRuntime() {
   const snapshot = published?.scope === scope ? published : null;
   return { scope, enabled: Boolean(scope?.enabled), ready: Boolean(snapshot?.runtime),
     registry: snapshot?.runtime?.registry || null, repository: snapshot?.runtime?.repository || null,
+    legacyRecovery: snapshot?.runtime?.legacyRecovery || null,
     error: snapshot?.error || '', retry: acquire };
 }

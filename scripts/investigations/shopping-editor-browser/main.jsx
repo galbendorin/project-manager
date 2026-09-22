@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { AuthProvider, useAuth } from '../../../src/contexts/AuthContext.jsx';
 import ShoppingListView from '../../../src/components/ShoppingListView.jsx';
 import { createShoppingCreateJournal } from '../../../src/utils/shoppingCreateJournal.js';
+import { createShoppingInputBatches } from '../../../src/utils/shoppingInputBatches.js';
 import { faults, evidence, speak, emit } from './environment.jsx';
 import '../../../src/styles/index.css';
 
@@ -10,6 +11,17 @@ window.addEventListener('unhandledrejection', event => { evidence.errors.push(St
 function Fixture() {
   const { user, shoppingDraftScope } = useAuth();
   const [mounted, setMounted] = useState(true), [result, setResult] = useState('');
+  const seedOlder = () => {
+    const batches = createShoppingInputBatches({ userId: user.id, getCurrentUserId: () => user.id });
+    const milk = { title: 'Legacy milk', operationId: crypto.randomUUID(), quantityValue: 2, quantityUnit: 'carton', meta: { note: 'preserve this' } };
+    batches.persistDraft(batches.newDraft('home', 'Legacy milk', [milk]));
+    const bread = { title: 'Already submitted bread', operationId: crypto.randomUUID() };
+    const accepted = batches.newDraft('home', bread.title, [bread]); batches.persistDraft(accepted);
+    batches.remove(batches.save('home', accepted.items, { draftGeneration: accepted.generation }));
+    batches.persistDraft(batches.newDraft('home', 'Already submitted bread, New rice', [bread, { title: 'New rice', operationId: crypto.randomUUID() }]));
+    localStorage.setItem(`pmworkspace:shopping-draft:v1:${user.id}`, JSON.stringify('Homemade soup,\nFresh rolls'));
+    window.dispatchEvent(new Event('storage')); setResult('Synthetic older drafts seeded');
+  };
   const inspect = async () => {
     const reader = createShoppingCreateJournal({ userId: user.id, getCurrentUserId: () => user.id });
     try {
@@ -22,6 +34,7 @@ function Fixture() {
     <details className="mb-4 rounded-xl border p-3"><summary>Local verification controls</summary>
       <p>Actual Shopping screen; synthetic accounts, offline service indicator and local IndexedDB. No production data or requests.</p>
       <div className="flex flex-wrap gap-2">
+        <button onClick={seedOlder}>Seed older recovery examples</button>
         <button onClick={() => { faults.saves = true; setResult('Saves blocked'); }}>Fail saves</button>
         <button onClick={() => { faults.saves = false; setResult('Saves allowed'); }}>Allow saves</button>
         <button onClick={() => { faults.loseAcceptance = true; setResult('Next acceptance confirmation will be lost'); }}>Lose confirmation</button>
