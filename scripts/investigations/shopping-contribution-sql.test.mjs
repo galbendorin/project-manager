@@ -30,13 +30,16 @@ const executeMigration = async name => db.exec((await sql(name))
 
 before(async () => {
   await db.exec(`
-    create role anon nologin; create role authenticated nologin;
+    create role anon nologin; create role authenticated nologin; create role service_role nologin;
     create schema auth;
     create table auth.users(id uuid primary key);
     create function auth.uid() returns uuid language sql stable as
       $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth, public to anon, authenticated;
     grant execute on function auth.uid() to anon, authenticated;
+    -- The live Supabase project grants these roles directly, in addition to
+    -- PostgreSQL's PUBLIC default. Replacing a function retains its old ACL.
+    alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
     create table public.projects(id uuid primary key, user_id uuid references auth.users(id), updated_at timestamptz default now());
     create table public.meal_plan_grocery_batches(id uuid primary key);
   `);
@@ -525,6 +528,12 @@ test('receipt project binding rejects a different accessible project', async () 
 });
 
 test('anon RPCs and authenticated direct receipt/helper/sequence access denied', async () => {
+  const { rows: [v2Permissions] } = await db.query(`select
+    has_function_privilege('anon', 'public.apply_shopping_list_add_v2(uuid,uuid,text,numeric,text,text,uuid,jsonb)', 'EXECUTE') as anonymous,
+    has_function_privilege('authenticated', 'public.apply_shopping_list_add_v2(uuid,uuid,text,numeric,text,text,uuid,jsonb)', 'EXECUTE') as authenticated,
+    has_function_privilege('service_role', 'public.apply_shopping_list_add_v2(uuid,uuid,text,numeric,text,text,uuid,jsonb)', 'EXECUTE') as service_role`);
+  assert.deepEqual(v2Permissions, { anonymous: false, authenticated: true, service_role: true });
+  await assert.rejects(asUser(null, 'select public.apply_shopping_list_add_v2($1,$2,$3)', [randomUUID(), project, 'Milk'], 'anon'), /permission denied/);
   await assert.rejects(asUser(null, 'select public.apply_shopping_list_add_v3($1,$2,$3)', [randomUUID(), project, 'Milk'], 'anon'), /permission denied/);
   await assert.rejects(asUser(null, 'select public.reconcile_shopping_contribution_v1($1,$2,$3,1,true)', [randomUUID(), project, randomUUID()], 'anon'), /permission denied/);
   for (const query of [

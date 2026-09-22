@@ -518,6 +518,9 @@ begin
 end;
 $$;
 
-revoke all on function public.apply_shopping_list_add_v2(uuid, uuid, text, numeric, text, text, uuid, jsonb) from public;
+-- CREATE OR REPLACE retains explicit grants from the deployed function.
+-- Revoke role-specific grants too before restoring the supported caller.
+revoke all on function public.apply_shopping_list_add_v2(uuid, uuid, text, numeric, text, text, uuid, jsonb)
+  from public, anon, authenticated;
 grant execute on function public.apply_shopping_list_add_v2(uuid, uuid, text, numeric, text, text, uuid, jsonb) to authenticated;
 commit;
