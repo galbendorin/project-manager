@@ -13,6 +13,34 @@ export function shoppingCreateErrorMessage(error) {
   return 'Unable to sync this addition. It remains saved on this device; try again when your connection returns.';
 }
 
+// Acceptance batches and journal records describe the same work during handoff.
+// Keep terminal records in the identity set so a retained receipt cannot make
+// a completed/cancelled grocery appear pending again. This is display only;
+// recovery still validates the complete original batch and reports conflicts.
+export function shoppingCreatePendingState({ records = [], batches = [], errors = new Map(), projectId }) {
+  const projectRecords = records.filter(record => record.projectId === projectId);
+  const projectBatches = batches.filter(batch => batch.projectId === projectId);
+  const represented = new Set(projectRecords.map(record => record.operationId));
+  const pendingRecords = projectRecords.filter(record => !['settled', 'local_cancelled'].includes(shoppingCreateProgress(record).status));
+  const missing = new Set();
+  const pendingBatches = projectBatches.flatMap(batch => {
+    const items = batch.items.filter(item => {
+      if (represented.has(item.operationId) || missing.has(item.operationId)) return false;
+      missing.add(item.operationId);
+      return true;
+    });
+    return items.length ? [{ ...batch, items }] : [];
+  });
+  const batchErrors = new Set(projectBatches.map(batch => `batch:${batch.id}`));
+  const visibleErrors = new Map([...errors].filter(([id]) => {
+    if (id.startsWith('batch:')) return batchErrors.has(id);
+    if (id.startsWith('refresh:')) return id === `refresh:${projectId}`;
+    return ['storage', 'inputs', 'drafts'].includes(id) || represented.has(id);
+  }));
+  return { records: pendingRecords, batches: pendingBatches, errors: visibleErrors,
+    pendingCount: new Set(pendingRecords.map(record => record.operationId)).size + missing.size };
+}
+
 // Pending contributions remain separate from shared groceries. Never replace
 // a shared row with a historical receipt image, or match ownership by title.
 export function projectShoppingCreates({ todos, records, projectId, refreshed = new Set() }) {
@@ -127,7 +155,9 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
         } catch (error) {
           if (closed || error.code === 'JOURNAL_OWNER_CHANGED') throw error;
           complete = false;
-          errors.set(`batch:${batch.id}`, 'These groceries are saved on this device. Retry to finish adding them.');
+          errors.set(`batch:${batch.id}`, error.code === 'JOURNAL_OPERATION_EXISTS'
+            ? `Check saved grocery “${item.title}”: its saved identity already has different details. Both records are preserved; it has not been added again.`
+            : `“${item.title}” is saved on this device. Retry to finish adding it.`);
           // A storage outage must not spend one timeout per remaining item.
           break;
         }

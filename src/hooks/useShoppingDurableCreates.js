@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { createShoppingCreateJournal } from '../utils/shoppingCreateJournal';
 import { createShoppingSessionTransport } from '../utils/shoppingSessionTransport';
-import { createShoppingCreateWorkspace, projectShoppingCreates, shoppingCreateErrorMessage } from '../utils/shoppingCreateWorkspace';
-import { shoppingCreateProgress } from '../utils/shoppingCreateOperation';
+import { createShoppingCreateWorkspace, projectShoppingCreates, shoppingCreateErrorMessage, shoppingCreatePendingState } from '../utils/shoppingCreateWorkspace';
 import { applyShoppingQueueToTodos, loadShoppingOfflineState, sortTodos } from '../utils/shoppingListViewState';
 import { mapManualTodoRow } from './projectData/manualTodoUtils';
 
@@ -101,11 +100,10 @@ export function useShoppingDurableCreates({ currentUserId, isOnline, enabled, se
       return { ok: false, message: shoppingCreateErrorMessage(cause) };
     }
   }, [ready, isCurrent, workspace]);
-  const pendingRecords = records.filter(record => record.projectId === selectedProjectId
-    && !['settled', 'local_cancelled'].includes(shoppingCreateProgress(record).status));
-  const batches = ownsSnapshot ? (snapshot.batches || []).filter(batch => batch.projectId === selectedProjectId) : [];
-  const showErrors = enabled || records.length || batches.length || (ownsSnapshot && snapshot.errors.has('drafts'));
-  return { enabled, ready, todos, sessionKey: workspace, records: pendingRecords,
-    batches, add, edit, retry, refresh,
-    busy: ownsSnapshot && snapshot.busy, error: showErrors ? error : '', errors: ownsSnapshot && showErrors ? snapshot.errors : new Map() };
+  const pending = shoppingCreatePendingState({ records,
+    batches: ownsSnapshot ? snapshot.batches || [] : [], errors: ownsSnapshot ? snapshot.errors : new Map(), projectId: selectedProjectId });
+  const showErrors = enabled || records.length || pending.pendingCount || pending.errors.size;
+  return { enabled, ready, todos, sessionKey: workspace, ...pending,
+    add, edit, retry, refresh,
+    busy: ownsSnapshot && snapshot.busy, error: showErrors ? error : '' };
 }

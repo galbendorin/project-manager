@@ -34,6 +34,10 @@ function Fixture() {
     <details className="mb-4 rounded-xl border p-3"><summary>Local verification controls</summary>
       <p>Actual Shopping screen; synthetic accounts, offline service indicator and local IndexedDB. No production data or requests.</p>
       <div className="flex flex-wrap gap-2">
+        <button onClick={() => { faults.online = !faults.online; window.dispatchEvent(new Event('fixture-online')); setResult(faults.online ? 'Synthetic online indicator enabled; transport still isolated' : 'Synthetic offline indicator enabled'); }}>Toggle connection indicator</button>
+        <label>Stop grocery handoff at <select aria-label="Stop grocery handoff at" onChange={event => { faults.handoffTitle = event.target.value; setResult(event.target.value ? `Handoff blocked at ${event.target.value}` : 'Handoff allowed'); }}>
+          <option value="">None</option><option>Handoff milk</option><option>Handoff bread</option><option>Handoff rice</option>
+        </select></label>
         <button onClick={seedOlder}>Seed older recovery examples</button>
         <button onClick={() => { faults.saves = true; setResult('Saves blocked'); }}>Fail saves</button>
         <button onClick={() => { faults.saves = false; setResult('Saves allowed'); }}>Allow saves</button>

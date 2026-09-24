@@ -545,6 +545,7 @@ export default function ShoppingListView({ currentUserId }) {
     setTodos,
     sortTodos,
     offlineQueue,
+    additionalPendingCount: durableCreates.pendingCount,
     lastSyncedAt,
     todos,
     failedTodoId,
@@ -558,17 +559,18 @@ export default function ShoppingListView({ currentUserId }) {
   const queuedTodoIds = useMemo(() => new Set([...legacyQueuedTodoIds, ...durableCreates.records.map(record => record.localId)]),
     [legacyQueuedTodoIds, durableCreates.records]);
   const retryShoppingSync = useCallback(() => Promise.all([retryLegacyShoppingSync(), retryDurable()]), [retryLegacyShoppingSync, retryDurable]);
-  const shoppingSyncSummary = durableCreates.records.length
-    ? `${durableCreates.records.length} addition${durableCreates.records.length === 1 ? '' : 's'} saved on this device`
+  const durablePendingCount = durableCreates.pendingCount;
+  const shoppingSyncSummary = durablePendingCount
+    ? `${durablePendingCount} grocery change${durablePendingCount === 1 ? '' : 's'} saved on this device${offlineQueue.length ? ` · ${legacyShoppingSyncSummary}` : ''}`
     : legacyShoppingSyncSummary;
-  const syncCenterItems = durableCreates.records.length ? [...legacySyncCenterItems, {
-    id: 'durable-additions', label: 'Pending additions', detail: 'Edits and cancellations stay saved until confirmed.',
+  const syncCenterItems = durablePendingCount ? [...legacySyncCenterItems, {
+    id: 'durable-additions', label: `${durablePendingCount} pending grocery change${durablePendingCount === 1 ? '' : 's'}`, detail: 'Additions, edits and cancellations stay saved until confirmed.',
     status: durableCreates.busy ? 'syncing' : 'queue', statusLabel: durableCreates.busy ? 'Syncing' : 'Saved on device',
     actionLabel: 'Retry sync', onAction: durableCreates.retry,
   }] : legacySyncCenterItems;
   const quickAddSyncState = useMemo(() => getShoppingQuickAddSyncState({
     isOnline,
-    queueCount: offlineQueue.length,
+    queueCount: offlineQueue.length + durablePendingCount,
     syncing: syncingQueue,
     hasFailedItem: Boolean(failedTodoId),
     lastSyncLabel: formatSyncTimeLabel(lastSyncedAt),
@@ -577,19 +579,20 @@ export default function ShoppingListView({ currentUserId }) {
     isOnline,
     lastSyncedAt,
     offlineQueue.length,
+    durablePendingCount,
     syncingQueue,
   ]);
   const quickAddActionLabel = useMemo(() => getShoppingQuickAddActionLabel({
     isOnline,
-    queueCount: offlineQueue.length,
+    queueCount: offlineQueue.length + durablePendingCount,
     syncing: syncingQueue,
     hasFailedItem: Boolean(failedTodoId),
-  }), [failedTodoId, isOnline, offlineQueue.length, syncingQueue]);
+  }), [failedTodoId, isOnline, offlineQueue.length, durablePendingCount, syncingQueue]);
   const quickAddSyncStateWithAction = useMemo(() => {
     if (!quickAddActionLabel) return quickAddSyncState;
 
     const failedTodo = failedTodoId ? todos.find((todo) => todo._id === failedTodoId) : null;
-    const action = offlineQueue.length > 0
+    const action = offlineQueue.length + durablePendingCount > 0
       ? retryShoppingSync
       : (failedTodo ? () => retryTodoAction(failedTodo) : null);
 
@@ -597,12 +600,13 @@ export default function ShoppingListView({ currentUserId }) {
       ...quickAddSyncState,
       actionLabel: quickAddActionLabel,
       onAction: action || undefined,
-      actionDisabled: syncingQueue || (!offlineQueue.length && !failedTodo),
+      actionDisabled: syncingQueue || (!offlineQueue.length && !durablePendingCount && !failedTodo),
     };
   }, [
     failedTodoId,
     offlineQueue.length,
     quickAddActionLabel,
+    durablePendingCount,
     quickAddSyncState,
     retryShoppingSync,
     retryTodoAction,
@@ -612,9 +616,9 @@ export default function ShoppingListView({ currentUserId }) {
   const shoppingEmptyState = useMemo(() => getShoppingEmptyState({
     isOnline,
     hasSelectedProject: Boolean(selectedProject),
-    queueCount: offlineQueue.length,
+    queueCount: offlineQueue.length + durablePendingCount,
     lastSyncLabel: formatSyncTimeLabel(lastSyncedAt),
-  }), [isOnline, lastSyncedAt, offlineQueue.length, selectedProject]);
+  }), [isOnline, lastSyncedAt, offlineQueue.length, durablePendingCount, selectedProject]);
 
   if (loadingProjects) {
     return (
