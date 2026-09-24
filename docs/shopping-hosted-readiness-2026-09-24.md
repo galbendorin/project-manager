@@ -1,0 +1,10 @@
+# Q04 hosted compatibility review — 24 September 2026
+
+Read-only catalog queries ran in the signed-in Supabase SQL Editor for the existing `project-manager` production project (`jbmcmtzizlckhgpogbev`). They read schema and function metadata only; no application rows were inspected or changed.
+
+- Required existing tables `manual_todos`, `projects`, `project_members` and `shopping_list_operation_receipts` exist with RLS enabled (earlier project preflight). `manual_todos` has the required quantity, source, metadata, assignee and timestamp columns. `shopping_revision` is absent, as expected before migration.
+- `apply_shopping_list_add_v2` exists with the expected eight arguments and `SECURITY DEFINER`. The proposed v3 and reconcile RPCs and two contribution tables are absent. There is no existing `manual_todos` trigger that conflicts with the proposed revision trigger. Existing triggers on `projects` and `project_members` are unrelated to its target table.
+- The four `manual_todos` RLS policies use `can_access_manual_todo`, `can_insert_manual_todo` and `can_update_manual_todo` with `auth.uid()`. The project access policies use `can_access_project`, `can_write_project` and `is_project_owner`. This is catalog compatibility evidence, not a tested authorization result.
+- Current v2 EXECUTE privilege is available to both `authenticated` and `anon`. Its deployed function body starts with `current_user_id := auth.uid()` and explicitly raises `AUTHENTICATION_REQUIRED` when null. The proposed migration revokes `anon` and regrants `authenticated`, which narrows access. We did not call the RPC anonymously against live data.
+
+Result: no catalog-level mismatch was found that blocks publication of the Q04 *source* with `VITE_SHOPPING_DURABLE_CREATES` OFF. This does not clear migration, activation, hosted permission or physical iPhone gates. The owner declined backup and restore rehearsal; there is no verified independent data recovery path. The transactional migration remains unapplied until the remaining hosted/rollout checks are ready, and its successful writes cannot be restored from this review.
