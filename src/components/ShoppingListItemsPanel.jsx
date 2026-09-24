@@ -106,6 +106,9 @@ export default function ShoppingListItemsPanel({
 }) {
   const duplicateBoughtCount = Math.max(0, completedTodos.length - completedTodoGroups.length);
   const openMealPlanTodoCount = openTodos.filter((todo) => todo.sourceType === 'meal_plan').length;
+  const sharedOpenTodos = openTodos.filter((todo) => !todo._shoppingOperationId);
+  const pendingOpenTodos = openTodos.filter((todo) => Boolean(todo._shoppingOperationId));
+  const displayOpenTodos = [...sharedOpenTodos, ...pendingOpenTodos];
   const [showMealPlanNotice, setShowMealPlanNotice] = useState(() => {
     if (typeof window === 'undefined') return true;
     return window.localStorage.getItem(MEAL_PLAN_NOTICE_STORAGE_KEY) !== 'true';
@@ -150,7 +153,9 @@ export default function ShoppingListItemsPanel({
           ) : null}
           <div>
             <span className="text-xs text-slate-400">
-              {loadingTodos ? 'Loading...' : `${openTodos.length} open · ${completedTodoGroups.length} bought`}
+              {loadingTodos
+                ? 'Loading...'
+                : `${openTodos.length} open${pendingOpenTodos.length ? ` · ${pendingOpenTodos.length} saved change${pendingOpenTodos.length === 1 ? '' : 's'}` : ''} · ${completedTodoGroups.length} bought`}
             </span>
             {offlineQueue.length > 0 ? (
               <div className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
@@ -207,24 +212,32 @@ export default function ShoppingListItemsPanel({
               </div>
             ) : null}
             <div className="space-y-3">
-              {openTodos.length === 0 ? (
+              {displayOpenTodos.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-500">
                   Nothing open right now.
                 </div>
-              ) : openTodos.map((todo) => {
+              ) : displayOpenTodos.map((todo, index) => {
                 const isExpanded = expandedOpenTodoId === todo._id;
                 const showHelperText = pendingCompleteId === todo._id
                   || savingTodoId === todo._id
                   || failedTodoId === todo._id
                   || editingTodoId === todo._id
                   || (!isMobile && !isCompactDesktop);
-                const syncState = queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
+                const syncState = todo._shoppingOperationId
+                  ? 'pending'
+                  : queuedTodoIds.has(todo._id) || isOfflineTempId(todo._id)
                   ? (syncingQueue && isOnline ? 'syncing' : 'offline')
                   : '';
 
                 return (
-                  <div
-                    key={todo._id}
+                  <React.Fragment key={todo._id}>
+                    {index === sharedOpenTodos.length && pendingOpenTodos.length > 0 ? (
+                      <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                        <p className="font-semibold text-sky-900">Saved changes</p>
+                        <p className="mt-1 text-xs leading-5">These groceries are safely saved on this device and will join the shared list after sync.</p>
+                      </div>
+                    ) : null}
+                    <div
                     data-shopping-open-todo-id={todo._id}
                     className={`border bg-white shadow-sm transition ${
                       isCompactDesktop ? 'rounded-[18px] px-3.5 py-3' : 'rounded-[22px] px-4 py-4'
@@ -326,6 +339,8 @@ export default function ShoppingListItemsPanel({
                               <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
                                 syncState === 'syncing'
                                   ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                                  : syncState === 'pending'
+                                    ? 'border-sky-200 bg-sky-50 text-sky-700'
                                   : 'border-amber-200 bg-amber-50 text-amber-700'
                               }`}>
                                 {todo._shoppingOperationId ? (todo._shoppingReadOnly ? 'Refresh needed' : todo._shoppingStatus === 'needs_review' ? 'Needs review' : 'Pending addition') : syncState === 'syncing' ? 'Syncing' : 'Saved offline'}
@@ -479,7 +494,8 @@ export default function ShoppingListItemsPanel({
                         </div>
                       ) : null}
                     </div>
-                  </div>
+                    </div>
+                  </React.Fragment>
                 );
               })}
             </div>
