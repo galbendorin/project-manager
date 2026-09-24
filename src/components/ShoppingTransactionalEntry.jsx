@@ -4,6 +4,7 @@ import { useShoppingDraftSession } from '../hooks/useShoppingDraftSession';
 import { normalizeShoppingDraftItems, shoppingTextDraft } from '../utils/shoppingDraftInput';
 import { formatShoppingAddSummary } from '../utils/shoppingListViewState';
 import ShoppingListQuickAdd from './ShoppingListQuickAdd';
+import ShoppingLegacyDraftReview from './ShoppingLegacyDraftReview';
 
 export default function ShoppingTransactionalEntry({ entryRef, projectId, onAccepted, ...quickAddProps }) {
   const runtime = useShoppingDraftRuntime();
@@ -149,5 +150,8 @@ export default function ShoppingTransactionalEntry({ entryRef, projectId, onAcce
         </select>
       </label>}
     </div>
+    {runtime.legacyRecovery && projectId && <ShoppingLegacyDraftReview key={`${userId}:${projectId}`}
+      recovery={runtime.legacyRecovery} projectId={projectId} projectName={quickAddProps.selectedProject?.name || 'this shopping list'}
+      onOpen={id => { choose(id); void listDrafts(); }} onAccepted={wakeRecovery}/>}
   </>;
 }

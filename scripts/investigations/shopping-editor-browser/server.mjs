@@ -11,6 +11,7 @@ const server = await createServer({ configFile: false, root,
     if (source.endsWith('/lib/supabase') || mocks.has(source)) return `${root}environment.jsx`;
     if (importer.endsWith('/src/contexts/AuthContext.jsx') && source === '../utils/offlineState') return `${root}environment.jsx`;
     if (importer.endsWith('/src/utils/shoppingDraftOwner.js') && source === './shoppingCreateJournal.js') return `${root}journal.js`;
+    if (importer.endsWith('/src/hooks/useShoppingDurableCreates.js') && source === '../utils/shoppingCreateJournal') return `${root}journal.js`;
     return null;
   } }], server: { host: '127.0.0.1', port: 52232, strictPort: true, fs: { allow: [repository] } },
 });

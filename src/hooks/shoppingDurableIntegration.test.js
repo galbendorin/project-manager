@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { IDBFactory } from 'fake-indexeddb';
 import { createShoppingCreateJournal } from '../utils/shoppingCreateJournal.js';
-import { createShoppingCreateWorkspace, projectShoppingCreates } from '../utils/shoppingCreateWorkspace.js';
+import { createShoppingCreateWorkspace, projectShoppingCreates, shoppingCreatePendingState } from '../utils/shoppingCreateWorkspace.js';
 import { isOfflineTempId } from '../utils/offlineState.js';
 import { planShoppingListAdds, createOfflineShoppingTodo, sortTodos } from '../utils/shoppingListViewState.js';
 import { enqueueCreate, enqueueDelete, enqueueUpdate } from '../utils/offlineQueue.js';
@@ -146,6 +146,70 @@ test('partial journal failure retains a complete batch and resumes stable IDs wi
   await fixture.workspace.sync();
   const records = await fixture.journal.list();
   assert.equal(records.length, 2); assert.ok(records.some(record => record.operationId === operationId));
+});
+
+for (const blockedTitle of ['Milk', 'Bread', 'Rice']) {
+  test(`pending count stays complete and unique when handoff stops at ${blockedTitle}`, async t => {
+    let blocked = true;
+    const fixture = setup(t, { journalWrap: journal => ({ ...journal, create: entry => {
+      if (blocked && entry.desired.draft.title === blockedTitle) throw new Error('quota');
+      return journal.create(entry);
+    } }) });
+    await fixture.actions().addItems(['Milk', 'Bread', 'Rice']);
+    const originalBatches = fixture.snapshot().batches;
+    const state = () => shoppingCreatePendingState({ ...fixture.snapshot(), projectId: 'project-a' });
+    const partial = state();
+    assert.equal(partial.pendingCount, 3);
+    assert.equal(partial.records.length + partial.batches.flatMap(batch => batch.items).length, 3);
+    assert.ok(partial.batches.flatMap(batch => batch.items).every(item => !partial.records.some(record => record.operationId === item.operationId)));
+    assert.equal(originalBatches[0].items.length, 3, 'display must not truncate stored recovery evidence');
+    // A second receipt/view of the same acceptance is not a fourth grocery.
+    assert.equal(shoppingCreatePendingState({ ...fixture.snapshot(), batches: [...originalBatches, ...originalBatches], projectId: 'project-a' }).pendingCount, 3);
+    blocked = false; await fixture.workspace.sync();
+    assert.equal(state().pendingCount, 3); assert.equal(state().batches.length, 0);
+    const pending = fixture.visible()[0];
+    await fixture.actions().deleteTodo(pending._id);
+    assert.equal(state().pendingCount, 2, 'cancelled locally before sending is finished');
+    assert.equal(shoppingCreatePendingState({ ...fixture.snapshot(), batches: originalBatches, projectId: 'project-a' }).pendingCount, 2);
+    fixture.online(); await fixture.workspace.sync(); await fixture.idle();
+    const terminalWithOldReceipt = shoppingCreatePendingState({ ...fixture.snapshot(), batches: originalBatches, projectId: 'project-a' });
+    assert.equal(terminalWithOldReceipt.pendingCount, 0);
+    assert.equal(terminalWithOldReceipt.batches.length, 0);
+    assert.equal(fixture.getServer().length, 2);
+  });
+}
+
+test('pending summary scopes receipt and journal identities to the selected list', async t => {
+  const fixture = setup(t);
+  await fixture.actions().addItems(['Milk']);
+  const id = fixture.snapshot().records[0].operationId;
+  const batches = [
+    { id: 'other', projectId: 'project-b', items: [{ operationId: id, title: 'Other list input' }] },
+    { id: 'current', projectId: 'project-a', items: [{ operationId: 'bread', title: 'Bread' }] },
+  ];
+  const errors = new Map([['batch:other', 'Other list conflict'], ['batch:current', 'Current list conflict'],
+    ['refresh:project-b', 'Other list refresh'], [id, 'Milk needs retry']]);
+  const first = shoppingCreatePendingState({ ...fixture.snapshot(), batches, errors, projectId: 'project-a' });
+  assert.equal(first.pendingCount, 2); assert.equal(first.batches[0].id, 'current');
+  assert.deepEqual([...first.errors.keys()], ['batch:current', id]);
+  const other = shoppingCreatePendingState({ ...fixture.snapshot(), batches, errors, projectId: 'project-b' });
+  assert.equal(other.pendingCount, 1); assert.equal(other.records.length, 0);
+  assert.deepEqual([...other.errors.keys()], ['batch:other', 'refresh:project-b']);
+  assert.equal(other.batches[0].items[0].title, 'Other list input');
+  assert.equal(shoppingCreatePendingState({ ...fixture.snapshot(), batches, projectId: '' }).pendingCount, 0);
+});
+
+test('a conflicting receipt keeps a labelled error after its terminal identity is removed from the pending count', async t => {
+  const fixture = setup(t);
+  await fixture.workspace.add('project-a', [{ operationId: 'same-intent', title: 'Milk' }]);
+  await fixture.actions().deleteTodo(fixture.visible()[0]._id);
+  await fixture.workspace.add('project-a', [{ operationId: 'same-intent', title: 'Different groceries' }]);
+  const pending = shoppingCreatePendingState({ ...fixture.snapshot(), projectId: 'project-a' });
+  assert.equal(pending.pendingCount, 0); assert.equal(pending.batches.length, 0);
+  assert.match([...pending.errors.values()].join(' '), /Different groceries.*different details/);
+  assert.equal(fixture.snapshot().batches[0].items[0].title, 'Different groceries');
+  assert.equal((await fixture.journal.list())[0].initialDesired.draft.title, 'Milk');
+  assert.equal(fixture.calls.length, 0);
 });
 
 test('pending records remain editable and syncable when the new-create rollout flag is off', async t => {

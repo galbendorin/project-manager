@@ -10,6 +10,7 @@ import { memoryStorage } from '../../scripts/investigations/shopping-input-test-
 import { IDBFactory } from 'fake-indexeddb';
 import { createShoppingCreateJournal } from '../utils/shoppingCreateJournal.js';
 import { createShoppingDraftRegistry } from '../utils/shoppingDraftRegistry.js';
+import { shoppingCreatePendingState } from '../utils/shoppingCreateWorkspace.js';
 
 // Execute the actual hook bodies with deterministic hook slots, effect cleanup,
 // speech callbacks and auth transitions. No browser storage or real account.
@@ -183,7 +184,7 @@ test('retained durable callbacks cannot target a replacement account or a later 
     AbortController, Map, Set, window: { addEventListener() {}, removeEventListener() {} },
     supabase: { auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) } },
     createShoppingCreateJournal: () => ({}), createShoppingSessionTransport: () => ({}),
-    shoppingCreateProgress: () => ({ status: 'pending_add' }), shoppingCreateErrorMessage: () => 'Failure',
+    shoppingCreatePendingState, shoppingCreateErrorMessage: () => 'Failure',
     sortTodos: items => items, projectShoppingCreates: ({ todos }) => todos,
     createShoppingCreateWorkspace: options => {
       const workspace = { close() {}, reload: async () => options.onChange({ records: [], errors: new Map(), refreshed: new Set(), busy: false }),
@@ -215,7 +216,7 @@ test('flag-off draft recovery wakes for the selected project and exposes errors 
     AbortController, Map, Set, window: { addEventListener() {}, removeEventListener() {} },
     supabase: { auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) } },
     createShoppingCreateJournal: () => ({}), createShoppingSessionTransport: () => ({}),
-    shoppingCreateProgress: () => ({ status: 'pending_add' }), shoppingCreateErrorMessage: () => 'Failure',
+    shoppingCreatePendingState, shoppingCreateErrorMessage: () => 'Failure',
     sortTodos: items => items, projectShoppingCreates: ({ todos }) => todos,
     createShoppingCreateWorkspace: options => ({ close() {},
       reload: async () => options.onChange({ records: [], batches: [], errors: new Map([['drafts', 'Saved draft conflict']]), refreshed: new Set(), busy: false }),

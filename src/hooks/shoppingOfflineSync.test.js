@@ -76,7 +76,7 @@ function setup({ replies, queue = [operation] }) {
     isMissingShoppingUpsertRpcError: unexpectedCreate,
   });
   const hook = vm.runInContext(`${source}\nuseShoppingListOfflineSync`, context);
-  const render = () => hook({
+  const render = (additionalPendingCount = 0) => hook({
     currentUserId: 'user-test',
     isOnline: true,
     selectedProjectId: projectId,
@@ -85,6 +85,7 @@ function setup({ replies, queue = [operation] }) {
     setTodos: (next) => { state.visibleTodos = next; },
     sortTodos: (items) => items,
     offlineQueue: cache.queue,
+    additionalPendingCount,
     lastSyncedAt: cache.lastSyncedAt,
     todos: cache.todosByProject[projectId],
     failedTodoId: state.failedId,
@@ -104,6 +105,14 @@ function assertRetained(runtime, expectedQueue) {
   assert.equal(runtime.state.busy, false);
   assert.equal(runtime.requests.filter((request) => request.method === 'PATCH').length, 1);
 }
+
+test('phone cache status includes durable work without adding it to the legacy queue', () => {
+  const runtime = setup({ replies: [], queue: [] });
+  assert.match(runtime.render(3).syncCenterItems.find(item => item.id === 'phone-cache').detail, /3 changes saved on this phone/);
+  assert.deepEqual(runtime.getCache().queue, []);
+  assert.match(runtime.render(0).syncCenterItems.find(item => item.id === 'phone-cache').detail, /no waiting changes/);
+  assert.equal(runtime.requests.length, 0);
+});
 
 test('queued update requires the server to return the matching item ID', async () => {
   const runtime = setup({ replies: [{ body: [{ id: targetId }] }] });

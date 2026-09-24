@@ -12,12 +12,20 @@ const noop = async () => {};
 const bought = { _id: 'bought-fixture', projectId: 'home', title: 'Yoghurt', status: 'Done',
   quantityValue: 2, quantityUnit: 'pot', createdAt: '2026-09-16T10:00:00Z', completedAt: '2026-09-16T10:00:00Z' };
 export const usePlan = () => ({ canCreateProject: true, limits: {}, refreshProjectCount: noop });
-export const useOnlineStatus = () => false;
+export const useOnlineStatus = () => {
+  const [online, setOnline] = useState(false);
+  useEffect(() => {
+    const change = () => setOnline(faults.online);
+    window.addEventListener('fixture-online', change);
+    return () => window.removeEventListener('fixture-online', change);
+  }, []);
+  return online;
+};
 export const useShoppingListLiveUpdates = () => ({ pushSupported: false, pushEnabled: false,
   pushPermission: 'default', pushBusy: false, pushMessage: '', liveUpdateMessage: '',
   handleEnablePushAlerts: noop, handleDisablePushAlerts: noop, handleTestPushAlert: noop });
 export const createShoppingSessionTransport = () => ({
-  rpc: () => { throw new Error('Fixture must not send network writes'); },
+  rpc: () => { evidence.syncAttempts++; throw new Error('Synthetic network unavailable; no request sent'); },
   readProject: () => { throw new Error('Fixture must not send network reads'); },
 });
 export function useShoppingListData({ currentUserId }) {
@@ -30,8 +38,8 @@ export function useShoppingListData({ currentUserId }) {
     todos, setTodos, todoError, setTodoError, loadTodos, loadProjects: noop,
     loadingProjects: false, loadingTodos: false, offlineStateHydrated: true, projectError: '' };
 }
-export const faults = { saves: false, loseAcceptance: false, holdAcceptance: false, release: null };
-export const evidence = { acceptanceRequests: [], errors: [] };
+export const faults = { saves: false, loseAcceptance: false, holdAcceptance: false, release: null, handoffTitle: '', online: false };
+export const evidence = { acceptanceRequests: [], errors: [], syncAttempts: 0 };
 export let recognition;
 window.SpeechRecognition = class {
   constructor() { recognition = this; }

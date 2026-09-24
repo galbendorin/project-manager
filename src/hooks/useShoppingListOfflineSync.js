@@ -32,6 +32,7 @@ export function useShoppingListOfflineSync({
   setTodos,
   sortTodos,
   offlineQueue,
+  additionalPendingCount = 0,
   lastSyncedAt,
   todos,
   failedTodoId,
@@ -307,7 +308,7 @@ export function useShoppingListOfflineSync({
     const phoneCacheState = getShoppingOfflineReadinessState({
       openCount,
       boughtCount,
-      queueCount: offlineQueue.length,
+      queueCount: offlineQueue.length + additionalPendingCount,
       isOnline,
       lastSyncLabel,
     });
@@ -370,6 +371,7 @@ export function useShoppingListOfflineSync({
   }, [
     failedTodoId,
     failedTodoMessage,
+    additionalPendingCount,
     formatSyncTimeLabel,
     isOnline,
     lastSyncedAt,
