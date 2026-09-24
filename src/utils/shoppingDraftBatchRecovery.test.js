@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { createShoppingCreateJournal } from './shoppingCreateJournal.js';
-import { createShoppingCreateWorkspace } from './shoppingCreateWorkspace.js';
+import { createShoppingCreateWorkspace, shoppingCreatePendingState } from './shoppingCreateWorkspace.js';
 import { createShoppingCreateOperations, shoppingCreateInitialDesired } from './shoppingCreateOperation.js';
 import { listShoppingDraftHandoffs } from './shoppingDraftBatchRecovery.js';
 import { createShoppingInputBatches } from './shoppingInputBatches.js';
@@ -55,6 +55,64 @@ test('reader without the rollout writer recovers accepted batches after compacti
   const reader = f.journal();
   assert.equal(reader.drafts, undefined); assert.deepEqual(await reader.readAcceptedDrafts('p'), [batch]);
   assert.deepEqual(await reader.readAcceptedDrafts('other'), []);
+});
+
+test('rollback to a compatible feature-off reader recovers old input and v2 acceptance without new identities', async t => {
+  const indexedDB = new IDBFactory();
+  const storage = memoryStorage();
+  const userId = 'a', projectId = 'p';
+  const owner = () => userId;
+  const journals = [];
+  const open = (options = {}) => {
+    const journal = createShoppingCreateJournal({ indexedDB, userId, getCurrentUserId: owner, ...options });
+    journals.push(journal); return journal;
+  };
+  const oldPinned = open({ indexedDB: { open: name => indexedDB.open(name, 1) } });
+  const legacy = item('old-operation', 'Bread');
+  await oldPinned.create({ operationId: legacy.operationId, projectId,
+    localId: `offline-${legacy.operationId}`, desired: shoppingCreateInitialDesired(legacy) });
+  const oldInput = createShoppingInputBatches({ userId, getCurrentUserId: owner, storage: () => storage });
+  const oldBatch = oldInput.save(projectId, [item('old-batch', 'Milk')], { draftGeneration: 'old-generation' });
+  storage.setItem('pmworkspace:shopping-draft:v1:a', 'Unsubmitted rice');
+
+  const writer = open({ includeDrafts: true });
+  const newer = item('new-accepted', 'Milk');
+  await writer.drafts.create({ projectId, draftId: 'new-draft', value: { text: 'Milk', items: [newer] } });
+  const accepted = await writer.drafts.accept({ projectId, draftId: 'new-draft', expectedVersion: 1 });
+  await writer.drafts.create({ projectId, draftId: 'unsent-draft', value: { text: 'Eggs', items: [item('unsent-eggs', 'Eggs')] } });
+  writer.close();
+
+  await assert.rejects(oldPinned.read(legacy.operationId), error =>
+    error.code === 'JOURNAL_STORAGE_UNAVAILABLE' && error.cause?.name === 'VersionError');
+  assert.equal(storage.getItem('pmworkspace:shopping-input-batch:v1:a:old-generation') !== null, true);
+  const rollback = open();
+  assert.equal(rollback.drafts, undefined);
+  assert.deepEqual(await rollback.readAcceptedDrafts(projectId), [accepted]);
+  assert.equal((await rollback.read(legacy.operationId)).operationId, legacy.operationId);
+
+  const snapshots = [];
+  const workspace = createShoppingCreateWorkspace({ journal: rollback, getCurrentUserId: owner,
+    getSelectedProjectId: () => projectId, isOnline: () => false,
+    inputBatches: createShoppingInputBatches({ userId, getCurrentUserId: owner, storage: () => storage }),
+    transport: { rpc() { assert.fail('Offline rollback must not dispatch'); } },
+    onChange: snapshot => snapshots.push(snapshot), onRefresh() {},
+  });
+  t.after(() => { workspace.close(); oldInput.close(); journals.forEach(journal => journal.close()); });
+  await workspace.sync();
+  const records = await rollback.list();
+  assert.deepEqual(records.map(record => record.operationId).sort(), ['new-accepted', 'old-batch', 'old-operation']);
+  assert.equal(shoppingCreatePendingState({ ...snapshots.at(-1), projectId }).pendingCount, 3);
+  assert.equal(snapshots.at(-1).batches.length, 0);
+  assert.equal((await rollback.read('old-batch')).initialDesired.draft.title, 'Milk');
+  assert.deepEqual(await rollback.readAcceptedDrafts(projectId), [accepted]);
+  assert.equal(storage.getItem('pmworkspace:shopping-input-batch:v1:a:old-generation') !== null, true);
+  assert.equal(storage.getItem('pmworkspace:shopping-draft:v1:a'), 'Unsubmitted rice');
+  assert.equal(oldBatch.items[0].operationId, 'old-batch');
+
+  await workspace.sync();
+  assert.deepEqual((await rollback.list()).map(record => record.operationId).sort(), ['new-accepted', 'old-batch', 'old-operation']);
+  const resumedWriter = open({ includeDrafts: true });
+  assert.deepEqual((await resumedWriter.drafts.list(projectId)).map(draft => draft.draftId), ['unsent-draft']);
 });
 
 test('offline workspace recovers exact identities with duplicate titles and keeps batch evidence', async t => {
