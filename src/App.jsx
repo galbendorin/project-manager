@@ -215,9 +215,9 @@ function App() {
   }, [currentPath, hasPendingFinanceAccess, navigateToPath, planLoading]);
 
   useEffect(() => {
-    if (planLoading || householdToolsEnabled || !isHouseholdToolPath(currentPath)) return;
+    if (authLoading || !user || planLoading || householdToolsEnabled || !isHouseholdToolPath(currentPath)) return;
     navigateToPath('/', { replace: true });
-  }, [currentPath, householdToolsEnabled, navigateToPath, planLoading]);
+  }, [authLoading, currentPath, householdToolsEnabled, navigateToPath, planLoading, user]);
 
   if (currentPath === '/privacy') {
     return renderLazyPage(<LegalPage page="privacy" />, 'Loading policy...');

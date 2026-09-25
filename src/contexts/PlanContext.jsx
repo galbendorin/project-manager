@@ -51,6 +51,7 @@ export const PlanProvider = ({ children }) => {
   const [profileLoading, setProfileLoading] = useState(true);
   const [householdAccessLoading, setHouseholdAccessLoading] = useState(true);
   const [financeAccessLoading, setFinanceAccessLoading] = useState(true);
+  const [accessUserId, setAccessUserId] = useState(null);
   const [projectCount, setProjectCount] = useState(0);
   const [hasSharedHouseholdProjectAccess, setHasSharedHouseholdProjectAccess] = useState(false);
   const [financeHouseholdAccess, setFinanceHouseholdAccess] = useState(EMPTY_FINANCE_HOUSEHOLD_ACCESS);
@@ -164,6 +165,7 @@ export const PlanProvider = ({ children }) => {
   }, [user]);
 
   useEffect(() => {
+    setAccessUserId(user?.id || null);
     if (!user) {
       financeAccessRequestRef.current += 1;
       setProfile(null);
@@ -258,7 +260,10 @@ export const PlanProvider = ({ children }) => {
   }, [loadFinanceHouseholdAccess, user]);
 
   // ── Derived state ───────────────────────────────────────────
-  const loading = profileLoading || householdAccessLoading || financeAccessLoading;
+  // Auth can resolve one render before this provider starts the user's requests.
+  // Do not let that render treat the signed-out access result as a denial.
+  const loading = Boolean(user && accessUserId !== user.id)
+    || profileLoading || householdAccessLoading || financeAccessLoading;
   const isAdmin = useMemo(() => Boolean(profile?.is_admin || profile?.is_platform_admin), [profile?.is_admin, profile?.is_platform_admin]);
   const householdToolsEnabled = useMemo(
     () => canAccessHouseholdToolsFromProfile(profile, { hasSharedHouseholdProjectAccess }),
