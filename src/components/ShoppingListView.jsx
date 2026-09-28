@@ -56,7 +56,7 @@ const SHOPPING_PROJECT_NAME = 'Shopping List';
 const SHOPPING_UI_PREFS_KEY = 'pmworkspace:shopping-ui:v1';
 const MOBILE_COMPLETE_DELAY_MS = 1000;
 // Enable only after staging the contribution SQL and integrated account checks.
-const DURABLE_CREATES_ENABLED = import.meta.env.VITE_SHOPPING_DURABLE_CREATES === 'true';
+const DURABLE_CREATES_ENABLED = (import.meta.env.VITE_SHOPPING_DURABLE_CREATES ?? 'true') === 'true';
 const ShoppingEntry = DURABLE_CREATES_ENABLED ? ShoppingTransactionalEntry : ShoppingListQuickAdd;
 
 

@@ -92,7 +92,7 @@ export const AuthProvider = ({ children }) => {
     // Construction is storage-free, including StrictMode's discarded render.
     // Only an opt-in consumer's capability.acquire() creates a draft writer.
     shoppingDraftOwnerRef.current = createShoppingDraftOwner({
-      enabled: import.meta.env.VITE_SHOPPING_DURABLE_CREATES === 'true', initialUserId: initialOfflineUser?.id || null,
+      enabled: (import.meta.env.VITE_SHOPPING_DURABLE_CREATES ?? 'true') === 'true', initialUserId: initialOfflineUser?.id || null,
     });
   }
   const [shoppingDraftScope, setShoppingDraftScope] = useState(() => shoppingDraftOwnerRef.current.getScope());
