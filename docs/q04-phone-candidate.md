@@ -1,5 +1,13 @@
 # Q04 phone verification candidate — do not merge
 
+## Candidate 4 diagnostic
+
+Physical Home Screen testing stayed on candidate2 with a retained draft and no update prompt, including a repeat with20seconds in the background and30seconds after returning. The cause is unconfirmed. Candidate4 adds a collapsible **Q04 update check** section only to this preview. **Check update** shows browser/standalone mode, online state, worker states, the HTTP status/content type of `/sw.js`, worker version, bounded update-check results and worker state transitions. It neither activates workers nor reloads pages. It does not inspect credentials, user records, browser storage or cookies; it writes no application data. No registration is created by the diagnostic itself.
+
+The current installed page cannot show newly added diagnostics until it loads the new document. After deployment, a deliberate full close/reopen of the test shortcut can load that document while retaining the saved draft. Treat that as diagnosis, not as proof the missing update prompt works. If candidate2 persists, stop and record it. Never clear site data, uninstall the shortcut or disable deployment protection to force a result.
+
+Local real-browser validation on a production build confirmed an active controller, HTTP200 JavaScript worker response, parsed worker version and successful manual check. This local fixture intentionally lacks Supabase config; it verifies the independent update diagnostics only, not authenticated Shopping. Product startup/update source is unchanged.
+
 This branch prepares a separate HTTPS preview for the remaining Q04 iPhone checks. It is not a production activation or a new product milestone.
 
 Only Vercel **preview** builds of `codex/q04-phone-candidate` enable durable Shopping creates. The same preview replaces Shopping's list name with `Q04 TEST - hosted verification` and displays a visible test banner. All other builds, including production builds of this branch, retain their existing flag configuration and normal list name. Source changes to the expected list declaration fail the preview build instead of losing isolation silently. Existing Supabase authentication and authorization remain in effect; no credentials or database changes are included.
