@@ -31,7 +31,7 @@ const q04PhoneVerification = () => ({
   },
   transformIndexHtml(html) {
     return html.replace('<title>', '<title>Q04 TEST — ')
-      .replace('<body>', '<body><aside role="status" style="padding:10px;background:#fff5d6;color:#332500;text-align:center">Q04 test candidate 4 · Shopping uses the separate test list.</aside>')
+      .replace('<body>', '<body><aside role="status" style="padding:10px;background:#fff5d6;color:#332500;text-align:center">Q04 test candidate 5 · Shopping uses the separate test list.</aside>')
       .replace('</body>', '<script defer src="/q04-update-diagnostics.js"></script></body>')
   },
 })
