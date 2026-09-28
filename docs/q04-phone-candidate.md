@@ -1,6 +1,12 @@
 # Q04 phone verification candidate — do not merge
 
-## Candidate 4 diagnostic
+## Candidate 6 update notice fix
+
+The 28 September 14:22 physical screenshot confirms an installed waiting worker on the Home Screen Shopping page. App omitted its update notice from the standalone-tool route branch. Candidate6 includes the route fix and mount/subscription race check described in `update-notice-verification.md`. It uses a new diagnostic asset URL to avoid the stale candidate4 diagnostic being shown alongside candidate5 HTML. The diagnostic label identifies its own version.
+
+The old loaded App cannot render the corrected notice until it loads the new JavaScript. After deployment, close Q04 Test fully and reopen once, retain the saved draft and confirm candidate6. This bootstrap step is not an update-prompt pass. If an update is waiting, use Update now and verify the retained draft; otherwise prepare one subsequent same-origin marker update while the fixed candidate remains loaded. Public production remains OFF; this temporary preview branch must not be merged.
+
+## Candidate 4 diagnostic (historical)
 
 Physical Home Screen testing stayed on candidate2 with a retained draft and no update prompt, including a repeat with20seconds in the background and30seconds after returning. The cause is unconfirmed. Candidate4 adds a collapsible **Q04 update check** section only to this preview. **Check update** shows browser/standalone mode, online state, worker states, the HTTP status/content type of `/sw.js`, worker version, bounded update-check results and worker state transitions. It neither activates workers nor reloads pages. It does not inspect credentials, user records, browser storage or cookies; it writes no application data. No registration is created by the diagnostic itself.
 
