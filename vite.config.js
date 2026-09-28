@@ -20,7 +20,7 @@ const q04PhoneVerification = () => ({
   name: 'q04-phone-verification',
   enforce: 'pre',
   async generateBundle() {
-    this.emitFile({ type: 'asset', fileName: 'q04-update-diagnostics-7.js',
+    this.emitFile({ type: 'asset', fileName: 'q04-update-diagnostics-8.js',
       source: await readFile(path.join(projectRoot, 'scripts/investigations/q04-update-diagnostics.js'), 'utf8') })
   },
   transform(code, id) {
@@ -31,8 +31,8 @@ const q04PhoneVerification = () => ({
   },
   transformIndexHtml(html) {
     return html.replace('<title>', '<title>Q04 TEST — ')
-      .replace('<body>', '<body><aside role="status" style="padding:10px;background:#fff5d6;color:#332500;text-align:center">Q04 test candidate 7 · Rollback check: new Shopping flow OFF. Separate test list.</aside>')
-      .replace('</body>', '<script defer src="/q04-update-diagnostics-7.js"></script></body>')
+      .replace('<body>', '<body><aside role="status" style="padding:10px;background:#fff5d6;color:#332500;text-align:center">Q04 test candidate 8 · New Shopping flow restored. Separate test list.</aside>')
+      .replace('</body>', '<script defer src="/q04-update-diagnostics-8.js"></script></body>')
   },
 })
 
@@ -83,7 +83,7 @@ const pwaPrecacheManifest = () => {
 export default defineConfig({
   plugins: [react(), ...(q04PhoneCandidate ? [q04PhoneVerification()] : []), pwaPrecacheManifest()],
   ...(q04PhoneCandidate ? {
-    define: { 'import.meta.env.VITE_SHOPPING_DURABLE_CREATES': JSON.stringify('false') },
+    define: { 'import.meta.env.VITE_SHOPPING_DURABLE_CREATES': JSON.stringify('true') },
   } : {}),
   build: {
     rollupOptions: {

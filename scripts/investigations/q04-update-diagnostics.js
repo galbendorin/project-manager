@@ -39,7 +39,7 @@
   button.addEventListener('click', async () => {
     button.disabled = true;
     lines.length = 0;
-    record(`Diagnostic: candidate 7; mode: ${navigator.standalone || window.matchMedia('(display-mode: standalone)').matches ? 'Home Screen' : 'browser'}`);
+    record(`Diagnostic: candidate 8; mode: ${navigator.standalone || window.matchMedia('(display-mode: standalone)').matches ? 'Home Screen' : 'browser'}`);
     record(`Online: ${navigator.onLine}; secure: ${window.isSecureContext}`);
     try {
       if (!('serviceWorker' in navigator)) { record('Service workers unavailable.'); return; }

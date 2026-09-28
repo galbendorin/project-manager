@@ -1,6 +1,10 @@
 # Q04 phone verification candidate — do not merge
 
-## Candidate 7 compatible rollback check
+## Candidate 8 restores the preview flow
+
+Owner confirmed candidate7 loaded and all eight synthetic groceries remained on the physical Home Screen app. Candidate8 restores durable creates only for the exact preview/branch pair, retaining the same origin, test list and compatible storage. Production is unchanged. After deployment, accept Update now, confirm candidate8 and select the original Home Screen draft in Saved drafts. Confirm its text and the eight groceries remain. Await that result before marking physical OFF-to-ON draft recovery passed; no such result is claimed by this build.
+
+## Candidate 7 compatible rollback check (historical)
 
 Candidate7 sets the durable-create flag OFF only within this exact preview/branch gate, retaining the same test list, current compatible storage readers and fixed update notice. Production configuration is unchanged. Candidate6's physical Home Screen Update now/reopen and manual saved-draft recovery passed by owner report and screenshots on28 September. No further marker-only update test is required.
 
@@ -22,7 +26,7 @@ Local real-browser validation on a production build confirmed an active controll
 
 This branch prepares a separate HTTPS preview for the remaining Q04 iPhone checks. It is not a production activation or a new product milestone.
 
-Only Vercel **preview** builds of `codex/q04-phone-candidate` override the durable Shopping flag (currently OFF for candidate7's rollback check). The same preview replaces Shopping's list name with `Q04 TEST - hosted verification` and displays a visible test banner. All other builds, including production builds of this branch, retain their existing flag configuration and normal list name. Source changes to the expected list declaration fail the preview build instead of losing isolation silently. Existing Supabase authentication and authorization remain in effect; no credentials or database changes are included.
+Only Vercel **preview** builds of `codex/q04-phone-candidate` override the durable Shopping flag (restored ON in candidate8). The same preview replaces Shopping's list name with `Q04 TEST - hosted verification` and displays a visible test banner. All other builds, including production builds of this branch, retain their existing flag configuration and normal list name. Source changes to the expected list declaration fail the preview build instead of losing isolation silently. Existing Supabase authentication and authorization remain in effect; no credentials or database changes are included.
 
 Use Shopping only on this candidate. Other tools still use the account's ordinary data. Do not merge this branch; activation will be a separate reviewed decision after the remaining gates pass.
 
