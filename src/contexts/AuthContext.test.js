@@ -18,7 +18,7 @@ const value = { text: 'Private grocery', items: [{ title: 'Private grocery', ope
 // Execute the actual AuthProvider and bootstrap; replace only JSX rendering
 // with its context value. Slot/effect scheduling lets tests emit several auth
 // events before React's next render, and hold sign-out/cleanup completions.
-async function fixture(t, { offline = false, enabled = true, cached = null } = {}) {
+async function fixture(t, { offline = false, enabled = true, flag = { value: enabled ? 'true' : 'false' }, cached = null } = {}) {
   const slots = [], effects = []; let cursor = 0, listener, mounted = true, cachedUser = cached;
   const initial = deferred(), signOut = deferred(), cleanup = deferred(), journals = [];
   const indexedDB = new IDBFactory(); let delayCleanup = false;
@@ -50,7 +50,7 @@ async function fixture(t, { offline = false, enabled = true, cached = null } = {
   const source = (await readFile(new URL('./AuthContext.jsx', import.meta.url), 'utf8'))
     .replace(/^import[\s\S]*?from ['"][^'"]+['"];\n/gm, '')
     .replace(/export const /g, 'const ')
-    .replace('import.meta.env.VITE_SHOPPING_DURABLE_CREATES', JSON.stringify(enabled ? 'true' : 'false'))
+    .replace('import.meta.env.VITE_SHOPPING_DURABLE_CREATES', JSON.stringify(flag.value) ?? 'undefined')
     .replace(/return \(\s*<AuthContext.Provider[\s\S]*?<\/AuthContext.Provider>\s*\);/, 'return value;');
   const renderProvider = vm.runInNewContext(`${source}\nAuthProvider`, { ...hooks, navigator: { onLine: !offline },
     URLSearchParams, console: { warn() {} }, startAuthBootstrap, supabase: { auth },
@@ -73,6 +73,29 @@ async function fixture(t, { offline = false, enabled = true, cached = null } = {
     },
   };
 }
+
+test('default rollout acquires a draft writer only after accepting the owner', async t => {
+  const f = await fixture(t, { flag: { value: undefined } });
+  assert.equal(f.render().shoppingDraftScope, null);
+  assert.equal(f.journals.length, 0);
+  f.initial.resolve({ data: { session: { user: { id: 'a' } } } }); await tick();
+  const scope = f.render().shoppingDraftScope;
+  assert.equal(scope.enabled, true);
+  const runtime = scope.acquire();
+  const lease = runtime.registry.attach({ userId: 'a', projectId: 'p' });
+  lease.edit(value); await lease.flush();
+  assert.equal(f.journals.length, 1);
+});
+
+test('unexpected rollout flag keeps the writer disabled', async t => {
+  const f = await fixture(t, { flag: { value: 'invalid' } });
+  f.render();
+  f.initial.resolve({ data: { session: { user: { id: 'a' } } } }); await tick();
+  const scope = f.render().shoppingDraftScope;
+  assert.equal(scope.enabled, false);
+  assert.throws(() => scope.acquire(), { code: 'JOURNAL_DRAFT_DISABLED' });
+  assert.equal(f.journals.length, 0);
+});
 
 test('AuthProvider keeps online cached identity unavailable until bootstrap accepts it; flag OFF opens no journal', async t => {
   const f = await fixture(t, { enabled: false, cached: { id: 'cached' } });
