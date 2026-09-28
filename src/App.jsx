@@ -167,6 +167,8 @@ function App() {
 
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('pmworkspace:update-available', handleUpdateAvailable);
+    // Registration can finish between the initial render and this subscription.
+    if (hasPendingServiceWorker()) handleUpdateAvailable();
     return () => {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('pmworkspace:update-available', handleUpdateAvailable);
@@ -276,10 +278,32 @@ function App() {
     );
   }
 
+  const updateNotice = updateReady ? (
+    <div className="fixed inset-x-4 bottom-4 z-[70] flex justify-center">
+      <div className="flex max-w-xl items-center gap-3 rounded-2xl border border-indigo-200 bg-white px-4 py-3 shadow-[0_18px_40px_rgba(15,23,42,0.16)]">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-950">Update ready</div>
+          <div className="text-xs text-slate-600">
+            {updateFailed ? 'The update is taking longer than expected. Please try again.' : 'A new version of PM Workspace is available.'}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleApplyUpdate}
+          disabled={applyingUpdate}
+          className="min-h-[44px] whitespace-nowrap rounded-xl bg-[var(--pm-accent)] px-3 py-2 text-xs font-semibold text-white"
+        >
+          {applyingUpdate ? 'Updating…' : 'Update now'}
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   if (!currentProject) {
     return (
       <>
         <OfflineBanner isOnline={isOnline} />
+        {updateNotice}
         {currentPath === '/track'
           ? renderLazyPage(
               <AuthenticatedTrackShell
@@ -410,26 +434,7 @@ function App() {
   return (
     <>
       <OfflineBanner isOnline={isOnline} />
-      {updateReady ? (
-        <div className="fixed inset-x-4 bottom-4 z-[70] flex justify-center">
-          <div className="flex max-w-xl items-center gap-3 rounded-2xl border border-indigo-200 bg-white px-4 py-3 shadow-[0_18px_40px_rgba(15,23,42,0.16)]">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-slate-950">Update ready</div>
-              <div className="text-xs text-slate-600">
-                {updateFailed ? 'The update is taking longer than expected. Please try again.' : 'A new version of PM Workspace is available.'}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleApplyUpdate}
-              disabled={applyingUpdate}
-              className="whitespace-nowrap rounded-xl bg-[var(--pm-accent)] px-3 py-2 text-xs font-semibold text-white transition hover:brightness-95"
-            >
-              {applyingUpdate ? 'Updating…' : 'Update now'}
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {updateNotice}
       {renderLazyPage(
         <MainApp
           project={currentProject}
