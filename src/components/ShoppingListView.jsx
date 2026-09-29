@@ -200,6 +200,8 @@ export default function ShoppingListView({ currentUserId }) {
   const {
     loadProjects,
     loadTodos: loadBaseTodos,
+    beginTodoMutation,
+    beginTodoRefresh,
     loadingProjects,
     loadingTodos,
     offlineStateHydrated,
@@ -238,7 +240,7 @@ export default function ShoppingListView({ currentUserId }) {
     ensuringProjectRef,
   });
   const durableCreates = useShoppingDurableCreates({ currentUserId, isOnline, enabled: DURABLE_CREATES_ENABLED,
-    selectedProjectId, baseTodos, setTodos, persistOfflineState });
+    selectedProjectId, baseTodos, setTodos, persistOfflineState, beginTodoRefresh });
   const transactionalEntryRef = useRef(null);
   const { value: draftTitle, set: setDraftTitle, prepare: prepareDraft, clearAccepted: clearAcceptedDraft,
     restoreFailed: restoreFailedDraft, error: draftError } = useShoppingTypedDraft({ userId: currentUserId, projectId: selectedProjectId,
@@ -348,6 +350,7 @@ export default function ShoppingListView({ currentUserId }) {
     selectedProject,
     todos,
     setTodos: setSharedTodos,
+    beginTodoMutation,
     setTodoError: setActionError,
     loadShoppingOfflineState,
     persistOfflineState,

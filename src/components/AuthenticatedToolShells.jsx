@@ -51,7 +51,7 @@ export function AuthenticatedShoppingShell({
       title="Shopping List"
       userEmail={userEmail}
     >
-      <ShoppingListView currentUserId={currentUserId} />
+      <ShoppingListView key={currentUserId} currentUserId={currentUserId} />
     </AuthenticatedMiniToolShell>
   );
 }

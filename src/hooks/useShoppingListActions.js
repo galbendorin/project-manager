@@ -33,6 +33,7 @@ export function useShoppingListActions({
   manualTodoSelect,
   shoppingExtraFields = [],
   durableCreates = null,
+  beginTodoMutation,
 }) {
   const todos = displayedTodos.filter(todo => !todo._shoppingOperationId);
   const [savingItems, setSavingItems] = useState(false);
@@ -207,7 +208,7 @@ export function useShoppingListActions({
     selectedProject?.id,
   ]);
 
-  const addItems = useCallback(async (titles, options = {}) => {
+  const addItemsAction = useCallback(async (titles, options = {}) => {
     const normalizedItems = (titles || [])
       .map((item) => {
         if (typeof item === 'string') {
@@ -428,7 +429,7 @@ export function useShoppingListActions({
     todos,
   ]);
 
-  const toggleTodoStatus = useCallback(async (todo) => {
+  const toggleTodoStatusAction = useCallback(async (todo) => {
     const nextStatus = todo.status === 'Done' ? 'Open' : 'Done';
     if (todo._shoppingOperationId) {
       const result = await durableCreates.edit(todo, { status: nextStatus });
@@ -569,7 +570,7 @@ export function useShoppingListActions({
     todos,
   ]);
 
-  const deleteTodo = useCallback(async (todoId) => {
+  const deleteTodoAction = useCallback(async (todoId) => {
     const pendingTodo = displayedTodos.find(item => item._id === todoId);
     if (pendingTodo?._shoppingOperationId) {
       clearPendingCompletion();
@@ -664,7 +665,7 @@ export function useShoppingListActions({
     todos,
   ]);
 
-  const updateTodoTitle = useCallback(async (todo, nextTitle) => {
+  const updateTodoTitleAction = useCallback(async (todo, nextTitle) => {
     const title = String(nextTitle || '').trim();
     if (!todo?._id) {
       return { ok: false, message: 'Choose a grocery to update.' };
@@ -791,6 +792,15 @@ export function useShoppingListActions({
     sortTodos,
     todos,
   ]);
+
+  const runMutation = useCallback(async (action, args) => {
+    const finish = beginTodoMutation?.();
+    try { return await action(...args); } finally { finish?.(); }
+  }, [beginTodoMutation]);
+  const addItems = useCallback((...args) => runMutation(addItemsAction, args), [runMutation, addItemsAction]);
+  const toggleTodoStatus = useCallback((...args) => runMutation(toggleTodoStatusAction, args), [runMutation, toggleTodoStatusAction]);
+  const deleteTodo = useCallback((...args) => runMutation(deleteTodoAction, args), [runMutation, deleteTodoAction]);
+  const updateTodoTitle = useCallback((...args) => runMutation(updateTodoTitleAction, args), [runMutation, updateTodoTitleAction]);
 
   const retryTodoAction = useCallback((todo) => {
     setFailedTodoId('');

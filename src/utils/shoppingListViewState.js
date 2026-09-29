@@ -866,14 +866,13 @@ export const loadShoppingOfflineStateAsync = async (userId) => {
   const key = buildShoppingOfflineKey(userId);
   const localState = loadShoppingOfflineState(userId);
   const durableState = normalizeShoppingOfflineState(
-    await readOfflineJson(key, createEmptyShoppingOfflineState())
+    await readOfflineJson(key, createEmptyShoppingOfflineState(), { hydrateLocal: false })
   );
-  const preferredState = pickNewestShoppingOfflineState(localState, durableState);
-
-  if (preferredState === durableState) {
-    writeLocalJson(key, preferredState);
-  }
-  return preferredState;
+  const currentState = loadShoppingOfflineState(userId);
+  // The durable read may finish after a local edit, sync acknowledgement or
+  // clear. A timestamp on that older result cannot supersede an intervening write.
+  if (JSON.stringify(currentState) !== JSON.stringify(localState)) return currentState;
+  return pickNewestShoppingOfflineState(currentState, durableState);
 };
 
 export const saveShoppingOfflineState = (userId, state) => {

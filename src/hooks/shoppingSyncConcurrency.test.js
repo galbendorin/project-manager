@@ -1,5 +1,5 @@
 import { registerShoppingSyncRaceTests } from '../../scripts/investigations/shopping-sync-races.mjs';
 
-// Q03 and controls run in release CI. Known Q04/Q05 reproductions remain
-// available through the investigation command until their repairs are complete.
+// Q03, Q05 and controls run in release CI. Historical legacy-Q04 reproductions
+// remain separate; durable create/contribution suites cover its replacement.
 registerShoppingSyncRaceTests({ includeKnownFailures: false });

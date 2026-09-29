@@ -167,12 +167,12 @@ export const removeLocalJson = (key) => {
   return didRemoveLocal;
 };
 
-export const readOfflineJson = async (key, fallback) => {
+export const readOfflineJson = async (key, fallback, { hydrateLocal = true } = {}) => {
   const localValue = readLocalJson(key, undefined);
   const indexedValue = await readIndexedDbJson(key);
 
   if (typeof indexedValue !== 'undefined') {
-    if (typeof localValue === 'undefined') {
+    if (hydrateLocal && typeof localValue === 'undefined' && typeof readLocalJson(key, undefined) === 'undefined') {
       writeLocalStorageOnly(key, indexedValue);
     }
     return indexedValue;

@@ -21,7 +21,8 @@ const map = row => ({ _id: row.id, projectId: row.project_id, title: row.title, 
 // A deliberately small response model for real action callbacks. Native SQL
 // tests separately certify transaction/merge behavior; this model controls the
 // network boundary and counts retries and UI state updates deterministically.
-function setup(t, { shared = false, loseAdd = false, holdAdd = false, offline = true, journalWrap, allowLegacy = false, failAll = false } = {}) {
+function setup(t, { shared = false, loseAdd = false, holdAdd = false, offline = true, journalWrap, allowLegacy = false, failAll = false,
+  beginRefresh, readGate } = {}) {
   let server = shared ? [{ id: 'shared-milk', project_id: 'project-a', title: 'Milk', status: 'Open', quantity_value: 2, quantity_unit: 'carton' }] : [];
   const receipts = new Map(), intents = new Map();
   const entered = defer(), release = defer();
@@ -31,7 +32,7 @@ function setup(t, { shared = false, loseAdd = false, holdAdd = false, offline = 
   let cache = { queue: [], todosByProject: {} };
   const batchStorage = memoryStorage();
   const journal = createShoppingCreateJournal({ userId: 'user-a', getCurrentUserId: () => 'user-a', indexedDB: new IDBFactory() });
-  const transport = { readProject: async () => structuredClone(server), rpc: async (name, args) => {
+  const transport = { readProject: async () => { const rows = structuredClone(server); if (readGate) await readGate(); return rows; }, rpc: async (name, args) => {
     calls.push({ name, args: structuredClone(args) });
     if (failAll) throw new Error('RPC unavailable');
     if (name.endsWith('_v3')) {
@@ -72,6 +73,7 @@ function setup(t, { shared = false, loseAdd = false, holdAdd = false, offline = 
     return { data: structuredClone(result) };
   } };
   const workspace = createShoppingCreateWorkspace({ journal: journalWrap ? journalWrap(journal) : journal, transport,
+    beginRefresh,
     inputBatches: createShoppingInputBatches({ userId: 'user-a', getCurrentUserId: () => 'user-a', storage: () => batchStorage }),
     getCurrentUserId: () => 'user-a', isOnline: () => online, createId: () => `id-${++serial}`,
     onChange: next => { snapshot = next; }, onRefresh: async (_projectId, rows) => { base = rows.map(map); } });
@@ -99,6 +101,23 @@ function setup(t, { shared = false, loseAdd = false, holdAdd = false, offline = 
     online: () => { online = true; }, getServer: () => server, error: () => error, snapshot: () => snapshot,
     setBase: rows => { base = rows; }, cache: () => cache };
 }
+
+test('Q05 rejected durable refresh retains terminal recovery until a current read succeeds', async t => {
+  const held = defer(), started = defer(); let allowed = true, hold = true;
+  const f = setup(t, { beginRefresh: () => () => allowed,
+    readGate: async () => { if (hold) { started.resolve(); await held.promise; } } });
+  await f.actions().addItems([{ title: 'Milk', quantityValue: 1, quantityUnit: 'carton' }]);
+  f.online(); const syncing = f.workspace.sync(); await started.promise;
+  allowed = false; f.setBase([{ _id: 'newer', projectId: 'project-a', title: 'New local edit', status: 'Open' }]);
+  held.resolve(); await syncing; await f.idle();
+  assert.equal(f.snapshot().refreshed.size, 0);
+  assert.ok(f.visible().some(todo => todo.title === 'New local edit'));
+  assert.ok(f.visible().some(todo => todo._shoppingOperationId));
+  allowed = true; hold = false; await f.workspace.sync(); await f.idle();
+  assert.equal(f.snapshot().refreshed.size, 1);
+  assert.equal(f.visible().some(todo => todo._shoppingOperationId), false);
+  assert.equal(f.visible()[0].title, 'Milk');
+});
 
 for (const scenario of [
   { title: 'temporary rename', patch: 'rename' }, { title: 'temporary cancellation', patch: 'cancel' },
