@@ -210,6 +210,28 @@ test('retained durable callbacks cannot target a replacement account or a later 
   assert.equal(workspaces.length, 3);
 });
 
+test('durable refresh reports its own failure and clears it after a successful retry', async t => {
+  let failing = true;
+  const harness = await hookHarness('./useShoppingDurableCreates.js', 'useShoppingDurableCreates', {
+    AbortController, Map, Set, window: { addEventListener() {}, removeEventListener() {} },
+    supabase: { auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) } },
+    createShoppingCreateJournal: () => ({}), createShoppingSessionTransport: () => ({}),
+    shoppingCreatePendingState, shoppingCreateErrorMessage: () => 'Failure',
+    sortTodos: items => items, projectShoppingCreates: ({ todos }) => todos,
+    createShoppingCreateWorkspace: options => ({ close() {},
+      reload: async () => options.onChange({ records: [], errors: new Map(), refreshed: new Set(), busy: false }),
+      sync: async () => {}, refresh: async () => { if (failing) throw new Error('Offline'); return true; },
+    }),
+  });
+  t.after(harness.close);
+  const props = { currentUserId: 'a', enabled: true, isOnline: true, selectedProjectId: 'p', baseTodos: [] };
+  harness.render(props); await Promise.resolve();
+  await harness.render(props).refresh();
+  assert.match(harness.render(props).error, /could not load/);
+  failing = false; await harness.render(props).refresh();
+  assert.equal(harness.render(props).error, '');
+});
+
 test('flag-off draft recovery wakes for the selected project and exposes errors without operations', async t => {
   const projects = [];
   const harness = await hookHarness('./useShoppingDurableCreates.js', 'useShoppingDurableCreates', {

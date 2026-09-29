@@ -66,6 +66,7 @@ export function projectShoppingCreates({ todos, records, projectId, refreshed = 
 export function createShoppingCreateWorkspace({ journal, transport, getCurrentUserId, isOnline,
   onChange, onRefresh, createId = () => globalThis.crypto.randomUUID(), broadcast = () => {},
   getSelectedProjectId = () => null,
+  beginRefresh = () => () => true,
   inputBatches = createShoppingInputBatches({ userId: getCurrentUserId(), getCurrentUserId }) }) {
   const controller = createShoppingCreateOperations({ journal, supabaseClient: transport, getCurrentUserId, createIntentId: createId });
   let records = [];
@@ -174,19 +175,27 @@ export function createShoppingCreateWorkspace({ journal, transport, getCurrentUs
     }
   };
   const refresh = async projectId => {
+    const canApply = beginRefresh(projectId);
+    if (!canApply) return false;
     // Read current rows only. Capture terminal versions before the request;
     // later acknowledgements/edits still need their own fresh read.
     const terminal = records.filter(record => record.projectId === projectId && shoppingCreateProgress(record).status === 'settled');
     const ticket = (refreshTickets.get(projectId) || 0) + 1;
     refreshTickets.set(projectId, ticket);
-    const rows = await transport.readProject(projectId);
-    if (closed || refreshTickets.get(projectId) !== ticket) return;
-    await onRefresh(projectId, rows);
+    let rows;
+    try { rows = await transport.readProject(projectId); }
+    catch (error) {
+      if (!isCurrent() || refreshTickets.get(projectId) !== ticket || !canApply()) return false;
+      throw error;
+    }
+    if (!isCurrent() || refreshTickets.get(projectId) !== ticket || !canApply()) return false;
+    if (await onRefresh(projectId, rows) === false) return false;
     if (closed) return;
     terminal.forEach(record => refreshed.add(`${record.operationId}:${record.recordVersion}`));
     refreshNeeded.delete(projectId);
     errors.delete(`refresh:${projectId}`);
     publish();
+    return true;
   };
   const sync = async (attemptedFailures = new Set()) => {
     if (closed) return;

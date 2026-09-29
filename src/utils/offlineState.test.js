@@ -167,6 +167,26 @@ test('healthy IndexedDB still supplies newer pending edits when localStorage has
   });
 });
 
+test('read-only durable lookup does not promote into local storage', async () => {
+  await withLocalStorage(async storage => {
+    globalThis.window.indexedDB = createIndexedDb({ value: { queue: ['durable'] } });
+    const { readOfflineJson } = await freshOfflineState();
+    assert.deepEqual(await readOfflineJson('shopping', null, { hydrateLocal: false }), { queue: ['durable'] });
+    assert.equal(storage.getItem('shopping'), null);
+  });
+});
+
+test('implicit durable hydration preserves a local write made while the read was pending', async () => {
+  await withLocalStorage(async storage => {
+    globalThis.window.indexedDB = createIndexedDb({ value: { queue: ['old'] } });
+    const { readOfflineJson } = await freshOfflineState();
+    const reading = readOfflineJson('shopping', null);
+    storage.setItem('shopping', JSON.stringify({ queue: ['new'] }));
+    await reading;
+    assert.deepEqual(JSON.parse(storage.getItem('shopping')), { queue: ['new'] });
+  });
+});
+
 test('a timed-out database can reopen and a late unused connection is closed', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   await withLocalStorage(async () => {

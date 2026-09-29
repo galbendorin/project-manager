@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { isLikelyNetworkError } from '../utils/connectivity';
 import {
@@ -7,6 +7,10 @@ import {
   pickPreferredShoppingProject,
 } from '../utils/shoppingListViewState';
 import { createProjectWithLimits, getProjectCreationErrorMessage } from '../utils/projectCreation';
+
+const cacheVersion = (state, projectId) => JSON.stringify([
+  state.todosByProject?.[projectId] || [], state.queue || [],
+]);
 
 export function useShoppingListData({
   canCreateProject,
@@ -43,7 +47,7 @@ export function useShoppingListData({
     projectId: initialSelectedProjectId,
   });
   const [projects, setProjects] = useState(() => initialCachedState.projects || []);
-  const [selectedProjectId, setSelectedProjectId] = useState(initialSelectedProjectId);
+  const [selectedProjectId, setSelectedProjectIdState] = useState(initialSelectedProjectId);
   const [loadingProjects, setLoadingProjects] = useState(() => !initialCachedState.projects?.length);
   const [projectError, setProjectError] = useState('');
   const [todos, setTodos] = useState(initialTodos);
@@ -53,6 +57,77 @@ export function useShoppingListData({
   const [todoError, setTodoError] = useState('');
   const [supportsShoppingFields, setSupportsShoppingFields] = useState(true);
   const [offlineStateHydrated, setOfflineStateHydrated] = useState(false);
+  const reads = useRef({ projects: 0, todos: 0, epoch: 0, active: true });
+  const localRevision = useRef(0);
+  const pendingMutations = useRef(new Map());
+  const context = useRef({ user: currentUserId, project: selectedProjectId });
+  if (context.current.user !== currentUserId || context.current.project !== selectedProjectId) {
+    if (context.current.user !== currentUserId) reads.current.epoch += 1;
+    reads.current.todos += 1;
+    context.current = { user: currentUserId, project: selectedProjectId };
+  }
+  useEffect(() => {
+    const state = reads.current;
+    state.active = true;
+    return () => { state.active = false; state.epoch += 1; };
+  }, []);
+
+  // External optimistic edits and successful writes invalidate older reads even
+  // after their queue entry has drained. Hook-owned refreshes use setTodos directly.
+  const setLocalTodos = useCallback((next) => {
+    if (context.current.user !== currentUserId || context.current.project !== selectedProjectId) return;
+    localRevision.current += 1;
+    setTodos(next);
+  }, [currentUserId, selectedProjectId]);
+
+  const beginTodoMutation = useCallback(() => {
+    const projectId = selectedProjectId;
+    pendingMutations.current.set(projectId, (pendingMutations.current.get(projectId) || 0) + 1);
+    reads.current.todos += 1;
+    localRevision.current += 1;
+    if (context.current.project === projectId) setLoadingTodos(false);
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      pendingMutations.current.set(projectId, Math.max(0, (pendingMutations.current.get(projectId) || 1) - 1));
+      localRevision.current += 1;
+    };
+  }, [selectedProjectId]);
+
+  const setSelectedProjectId = useCallback((value) => {
+    if (context.current.user !== currentUserId) return;
+    const next = typeof value === 'function' ? value(context.current.project) : value;
+    if (next === context.current.project) return;
+    reads.current.todos += 1;
+    context.current.project = next;
+    const cached = loadShoppingOfflineState(currentUserId);
+    // Selection and its rows change together, so the view's cache effect cannot
+    // persist the previous list's rows under the newly selected project ID.
+    setTodos(applyShoppingQueueToTodos({
+      todos: cached.todosByProject?.[next] || [], queue: cached.queue || [], projectId: next,
+    }));
+    setTodoError('');
+    setLoadingTodos(Boolean(next) && !hasCachedShoppingTodos(cached, next));
+    setSelectedProjectIdState(next);
+  }, [currentUserId, loadShoppingOfflineState]);
+
+  // Durable-create confirmations and ordinary list reads share one acceptance
+  // fence. A late confirmation must not erase a newer existing-item edit.
+  const beginTodoRefresh = useCallback((projectId) => {
+    if (!reads.current.active || context.current.user !== currentUserId
+      || context.current.project !== projectId || pendingMutations.current.get(projectId)) return null;
+    setLoadingTodos(false);
+    const request = ++reads.current.todos;
+    const epoch = reads.current.epoch;
+    const revision = localRevision.current;
+    const version = cacheVersion(loadShoppingOfflineState(currentUserId), projectId);
+    return () => reads.current.active && reads.current.todos === request
+      && reads.current.epoch === epoch && context.current.user === currentUserId
+      && context.current.project === projectId && localRevision.current === revision
+      && !pendingMutations.current.get(projectId)
+      && cacheVersion(loadShoppingOfflineState(currentUserId), projectId) === version;
+  }, [currentUserId, loadShoppingOfflineState]);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) || null,
@@ -79,9 +154,14 @@ export function useShoppingListData({
     }
 
     let active = true;
+    const epoch = reads.current.epoch;
+    const revision = localRevision.current;
+    const version = JSON.stringify(cachedState);
     void loadShoppingOfflineStateAsync(currentUserId)
       .then((preferredState) => {
-        if (!active || !preferredState) return;
+        if (!active || !preferredState || epoch !== reads.current.epoch
+          || revision !== localRevision.current
+          || version !== JSON.stringify(loadShoppingOfflineState(currentUserId))) return;
         if (preferredState.projects?.length) {
           setProjects(preferredState.projects);
           setLoadingProjects(false);
@@ -92,11 +172,13 @@ export function useShoppingListData({
         if (preferredProjectId) {
           setSelectedProjectId((current) => current || preferredProjectId);
         }
-        if (hasCachedShoppingTodos(preferredState, preferredProjectId)) {
+        const activeProjectId = context.current.project;
+        persistOfflineState({ ...preferredState, selectedProjectId: activeProjectId });
+        if (hasCachedShoppingTodos(preferredState, activeProjectId)) {
           setTodos(applyShoppingQueueToTodos({
-            todos: preferredState.todosByProject?.[preferredProjectId] || [],
+            todos: preferredState.todosByProject?.[activeProjectId] || [],
             queue: preferredState.queue || [],
-            projectId: preferredProjectId,
+            projectId: activeProjectId,
           }));
           setLoadingTodos(false);
         }
@@ -108,7 +190,7 @@ export function useShoppingListData({
     return () => {
       active = false;
     };
-  }, [currentUserId, loadShoppingOfflineState, loadShoppingOfflineStateAsync]);
+  }, [currentUserId, loadShoppingOfflineState, loadShoppingOfflineStateAsync, persistOfflineState, setSelectedProjectId]);
 
   const createShoppingProject = useCallback(async () => {
     const { data, error } = await createProjectWithLimits({
@@ -134,10 +216,16 @@ export function useShoppingListData({
   ]);
 
   const loadProjects = useCallback(async () => {
+    if (!reads.current.active || context.current.user !== currentUserId) return;
     if (!currentUserId) {
       setLoadingProjects(false);
       return;
     }
+
+    const request = ++reads.current.projects;
+    const epoch = reads.current.epoch;
+    const current = () => reads.current.active && reads.current.projects === request
+      && reads.current.epoch === epoch && context.current.user === currentUserId;
 
     setProjectError('');
 
@@ -154,7 +242,13 @@ export function useShoppingListData({
       }
     }
 
-    const cachedState = await loadShoppingOfflineStateAsync(currentUserId);
+    const hydrated = await loadShoppingOfflineStateAsync(currentUserId);
+    if (!current()) return;
+    let cachedState = loadShoppingOfflineState(currentUserId);
+    if (JSON.stringify(cachedState) === JSON.stringify(localCachedState)) {
+      cachedState = hydrated;
+      persistOfflineState(cachedState);
+    }
     if (cachedState.projects?.length) {
       setProjects(cachedState.projects);
       setLoadingProjects(false);
@@ -180,6 +274,8 @@ export function useShoppingListData({
       .eq('name', shoppingProjectName)
       .order('created_at', { ascending: true });
 
+    if (!current()) return;
+
     if (error && includeMembers && isProjectRelationMissingError(error, 'project_members')) {
       supportsProjectMembersRef.current = false;
       includeMembers = false;
@@ -188,14 +284,17 @@ export function useShoppingListData({
         .select('id, user_id, name, created_at, updated_at')
         .eq('name', shoppingProjectName)
         .order('created_at', { ascending: true }));
+      if (!current()) return;
     }
+
+    cachedState = loadShoppingOfflineState(currentUserId);
 
     if (error) {
       if (isLikelyNetworkError(error, { online: isOnline })) {
         if (cachedState.projects?.length) {
           setProjects(cachedState.projects);
           if (cachedState.selectedProjectId) {
-            setSelectedProjectId(cachedState.selectedProjectId);
+            setSelectedProjectId(currentValue => currentValue || cachedState.selectedProjectId);
           }
         } else {
           setProjectError('The connection is unavailable. Open Shopping List once online on this device to keep it available.');
@@ -215,8 +314,10 @@ export function useShoppingListData({
       ensuringProjectRef.current = true;
       try {
         const createdProject = await createShoppingProject();
+        if (!current()) return;
         nextProjects = createdProject ? [createdProject] : [];
       } catch (createError) {
+        if (!current()) return;
         setProjectError(createError.message || 'Unable to prepare Shopping List.');
       } finally {
         ensuringProjectRef.current = false;
@@ -229,6 +330,8 @@ export function useShoppingListData({
 
     const defaultProject = pickPreferredShoppingProject(nextProjects, currentUserId) || nextProjects[0] || null;
 
+    cachedState = loadShoppingOfflineState(currentUserId);
+
     setProjects(nextProjects);
     setSelectedProjectId((currentValue) => (
       currentValue && nextProjects.some((project) => project.id === currentValue)
@@ -239,7 +342,8 @@ export function useShoppingListData({
     persistOfflineState({
       ...cachedState,
       projects: nextProjects,
-      selectedProjectId: defaultProject?.id || cachedState.selectedProjectId || '',
+      selectedProjectId: nextProjects.some(project => project.id === context.current.project)
+        ? context.current.project : (defaultProject?.id || ''),
     });
   }, [
     canCreateProject,
@@ -256,9 +360,18 @@ export function useShoppingListData({
     persistOfflineState,
     shoppingProjectName,
     supportsProjectMembersRef,
+    setSelectedProjectId,
   ]);
 
   const loadTodos = useCallback(async () => {
+    if (!reads.current.active || context.current.user !== currentUserId
+      || context.current.project !== selectedProjectId) return;
+    if (pendingMutations.current.get(selectedProject?.id)) return;
+    const request = ++reads.current.todos;
+    const epoch = reads.current.epoch;
+    const current = () => reads.current.active && reads.current.todos === request
+      && reads.current.epoch === epoch && context.current.user === currentUserId
+      && context.current.project === selectedProject?.id;
     if (!selectedProject?.id) {
       setTodos([]);
       setLoadingTodos(false);
@@ -279,7 +392,17 @@ export function useShoppingListData({
       setTodos(cachedVisibleTodos);
     }
 
-    const cachedState = await loadShoppingOfflineStateAsync(currentUserId);
+    const hydrationRevision = localRevision.current;
+    const hydrated = await loadShoppingOfflineStateAsync(currentUserId);
+    if (!current()) return;
+    if (hydrationRevision !== localRevision.current) { setLoadingTodos(false); return; }
+    let cachedState = loadShoppingOfflineState(currentUserId);
+    // Promote a durable fallback only while the scope and synchronous base are
+    // unchanged, including its queue; later refreshes must see the same intent.
+    if (JSON.stringify(cachedState) === JSON.stringify(localCachedState)) {
+      cachedState = hydrated;
+      persistOfflineState(cachedState);
+    }
     const cachedTodos = cachedState.todosByProject?.[selectedProject.id] || [];
     const durableVisibleTodos = applyShoppingQueueToTodos({
       todos: cachedTodos,
@@ -301,6 +424,8 @@ export function useShoppingListData({
       return;
     }
 
+    const revision = localRevision.current;
+    const version = cacheVersion(loadShoppingOfflineState(currentUserId), selectedProject.id);
     let selectClause = supportsShoppingFields ? manualTodoSelect : legacyManualTodoSelect;
     let { data, error } = await supabase
       .from('manual_todos')
@@ -308,6 +433,8 @@ export function useShoppingListData({
       .eq('project_id', selectedProject.id)
       .order('status', { ascending: true })
       .order('created_at', { ascending: true });
+
+    if (!current()) return;
 
     if (error && supportsShoppingFields && isMissingSchemaFieldError(error, shoppingExtraFields)) {
       setSupportsShoppingFields(false);
@@ -318,12 +445,26 @@ export function useShoppingListData({
         .eq('project_id', selectedProject.id)
         .order('status', { ascending: true })
         .order('created_at', { ascending: true }));
+      if (!current()) return;
+    }
+
+    cachedState = loadShoppingOfflineState(currentUserId);
+    const changed = revision !== localRevision.current
+      || version !== cacheVersion(cachedState, selectedProject.id);
+    if (changed) {
+      // An old success or failure cannot establish the result of newer work.
+      // Leave the current optimistic UI alone; a subsequent refresh can apply.
+      setLoadingTodos(false);
+      return;
     }
 
     if (error) {
       if (isLikelyNetworkError(error, { online: isOnline })) {
         if (hasCachedTodos) {
-          setTodos(cachedVisibleTodos);
+          setTodos(applyShoppingQueueToTodos({
+            todos: cachedState.todosByProject?.[selectedProject.id] || cachedVisibleTodos,
+            queue: cachedState.queue || [], projectId: selectedProject.id,
+          }));
         } else {
           setTodoError('The connection is unavailable. Open this list once online on this device to cache it.');
         }
@@ -354,7 +495,7 @@ export function useShoppingListData({
         ...(cachedState.todosByProject || {}),
         [selectedProject.id]: nextTodos,
       },
-      lastSyncedAt: new Date().toISOString(),
+      lastSyncedAt: cachedState.queue?.length ? cachedState.lastSyncedAt : new Date().toISOString(),
     });
     setLoadingTodos(false);
   }, [
@@ -369,6 +510,7 @@ export function useShoppingListData({
     mapManualTodoRow,
     persistOfflineState,
     selectedProject?.id,
+    selectedProjectId,
     shoppingExtraFields,
     sortTodos,
     supportsShoppingFields,
@@ -383,6 +525,8 @@ export function useShoppingListData({
   }, [loadTodos]);
 
   return {
+    beginTodoMutation,
+    beginTodoRefresh,
     loadProjects,
     loadTodos,
     loadingProjects,
@@ -395,7 +539,7 @@ export function useShoppingListData({
     setProjectError,
     setSelectedProjectId,
     setTodoError,
-    setTodos,
+    setTodos: setLocalTodos,
     todoError,
     todos,
   };

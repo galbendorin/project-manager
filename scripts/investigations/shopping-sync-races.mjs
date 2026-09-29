@@ -181,11 +181,13 @@ async function setup({ queue = [update], hold = 'update', failure = false, onReq
   const actions = await renderer('useShoppingListActions');
   const data = await renderer('useShoppingListData');
   dataSetTodos = data().setTodos;
+  shared.beginTodoMutation = data().beginTodoMutation;
   return {
     sync, data, requests,
     entered: entered.promise, release: () => release.resolve(),
     edit: (id, title) => actions({ isOnline: false }).updateTodoTitle(visible.find((todo) => todo._id === id), title),
     remove: (id) => actions({ isOnline: false }).deleteTodo(id),
+    editOnline: (id, title) => actions().updateTodoTitle(visible.find(todo => todo._id === id), title),
     snapshot: () => copy({ cache, visible, server, requests }),
     durableTitle(id) {
       return view.applyShoppingQueueToTodos({ todos: server.map(rows.mapManualTodoRow),
@@ -216,8 +218,18 @@ async function runSyncRace(t, options, action) {
 
 export function registerShoppingSyncRaceTests({ includeKnownFailures = true } = {}) {
 const test = (name, options, callback) => {
-  if (includeKnownFailures || !/^Q0[45]:/.test(name)) nodeTest(name, options, callback);
+  if (includeKnownFailures || !/^Q04:/.test(name)) nodeTest(name, options, callback);
 };
+
+test('Q05: actual online edit fences a refresh until its acknowledgement', { timeout: 3000 }, async () => {
+  const runtime = await setup({ queue: [], hold: 'update' });
+  const editing = runtime.editOnline('item-a', 'New title'); await runtime.entered;
+  await runtime.data().loadTodos();
+  assert.equal(runtime.requests.some(request => request.kind === 'read:manual_todos'), false);
+  assert.equal(runtime.data().todos.find(todo => todo._id === 'item-a').title, 'New title');
+  runtime.release(); await editing; await runtime.data().loadTodos();
+  assert.equal(runtime.data().todos.find(todo => todo._id === 'item-a').title, 'New title');
+});
 
 test('control: an uncontested queued update reaches the server and drains', { timeout: 3000 }, async (t) => {
   const runtime = await runSyncRace(t, {}, null);

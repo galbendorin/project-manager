@@ -7,9 +7,9 @@ import { applyShoppingQueueToTodos, loadShoppingOfflineState, sortTodos } from '
 import { mapManualTodoRow } from './projectData/manualTodoUtils';
 
 export function useShoppingDurableCreates({ currentUserId, isOnline, enabled, selectedProjectId,
-  baseTodos, setTodos, persistOfflineState }) {
+  baseTodos, setTodos, persistOfflineState, beginTodoRefresh }) {
   const live = useRef(null);
-  live.current = { currentUserId, isOnline, selectedProjectId, setTodos, persistOfflineState };
+  live.current = { currentUserId, isOnline, selectedProjectId, setTodos, persistOfflineState, beginTodoRefresh };
   const runtime = useRef(null);
   const [snapshot, setSnapshot] = useState({ owner: '', ready: false, records: [], errors: new Map(), refreshed: new Set(), busy: false });
   const [error, setError] = useState('');
@@ -30,12 +30,13 @@ export function useShoppingDurableCreates({ currentUserId, isOnline, enabled, se
       isOnline: () => active && live.current.isOnline,
       onChange: next => { if (owner()) setSnapshot({ owner: currentUserId, ready: true, ...next }); },
       broadcast: () => channel?.postMessage('changed'),
+      beginRefresh: projectId => live.current.beginTodoRefresh?.(projectId) ?? null,
       onRefresh: (projectId, rows) => {
-        if (!owner()) return;
+        if (!owner()) return false;
         const cached = loadShoppingOfflineState(currentUserId);
         const nextTodos = applyShoppingQueueToTodos({ todos: rows.map(mapManualTodoRow), queue: cached.queue, projectId });
         live.current.persistOfflineState({ ...cached, todosByProject: { ...cached.todosByProject, [projectId]: nextTodos },
-          lastSyncedAt: new Date().toISOString() });
+          lastSyncedAt: cached.queue?.length ? cached.lastSyncedAt : new Date().toISOString() });
         if (live.current.selectedProjectId === projectId) live.current.setTodos(sortTodos(nextTodos));
       },
     });
@@ -83,7 +84,15 @@ export function useShoppingDurableCreates({ currentUserId, isOnline, enabled, se
   }, [isCurrent, workspace]);
   const refresh = useCallback(async () => {
     if ((!enabled && !hasProjectRecords) || !selectedProjectId || !isOnline || !ready || !isCurrent()) return;
-    try { await workspace.refresh(selectedProjectId); } catch { /* Existing list loader reports its own refresh failure. */ }
+    try {
+      const applied = await workspace.refresh(selectedProjectId);
+      if (applied && isCurrent()) setError('');
+    } catch {
+      // This read may supersede the ordinary loader, so it owns its error too.
+      if (isCurrent() && live.current.selectedProjectId === selectedProjectId) {
+        setError('The latest grocery list could not load. Your saved changes are kept. Retry to refresh it.');
+      }
+    }
   }, [enabled, hasProjectRecords, selectedProjectId, isOnline, ready, isCurrent, workspace]);
   const add = useCallback(async (items, options) => {
     if (!ready || !isCurrent() || !selectedProjectId) throw new Error('Shopping is still opening. Please try again.');
