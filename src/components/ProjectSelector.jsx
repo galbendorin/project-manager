@@ -20,6 +20,7 @@ import { loadLastProject } from '../utils/navigationState';
 import { getStoredProjectTab } from '../utils/projectTabMemory';
 import { getProjectHomeLaunchFeatures } from '../utils/featureRegistry';
 import { canAccessItilQuiz } from '../utils/itilQuizAccess';
+import { useProjectHomeLoading } from '../hooks/useProjectHomeLoading';
 
 const PROJECT_TAB_LABEL_BY_ID = new Map(TABS.map((tab) => [tab.id, tab.label]));
 
@@ -38,8 +39,6 @@ const isRowLevelSecurityError = (error, tableName = '') => {
   return msg.includes('row-level security')
     && (!tableName || msg.includes(tableName.toLowerCase()));
 };
-
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const getFriendlyProjectCreateErrorMessage = (error) => {
   if (isRowLevelSecurityError(error, 'projects')) {
@@ -60,9 +59,6 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHab
     refreshFinanceAccess,
     refreshProjectCount,
   } = usePlan();
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState('Loading projects...');
   const [newProjectName, setNewProjectName] = useState('');
   const [creating, setCreating] = useState(false);
   const [creatingSample, setCreatingSample] = useState(false);
@@ -76,11 +72,6 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHab
 
   const normalizeProject = useCallback((project) => normalizeProjectRecord(project, user?.id), [user?.id]);
 
-  const accessSummary = useMemo(() => summarizeProjectAccess(projects, user?.id), [projects, user?.id]);
-  const ownedSampleProject = useMemo(
-    () => projects.find((project) => project.isOwned && project.is_demo) || null,
-    [projects]
-  );
   const showInternalLaunchCards = householdToolsEnabled;
   const canUseItilQuiz = useMemo(() => canAccessItilQuiz(user?.email), [user?.email]);
   const canUseFinancePlanner = financeToolsEnabled;
@@ -101,23 +92,6 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHab
     'financial-planner': onOpenFinance,
     timesheets: onOpenTrack,
   }), [onOpenBaby, onOpenFinance, onOpenHabits, onOpenItilQuiz, onOpenMeals, onOpenShopping, onOpenTrack, onOpenWeight]);
-  const shareProject = useMemo(
-    () => projects.find((project) => project.id === shareProjectId) || null,
-    [projects, shareProjectId]
-  );
-  const continueProject = useMemo(() => {
-    if (loading || projects.length === 0) return null;
-    return (
-      (storedLastProject?.id && projects.find((project) => project.id === storedLastProject.id))
-      || projects[0]
-      || null
-    );
-  }, [loading, projects, storedLastProject?.id]);
-  const continueProjectTabLabel = useMemo(() => {
-    const storedTab = getStoredProjectTab(continueProject?.id);
-    return PROJECT_TAB_LABEL_BY_ID.get(storedTab) || 'Project Plan';
-  }, [continueProject?.id]);
-  const continueActionLabel = storedLastProject?.id === continueProject?.id ? 'Continue' : 'Open latest';
 
   const createProjectRecord = useCallback(async (payload, includeIsDemo = supportsIsDemoRef.current) => {
     const snapshot = {
@@ -140,6 +114,48 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHab
     }
     return { data: normalizeProject(data), error: null };
   }, [normalizeProject]);
+
+  const runProjectQuery = useCallback(async (includeIsDemo, includeMembers) => {
+    const selectParts = ['id', 'user_id', 'name', includeIsDemo ? 'is_demo' : null, 'created_at', 'updated_at',
+      includeMembers ? 'project_members(id, user_id, member_email, role, invited_by_user_id, created_at)' : null].filter(Boolean);
+    return supabase.from('projects').select(selectParts.join(', ')).order('updated_at', { ascending: false });
+  }, []);
+  const queryProjects = useCallback(async () => {
+    let includeIsDemo = supportsIsDemoRef.current;
+    let includeMembers = supportsProjectMembersRef.current;
+    let data = null;
+    let error = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await runProjectQuery(includeIsDemo, includeMembers);
+      data = response.data;
+      error = response.error;
+      if (!error) break;
+      let shouldRetry = false;
+      if (includeMembers && isMissingRelationError(error, 'project_members')) {
+        supportsProjectMembersRef.current = false;
+        includeMembers = false;
+        shouldRetry = true;
+      }
+      if (includeIsDemo && isMissingColumnError(error, 'is_demo')) {
+        supportsIsDemoRef.current = false;
+        includeIsDemo = false;
+        shouldRetry = true;
+      }
+      if (!shouldRetry) break;
+    }
+    return { data, error };
+  }, [runProjectQuery]);
+  const { projects, loading, loadingMessage, error: loadError, fetchProjects } = useProjectHomeLoading({
+    userId: user?.id, queryProjects, normalizeProject,
+  });
+  const accessSummary = useMemo(() => summarizeProjectAccess(projects, user?.id), [projects, user?.id]);
+  const ownedSampleProject = useMemo(() => projects.find(project => project.isOwned && project.is_demo) || null, [projects]);
+  const shareProject = useMemo(() => projects.find(project => project.id === shareProjectId) || null, [projects, shareProjectId]);
+  const continueProject = useMemo(() => (
+    (storedLastProject?.id && projects.find(project => project.id === storedLastProject.id)) || projects[0] || null
+  ), [projects, storedLastProject?.id]);
+  const continueProjectTabLabel = useMemo(() => PROJECT_TAB_LABEL_BY_ID.get(getStoredProjectTab(continueProject?.id)) || 'Project Plan', [continueProject?.id]);
+  const continueActionLabel = storedLastProject?.id === continueProject?.id ? 'Continue' : 'Open latest';
 
   const createSampleProject = useCallback(async () => {
     if (!user?.id || ownedSampleProject || creatingSample) return;
@@ -188,101 +204,6 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHab
     user?.created_at,
     user?.id,
   ]);
-
-  const runProjectQuery = useCallback(async (includeIsDemo, includeMembers) => {
-    const selectParts = [
-      'id',
-      'user_id',
-      'name',
-      includeIsDemo ? 'is_demo' : null,
-      'created_at',
-      'updated_at',
-      includeMembers
-        ? 'project_members(id, user_id, member_email, role, invited_by_user_id, created_at)'
-        : null
-    ].filter(Boolean);
-
-    return supabase
-      .from('projects')
-      .select(selectParts.join(', '))
-      .order('updated_at', { ascending: false });
-  }, []);
-
-  const queryProjects = useCallback(async () => {
-    let includeIsDemo = supportsIsDemoRef.current;
-    let includeMembers = supportsProjectMembersRef.current;
-    let data = null;
-    let error = null;
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const response = await runProjectQuery(includeIsDemo, includeMembers);
-      data = response.data;
-      error = response.error;
-
-      if (!error) {
-        break;
-      }
-
-      let shouldRetry = false;
-
-      if (includeMembers && isMissingRelationError(error, 'project_members')) {
-        supportsProjectMembersRef.current = false;
-        includeMembers = false;
-        shouldRetry = true;
-      }
-
-      if (includeIsDemo && isMissingColumnError(error, 'is_demo')) {
-        supportsIsDemoRef.current = false;
-        includeIsDemo = false;
-        shouldRetry = true;
-      }
-
-      if (!shouldRetry) {
-        break;
-      }
-    }
-
-    return { data, error };
-  }, [runProjectQuery]);
-
-  const fetchProjects = useCallback(async (isRetry = false) => {
-    if (!user?.id) return;
-
-    if (!isRetry) {
-      setLoading(true);
-      setLoadingMessage('Loading projects...');
-    }
-
-    let { data, error } = await queryProjects();
-
-    // Cold start retry: if we get an error or null data, wait and try once more
-    if ((error || !data) && !isRetry) {
-      console.warn('First fetch failed (likely cold start), retrying in 3s...');
-      setLoadingMessage('Waking up the database...');
-      await sleep(3000);
-      const retry = await queryProjects();
-      data = retry.data;
-      error = retry.error;
-    }
-
-    if (error) {
-      console.error('Failed to fetch projects:', error);
-      setProjects([]);
-      setLoading(false);
-      return;
-    }
-
-    let nextProjects = (data || []).map(normalizeProject);
-
-    setProjects(nextProjects);
-    setLoading(false);
-  }, [normalizeProject, queryProjects, user?.id]);
-
-  useEffect(() => {
-    if (user?.id) {
-      fetchProjects();
-    }
-  }, [fetchProjects, user?.id]);
 
   useEffect(() => {
     setShareProjectId((currentId) => (
@@ -589,16 +510,27 @@ const ProjectSelector = ({ onSelectProject, onOpenBaby, onOpenFinance, onOpenHab
                 <div className="mt-6">
                   <div className="mb-3 flex items-center justify-between">
                     <h3 className="pm-kicker text-sm">Projects</h3>
-                    <span className="text-xs text-slate-400">{loading ? loadingMessage : `${projects.length} visible`}</span>
+                    <span className="text-xs text-slate-400">{loading ? loadingMessage : loadError && projects.length === 0 ? 'Unavailable' : `${projects.length} visible`}</span>
                   </div>
 
                   <div className="pm-list-shell space-y-3 rounded-[28px] p-3 sm:p-4">
-                    {loading ? (
+                    {loadError && (
+                      <div role="alert" className="rounded-[24px] border border-amber-200 bg-amber-50 p-4 sm:p-5">
+                        <h4 className="font-semibold text-amber-950">Projects could not load</h4>
+                        <p className="mt-1 text-sm leading-6 text-amber-900">{loadError}</p>
+                        {projects.length > 0 && <p className="mt-1 text-sm text-amber-900">Showing your last loaded projects.</p>}
+                        <button type="button" onClick={() => void fetchProjects(true)} disabled={loading}
+                          className="pm-subtle-button mt-3 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60">
+                          {loading ? 'Retrying...' : 'Retry loading projects'}
+                        </button>
+                      </div>
+                    )}
+                    {loading && projects.length === 0 ? (
                       <div className="pm-surface-card text-center py-12 rounded-[24px] shadow-sm">
                         <div className="inline-block w-8 h-8 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3" style={{ borderWidth: '3px' }}></div>
                         <p className="text-slate-500 text-sm">{loadingMessage}</p>
                       </div>
-                    ) : projects.length === 0 ? (
+                    ) : loadError && projects.length === 0 ? null : projects.length === 0 ? (
                       <div className="pm-surface-card text-center py-12 rounded-[24px] shadow-sm">
                         <div className="text-4xl mb-3">📋</div>
                         <p className="text-slate-700 font-medium mb-1">Your workspace is ready for its first project</p>
