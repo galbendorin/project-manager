@@ -251,15 +251,20 @@ export default function ShoppingListItemsPanel({
                   >
                     <div className={`flex gap-3 ${isCompactDesktop ? 'items-center' : 'items-start sm:items-center'}`}>
                       {isMobile ? (
-                        <span
-                          className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${
+                        <button
+                          type="button"
+                          onClick={() => handleToggleTodo(todo)}
+                          disabled={savingTodoId === todo._id || editingTodoId === todo._id || Boolean(todo._shoppingReadOnly)}
+                          aria-label={pendingCompleteId === todo._id
+                            ? `Keep ${todo.title} on the list`
+                            : `Mark ${todo.title} as bought`}
+                          className={`inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pm-accent)] focus-visible:ring-offset-2 disabled:cursor-not-allowed ${
                             pendingCompleteId === todo._id
                               ? 'border-emerald-300 bg-white text-emerald-700'
                               : savingTodoId === todo._id
                                 ? 'border-emerald-300 bg-white text-emerald-600'
                                 : 'border-slate-200 bg-white text-slate-400'
                           }`}
-                          aria-hidden="true"
                         >
                           {savingTodoId === todo._id ? (
                             <LoaderIcon className="h-4 w-4 animate-spin" />
@@ -268,7 +273,7 @@ export default function ShoppingListItemsPanel({
                           ) : (
                             <CheckIcon className="h-4 w-4" />
                           )}
-                        </span>
+                        </button>
                       ) : (
                         <button
                           type="button"
