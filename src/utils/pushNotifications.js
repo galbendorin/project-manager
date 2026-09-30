@@ -15,13 +15,10 @@ const parseJsonResponse = async (response) => {
   }
 };
 
-const getSessionAccessToken = async () => {
+const buildAuthHeaders = async (expectedUserId) => {
   const { data } = await supabase.auth.getSession();
-  return data?.session?.access_token || '';
-};
-
-const buildAuthHeaders = async () => {
-  const token = await getSessionAccessToken();
+  if (expectedUserId && data?.session?.user?.id !== expectedUserId) return {};
+  const token = data?.session?.access_token || '';
   const headers = {};
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -337,15 +334,17 @@ export const notifyShoppingListSubscribers = async ({
   projectId,
   itemTitles = [],
   eventType = 'added',
+  expectedUserId,
+  isCurrent = () => true,
 }) => {
   const titles = (Array.isArray(itemTitles) ? itemTitles : [])
     .map((value) => String(value || '').trim())
     .filter(Boolean);
 
-  if (!projectId || titles.length === 0) return;
+  if (!projectId || titles.length === 0 || !isCurrent()) return;
 
-  const headers = await buildAuthHeaders();
-  if (!headers.Authorization) return;
+  const headers = await buildAuthHeaders(expectedUserId);
+  if (!headers.Authorization || !isCurrent()) return;
 
   try {
     await fetch(SHOPPING_NOTIFY_ENDPOINT, {

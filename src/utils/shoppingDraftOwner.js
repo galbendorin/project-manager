@@ -24,6 +24,7 @@ export function createShoppingDraftOwner({ enabled = false, initialUserId = null
     close();
     if (userId === null) return null;
     const scope = Object.freeze({ userId, enabled,
+      isCurrent: () => current === scope,
       acquire: () => {
         if (current !== scope) invalid();
         if (!enabled) throw new ShoppingJournalError('JOURNAL_DRAFT_DISABLED');

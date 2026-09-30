@@ -33,8 +33,35 @@ disk erasure guarantee. A new account cannot load another account's scoped keys.
 
 ## Remaining Q09 assessment
 
-Verify older queued sync callbacks across account change/unmount, delayed plan
-metadata, expired-session fallback and membership revocation. Existing durable
+## Verified repair: legacy Shopping sync lifetime
+
+A controlled actual-hook probe showed two persistence calls after unmount and
+sign-out cache clearance. The obsolete update reply recreated an empty cache
+and successful-sync timestamp. This proves a local lifecycle failure, not a
+hosted cross-account mutation.
+
+Legacy sync now checks AuthProvider's immutable, revocable owner capability
+without opening the durable journal. Unmount/replay cancels each run by epoch
+and abort signal. Queued reads, adds, updates and deletes use a Supabase client
+with a captured, identity-checked bearer token; it cannot acquire a replacement
+account's token internally. Late responses cannot acknowledge, persist, publish
+UI errors or start follow-up work. Add notifications also verify the expected
+account and current lineage after session acquisition. An already dispatched
+server operation may have committed; response cancellation does not undo it.
+Existing operation identities and retry contracts remain authoritative.
+
+757 tests/hooks/lint/build passed, including 20 new lifecycle/transport/notify
+checks. Review identified a StrictMode mutex issue; epoch/abort-aware exclusion
+and a held-acquisition replay regression resolve it. Final review found no
+blockers. Actual React hook plus real Supabase SDK browser checks at desktop and
+390x844 retained only account B rows after a delayed account A reply: one A-token
+request, zero post-close persistence. Synthetic replies/accounts, no hosted
+writes or physical Safari evidence. Feature-OFF legacy queue control also passes.
+
+## Remaining Q09 assessment
+
+Verify delayed plan metadata, cached tool mounting, expired-session fallback and
+membership revocation. Existing durable
 Shopping owner, transport and registry tests and Q04 real-user revocation
 evidence should be reused. A source suspicion is not a reproduced failure.
 Offline data already cached on a device cannot learn about a remote revocation

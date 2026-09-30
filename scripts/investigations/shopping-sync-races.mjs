@@ -15,6 +15,7 @@ import { isLikelyNetworkError } from '../../src/utils/connectivity.js';
 async function loadSource(path, exports, injected) {
   const source = (await readFile(new URL(path, import.meta.url), 'utf8'))
     .replace(/^import[\s\S]*?from ['"][^'"]+['"];\n/gm, '')
+    .replace(/import.meta.env.VITE_SUPABASE_(URL|ANON_KEY)/g, "'synthetic'")
     .replaceAll('export function ', 'function ')
     .replaceAll('export const ', 'const ');
   return vm.runInNewContext(`${source}\n({${exports.join(',')}})`, injected, { filename: path });
@@ -164,7 +165,9 @@ async function setup({ queue = [update], hold = 'update', failure = false, onReq
     isMissingSchemaFieldError: () => false, isMissingTodoRelationError: () => false,
     isProjectRelationMissingError: () => false,
   };
-  const injected = { supabase, ...view, ...rows, ...queueFns, ...rpc,
+  const authScope = { userId: 'user-test', isCurrent: () => true };
+  const injected = { supabase, ...view, ...rows, ...queueFns, ...rpc, AbortController,
+    useAuth: () => ({ shoppingDraftScope: authScope }), createShoppingOwnerClient: async () => supabase,
     isOfflineTempId, isLikelyNetworkError, notifyShoppingListSubscribers: notify,
     isFreshTimestamp: unexpected, createProjectWithLimits: unexpected,
     getProjectCreationErrorMessage: unexpected };
