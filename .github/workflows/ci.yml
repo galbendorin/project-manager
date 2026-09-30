@@ -25,6 +25,11 @@ jobs:
       - name: Run unit tests
         run: npm run test:ci
 
+      - name: Household export and isolated restore checks
+        run: |
+          npm install --prefix "$RUNNER_TEMP/household-restore" --no-audit --no-fund @electric-sql/pglite@0.5.8
+          PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/household-backup.test.mjs
+
       - name: Build app
         run: npm run build
 
