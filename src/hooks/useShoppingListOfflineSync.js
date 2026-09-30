@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { createShoppingOwnerClient } from '../utils/shoppingOwnerClient';
 import { SHOPPING_MANUAL_TODO_SELECT, mapManualTodoRow } from './projectData/manualTodoUtils';
 import { isLikelyNetworkError } from '../utils/connectivity';
 import { notifyShoppingListSubscribers } from '../utils/pushNotifications';
@@ -44,15 +46,38 @@ export function useShoppingListOfflineSync({
 }) {
   const [syncingQueue, setSyncingQueue] = useState(false);
   const syncingQueueRef = useRef(false);
+  const { shoppingDraftScope } = useAuth();
+  const ownerRef = useRef(null);
+  if (!ownerRef.current || ownerRef.current.auth !== shoppingDraftScope || ownerRef.current.userId !== currentUserId) {
+    ownerRef.current = { auth: shoppingDraftScope, userId: currentUserId, active: true, epoch: 0, requests: new Set() };
+  }
+  const owner = ownerRef.current;
+  const ownsSession = useCallback(() => ownerRef.current === owner && owner.active
+    && owner.auth?.userId === currentUserId && owner.auth.isCurrent(), [currentUserId, owner]);
+  useEffect(() => {
+    owner.active = true;
+    setSyncingQueue(false);
+    return () => {
+      owner.active = false;
+      owner.epoch += 1;
+      owner.requests.forEach(request => request.abort());
+      owner.requests.clear();
+    };
+  }, [owner]);
 
   const syncOfflineQueue = useCallback(async () => {
-    if (!currentUserId || !isOnline || syncingQueueRef.current) return;
+    const pending = syncingQueueRef.current;
+    if (!currentUserId || !isOnline || !ownsSession()
+      || (pending?.owner === owner && pending.epoch === owner.epoch && !pending.abort.signal.aborted)) return;
 
     const cachedState = loadShoppingOfflineState(currentUserId);
     let queue = Array.isArray(cachedState.queue) ? [...cachedState.queue] : [];
     if (queue.length === 0) return;
 
-    syncingQueueRef.current = true;
+    const run = { owner, epoch: owner.epoch, abort: new AbortController() };
+    const current = () => ownsSession() && owner.epoch === run.epoch && !run.abort.signal.aborted;
+    syncingQueueRef.current = run;
+    owner.requests.add(run.abort);
     setSyncingQueue(true);
     let todosByProject = { ...(cachedState.todosByProject || {}) };
     const createdTitlesByProject = new Map();
@@ -60,6 +85,7 @@ export function useShoppingListOfflineSync({
     // Complete each operation against current storage in one synchronous turn.
     // User actions can replace/compact queue entries while a request is pending.
     const commitCurrentState = (mutate = (state) => state) => {
+      if (!current()) return;
       const nextState = mutate(loadShoppingOfflineState(currentUserId));
       queue = Array.isArray(nextState.queue) ? [...nextState.queue] : [];
       todosByProject = Object.fromEntries(
@@ -97,15 +123,17 @@ export function useShoppingListOfflineSync({
       });
     };
 
+    let client;
     const refreshProjectTodos = async (projectId) => {
-      if (!projectId) return [];
-      const { data, error } = await supabase
+      if (!projectId || !current()) return [];
+      const { data, error } = await client
         .from('manual_todos')
         .select(SHOPPING_MANUAL_TODO_SELECT)
         .eq('project_id', projectId)
         .order('status', { ascending: true })
         .order('created_at', { ascending: true });
 
+      if (!current()) return [];
       if (error) throw error;
 
       const serverTodos = sortTodos((data || []).map(mapManualTodoRow));
@@ -129,11 +157,17 @@ export function useShoppingListOfflineSync({
     };
 
     try {
+      client = await createShoppingOwnerClient({ supabaseClient: supabase, userId: currentUserId,
+        isCurrent: current, signal: run.abort.signal,
+        url: import.meta.env.VITE_SUPABASE_URL, anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY });
+      if (!current()) return;
       while (queue.length > 0) {
+        if (!current()) return;
         const op = queue[0];
 
         if (op.kind === 'create') {
           const refreshedTodos = await refreshProjectTodos(op.record.projectId).catch(() => []);
+          if (!current()) return;
           const confirmedTodo = findUncertainShoppingCreateMatch(op.record, refreshedTodos);
 
           if (confirmedTodo) {
@@ -142,11 +176,12 @@ export function useShoppingListOfflineSync({
           }
 
           const { data, error } = await upsertShoppingListItem({
-            supabaseClient: supabase,
+            supabaseClient: client,
             projectId: op.record.projectId,
             item: op.record,
             operationId: op.record.operationId,
           });
+          if (!current()) return;
 
           if (error || !data) {
             if (isLikelyNetworkError(error, { online: isOnline })) {
@@ -173,7 +208,7 @@ export function useShoppingListOfflineSync({
         }
 
         if (op.kind === 'update') {
-          const { data, error: updateError } = await supabase
+          const { data, error: updateError } = await client
             .from('manual_todos')
             .update({
               ...(Object.prototype.hasOwnProperty.call(op.patch, 'title') ? { title: op.patch.title } : {}),
@@ -186,6 +221,7 @@ export function useShoppingListOfflineSync({
             .eq('id', op.targetId)
             .select('id')
             .maybeSingle();
+          if (!current()) return;
 
           const error = updateError || (data?.id === op.targetId ? null : new Error(
             'Could not confirm this edit was saved. The item may have been removed or your access changed. Your edit is still queued.'
@@ -207,10 +243,11 @@ export function useShoppingListOfflineSync({
         }
 
         if (op.kind === 'delete') {
-          const { error } = await supabase
+          const { error } = await client
             .from('manual_todos')
             .delete()
             .eq('id', op.targetId);
+          if (!current()) return;
 
           if (error) {
             if (isLikelyNetworkError(error, { online: isOnline })) {
@@ -236,18 +273,27 @@ export function useShoppingListOfflineSync({
         setFailedTodoId('');
         setFailedTodoMessage('');
       }
+    } catch (error) {
+      if (current()) {
+        setFailedTodoId(queue[0]?.targetId || '');
+        setFailedTodoMessage(error?.message || 'Unable to sync these groceries right now.');
+      }
     } finally {
-      syncingQueueRef.current = false;
-      setSyncingQueue(false);
+      owner.requests.delete(run.abort);
+      if (syncingQueueRef.current === run) syncingQueueRef.current = false;
+      if (current()) setSyncingQueue(false);
     }
 
     // Delivery may be slow. The queue is already persisted, so allow the next
     // online/focus/retry trigger to sync new edits while notifications finish.
     for (const [projectId, itemTitles] of createdTitlesByProject.entries()) {
-      await notifyShoppingListSubscribers({ projectId, itemTitles });
+      if (!current()) return;
+      await notifyShoppingListSubscribers({ projectId, itemTitles, expectedUserId: currentUserId, isCurrent: current });
     }
   }, [
     currentUserId,
+    owner,
+    ownsSession,
     isOnline,
     loadShoppingOfflineState,
     persistOfflineState,

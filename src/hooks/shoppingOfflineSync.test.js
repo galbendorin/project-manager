@@ -11,6 +11,7 @@ import * as shoppingViewState from '../utils/shoppingListViewState.js';
 // React, using a household account, or contacting a database.
 const source = (await readFile(new URL('./useShoppingListOfflineSync.js', import.meta.url), 'utf8'))
   .replace(/^import[\s\S]*?from ['"][^'"]+['"];\n/gm, '')
+  .replace(/import.meta.env.VITE_SUPABASE_(URL|ANON_KEY)/g, "'synthetic'")
   .replace('export function useShoppingListOfflineSync', 'function useShoppingListOfflineSync');
 
 const projectId = 'project-test';
@@ -60,6 +61,9 @@ function setup({ replies, queue = [operation] }) {
   });
   const unexpectedCreate = () => { throw new Error('An update must never create a replacement item'); };
   const context = vm.createContext({
+    AbortController,
+    useAuth: () => ({ shoppingDraftScope: { userId: 'user-test', isCurrent: () => true } }),
+    createShoppingOwnerClient: async () => supabase,
     useCallback: (callback) => callback,
     useEffect: () => {},
     useMemo: (factory) => factory(),
