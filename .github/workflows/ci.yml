@@ -27,3 +27,26 @@ jobs:
 
       - name: Build app
         run: npm run build
+
+      - name: Install smoke browser
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Core Shopping release smoke
+        run: |
+          node --test scripts/shopping-smoke/service.test.mjs
+          npm run smoke:shopping
+
+      - name: Verify smoke detects a failed retry
+        run: npm run smoke:shopping -- --prove-failure
+        env:
+          SHOPPING_SMOKE_OUTPUT: tmp/shopping-smoke-negative
+
+      - name: Upload Shopping smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopping-smoke-evidence
+          path: |
+            tmp/shopping-smoke/
+            tmp/shopping-smoke-negative/
+          if-no-files-found: ignore
