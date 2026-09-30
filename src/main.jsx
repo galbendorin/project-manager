@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AuthProvider } from './contexts/AuthContext';
 import { PlanProvider } from './contexts/PlanContext';
+import AccountAppBoundary from './components/AccountAppBoundary';
 import App from './App';
 import './styles/index.css';
 import { isSupabaseConfigured, supabaseConfigStatus } from './lib/supabase';
@@ -79,9 +80,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <AppStartupRendered />
       {isSupabaseConfigured ? (
         <AuthProvider>
-          <PlanProvider>
-            <App />
-          </PlanProvider>
+          <AccountAppBoundary>
+            <PlanProvider>
+              <App />
+            </PlanProvider>
+          </AccountAppBoundary>
         </AuthProvider>
       ) : (
         <>
