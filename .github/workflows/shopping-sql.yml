@@ -10,6 +10,7 @@ on:
       - 'scripts/sql/**'
       - 'scripts/investigations/shopping-contribution-sql.test.mjs'
       - 'scripts/investigations/shopping-test-database.mjs'
+      - 'scripts/investigations/household-access-baseline.test.mjs'
       - '.github/workflows/shopping-sql.yml'
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - 'scripts/sql/**'
       - 'scripts/investigations/shopping-contribution-sql.test.mjs'
       - 'scripts/investigations/shopping-test-database.mjs'
+      - 'scripts/investigations/household-access-baseline.test.mjs'
       - '.github/workflows/shopping-sql.yml'
 
 permissions:
@@ -46,3 +48,12 @@ jobs:
         env:
           PMW_NATIVE_POSTGRES_MODULE: ${{ runner.temp }}/pmw-sql-runtime/node_modules/embedded-postgres/dist/index.js
         run: node --test scripts/investigations/shopping-contribution-sql.test.mjs
+      - name: Reproduce deployed household access baseline
+        env:
+          PMW_NATIVE_POSTGRES_MODULE: ${{ runner.temp }}/pmw-sql-runtime/node_modules/embedded-postgres/dist/index.js
+        run: node --test scripts/investigations/household-access-baseline.test.mjs
+      - name: Verify household relationship and invitation repair
+        env:
+          PMW_NATIVE_POSTGRES_MODULE: ${{ runner.temp }}/pmw-sql-runtime/node_modules/embedded-postgres/dist/index.js
+          Q08_REPAIR: '1'
+        run: node --test scripts/investigations/household-access-baseline.test.mjs
