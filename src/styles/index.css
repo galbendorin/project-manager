@@ -279,6 +279,23 @@ body {
   outline: none;
 }
 
+/* Keep native Safari month values inside the Finance card and aligned with
+   other fields. Editable phone text remains 16px to avoid focus zoom. */
+.pm-finance-field[type="month"] {
+  appearance: none;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.pm-finance-field[type="month"]::-webkit-date-and-time-value {
+  min-height: 1.5em;
+  text-align: left;
+}
+
+.pm-finance-field[type="month"]::-webkit-datetime-edit {
+  padding: 0;
+}
+
 .pm-project-row {
   border: 1px solid var(--pm-border);
   background: rgba(255, 255, 255, 0.94);
