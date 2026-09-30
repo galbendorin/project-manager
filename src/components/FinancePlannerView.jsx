@@ -44,9 +44,11 @@ const VIEWS = [
   { id: 'history', label: 'History' },
 ];
 
-const fieldClass = 'pm-input min-h-[44px] w-full rounded-xl px-3 py-2 text-[16px] font-medium text-slate-950 placeholder:text-slate-400 lg:min-h-[40px] lg:text-[13px]';
-const primaryButton = 'pm-toolbar-primary min-h-[44px] rounded-xl px-4 py-2 text-[14px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50';
-const secondaryButton = 'min-h-[44px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-[14px] font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50';
+const fieldClass = 'pm-input pm-finance-field block min-h-[44px] min-w-0 max-w-full w-full rounded-xl px-3 py-2 text-[16px] leading-6 font-normal text-slate-950 placeholder:text-slate-400 lg:min-h-[40px] lg:text-[13px]';
+const primaryButton = 'pm-toolbar-primary min-h-[44px] rounded-xl px-4 py-2 text-[14px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50';
+const secondaryButton = 'min-h-[44px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-[14px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50';
+const settingsLabelClass = 'block min-w-0 text-[12px] font-semibold leading-5 text-slate-500';
+const settingsSummaryClass = 'flex min-h-12 cursor-pointer list-none items-center justify-between px-4 py-3 text-[15px] font-semibold leading-6 text-slate-800';
 const subtleButton = 'min-h-[44px] min-w-[44px] rounded-xl px-3 py-2 text-[14px] font-bold text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 disabled:opacity-40';
 
 const useDialogFocus = ({ open, onClose, dialogRef, initialFocusRef }) => {
@@ -104,8 +106,8 @@ const Section = ({ children, className = '', id }) => (
 const SectionHeader = ({ title, detail, action }) => (
   <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5">
     <div className="min-w-0">
-      <h2 className="text-lg font-black tracking-[-0.025em] text-slate-950">{title}</h2>
-      {detail ? <p className="mt-1 text-sm leading-5 text-slate-500">{detail}</p> : null}
+      <h2 className="text-[16px] font-semibold tracking-[-0.015em] text-slate-950 lg:text-[18px]">{title}</h2>
+      {detail ? <p className="mt-1 text-[13px] leading-5 text-slate-500 lg:text-sm">{detail}</p> : null}
     </div>
     {action}
   </div>
@@ -842,13 +844,13 @@ const PlanSettings = ({ profile, saving, onSave, onReset }) => {
   };
   return (
     <details className="rounded-2xl border border-slate-200 bg-white">
-      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-black text-slate-700"><span>Plan settings</span><span aria-hidden="true">⌄</span></summary>
-      <form onSubmit={submit} className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-        <label className="text-xs font-bold text-slate-500">Opening savings<input value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} inputMode="decimal" className={`${fieldClass} mt-1`} /></label>
-        <label className="text-xs font-bold text-slate-500">Plan starts<input type="month" value={startMonth} onChange={(event) => setStartMonth(event.target.value)} className={`${fieldClass} mt-1`} /></label>
+      <summary className={settingsSummaryClass}><span>Plan settings</span><span aria-hidden="true">⌄</span></summary>
+      <form onSubmit={submit} className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+        <label className={settingsLabelClass}>Opening savings<input value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} inputMode="decimal" className={`${fieldClass} mt-1`} /></label>
+        <label className={settingsLabelClass}>Plan starts<input type="month" value={startMonth} onChange={(event) => setStartMonth(event.target.value)} className={`${fieldClass} mt-1`} /></label>
         <button type="submit" disabled={saving} className={secondaryButton}>Save settings</button>
         {message ? <p className="text-sm font-semibold text-slate-500 sm:col-span-3">{message}</p> : null}
-        <div className="border-t border-slate-100 pt-3 sm:col-span-3"><button type="button" onClick={() => { if (window.confirm('Remove all Financial Planner data? This cannot be undone.')) void onReset(); }} className="min-h-11 text-xs font-bold text-rose-600">Reset all Finance data</button></div>
+        <div className="border-t border-slate-100 pt-3 sm:col-span-3"><button type="button" onClick={() => { if (window.confirm('Remove all Financial Planner data? This cannot be undone.')) void onReset(); }} className="min-h-11 text-[12px] font-semibold text-rose-600">Reset all Finance data</button></div>
       </form>
     </details>
   );
@@ -866,12 +868,12 @@ const RecordBalanceForm = ({ profile, saving, onSave }) => {
   };
   return (
     <details className="rounded-2xl border border-slate-200 bg-white">
-      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-black text-slate-700"><span>Record actual savings</span><span aria-hidden="true">⌄</span></summary>
-      <form onSubmit={submit} className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-        <label className="text-xs font-bold text-slate-500">Month<input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className={`${fieldClass} mt-1`} /></label>
-        <label className="text-xs font-bold text-slate-500">Actual savings<input value={cash} onChange={(event) => setCash(event.target.value)} inputMode="decimal" placeholder="0" className={`${fieldClass} mt-1`} /></label>
+      <summary className={settingsSummaryClass}><span>Record actual savings</span><span aria-hidden="true">⌄</span></summary>
+      <form onSubmit={submit} className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+        <label className={settingsLabelClass}>Month<input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className={`${fieldClass} mt-1`} /></label>
+        <label className={settingsLabelClass}>Actual savings<input value={cash} onChange={(event) => setCash(event.target.value)} inputMode="decimal" placeholder="0" className={`${fieldClass} mt-1`} /></label>
         <button type="submit" disabled={saving} className={secondaryButton}>Save balance</button>
-        <p className="text-xs leading-5 text-slate-400 sm:col-span-3">This records what you actually had. It does not rewrite the forecast.</p>
+        <p className="text-[12px] leading-5 text-slate-500 sm:col-span-3">This records what you actually had. It does not rewrite the forecast.</p>
         {message ? <p className="text-sm font-semibold text-slate-500 sm:col-span-3">{message}</p> : null}
       </form>
     </details>
