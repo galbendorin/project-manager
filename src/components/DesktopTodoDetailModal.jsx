@@ -52,8 +52,8 @@ export default function DesktopTodoDetailModal({
         onClick={onClose}
         aria-label="Close task details"
       />
-      <div className="relative z-10 w-full max-w-5xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div className="relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl sm:max-h-[calc(100dvh-3rem)]">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Task card</div>
             <div className="mt-1 text-sm text-slate-500">
@@ -83,6 +83,7 @@ export default function DesktopTodoDetailModal({
           </div>
         </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="border-b border-slate-100 px-5 py-5 lg:border-b-0 lg:border-r">
             <div className={`rounded-[24px] border p-5 ${isCompleted ? 'border-emerald-200 bg-emerald-50/80' : 'border-slate-200 bg-slate-50/70'}`}>
@@ -270,6 +271,7 @@ export default function DesktopTodoDetailModal({
               </div>
             </div>
           </aside>
+        </div>
         </div>
       </div>
     </div>
