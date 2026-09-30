@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { IDBFactory } from 'fake-indexeddb';
 
 import {
   buildOfflineUserKey,
@@ -217,5 +218,118 @@ test('denied browser storage getters do not crash auth or offline startup', asyn
     assert.equal(loadCachedOfflineUser(), null);
     assert.equal(await readOfflineJson('project', null), null);
     assert.equal(writeLocalJson('project', { tasks: [] }), false);
+  });
+});
+
+test('sign-out cleanup cannot erase a replacement account identity or navigation during database startup', async () => {
+  await withLocalStorage(async storage => {
+    const indexedDB = new IDBFactory();
+    let openRequest;
+    globalThis.window.indexedDB = { open: (...args) => { openRequest = indexedDB.open(...args); return openRequest; } };
+    const state = await freshOfflineState();
+    const oldKey = 'pmworkspace:shopping-offline:v1:old';
+    const newKey = 'pmworkspace:shopping-offline:v1:new';
+    storage.setItem(oldKey, JSON.stringify({ queue: ['old-intent'] }));
+    storage.setItem('pmworkspace:offline-user-active:v1', JSON.stringify('old'));
+    storage.setItem('pmworkspace:last-path:v1', JSON.stringify('/shopping'));
+    const cleaning = state.clearOfflineDataForUser('old');
+    state.saveCachedOfflineUser({ id: 'new', email: 'new@example.test' });
+    state.writeLocalJson(newKey, { queue: ['new-intent'] });
+    state.writeLocalJson('pmworkspace:last-path:v1', '/timesheet');
+    await cleaning;
+    assert.equal(state.loadCachedOfflineUser()?.id, 'new');
+    assert.equal(state.readLocalJson('pmworkspace:last-path:v1'), '/timesheet');
+    assert.equal(storage.getItem(oldKey), null);
+    assert.deepEqual(await state.readOfflineJson(newKey, null), { queue: ['new-intent'] });
+    assert.equal(await state.readOfflineJson('pmworkspace:offline-user-active:v1', null), 'new');
+    openRequest.result.close();
+  });
+});
+
+test('sign-out cleanup leaves newly written same-account intent intact after database startup', async () => {
+  await withLocalStorage(async storage => {
+    const indexedDB = new IDBFactory(); let openRequest;
+    globalThis.window.indexedDB = { open: (...args) => { openRequest = indexedDB.open(...args); return openRequest; } };
+    const state = await freshOfflineState();
+    const key = 'pmworkspace:shopping-offline:v1:owner';
+    storage.setItem(key, JSON.stringify({ queue: ['old-intent'] }));
+    const cleaning = state.clearOfflineDataForUser('owner');
+    state.saveCachedOfflineUser({ id: 'owner' });
+    state.writeLocalJson(key, { queue: ['new-intent'] });
+    await cleaning;
+    assert.equal(state.loadCachedOfflineUser()?.id, 'owner');
+    assert.deepEqual(state.readLocalJson(key), { queue: ['new-intent'] });
+    assert.deepEqual(await state.readOfflineJson(key, null), { queue: ['new-intent'] });
+    openRequest.result.close();
+  });
+});
+
+test('a durable-only read begun before sign-out cannot revive the cleared cache', async () => {
+  await withLocalStorage(async storage => {
+    const indexedDB = new IDBFactory(); let openRequest;
+    globalThis.window.indexedDB = { open: (...args) => { openRequest = indexedDB.open(...args); return openRequest; } };
+    const state = await freshOfflineState();
+    const key = 'pmworkspace:timesheet-offline:v1:owner';
+    state.writeLocalJson(key, { queue: ['old-intent'] });
+    await state.readOfflineJson(key, null);
+    storage.removeItem(key);
+    const reading = state.readOfflineJson(key, null);
+    const cleaning = state.clearOfflineDataForUser('owner');
+    assert.equal(await reading, null);
+    await cleaning;
+    assert.equal(storage.getItem(key), null);
+    assert.equal(await state.readOfflineJson(key, null), null);
+    openRequest.result.close();
+  });
+});
+
+test('cleanup clears both stores for the leaving account and preserves other accounts and preferences', async () => {
+  await withLocalStorage(async storage => {
+    const indexedDB = new IDBFactory(); let openRequest;
+    globalThis.window.indexedDB = { open: (...args) => { openRequest = indexedDB.open(...args); return openRequest; } };
+    const state = await freshOfflineState();
+    const keys = ['pmworkspace:shopping-offline:v1:old', 'pmworkspace:timesheet-offline:v1:old',
+      'pmworkspace:offline:project:v1:old:project', 'pmworkspace:household-access:v1:old'];
+    keys.forEach(key => state.writeLocalJson(key, { private: 'old' }));
+    state.writeLocalJson('pmworkspace:shopping-offline:v1:new', { queue: ['new-intent'] });
+    state.writeLocalJson('pmworkspace:shopping-ui:v1', { compact: true });
+    state.saveCachedOfflineUser({ id: 'new' });
+    state.writeLocalJson('pmworkspace:last-path:v1', '/shopping');
+    await state.readOfflineJson(keys[0], null);
+    const newReading = state.readOfflineJson('pmworkspace:shopping-offline:v1:new', null);
+    await state.clearOfflineDataForUser('old');
+    for (const key of keys) {
+      assert.equal(storage.getItem(key), null);
+      assert.equal(await state.readOfflineJson(key, null), null);
+    }
+    assert.deepEqual(await newReading, { queue: ['new-intent'] });
+    assert.equal(state.loadCachedOfflineUser()?.id, 'new');
+    assert.equal(await state.readOfflineJson('pmworkspace:offline-user-active:v1', null), 'new');
+    assert.equal(await state.readOfflineJson('pmworkspace:last-path:v1', null), '/shopping');
+    assert.deepEqual(await state.readOfflineJson('pmworkspace:shopping-ui:v1', null), { compact: true });
+    openRequest.result.close();
+  });
+});
+
+test('clearing an old cached identity preserves the active replacement identity', async () => {
+  await withLocalStorage(async () => {
+    saveCachedOfflineUser({ id: 'old' });
+    saveCachedOfflineUser({ id: 'new' });
+    clearCachedOfflineUser('old');
+    assert.equal(loadCachedOfflineUser()?.id, 'new');
+  });
+});
+
+test('sign-out clears local data immediately even when IndexedDB cannot open', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await withLocalStorage(async storage => {
+    globalThis.window.indexedDB = { open: () => ({}) };
+    const state = await freshOfflineState();
+    const key = 'pmworkspace:shopping-offline:v1:owner';
+    storage.setItem(key, JSON.stringify({ queue: ['old-intent'] }));
+    const cleaning = state.clearOfflineDataForUser('owner');
+    assert.equal(storage.getItem(key), null);
+    t.mock.timers.tick(1500);
+    await cleaning;
   });
 });

@@ -16,6 +16,14 @@ const OFFLINE_STORAGE_TIMEOUT_MS = 1500;
 
 const safeWindow = () => (typeof window !== 'undefined' ? window : null);
 let openDbPromise = null;
+const cleanupEpochs = new Map();
+const cleanupEpochForKey = key => {
+  let epoch = 0;
+  for (const [userId, version] of cleanupEpochs) {
+    if (shouldClearUserOfflineKey(key, userId)) epoch += version;
+  }
+  return epoch;
+};
 
 const getBrowserStorage = (name) => {
   try {
@@ -168,8 +176,13 @@ export const removeLocalJson = (key) => {
 };
 
 export const readOfflineJson = async (key, fallback, { hydrateLocal = true } = {}) => {
+  const cleanupEpoch = cleanupEpochForKey(key);
   const localValue = readLocalJson(key, undefined);
   const indexedValue = await readIndexedDbJson(key);
+
+  // A read begun before sign-out cannot revive data cleared by that sign-out.
+  // A new session's synchronous write, if present, is the current value.
+  if (cleanupEpochForKey(key) !== cleanupEpoch) return readLocalJson(key, fallback);
 
   if (typeof indexedValue !== 'undefined') {
     if (hydrateLocal && typeof localValue === 'undefined' && typeof readLocalJson(key, undefined) === 'undefined') {
@@ -239,7 +252,10 @@ export const clearCachedOfflineUser = (userId) => {
   if (normalizedUserId) {
     removeLocalJson(buildOfflineUserKey(normalizedUserId));
   }
-  removeLocalJson(ACTIVE_OFFLINE_USER_KEY);
+  const activeUserId = readLocalJson(ACTIVE_OFFLINE_USER_KEY, '');
+  if (!normalizedUserId || activeUserId === normalizedUserId) {
+    removeLocalJson(ACTIVE_OFFLINE_USER_KEY);
+  }
 };
 
 export const loadCachedHouseholdAccess = (userId) => (
@@ -275,21 +291,27 @@ const listLocalStorageKeys = () => {
   }
 };
 
-const listIndexedDbKeys = () => (
-  runOfflineTransaction('readonly', (store) => store.getAllKeys(), [], (request) => request.result || [])
-);
-
 export const clearOfflineDataForUser = async (userId) => {
   const normalizedUserId = String(userId || '').trim();
   if (!normalizedUserId) return [];
+  cleanupEpochs.set(normalizedUserId, (cleanupEpochs.get(normalizedUserId) || 0) + 1);
 
-  const indexedDbKeys = await listIndexedDbKeys();
-  const keysToRemove = [...new Set([
-    ...listLocalStorageKeys(),
-    ...indexedDbKeys.map(String),
-  ].filter((key) => shouldClearUserOfflineKey(key, normalizedUserId)))];
-
-  keysToRemove.forEach(removeLocalStorageOnly);
-  await Promise.all(keysToRemove.map(removeIndexedDbJson));
-  return keysToRemove;
+  const activeUserId = readLocalJson(ACTIVE_OFFLINE_USER_KEY, '');
+  const clearNavigation = !activeUserId || activeUserId === normalizedUserId;
+  const belongsToLeavingUser = key => shouldClearUserOfflineKey(key, normalizedUserId)
+    && (!NAVIGATION_CACHE_KEYS.has(String(key)) || clearNavigation);
+  // Remove the leaving session's local state before yielding. A replacement
+  // sign-in can then write its own identity, navigation and queue safely.
+  const localKeys = listLocalStorageKeys().filter(belongsToLeavingUser);
+  localKeys.forEach(removeLocalStorageOnly);
+  // Scan and delete in one transaction, queued before subsequent writes. A
+  // separate async scan followed by deletes could erase the new session's data.
+  const indexedKeys = await runOfflineTransaction('readwrite', store => {
+    const request = store.getAllKeys();
+    request.onsuccess = () => {
+      request.result.filter(belongsToLeavingUser).forEach(key => store.delete(key));
+    };
+    return request;
+  }, [], request => request.result.filter(belongsToLeavingUser).map(String));
+  return [...new Set([...localKeys, ...indexedKeys])];
 };
