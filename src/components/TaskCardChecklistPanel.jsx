@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { summarizeTaskChecklists } from '../utils/taskCardChecklists';
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from './Icons';
 
@@ -32,23 +32,43 @@ const SmallIconButton = ({ children, disabled, label, onClick }) => (
   </button>
 );
 
-const ChecklistTitleInput = ({ canEdit, checklist, onRenameChecklist }) => {
-  const [draftTitle, setDraftTitle] = useState(checklist.title || 'Checklist');
-
+const useChecklistTitleDraft = (id, title, onSave) => {
+  const [draftTitle, setDraftTitle] = useState(title);
+  const edits = useRef({ id, revision: 0, dirty: false });
   useEffect(() => {
-    setDraftTitle(checklist.title || 'Checklist');
-  }, [checklist.id, checklist.title]);
-
-  const commitTitle = () => {
-    const trimmed = draftTitle.trim();
-    if (!trimmed) {
-      setDraftTitle(checklist.title || 'Checklist');
-      return;
-    }
-    if (trimmed !== checklist.title) {
-      onRenameChecklist(checklist.id, trimmed);
-    }
+    if (edits.current.id !== id) edits.current = { id, revision: 0, dirty: false };
+    if (!edits.current.dirty) setDraftTitle(title);
+  }, [id, title]);
+  const changeTitle = (value) => {
+    edits.current.revision += 1;
+    edits.current.dirty = true;
+    setDraftTitle(value);
   };
+  const resetTitle = () => {
+    edits.current.revision += 1;
+    edits.current.dirty = false;
+    setDraftTitle(title);
+  };
+  const commitTitle = async () => {
+    const trimmed = draftTitle.trim();
+    if (!trimmed) { resetTitle(); return; }
+    if (trimmed === title) { edits.current.dirty = false; return; }
+    const revision = edits.current.revision;
+    try {
+      const saved = await onSave(id, trimmed);
+      if (saved === true && edits.current.id === id && edits.current.revision === revision) {
+        edits.current.dirty = false;
+        setDraftTitle(trimmed);
+      }
+    } catch { /* The draft stays available for another save attempt. */ }
+  };
+  return { draftTitle, changeTitle, resetTitle, commitTitle };
+};
+
+const ChecklistTitleInput = ({ canEdit, checklist, onRenameChecklist }) => {
+  const { draftTitle, changeTitle, resetTitle, commitTitle } = useChecklistTitleDraft(
+    checklist.id, checklist.title || 'Checklist', onRenameChecklist
+  );
 
   if (!canEdit) {
     return <div className="text-sm font-semibold text-slate-900">{checklist.title || 'Checklist'}</div>;
@@ -58,7 +78,7 @@ const ChecklistTitleInput = ({ canEdit, checklist, onRenameChecklist }) => {
     <input
       type="text"
       value={draftTitle}
-      onChange={(event) => setDraftTitle(event.target.value)}
+      onChange={(event) => changeTitle(event.target.value)}
       onBlur={commitTitle}
       onKeyDown={(event) => {
         if (event.key === 'Enter') {
@@ -67,7 +87,7 @@ const ChecklistTitleInput = ({ canEdit, checklist, onRenameChecklist }) => {
           event.currentTarget.blur();
         }
         if (event.key === 'Escape') {
-          setDraftTitle(checklist.title || 'Checklist');
+          resetTitle();
           event.currentTarget.blur();
         }
       }}
@@ -87,22 +107,9 @@ const ChecklistItemRow = ({
   onRenameChecklistItem,
   onToggleChecklistItem,
 }) => {
-  const [draftTitle, setDraftTitle] = useState(item.title || '');
-
-  useEffect(() => {
-    setDraftTitle(item.title || '');
-  }, [item.id, item.title]);
-
-  const commitTitle = () => {
-    const trimmed = draftTitle.trim();
-    if (!trimmed) {
-      setDraftTitle(item.title || '');
-      return;
-    }
-    if (trimmed !== item.title) {
-      onRenameChecklistItem(item.id, trimmed);
-    }
-  };
+  const { draftTitle, changeTitle, resetTitle, commitTitle } = useChecklistTitleDraft(
+    item.id, item.title || '', onRenameChecklistItem
+  );
 
   return (
     <div className="group flex items-start gap-2 rounded-xl px-1 py-1.5 transition hover:bg-slate-50">
@@ -125,7 +132,7 @@ const ChecklistItemRow = ({
           <input
             type="text"
             value={draftTitle}
-            onChange={(event) => setDraftTitle(event.target.value)}
+            onChange={(event) => changeTitle(event.target.value)}
             onBlur={commitTitle}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
@@ -134,7 +141,7 @@ const ChecklistItemRow = ({
                 event.currentTarget.blur();
               }
               if (event.key === 'Escape') {
-                setDraftTitle(item.title || '');
+                resetTitle();
                 event.currentTarget.blur();
               }
             }}
@@ -179,12 +186,30 @@ const ChecklistItemRow = ({
 
 const ChecklistItemComposer = ({ checklistId, disabled, onAddChecklistItems }) => {
   const [draftValue, setDraftValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const editRevision = useRef(0);
+  const [saveError, setSaveError] = useState('');
 
-  const submit = async () => {
-    const trimmed = draftValue.trim();
-    if (!trimmed || disabled) return;
-    setDraftValue('');
-    await onAddChecklistItems(checklistId, trimmed);
+  const submit = async (value = draftValue) => {
+    if (!value.trim() || disabled || savingRef.current) return;
+    const revision = editRevision.current;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const saved = await onAddChecklistItems(checklistId, value.trim());
+      if (saved === true) {
+        if (revision === editRevision.current) setDraftValue('');
+      } else {
+        setSaveError('Item not saved. Your text is kept; try again.');
+      }
+    } catch {
+      setSaveError('Item not saved. Your text is kept; try again.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   return (
@@ -193,13 +218,18 @@ const ChecklistItemComposer = ({ checklistId, disabled, onAddChecklistItems }) =
         type="text"
         value={draftValue}
         disabled={disabled}
-        onChange={(event) => setDraftValue(event.target.value)}
+        onChange={(event) => {
+          editRevision.current += 1;
+          setDraftValue(event.target.value);
+        }}
         onPaste={(event) => {
           const pasted = event.clipboardData.getData('text');
           if (!pasted.includes('\n')) return;
           event.preventDefault();
-          setDraftValue('');
-          void onAddChecklistItems(checklistId, pasted);
+          editRevision.current += 1;
+          const value = [draftValue, pasted].filter(Boolean).join('\n');
+          setDraftValue(value);
+          if (!savingRef.current) void submit(value);
         }}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
@@ -214,12 +244,13 @@ const ChecklistItemComposer = ({ checklistId, disabled, onAddChecklistItems }) =
       <button
         type="button"
         onClick={() => void submit()}
-        disabled={disabled || !draftValue.trim()}
+        disabled={disabled || saving || !draftValue.trim()}
         className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
       >
         <IconPlus />
-        Add
+        {saving ? 'Saving…' : 'Add'}
       </button>
+      {saveError ? <span role="alert" className="text-sm text-amber-700">{saveError}</span> : null}
     </div>
   );
 };
@@ -229,7 +260,9 @@ export default function TaskCardChecklistPanel({
   checklists,
   checklistsAvailable,
   checklistsLoading,
+  checklistsSaving = false,
   checklistMessage,
+  onRetryChecklists,
   onAddChecklist,
   onAddChecklistItems,
   onDeleteChecklist,
@@ -284,8 +317,11 @@ export default function TaskCardChecklistPanel({
       ) : null}
 
       {checklistMessage ? (
-        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+        <div role="status" className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
           {checklistMessage}
+          {onRetryChecklists ? (
+            <button type="button" disabled={checklistsLoading} onClick={onRetryChecklists} className="ml-3 min-h-10 rounded-lg px-3 font-semibold underline disabled:opacity-50">Retry loading</button>
+          ) : null}
         </div>
       ) : null}
 
@@ -295,7 +331,9 @@ export default function TaskCardChecklistPanel({
         </div>
       ) : null}
 
-      {checklists.length === 0 && !checklistsLoading ? (
+      {checklistsSaving ? <div role="status" className="mt-3 text-sm text-slate-500">Saving checklist changes…</div> : null}
+
+      {checklists.length === 0 && !checklistsLoading && !checklistMessage ? (
         <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
           No checklists yet.
         </div>

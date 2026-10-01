@@ -25,10 +25,14 @@ jobs:
       - name: Run unit tests
         run: npm run test:ci
 
+      - name: Checklist and recipe React regressions
+        run: node --experimental-vm-modules --test scripts/regressions/checklist-recipe.test.mjs
+
       - name: Household export and isolated restore checks
         run: |
           npm install --prefix "$RUNNER_TEMP/household-restore" --no-audit --no-fund @electric-sql/pglite@0.5.8
           PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/household-backup.test.mjs
+          PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/investigations/atomic-recipe-update.test.mjs
 
       - name: Build app
         run: npm run build

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { buildTodoCardKey } from './useTodoKanbanBoard';
 import {
@@ -18,10 +18,9 @@ const isMissingRelationError = (error, relationName) => {
   const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
   const relation = relationName.toLowerCase();
   return message.includes(relation) && (
-    message.includes('relation')
-    || message.includes('schema cache')
-    || message.includes('could not find')
-    || message.includes('does not exist')
+    message.includes('does not exist')
+    || (message.includes('could not find') && message.includes('table'))
+    || error?.code === '42P01'
     || error?.code === 'PGRST205'
   );
 };
@@ -137,6 +136,21 @@ export function useTaskCardChecklists({
   const [checklistsLoading, setChecklistsLoading] = useState(false);
   const [checklistMessage, setChecklistMessage] = useState('');
   const [checklistsAvailable, setChecklistsAvailable] = useState(true);
+  const [checklistsSaving, setChecklistsSaving] = useState(0);
+  const lifecycle = useRef({ owner: currentUserId, active: true, revision: 0, load: 0, pending: 0, queues: new Map() });
+
+  useEffect(() => {
+    const previous = lifecycle.current;
+    const current = { owner: currentUserId, active: true, revision: 0, load: 0, pending: 0, queues: new Map() };
+    lifecycle.current = current;
+    if (previous.owner !== currentUserId) {
+      setChecklistsByScopeKey({});
+      setChecklistMessage('');
+      setChecklistsAvailable(true);
+      setChecklistsSaving(0);
+    }
+    return () => { current.active = false; };
+  }, [currentUserId]);
 
   const checklistScopes = useMemo(() => buildChecklistScopes(todos), [todos]);
   const checklistScopeSignature = useMemo(
@@ -145,19 +159,22 @@ export function useTaskCardChecklists({
   );
 
   const loadChecklists = useCallback(async () => {
+    const session = lifecycle.current;
+    if (session.pending > 0) { session.needsReload = true; return; }
+    const load = ++session.load;
+    const revision = session.revision;
+    const current = () => session.active && lifecycle.current === session
+      && session.owner === currentUserId && session.load === load && session.revision === revision;
     if (!currentUserId || checklistScopes.length === 0) {
       setChecklistsLoading(false);
       setChecklistsByScopeKey({});
       return;
     }
 
-    if (!checklistsAvailable) {
-      setChecklistsLoading(false);
-      setChecklistsByScopeKey({});
-      return;
-    }
-
     setChecklistsLoading(true);
+    session.loading = true;
+
+    try {
 
     const projectIds = [...new Set(checklistScopes.map((scope) => scope.projectId).filter(Boolean))];
     const cardKeys = [...new Set(checklistScopes.map((scope) => scope.cardKey).filter(Boolean))];
@@ -190,6 +207,7 @@ export function useTaskCardChecklists({
     }
 
     const checklistResults = await Promise.all(checklistQueries);
+    if (!current()) return;
     const checklistError = checklistResults.find((result) => result.error)?.error || null;
     const checklistRows = checklistResults.flatMap((result) => result.data || []);
 
@@ -203,8 +221,7 @@ export function useTaskCardChecklists({
       }
 
       console.error('Failed to load task checklists:', checklistError);
-      setChecklistsAvailable(false);
-      setChecklistMessage(CHECKLIST_SETUP_MESSAGE);
+      setChecklistMessage('Unable to load checklists. Previously loaded items are kept. Retry loading.');
       return;
     }
 
@@ -217,6 +234,7 @@ export function useTaskCardChecklists({
         .select(CHECKLIST_ITEM_SELECT)
         .in('checklist_id', checklistIds)
         .order('position', { ascending: true });
+      if (!current()) return;
 
       if (itemError) {
         setChecklistsLoading(false);
@@ -228,8 +246,7 @@ export function useTaskCardChecklists({
         }
 
         console.error('Failed to load task checklist items:', itemError);
-        setChecklistsAvailable(false);
-        setChecklistMessage(CHECKLIST_SETUP_MESSAGE);
+        setChecklistMessage('Unable to load checklist items. Previously loaded items are kept. Retry loading.');
         return;
       }
       itemRows = rows || [];
@@ -241,12 +258,29 @@ export function useTaskCardChecklists({
       Object.entries(grouped).filter(([scopeKey]) => scopeKeys.has(scopeKey))
     ));
     setChecklistMessage('');
+    setChecklistsAvailable(true);
     setChecklistsLoading(false);
-  }, [checklistScopes, checklistsAvailable, currentUserId]);
+    } catch {
+      if (current()) setChecklistMessage('Unable to load checklists. Previously loaded items are kept. Retry loading.');
+    } finally {
+      if (session.load === load) session.loading = false;
+      if (current()) setChecklistsLoading(false);
+    }
+  }, [checklistScopes, currentUserId]);
 
   useEffect(() => {
     void loadChecklists();
+    const session = lifecycle.current;
+    return () => { session.load += 1; };
   }, [checklistScopeSignature, loadChecklists]);
+
+  useEffect(() => {
+    const session = lifecycle.current;
+    if (session.pending === 0 && session.needsReload) {
+      session.needsReload = false;
+      void loadChecklists();
+    }
+  }, [checklistsSaving, loadChecklists]);
 
   const getChecklistsForTodo = useCallback((todo) => {
     if (!todo) return [];
@@ -279,15 +313,63 @@ export function useTaskCardChecklists({
     return false;
   }, []);
 
+  // Serialize writes to a row, and change visible state only after the intended
+  // row is acknowledged. A failed/zero-row write leaves confirmed state intact.
+  const saveRow = useCallback(async (key, request, apply, message) => {
+    const session = lifecycle.current;
+    if (!session.active || session.owner !== currentUserId) return false;
+    if (session.loading) session.needsReload = true;
+    session.revision += 1;
+    session.pending += 1;
+    setChecklistsLoading(false);
+    setChecklistsSaving((count) => count + 1);
+    const previous = session.queues.get(key) || Promise.resolve();
+    const operation = previous.then(async () => {
+      if (!session.active || lifecycle.current !== session) return false;
+      try {
+        const { data, error } = await request();
+        if (!session.active || lifecycle.current !== session) return false;
+        if (error) throw error;
+        if (!Array.isArray(data) || data.length !== 1 || data[0].id !== key.split(':').slice(1).join(':')) {
+          throw new Error('CHECKLIST_ROW_NOT_SAVED');
+        }
+        setChecklistsByScopeKey(apply);
+        setChecklistMessage('');
+        return true;
+      } catch (error) {
+        if (session.active && lifecycle.current === session && !setUnavailableFromError(error)) {
+          setChecklistMessage(message);
+        }
+        return false;
+      }
+    });
+    session.queues.set(key, operation);
+    try { return await operation; }
+    finally {
+      if (session.queues.get(key) === operation) session.queues.delete(key);
+      session.revision += 1;
+      session.pending -= 1;
+      if (session.active && lifecycle.current === session) setChecklistsSaving((count) => count - 1);
+    }
+  }, [currentUserId, setUnavailableFromError]);
+
   const addChecklist = useCallback(async (todo, title = 'Checklist') => {
     if (!todo || !currentUserId || isExternalView || !checklistsAvailable) return;
+    const session = lifecycle.current;
+    if (!session.active || session.owner !== currentUserId) return false;
+    if (session.loading) session.needsReload = true;
+    session.revision += 1;
+    session.pending += 1;
+    setChecklistsLoading(false);
+    setChecklistsSaving((count) => count + 1);
 
     const cardKey = buildTodoCardKey(todo);
     const scopeKey = buildTaskChecklistScopeKey(todo.projectId || null, cardKey);
     const existing = checklistsByScopeKey[scopeKey] || [];
     const position = calculateTaskChecklistPosition(existing, existing.length);
 
-    const { data, error } = await supabase
+    let result;
+    try { result = await supabase
       .from('task_card_checklists')
       .insert({
         user_id: currentUserId,
@@ -298,13 +380,19 @@ export function useTaskCardChecklists({
       })
       .select(CHECKLIST_SELECT)
       .single();
+    } catch (error) { result = { error }; }
+    session.pending -= 1;
+    session.revision += 1;
+    if (!session.active || lifecycle.current !== session) return false;
+    setChecklistsSaving((count) => count - 1);
+    const { data, error } = result;
 
-    if (error || !data) {
+    if (error || !data?.id) {
       if (!setUnavailableFromError(error)) {
         console.error('Failed to add checklist:', error);
         setChecklistMessage('Unable to add a checklist right now.');
       }
-      return;
+      return false;
     }
 
     const checklist = normalizeChecklistRow(data, []);
@@ -313,62 +401,47 @@ export function useTaskCardChecklists({
       [scopeKey]: sortTaskChecklists([...(prev[scopeKey] || []), checklist]),
     }));
     setChecklistMessage('');
+    return true;
   }, [checklistsAvailable, checklistsByScopeKey, currentUserId, isExternalView, setUnavailableFromError]);
 
   const renameChecklist = useCallback(async (checklistId, title) => {
     const trimmedTitle = String(title || '').trim();
     if (!checklistId || !trimmedTitle || isExternalView || !checklistsAvailable) return;
 
-    setChecklistsByScopeKey((prev) => replaceChecklistInState(prev, checklistId, (checklist) => ({
-      ...checklist,
-      title: trimmedTitle,
-    })));
-
-    const { error } = await supabase
+    return saveRow(`checklist:${checklistId}`, () => supabase
       .from('task_card_checklists')
       .update({ title: trimmedTitle, updated_at: new Date().toISOString() })
-      .eq('id', checklistId);
-
-    if (error) {
-      if (!setUnavailableFromError(error)) {
-        console.error('Failed to rename checklist:', error);
-        setChecklistMessage('Unable to rename this checklist right now.');
-        void loadChecklists();
-      }
-    }
-  }, [checklistsAvailable, isExternalView, loadChecklists, setUnavailableFromError]);
+      .eq('id', checklistId).select('id'),
+    (prev) => replaceChecklistInState(prev, checklistId, (checklist) => ({ ...checklist, title: trimmedTitle })),
+    'Checklist title not saved. Try again.');
+  }, [checklistsAvailable, isExternalView, saveRow]);
 
   const deleteChecklist = useCallback(async (checklistId) => {
     if (!checklistId || isExternalView || !checklistsAvailable) return;
 
-    setChecklistsByScopeKey((prev) => Object.fromEntries(
+    return saveRow(`checklist:${checklistId}`, () => supabase.from('task_card_checklists')
+      .delete().eq('id', checklistId).select('id'), (prev) => Object.fromEntries(
       Object.entries(prev).map(([scopeKey, checklists]) => [
         scopeKey,
         checklists.filter((checklist) => checklist.id !== checklistId),
       ])
-    ));
-
-    const { error } = await supabase
-      .from('task_card_checklists')
-      .delete()
-      .eq('id', checklistId);
-
-    if (error) {
-      if (!setUnavailableFromError(error)) {
-        console.error('Failed to delete checklist:', error);
-        setChecklistMessage('Unable to delete this checklist right now.');
-        void loadChecklists();
-      }
-    }
-  }, [checklistsAvailable, isExternalView, loadChecklists, setUnavailableFromError]);
+    ), 'Checklist not deleted. Try again.');
+  }, [checklistsAvailable, isExternalView, saveRow]);
 
   const addChecklistItems = useCallback(async (checklistId, rawValue) => {
-    if (!checklistId || isExternalView || !currentUserId || !checklistsAvailable) return;
+    if (!checklistId || isExternalView || !currentUserId || !checklistsAvailable) return false;
     const itemDrafts = parseChecklistItemDrafts(rawValue);
-    if (itemDrafts.length === 0) return;
+    if (itemDrafts.length === 0) return false;
 
     const { checklist, scopeKey } = findChecklist(checklistId);
-    if (!checklist) return;
+    if (!checklist) return false;
+    const session = lifecycle.current;
+    if (!session.active || session.owner !== currentUserId) return false;
+    if (session.loading) session.needsReload = true;
+    session.revision += 1;
+    session.pending += 1;
+    setChecklistsLoading(false);
+    setChecklistsSaving((count) => count + 1);
 
     let positionBaseItems = checklist.items || [];
     const rows = itemDrafts.map((itemDraft) => {
@@ -384,17 +457,24 @@ export function useTaskCardChecklists({
       };
     });
 
-    const { data, error } = await supabase
+    let result;
+    try { result = await supabase
       .from('task_card_checklist_items')
       .insert(rows)
       .select(CHECKLIST_ITEM_SELECT);
+    } catch (error) { result = { error }; }
+    session.revision += 1;
+    session.pending -= 1;
+    if (!session.active || lifecycle.current !== session) return false;
+    setChecklistsSaving((count) => count - 1);
+    const { data, error } = result;
 
-    if (error) {
+    if (error || !Array.isArray(data) || data.length !== rows.length || data.some((row) => !row.id)) {
       if (!setUnavailableFromError(error)) {
         console.error('Failed to add checklist items:', error);
         setChecklistMessage('Unable to add checklist items right now.');
       }
-      return;
+      return false;
     }
 
     const nextItems = (data || []).map(normalizeChecklistItemRow);
@@ -407,57 +487,37 @@ export function useTaskCardChecklists({
       )),
     }));
     setChecklistMessage('');
+    return true;
   }, [checklistsAvailable, currentUserId, findChecklist, isExternalView, setUnavailableFromError]);
 
   const renameChecklistItem = useCallback(async (itemId, title) => {
     const trimmedTitle = String(title || '').trim();
     if (!itemId || !trimmedTitle || isExternalView || !checklistsAvailable) return;
 
-    setChecklistsByScopeKey((prev) => replaceChecklistItemInState(prev, itemId, (item) => ({
-      ...item,
-      title: trimmedTitle,
-    })));
-
-    const { error } = await supabase
+    return saveRow(`item:${itemId}`, () => supabase
       .from('task_card_checklist_items')
       .update({ title: trimmedTitle, updated_at: new Date().toISOString() })
-      .eq('id', itemId);
-
-    if (error) {
-      if (!setUnavailableFromError(error)) {
-        console.error('Failed to rename checklist item:', error);
-        setChecklistMessage('Unable to rename this checklist item right now.');
-        void loadChecklists();
-      }
-    }
-  }, [checklistsAvailable, isExternalView, loadChecklists, setUnavailableFromError]);
+      .eq('id', itemId).select('id'),
+    (prev) => replaceChecklistItemInState(prev, itemId, (item) => ({ ...item, title: trimmedTitle })),
+    'Checklist item title not saved. Try again.');
+  }, [checklistsAvailable, isExternalView, saveRow]);
 
   const toggleChecklistItem = useCallback(async (itemId, checked) => {
     if (!itemId || isExternalView || !checklistsAvailable) return;
 
-    setChecklistsByScopeKey((prev) => replaceChecklistItemInState(prev, itemId, (item) => ({
-      ...item,
-      checked: checked === true,
-    })));
-
-    const { error } = await supabase
+    return saveRow(`item:${itemId}`, () => supabase
       .from('task_card_checklist_items')
       .update({ checked: checked === true, updated_at: new Date().toISOString() })
-      .eq('id', itemId);
-
-    if (error) {
-      if (!setUnavailableFromError(error)) {
-        console.error('Failed to update checklist item:', error);
-        setChecklistMessage('Unable to update this checklist item right now.');
-        void loadChecklists();
-      }
-    }
-  }, [checklistsAvailable, isExternalView, loadChecklists, setUnavailableFromError]);
+      .eq('id', itemId).select('id'),
+    (prev) => replaceChecklistItemInState(prev, itemId, (item) => ({ ...item, checked: checked === true })),
+    'Checklist item not saved. Try again.');
+  }, [checklistsAvailable, isExternalView, saveRow]);
 
   const deleteChecklistItem = useCallback(async (itemId) => {
     if (!itemId || isExternalView || !checklistsAvailable) return;
 
-    setChecklistsByScopeKey((prev) => Object.fromEntries(
+    return saveRow(`item:${itemId}`, () => supabase.from('task_card_checklist_items')
+      .delete().eq('id', itemId).select('id'), (prev) => Object.fromEntries(
       Object.entries(prev).map(([scopeKey, checklists]) => [
         scopeKey,
         checklists.map((checklist) => ({
@@ -465,21 +525,8 @@ export function useTaskCardChecklists({
           items: (checklist.items || []).filter((item) => item.id !== itemId),
         })),
       ])
-    ));
-
-    const { error } = await supabase
-      .from('task_card_checklist_items')
-      .delete()
-      .eq('id', itemId);
-
-    if (error) {
-      if (!setUnavailableFromError(error)) {
-        console.error('Failed to delete checklist item:', error);
-        setChecklistMessage('Unable to delete this checklist item right now.');
-        void loadChecklists();
-      }
-    }
-  }, [checklistsAvailable, isExternalView, loadChecklists, setUnavailableFromError]);
+    ), 'Checklist item not deleted. Try again.');
+  }, [checklistsAvailable, isExternalView, saveRow]);
 
   const moveChecklistItem = useCallback(async (checklistId, itemId, direction) => {
     if (!checklistId || !itemId || isExternalView || !checklistsAvailable) return;
@@ -495,24 +542,13 @@ export function useTaskCardChecklists({
     const insertIndex = direction < 0 ? targetIndex : targetIndex + 1;
     const nextPosition = calculateTaskChecklistPosition(itemsWithoutDragged, insertIndex);
 
-    setChecklistsByScopeKey((prev) => replaceChecklistItemInState(prev, itemId, (item) => ({
-      ...item,
-      position: nextPosition,
-    })));
-
-    const { error } = await supabase
+    return saveRow(`item:${itemId}`, () => supabase
       .from('task_card_checklist_items')
       .update({ position: nextPosition, updated_at: new Date().toISOString() })
-      .eq('id', itemId);
-
-    if (error) {
-      if (!setUnavailableFromError(error)) {
-        console.error('Failed to move checklist item:', error);
-        setChecklistMessage('Unable to move this checklist item right now.');
-        void loadChecklists();
-      }
-    }
-  }, [checklistsAvailable, findChecklist, isExternalView, loadChecklists, setUnavailableFromError]);
+      .eq('id', itemId).select('id'),
+    (prev) => replaceChecklistItemInState(prev, itemId, (item) => ({ ...item, position: nextPosition })),
+    'Checklist item order not saved. Try again.');
+  }, [checklistsAvailable, findChecklist, isExternalView, saveRow]);
 
   return {
     addChecklist,
@@ -520,6 +556,8 @@ export function useTaskCardChecklists({
     checklistMessage,
     checklistsAvailable,
     checklistsLoading,
+    checklistsSaving: checklistsSaving > 0,
+    retryChecklists: loadChecklists,
     deleteChecklist,
     deleteChecklistItem,
     getChecklistSummaryForTodo,

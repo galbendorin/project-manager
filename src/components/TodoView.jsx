@@ -822,6 +822,8 @@ const TodoView = ({
     checklistMessage,
     checklistsAvailable,
     checklistsLoading,
+    checklistsSaving,
+    retryChecklists,
     deleteChecklist,
     deleteChecklistItem,
     getChecklistSummaryForTodo,
@@ -986,6 +988,8 @@ const TodoView = ({
           checklistsAvailable={checklistsAvailable}
           checklistsLoading={checklistsLoading}
           checklistMessage={checklistMessage}
+          checklistsSaving={checklistsSaving}
+          onRetryChecklists={retryChecklists}
           onAddChecklist={() => addChecklist(selectedTodo)}
           onAddChecklistItems={addChecklistItems}
           onDeleteChecklist={deleteChecklist}
@@ -1013,6 +1017,8 @@ const TodoView = ({
           checklistsAvailable={checklistsAvailable}
           checklistsLoading={checklistsLoading}
           checklistMessage={checklistMessage}
+          checklistsSaving={checklistsSaving}
+          onRetryChecklists={retryChecklists}
           onAddChecklist={() => addChecklist(selectedTodo)}
           onAddChecklistItems={addChecklistItems}
           onDeleteChecklist={deleteChecklist}
