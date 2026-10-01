@@ -34,6 +34,8 @@ export default function MobileTodoDetailSheet({
   checklistsAvailable = true,
   checklistsLoading = false,
   checklistMessage = '',
+  checklistsSaving = false,
+  onRetryChecklists,
   onAddChecklist,
   onAddChecklistItems,
   onDeleteChecklist,
@@ -224,6 +226,8 @@ export default function MobileTodoDetailSheet({
               checklistsAvailable={checklistsAvailable}
               checklistsLoading={checklistsLoading}
               checklistMessage={checklistMessage}
+              checklistsSaving={checklistsSaving}
+              onRetryChecklists={onRetryChecklists}
               onAddChecklist={onAddChecklist}
               onAddChecklistItems={onAddChecklistItems}
               onDeleteChecklist={onDeleteChecklist}

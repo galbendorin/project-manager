@@ -1524,7 +1524,6 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     setError('');
     try {
       const ingredientLines = recipeInput.ingredientLines || splitIngredientList(recipeInput.ingredientsRaw || '');
-      const isBatchRecipeInput = String(recipeInput.yieldMode || 'flexible') === 'batch';
       const mealPayload = buildMealLibraryRecords([{
         externalId: recipeInput.externalId || '',
         sourcePdf: recipeInput.sourcePdf || '',
@@ -1543,30 +1542,18 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
         batchYieldPortions: recipeInput.batchYieldPortions ?? null,
       }], recipeInput.recipeOrigin || 'manual')[0];
 
-      let updateResult = await supabase
-        .from('meal_library_meals')
-        .update(mealPayload)
-        .eq('id', recipeId);
-
-      if (updateResult.error && isMissingMealPlannerFieldError(updateResult.error, MEAL_LIBRARY_RECIPE_NUTRITION_FIELDS)) {
-        updateResult = await supabase
-          .from('meal_library_meals')
-          .update(stripMealNutritionFields(mealPayload))
-          .eq('id', recipeId);
-      }
-
-      if (updateResult.error && isMissingMealPlannerFieldError(updateResult.error, ['yield_mode', 'batch_yield_portions'])) {
-        if (isBatchRecipeInput) {
-          throw new Error('Meal Planner needs the latest SQL migration before batch recipes can be saved.');
+      const { data: savedId, error: saveError } = await supabase.rpc('update_meal_recipe_atomic', {
+        target_recipe_id: recipeId,
+        target_recipe: mealPayload,
+        target_ingredients: buildMealIngredientRecords(ingredientLines),
+      });
+      if (saveError) {
+        if (saveError.code === 'PGRST202' || saveError.code === '42883') {
+          throw new Error('Recipe editing needs the latest database update. Your previous recipe is unchanged.');
         }
-        updateResult = await supabase
-          .from('meal_library_meals')
-          .update(stripMealNutritionFields(stripMealBatchFields(mealPayload)))
-          .eq('id', recipeId);
+        throw saveError;
       }
-
-      if (updateResult.error) throw updateResult.error;
-      await replaceRecipeIngredients(recipeId, ingredientLines);
+      if (savedId !== recipeId) throw new Error('Recipe save was not confirmed. Reload before trying again.');
       await loadRecipes(plannerProject?.id || '');
     } catch (nextError) {
       setError(nextError?.message || 'Unable to update recipe.');
@@ -1574,7 +1561,7 @@ export function useMealPlannerData({ currentUserEmail, currentUserId }) {
     } finally {
       setSaving(false);
     }
-  }, [loadRecipes, plannerProject?.id, replaceRecipeIngredients]);
+  }, [loadRecipes, plannerProject?.id]);
 
   const duplicateRecipe = useCallback(async (recipe) => {
     await createRecipe({

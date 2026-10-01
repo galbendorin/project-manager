@@ -31,6 +31,8 @@ export default function DesktopTodoDetailModal({
   checklistsAvailable = true,
   checklistsLoading = false,
   checklistMessage = '',
+  checklistsSaving = false,
+  onRetryChecklists,
   onAddChecklist,
   onAddChecklistItems,
   onDeleteChecklist,
@@ -239,6 +241,8 @@ export default function DesktopTodoDetailModal({
               checklistsAvailable={checklistsAvailable}
               checklistsLoading={checklistsLoading}
               checklistMessage={checklistMessage}
+              checklistsSaving={checklistsSaving}
+              onRetryChecklists={onRetryChecklists}
               onAddChecklist={onAddChecklist}
               onAddChecklistItems={onAddChecklistItems}
               onDeleteChecklist={onDeleteChecklist}
