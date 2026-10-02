@@ -11,6 +11,31 @@ import {
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 
+// Temporary Q04 phone candidate. Production and every other branch retain
+// their existing configuration. Do not merge this verification branch.
+const q04PhoneCandidate = process.env.VERCEL_ENV === 'preview'
+  && process.env.VERCEL_GIT_COMMIT_REF === 'codex/q04-phone-candidate'
+
+const q04PhoneVerification = () => ({
+  name: 'q04-phone-verification',
+  enforce: 'pre',
+  async generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'q04-update-diagnostics-8.js',
+      source: await readFile(path.join(projectRoot, 'scripts/investigations/q04-update-diagnostics.js'), 'utf8') })
+  },
+  transform(code, id) {
+    if (id.split('?')[0] !== path.join(projectRoot, 'src/components/ShoppingListView.jsx')) return null
+    const expected = "const SHOPPING_PROJECT_NAME = 'Shopping List';"
+    if (!code.includes(expected)) throw new Error('Q04 test-list isolation needs review.')
+    return code.replace(expected, "const SHOPPING_PROJECT_NAME = 'Q04 TEST - hosted verification';")
+  },
+  transformIndexHtml(html) {
+    return html.replace('<title>', '<title>Q04 TEST — ')
+      .replace('<body>', '<body><aside role="status" style="padding:10px;background:#fff5d6;color:#332500;text-align:center">Q04 test candidate 8 · New Shopping flow restored. Separate test list.</aside>')
+      .replace('</body>', '<script defer src="/q04-update-diagnostics-8.js"></script></body>')
+  },
+})
+
 const collectOutputFiles = async (directory, rootDirectory = directory) => {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = await Promise.all(entries.map(async (entry) => {
@@ -56,7 +81,10 @@ const pwaPrecacheManifest = () => {
 }
 
 export default defineConfig({
-  plugins: [react(), pwaPrecacheManifest()],
+  plugins: [react(), ...(q04PhoneCandidate ? [q04PhoneVerification()] : []), pwaPrecacheManifest()],
+  ...(q04PhoneCandidate ? {
+    define: { 'import.meta.env.VITE_SHOPPING_DURABLE_CREATES': JSON.stringify('true') },
+  } : {}),
   build: {
     rollupOptions: {
       output: {
