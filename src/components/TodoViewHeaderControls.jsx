@@ -69,11 +69,11 @@ export default function TodoViewHeaderControls({
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
+          <div className="grid grid-cols-2 items-center rounded-xl border border-slate-200 bg-slate-50 p-1 sm:grid-cols-4">
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+              className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'list'
                   ? 'bg-[var(--pm-accent)] text-white shadow-sm'
                   : 'text-slate-500'
@@ -84,7 +84,7 @@ export default function TodoViewHeaderControls({
             <button
               type="button"
               onClick={() => setViewMode('timeline')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+              className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'timeline'
                   ? 'bg-[var(--pm-accent)] text-white shadow-sm'
                   : 'text-slate-500'
@@ -95,7 +95,7 @@ export default function TodoViewHeaderControls({
             <button
               type="button"
               onClick={() => setViewMode('kanban')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+              className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'kanban'
                   ? 'bg-[var(--pm-accent)] text-white shadow-sm'
                   : 'text-slate-500'
@@ -103,6 +103,7 @@ export default function TodoViewHeaderControls({
             >
               Kanban
             </button>
+            <button type="button" aria-label="Eisenhower matrix" aria-pressed={viewMode==='matrix'} onClick={()=>setViewMode('matrix')} className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold ${viewMode==='matrix'?'bg-[var(--pm-accent)] text-white shadow-sm':'text-slate-500'}`}>Matrix</button>
           </div>
           <input
             type="text"
@@ -111,7 +112,7 @@ export default function TodoViewHeaderControls({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
           />
-          {futureMonthCount > 0 ? (
+          {viewMode !== 'matrix' && futureMonthCount > 0 ? (
             <button
               type="button"
               onClick={() => setShowFutureMonths((value) => !value)}
@@ -190,7 +191,7 @@ export default function TodoViewHeaderControls({
                 Clear
               </button>
             ) : null}
-            {futureMonthCount > 0 ? (
+            {viewMode !== 'matrix' && futureMonthCount > 0 ? (
               <button
                 type="button"
                 onClick={() => setShowFutureMonths((value) => !value)}
@@ -205,7 +206,7 @@ export default function TodoViewHeaderControls({
             ) : null}
           </div>
 
-          {!showFutureMonths && futureItemCount > 0 ? (
+          {viewMode !== 'matrix' && !showFutureMonths && futureItemCount > 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500">
               {futureItemCount} task{futureItemCount !== 1 ? 's' : ''} scheduled across the next {futureMonthCount} month{futureMonthCount !== 1 ? 's' : ''} are hidden.
             </div>

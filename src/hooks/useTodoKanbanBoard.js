@@ -79,6 +79,7 @@ const computeNextPosition = (cards = [], targetIndex) => {
 };
 
 export function useTodoKanbanBoard({
+  enabled = true,
   currentProject,
   currentUserId,
   isExternalView,
@@ -101,7 +102,7 @@ export function useTodoKanbanBoard({
   ), [projectId, visibleOpenTodos]);
 
   const loadColumns = useCallback(async () => {
-    if (!projectId || scope !== 'project') {
+    if (!enabled || !projectId || scope !== 'project') {
       setColumns([]);
       return [];
     }
@@ -162,14 +163,14 @@ export function useTodoKanbanBoard({
     setColumns(nextColumns);
     setKanbanMessage('');
     return nextColumns;
-  }, [currentUserId, isExternalView, projectId, scope]);
+  }, [currentUserId, enabled, isExternalView, projectId, scope]);
 
   useEffect(() => {
     void loadColumns();
   }, [loadColumns]);
 
   const loadCardOverrides = useCallback(async () => {
-    if (!projectId || scope !== 'project') {
+    if (!enabled || !projectId || scope !== 'project') {
       setCardOverrides({});
       return {};
     }
@@ -208,7 +209,7 @@ export function useTodoKanbanBoard({
     );
     setCardOverrides(nextOverrides);
     return nextOverrides;
-  }, [projectId, scope]);
+  }, [enabled, projectId, scope]);
 
   useEffect(() => {
     void loadCardOverrides();

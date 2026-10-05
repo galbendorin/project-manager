@@ -5,16 +5,18 @@ import { coveredTables, identifier, columnType } from './household-backup.mjs';
 export function unwrapBackup(value) {
   const result = Array.isArray(value) ? value[0]?.household_backup : value;
   const backup = typeof result === 'string' ? JSON.parse(result) : result;
-  if (backup?.format !== 'pmw-household-v1' || !Array.isArray(backup.schema) || !Array.isArray(backup.tables)) throw new Error('Unsupported household backup');
+  if (!['pmw-household-v1','pmw-household-v2'].includes(backup?.format) || !Array.isArray(backup.schema) || !Array.isArray(backup.tables)) throw new Error('Unsupported household backup');
   return backup;
 }
 
 export async function verifyBackup(value, createDatabase) {
   const backup = unwrapBackup(value);
   if (backup.scope_gaps?.timesheet_entries_outside_owned_projects !== 0) throw new Error('Incomplete timesheet scope; review shared-project coverage before restoring');
-  const expected = [...coveredTables, 'identity_stubs'];
+  if (backup.format==='pmw-household-v2' && backup.scope_gaps?.matrix_preferences_outside_owned_scope !== 0) throw new Error('Incomplete matrix preference scope; review shared-project coverage before restoring');
+  const requiredTables=backup.format==='pmw-household-v1'?coveredTables.filter(name=>name!=='task_eisenhower_preferences'):coveredTables;
+  const expected = [...requiredTables, 'identity_stubs'];
   if (backup.tables.length !== expected.length || new Set(backup.tables.map(t=>t.name)).size !== expected.length || expected.some(n=>!backup.tables.some(t=>t.name===n))) throw new Error('Incomplete or duplicate table manifest');
-  const schema = coveredTables.map(name => {
+  const schema = requiredTables.map(name => {
     const matches = backup.schema.filter(t=>t.name===name);
     if (matches.length !== 1) throw new Error(`Missing/duplicate schema ${name}`);
     return matches[0];

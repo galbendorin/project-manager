@@ -10,7 +10,7 @@ finance_profiles finance_scenario_changes finance_scenarios habit_entries habit_
 manual_todos meal_library_ingredients meal_library_meals meal_plan_entries meal_plan_grocery_batches
 meal_plan_weeks profiles project_member_invites project_members projects shopping_contribution_intents
 shopping_contributions shopping_list_operation_receipts task_board_cards task_board_columns
-task_card_checklist_items task_card_checklists time_entries weekly_timesheet_entries weekly_timesheets
+task_card_checklist_items task_card_checklists task_eisenhower_preferences time_entries weekly_timesheet_entries weekly_timesheets
 weight_entries weight_tracker_settings`.split(/\s+/);
 
 export function identifier(value) {
@@ -38,6 +38,7 @@ export function scopeFor(table) {
   const projects = '(SELECT id FROM selected_projects)';
   if (table.name === 'projects') return 'user_id = (SELECT owner_id FROM scope)';
   if (table.name === 'profiles') return 'id = (SELECT owner_id FROM scope)';
+  if (table.name === 'task_eisenhower_preferences') return `user_id = (SELECT owner_id FROM scope) AND ((manual_todo_id IS NOT NULL AND manual_todo_id IN (SELECT id FROM selected_manual_todos)) OR (project_id IN ${projects}))`;
   if (table.name === 'meal_library_ingredients') return 'meal_id IN (SELECT id FROM selected_meal_library_meals)';
   if (table.name === 'shopping_contribution_intents') return 'operation_id IN (SELECT operation_id FROM selected_shopping_contributions)';
   if (table.name === 'weekly_timesheets') return `id IN (SELECT timesheet_id FROM selected_weekly_timesheet_entries) OR user_id = (SELECT owner_id FROM scope)`;
@@ -74,10 +75,12 @@ payload AS (SELECT n.name, count(r.j) AS count,
  coalesce(jsonb_agg(r.j ORDER BY r.j::text COLLATE "C") FILTER (WHERE r.j IS NOT NULL), '[]'::jsonb)::text AS rows_json,
  encode(sha256(convert_to(coalesce(string_agg(r.j::text,E'\\n' ORDER BY r.j::text COLLATE "C"),''),'UTF8')),'hex') AS sha256
  FROM table_names n LEFT JOIN export_rows r ON r.name=n.name GROUP BY n.name)
-SELECT jsonb_build_object('format','pmw-household-v1','exported_at',now(),'owner_id',(SELECT owner_id FROM scope),
+SELECT jsonb_build_object('format','pmw-household-v2','exported_at',now(),'owner_id',(SELECT owner_id FROM scope),
  'scope_gaps',jsonb_build_object('timesheet_entries_outside_owned_projects',
  (SELECT count(*) FROM public.weekly_timesheet_entries e JOIN public.weekly_timesheets w ON w.id=e.timesheet_id
- WHERE w.user_id=(SELECT owner_id FROM scope) AND e.project_id NOT IN (SELECT id FROM selected_projects))),
+ WHERE w.user_id=(SELECT owner_id FROM scope) AND e.project_id NOT IN (SELECT id FROM selected_projects)),
+ 'matrix_preferences_outside_owned_scope',(SELECT count(*) FROM public.task_eisenhower_preferences m
+ WHERE m.user_id=(SELECT owner_id FROM scope) AND m.id NOT IN (SELECT id FROM selected_task_eisenhower_preferences))),
  'schema',(${inventoryQuery}),
  'excluded_tables',to_jsonb(ARRAY[${excludedTables.map(t=>`'${t}'`).join(',')}]),
  'tables',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.name) FROM payload p)) AS household_backup;

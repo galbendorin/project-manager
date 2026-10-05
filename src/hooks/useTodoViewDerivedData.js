@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { taskViewIdentity } from '../utils/todoEisenhower';
 import {
   filterBySearch,
   collectDerivedTodos,
@@ -47,6 +48,7 @@ export function useTodoViewDerivedData({
   sourceFilter,
   todos,
   tracker,
+  today = getCurrentDate(),
 }) {
   const projectsForDerived = useMemo(() => {
     if (scope !== 'all') {
@@ -130,8 +132,8 @@ export function useTodoViewDerivedData({
   const focusCounts = useMemo(() => getTodoFocusCounts(mergedOpenTodos, {
     currentUserId,
     currentUserName,
-    today: getCurrentDate(),
-  }), [currentUserId, currentUserName, mergedOpenTodos]);
+    today,
+  }), [currentUserId, currentUserName, mergedOpenTodos, today]);
 
   const allTodoItems = useMemo(
     () => [...manualTodosByScope, ...derivedTodosByScope],
@@ -158,7 +160,7 @@ export function useTodoViewDerivedData({
     nextItems = nextItems.filter((item) => matchesTodoFocusView(item, focusView, {
       currentUserId,
       currentUserName,
-      today: getCurrentDate(),
+      today,
     }));
     nextItems = filterBySearch(nextItems, searchQuery);
 
@@ -177,6 +179,7 @@ export function useTodoViewDerivedData({
     focusView,
     currentUserId,
     currentUserName,
+    today,
   ]);
 
   const filteredOpenTodos = useMemo(
@@ -190,8 +193,8 @@ export function useTodoViewDerivedData({
   );
 
   const visibleOpenTodos = useMemo(() => {
-    const hiddenIds = new Set(Object.keys(pendingCompletedTodos));
-    return filteredOpenTodos.filter((item) => !hiddenIds.has(item._id));
+    const hiddenIds = new Set(Object.values(pendingCompletedTodos).map(entry=>taskViewIdentity(entry.todo)));
+    return filteredOpenTodos.filter((item) => !hiddenIds.has(taskViewIdentity(item)));
   }, [filteredOpenTodos, pendingCompletedTodos]);
 
   const projectSelectOptions = useMemo(() => {
