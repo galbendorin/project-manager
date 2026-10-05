@@ -17,6 +17,10 @@ import { buildCrossProjectTodoUpdateData } from '../utils/crossProjectTodoComple
 import TodoBoardView from './TodoBoardView';
 import TodoBucketSection from './TodoBucketSection';
 import TodoKanbanBoard from './TodoKanbanBoard';
+import TodoEisenhowerMatrix from './TodoEisenhowerMatrix';
+import { useTodoEisenhowerMatrix } from '../hooks/useTodoEisenhowerMatrix';
+import { useLocalCalendarDay } from '../hooks/useLocalCalendarDay';
+import { taskViewIdentity } from '../utils/todoEisenhower';
 import DesktopTodoDetailModal from './DesktopTodoDetailModal';
 import MobileTodoDetailSheet from './MobileTodoDetailSheet';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
@@ -158,7 +162,13 @@ const TodoView = ({
   }
   const initialCommandState = initialCommandStateRef.current;
   const [searchQuery, setSearchQuery] = useState('');
-  const [focusView, setFocusView] = useState(initialCommandState.focusView);
+  const matrixMemoryKey = `pmworkspace:todo-matrix-focus:v1:${currentUserId}`;
+  const initialMatrixMemory = useRef(readLocalJson(matrixMemoryKey,{}));
+  const [focusView, setFocusView] = useState(() => readLocalJson(TODO_VIEW_MODE_KEY,{})?.mode==='matrix'
+    ? normalizeTodoFocusView(initialMatrixMemory.current.matrixFocus || TODO_FOCUS_VIEWS.all) : initialCommandState.focusView);
+  const today = useLocalCalendarDay();
+  const matrixFocus = useRef(normalizeTodoFocusView(initialMatrixMemory.current.matrixFocus || TODO_FOCUS_VIEWS.all));
+  const previousFocus = useRef(normalizeTodoFocusView(initialMatrixMemory.current.previousFocus || initialCommandState.focusView));
   const [scope, setScope] = useState(initialCommandState.scope);
   const [projectFilter, setProjectFilter] = useState(initialCommandState.projectFilter);
   const [sourceFilter, setSourceFilter] = useState(initialCommandState.sourceFilter);
@@ -174,6 +184,7 @@ const TodoView = ({
   const [selectedTodo, setSelectedTodo] = useState(null);
   const [viewMode, setViewMode] = useState(() => {
     const cached = readLocalJson(TODO_VIEW_MODE_KEY, {});
+    if (cached?.mode === 'matrix') return 'matrix';
     if (cached?.mode === 'kanban') return 'kanban';
     if (cached?.mode === 'board' || cached?.mode === 'timeline') return 'timeline';
     return 'list';
@@ -190,6 +201,14 @@ const TodoView = ({
   const completionTimeoutsRef = useRef(new Map());
   const previousProjectIdRef = useRef(currentProject?.id || null);
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const changeViewMode = (next) => {
+    if (next === 'matrix' && viewMode !== 'matrix') {
+      previousFocus.current = focusView; setFocusView(matrixFocus.current);
+    } else if (viewMode === 'matrix' && next !== 'matrix') {
+      matrixFocus.current = focusView; setFocusView(previousFocus.current);
+    }
+    setViewMode(next);
+  };
 
   const setQuickAddInputRef = (bucketKey, element) => {
     if (!bucketKey) return;
@@ -210,6 +229,12 @@ const TodoView = ({
   useEffect(() => {
     writeLocalJson(TODO_VIEW_MODE_KEY, { mode: viewMode });
   }, [viewMode]);
+  useEffect(() => {
+    if (currentUserId && !isExternalView) writeLocalJson(matrixMemoryKey,{
+      matrixFocus: viewMode==='matrix'?focusView:matrixFocus.current,
+      previousFocus: viewMode==='matrix'?previousFocus.current:focusView,
+    });
+  }, [currentUserId, isExternalView, matrixMemoryKey, viewMode, focusView]);
 
   useEffect(() => {
     writeLocalJson(TODO_FUTURE_MONTHS_KEY, { show: showFutureMonths });
@@ -361,6 +386,7 @@ const TodoView = ({
     projectSelectOptions,
     visibleOpenTodos,
   } = useTodoViewDerivedData({
+    today,
     allProjectManualTodos,
     allProjectsData,
     bucketFilter,
@@ -396,8 +422,7 @@ const TodoView = ({
 
   useEffect(() => {
     if (!selectedTodo) return;
-    const selectedId = selectedTodo._id || selectedTodo.id;
-    const nextSelected = allTodoItems.find((item) => (item._id || item.id) === selectedId) || null;
+    const nextSelected = allTodoItems.find((item) => taskViewIdentity(item) === taskViewIdentity(selectedTodo)) || null;
     if (!nextSelected) {
       setSelectedTodo(null);
       return;
@@ -533,7 +558,8 @@ const TodoView = ({
   }, [completeCrossProjectTodo, currentProject?.id, handleUpdateTodo, onCompleteTodo, scope]);
 
   const schedulePendingCompletion = useCallback((todo, delayMs) => {
-    const existingTimeoutId = completionTimeoutsRef.current.get(todo._id);
+    const key = taskViewIdentity(todo);
+    const existingTimeoutId = completionTimeoutsRef.current.get(key);
     if (existingTimeoutId) {
       window.clearTimeout(existingTimeoutId);
     }
@@ -544,24 +570,25 @@ const TodoView = ({
           console.error('Failed to complete task from Tasks view:', error);
         })
         .finally(() => {
-          clearPendingCompletion(todo._id);
+          clearPendingCompletion(key);
         });
     }, delayMs);
 
-    completionTimeoutsRef.current.set(todo._id, timeoutId);
+    completionTimeoutsRef.current.set(key, timeoutId);
   }, [clearPendingCompletion, persistCompletedTodo]);
 
   const handleCompleteTodo = useCallback((todo, bucketKey, displayIndex) => {
     if (!todo || isExternalView || !onCompleteTodo) return;
 
-    if (Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id)) {
-      clearPendingCompletion(todo._id);
+    const key = taskViewIdentity(todo);
+    if (Object.prototype.hasOwnProperty.call(pendingCompletedTodos, key)) {
+      clearPendingCompletion(key);
       return;
     }
 
     setPendingCompletedTodos((prev) => ({
       ...prev,
-      [todo._id]: {
+      [key]: {
         todo: {
           ...todo,
           status: 'Done',
@@ -619,6 +646,7 @@ const TodoView = ({
     moveCardToPosition,
     renameColumn,
   } = useTodoKanbanBoard({
+    enabled: viewMode !== 'matrix',
     currentProject,
     currentUserId,
     isExternalView,
@@ -642,12 +670,16 @@ const TodoView = ({
     futureMonthSections,
     futureItemCount,
   } = buildTodoCalendarSections(visibleOpenTodosWithCardOrder, {
+    today,
     showFutureMonths,
   });
 
   const filterableBucketSections = showFutureMonths
     ? allBucketSections
     : allBucketSections.filter((bucket) => !bucket.key.startsWith('month:'));
+  const matrixSections = buildTodoCalendarSections(visibleOpenTodos,{today,showFutureMonths:true}).sections;
+  const matrixTodos = matrixSections.filter(section=>!bucketFilter.length||bucketFilter.includes(section.key)).flatMap(section=>section.items);
+  const matrix = useTodoEisenhowerMatrix({currentUserId,isExternalView,enabled:viewMode==='matrix',todos:matrixTodos,today});
 
   const filteredBucketSections = filterableBucketSections.filter((bucket) => (
     bucketFilter.length === 0 || bucketFilter.includes(bucket.key)
@@ -808,10 +840,10 @@ const TodoView = ({
   const checklistSourceTodos = useMemo(() => {
     const todoMap = new Map();
     visibleOpenTodos.forEach((todo) => {
-      if (todo?._id) todoMap.set(todo._id, todo);
+      if (todo?._id) todoMap.set(taskViewIdentity(todo), todo);
     });
     if (selectedTodo?._id) {
-      todoMap.set(selectedTodo._id, selectedTodo);
+      todoMap.set(taskViewIdentity(selectedTodo), selectedTodo);
     }
     return [...todoMap.values()];
   }, [selectedTodo, visibleOpenTodos]);
@@ -846,7 +878,7 @@ const TodoView = ({
         <TodoViewHeaderControls
           activeFilterCount={activeFilterCount}
           bucketFilter={bucketFilter}
-          bucketOptions={filterableBucketSections.map((bucket) => ({ value: bucket.key, label: bucket.label }))}
+          bucketOptions={(viewMode==='matrix'?matrixSections:filterableBucketSections).map((bucket) => ({ value: bucket.key, label: bucket.label }))}
           clearAllFilters={clearAllFilters}
           focusCounts={focusCounts}
           focusView={focusView}
@@ -871,7 +903,7 @@ const TodoView = ({
           setSearchQuery={setSearchQuery}
           setShowFutureMonths={setShowFutureMonths}
           setShowMobileFilters={setShowMobileFilters}
-          setViewMode={setViewMode}
+          setViewMode={changeViewMode}
           showFutureMonths={showFutureMonths}
           showMobileFilters={showMobileFilters}
           sourceFilter={sourceFilter}
@@ -881,7 +913,9 @@ const TodoView = ({
           visibleOpenTodos={visibleOpenTodos}
         />
 
-        {viewMode === 'timeline' ? (
+        {viewMode === 'matrix' ? (
+          <TodoEisenhowerMatrix matrix={matrix} isMobile={isMobile} isExternalView={isExternalView} onOpenTodo={setSelectedTodo} handleCompleteTodo={handleCompleteTodo} getChecklistSummary={getChecklistSummaryForTodo} transientTodos={filteredTransientTodos}/>
+        ) : viewMode === 'timeline' ? (
           <TodoBoardView
             bucketSections={bucketSections}
             canReorderTodo={canDragReorderTodo}

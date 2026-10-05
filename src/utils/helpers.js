@@ -785,6 +785,7 @@ const makeDerivedTodo = ({
   originType = '',
   originRegisterType = '',
   originItemId = '',
+  hasStableOriginId = false,
   originTaskId = null
 }) => ({
   _id: id,
@@ -802,6 +803,7 @@ const makeDerivedTodo = ({
   originType,
   originRegisterType,
   originItemId,
+  hasStableOriginId,
   originTaskId
 });
 
@@ -831,6 +833,7 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       publicValue: item.public,
       originType: 'register',
       originRegisterType: 'actions',
+      hasStableOriginId: Boolean(item._id),
       originItemId: item._id || String(idx),
       originTaskId: null
     }));
@@ -850,6 +853,7 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       publicValue: item.public,
       originType: 'register',
       originRegisterType: 'issues',
+      hasStableOriginId: Boolean(item._id),
       originItemId: item._id || String(idx),
       originTaskId: null
     }));
@@ -869,6 +873,7 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       publicValue: item.public,
       originType: 'register',
       originRegisterType: 'changes',
+      hasStableOriginId: Boolean(item._id),
       originItemId: item._id || String(idx),
       originTaskId: null
     }));
@@ -899,6 +904,7 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
         completedAt: item.status === 'Completed' ? (item.updatedAt || item.lastUpdated || '') : '',
         publicValue: item.public,
         originType: 'tracker',
+        hasStableOriginId: Boolean(item._id),
         originRegisterType: '',
         originItemId: item._id || String(idx),
         originTaskId: item.taskId ?? null
@@ -920,6 +926,7 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       completedAt: Number(task.pct) >= 100 ? (task.updatedAt || '') : '',
       publicValue: true,
       originType: 'schedule',
+      hasStableOriginId: task.id !== null && task.id !== undefined,
       originRegisterType: '',
       originItemId: '',
       originTaskId: task.id ?? null

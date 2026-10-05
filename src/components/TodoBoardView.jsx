@@ -1,4 +1,5 @@
 import React from 'react';
+import { taskViewIdentity } from '../utils/todoEisenhower';
 import { formatDate } from '../utils/helpers';
 import { IconArrowDown, IconArrowUp } from './Icons';
 import TaskChecklistBadge from './TaskChecklistBadge';
@@ -94,7 +95,7 @@ const TodoBoardCard = ({
   isExternalView,
 }) => {
   const isCompleted = todo.status === 'Done';
-  const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, todo._id);
+  const isPendingCompletion = Object.prototype.hasOwnProperty.call(pendingCompletedTodos, taskViewIdentity(todo));
   const canDelete = !isExternalView && !todo.isDerived && todo.status !== 'Done';
   const canDragTodo = typeof canReorderTodo === 'function' && canReorderTodo(todo);
   const canMove = !isExternalView && todo.status !== 'Done';

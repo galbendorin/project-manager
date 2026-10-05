@@ -55,16 +55,20 @@ values, checked checklist state and negative corruption/orphan controls.
 
 ## Coverage and limits
 
-The allowlist covers 42 public data tables: projects and embedded plan/register
+The current allowlist covers 43 public data tables: projects and embedded plan/register
 JSON, project sharing/invites, tasks/boards/checklists, Shopping including
 receipts/contributions/intents, Meals and grocery batches, Finance including
-reconciliations, Baby, Habits, Weight and Timesheets. Empty tables are still
+reconciliations, Baby, Habits, Weight, Timesheets and personal Matrix preferences. Empty tables are still
 exported and checked. Auth references use UUID-only identity stubs: these prove
 data relationships but cannot recreate logins. Selecting a household does not
 claim to back up other project owners' data. Timesheet entries referring to
 another owner's shared project are counted as scope gaps and prevent a passed
 rehearsal; they cannot silently disappear from otherwise exported headers.
 Missing referenced records also fail and require a reviewed expansion of scope.
+Matrix exports use format v2; preferences outside the owned-project/manual-task
+scope are counted and prevent a passed rehearsal. The verifier still supports
+original format v1 backups with 42 public tables. The dated Q12 proof below
+remains the historical 42-table result, not a live restore certification of Matrix.
 
 Excluded public tables: user_profiles (billing/entitlements),
 billing_checkout_sessions, ai_generation_reservations, api_rate_limits,

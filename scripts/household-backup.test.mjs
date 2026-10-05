@@ -22,6 +22,7 @@ test('read-only export independently restores exact bigint, decimal, JSON and re
         projects: ', tasks jsonb, version bigint',
         manual_todos: ', project_id uuid REFERENCES public.projects(id), title text, quantity_value numeric, shopping_revision bigint',
         task_card_checklists: ', project_id uuid REFERENCES public.projects(id)',
+        task_eisenhower_preferences: ', project_id uuid REFERENCES public.projects(id), manual_todo_id uuid REFERENCES public.manual_todos(id), task_key text, manual_quadrant text',
         task_card_checklist_items: ', project_id uuid REFERENCES public.projects(id), checklist_id uuid, checked boolean',
         meal_library_ingredients: ', meal_id uuid', meal_library_meals: ', shopping_project_id uuid',
         shopping_contributions: ', operation_id uuid UNIQUE, project_id uuid',
@@ -43,6 +44,7 @@ test('read-only export independently restores exact bigint, decimal, JSON and re
     await source.query('INSERT INTO public.profiles(id,user_id) VALUES ($1,$1)',[owner]);
     await source.query('INSERT INTO public.task_card_checklists VALUES ($1,$2,$3)',[parent,owner,project]);
     await source.query('INSERT INTO public.task_card_checklist_items VALUES ($1,$2,$3,$4,true)',[item,owner,project,parent]);
+    await source.query("INSERT INTO public.task_eisenhower_preferences(id,user_id,manual_todo_id,task_key,manual_quadrant) VALUES($1,$2,$3,$4,'urgent_important')",[item,owner,item,`manual:${item}`]);
     const tables = (await source.query(`SELECT c.relname AS name,
       (SELECT jsonb_agg(jsonb_build_object('name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'nullable',not a.attnotnull) ORDER BY a.attnum) FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) AS columns,
       (SELECT coalesce(jsonb_agg(jsonb_build_object('kind',con.contype,'columns',(SELECT jsonb_agg(a.attname ORDER BY k.ord) FROM unnest(con.conkey) WITH ORDINALITY k(num,ord) JOIN pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=k.num),'parent_schema',pn.nspname,'parent_table',pc.relname,'parent_columns',(SELECT jsonb_agg(a.attname ORDER BY k.ord) FROM unnest(con.confkey) WITH ORDINALITY k(num,ord) JOIN pg_attribute a ON a.attrelid=con.confrelid AND a.attnum=k.num))), '[]'::jsonb) FROM pg_constraint con LEFT JOIN pg_class pc ON pc.oid=con.confrelid LEFT JOIN pg_namespace pn ON pn.oid=pc.relnamespace WHERE con.conrelid=c.oid) AS constraints
@@ -56,13 +58,22 @@ test('read-only export independently restores exact bigint, decimal, JSON and re
     assert.match(bundle.tables.find(t=>t.name==='manual_todos').rows_json,/123456789\.123456789/);
     const report = await verifyBackup(bundle,()=>new PGlite());
     assert.equal(report.status,'passed');
-    assert.equal(report.totalRows,6);
+    assert.equal(report.totalRows,7);
     assert.ok(report.relationships>4);
+    const legacy=structuredClone(bundle);legacy.format='pmw-household-v1';
+    legacy.tables=legacy.tables.filter(t=>t.name!=='task_eisenhower_preferences');
+    legacy.schema=legacy.schema.filter(t=>t.name!=='task_eisenhower_preferences');
+    assert.equal((await verifyBackup(legacy,()=>new PGlite())).totalRows,6);
     // A shared-project entry cannot silently disappear from an owned timesheet.
     const otherOwner = '55555555-5555-4555-8555-555555555555';
     const externalProject = '66666666-6666-4666-8666-666666666666';
     await source.query('INSERT INTO auth.users VALUES ($1)',[otherOwner]);
     await source.query('INSERT INTO public.projects(id,user_id) VALUES ($1,$2)',[externalProject,otherOwner]);
+    await source.query("INSERT INTO public.task_eisenhower_preferences(id,user_id,project_id,task_key,manual_quadrant) VALUES($1,$2,$3,$4,'urgent_important')",[parent,owner,externalProject,`project:${externalProject}:schedule:1`]);
+    const matrixPartial=(await source.exec(sql)).flatMap(r=>r.rows).find(r=>r.household_backup).household_backup;
+    assert.equal(matrixPartial.scope_gaps.matrix_preferences_outside_owned_scope,1);
+    await assert.rejects(verifyBackup(matrixPartial,()=>new PGlite()),/matrix preference scope/);
+    await source.query('DELETE FROM public.task_eisenhower_preferences WHERE id=$1',[parent]);
     await source.query('INSERT INTO public.weekly_timesheets(id,user_id) VALUES ($1,$2)',[parent,owner]);
     await source.query('INSERT INTO public.weekly_timesheet_entries(id,user_id,project_id,timesheet_id) VALUES ($1,$2,$3,$4)',[item,owner,externalProject,parent]);
     const partialResults = await source.exec(sql);
