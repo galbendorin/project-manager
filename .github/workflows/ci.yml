@@ -26,7 +26,7 @@ jobs:
         run: npm run test:ci
 
       - name: Checklist and recipe React regressions
-        run: node --experimental-vm-modules --test scripts/regressions/checklist-recipe.test.mjs scripts/regressions/eisenhower.test.mjs
+        run: node --experimental-vm-modules --test scripts/regressions/checklist-recipe.test.mjs scripts/regressions/eisenhower.test.mjs scripts/regressions/today-planning.test.mjs scripts/regressions/task-plan-promotion.test.mjs
         env:
           TZ: Europe/London
 
@@ -36,6 +36,7 @@ jobs:
           PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/household-backup.test.mjs
           PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/investigations/atomic-recipe-update.test.mjs
           PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/investigations/eisenhower-sql.test.mjs
+          PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/investigations/task-plan-promotion-sql.test.mjs
 
       - name: Build app
         run: npm run build

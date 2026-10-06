@@ -4,6 +4,9 @@ import AuthenticatedFooter from './AuthenticatedFooter';
 import Header from './Header';
 import Navigation from './Navigation';
 import TaskModal from './TaskModal';
+import ScheduleTaskSetup from './ScheduleTaskSetup';
+import { planLinkForTodo, promotionReference, promotionTodoFromSource } from '../utils/taskPlanPromotion';
+import { planTaskVisibleExternally, projectLinkedSource } from '../hooks/projectData/taskPlanTransactions';
 import DemoBenefitsModal from './DemoBenefitsModal';
 import BlurOverlay from './BlurOverlay';
 import { TrialBanner, CancellationBanner, ReadOnlyBanner } from './UpgradeBanner';
@@ -37,7 +40,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
   const isMobile = useMediaQuery('(max-width: 768px)');
   const {
     canUseAiReport, aiReportsRemaining, canUsePlatformAi,
-    limits, effectivePlan, isAdmin, isInTaskGrace, getTaskHardLimit,
+    limits, effectivePlan, isAdmin, isInTaskGrace, getTaskHardLimit, isReadOnly,
     refreshProfile, simulatedPlan, setSimulatedPlan, simulatorOptions,
   } = usePlan();
 
@@ -49,6 +52,9 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
   const [pendingTodoFocusId, setPendingTodoFocusId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [planSetup, setPlanSetup] = useState(null);
+  const [pendingScheduledTaskId, setPendingScheduledTaskId] = useState(null);
+  const [scheduleFocusId, setScheduleFocusId] = useState(null);
   const [sourceFocus, setSourceFocus] = useState(null);
   const [sourceMessage, setSourceMessage] = useState('');
   const consumedSourceRequest = useRef(null);
@@ -89,6 +95,9 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     todos,
     baseline,
     saving,
+    planTransactionBusy,
+    preparePlanPromotion,
+    commitPlanPromotion,
     lastSaved,
     loadingData,
     readyProjectId,
@@ -136,6 +145,14 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     setTracker,
     updateRaciData,
   } = useProjectData(project.id, currentUserId);
+  const projectedTracker = useMemo(() => tracker.map((item) => projectLinkedSource(item, 'tracker', projectData)), [tracker, projectData]);
+  const projectedRegisters = useMemo(() => ({ ...registers, actions: (registers.actions || []).map((item) => projectLinkedSource(item, 'action', projectData)) }), [registers, projectData]);
+  const externalPlanTasks = useMemo(() => projectData.filter((task) => planTaskVisibleExternally(task, registers, tracker)), [projectData, registers, tracker]);
+  useEffect(() => {
+    if (pendingScheduledTaskId == null) return;
+    const task = projectData.find((item) => item.id === pendingScheduledTaskId);
+    if (task) { setActiveTab('schedule'); setScheduleFocusId(task.id); setEditingTask(null); setIsModalOpen(false); setPendingScheduledTaskId(null); }
+  }, [pendingScheduledTaskId, projectData]);
 
   const handleRemoveFromTracker = useCallback((taskId) => {
     const trackerItem = tracker.find((t) => t.taskId === taskId);
@@ -163,22 +180,36 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
 
   const handleNavigateToSchedule = useCallback((taskId) => {
     setActiveTab('schedule');
+    setScheduleFocusId(taskId);
     const task = projectData.find((item) => item.id === taskId);
     if (task) { setEditingTask(task); setIsModalOpen(true); }
   }, [projectData]);
-  const handleOpenSourceTodo = useCallback((todo) => {
-    if (todo.projectId !== project.id && (readyProjectId !== project.id || hasPendingProjectSave || saving || offlinePendingSync || pendingProjectSyncCount || saveError)) {
+  const handleOpenSourceTodo = useCallback((todo, options = {}) => {
+    const targetId = options.destinationProjectId || planLinkForTodo(todo)?.projectId || todo.projectId;
+    if (targetId !== project.id && (readyProjectId !== project.id || hasPendingProjectSave || saving || planTransactionBusy || offlinePendingSync || pendingProjectSyncCount || saveError)) {
       setSourceMessage('Finish loading or saving this project before opening another project. Your current edits are retained; try again shortly.');
       return false;
     }
     setSourceMessage('');
     const originProjectId = project.id;
-    return onOpenSourceTodo?.(todo, { canLeave: (targetId) => {
+    return onOpenSourceTodo?.(todo, { ...options, mode: options.mode || (planLinkForTodo(todo) ? 'plan' : 'source'), canLeave: (targetId) => {
       const latest = sourceLeaveState.current;
       return latest.active && latest.owner === currentUserId && latest.projectId === originProjectId && (targetId === originProjectId || !latest.blocked);
     } });
-  }, [project.id, currentUserId, readyProjectId, hasPendingProjectSave, saving, offlinePendingSync, pendingProjectSyncCount, saveError, onOpenSourceTodo]);
-  sourceLeaveState.current = { active: true, owner: currentUserId, projectId: project.id, blocked: readyProjectId !== project.id || hasPendingProjectSave || saving || offlinePendingSync || pendingProjectSyncCount > 0 || Boolean(saveError) };
+  }, [project.id, currentUserId, readyProjectId, hasPendingProjectSave, saving, planTransactionBusy, offlinePendingSync, pendingProjectSyncCount, saveError, onOpenSourceTodo]);
+  sourceLeaveState.current = { active: true, owner: currentUserId, projectId: project.id, blocked: readyProjectId !== project.id || hasPendingProjectSave || saving || planTransactionBusy || offlinePendingSync || pendingProjectSyncCount > 0 || Boolean(saveError) };
+  const handleMoveToPlan = (todo, destinationProjectId) => !isExternalView && !isReadOnly && handleOpenSourceTodo(todo, { mode: 'promote', destinationProjectId });
+  const handleReturnFromPlan = (todo) => !isExternalView && !isReadOnly && handleOpenSourceTodo(todo, { mode: 'return' });
+  const handleOpenPlan = (todo) => handleOpenSourceTodo(todo, { mode: 'plan' });
+  const handleDeletePlanTask = (taskId) => {
+    const task = projectData.find((item) => item.id === taskId);
+    if (!task?.originRef) { deleteTask(taskId); return; }
+    const origin = task.originRef;
+    const todo = origin.sourceKind === 'manual'
+      ? { _id: origin.sourceId, title: task.name, projectId: project.id, meta: { projectPlanLink: origin } }
+      : promotionTodoFromSource(origin.sourceKind, { _id: origin.sourceId, taskName: task.name, description: task.name, projectPlanLink: origin }, project.id);
+    handleReturnFromPlan(todo);
+  };
 
   useEffect(() => {
     if (!sourceNavigation || sourceNavigation.ownerId !== currentUserId || sourceNavigation.projectId !== project.id || readyProjectId !== project.id || loadingData || consumedSourceRequest.current === sourceNavigation.id) return;
@@ -188,11 +219,18 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     }
     setSourceMessage('');
     const todo = sourceNavigation.todo;
+    if (['promote', 'return'].includes(sourceNavigation.mode)) {
+      const reference = promotionReference(todo);
+      if (reference && !isExternalView && !isReadOnly) { setActiveTab('schedule'); setIsModalOpen(false); setPlanSetup({ reference, title: todo.title, returning: sourceNavigation.mode === 'return', key: sourceNavigation.id }); }
+      else setSourceMessage('This source cannot be scheduled from the current view.');
+      consumedSourceRequest.current = sourceNavigation.id; onSourceNavigationHandled?.(); return;
+    }
     // Do not consume a request against the previous project's still-loading arrays.
-    const task = todo.originTaskId != null ? projectData.find((item) => item.id === todo.originTaskId) : null;
+    const taskId = planLinkForTodo(todo)?.taskId ?? todo.originTaskId;
+    const task = taskId != null ? projectData.find((item) => item.id === taskId) : null;
     const item = todo.originType === 'register' ? registers[todo.originRegisterType]?.find((entry) => entry._id === todo.originItemId) : tracker.find((entry) => entry._id === todo.originItemId);
     if (task) {
-      setActiveTab('schedule'); setEditingTask(task); setInsertAfterId(null); setIsModalOpen(true);
+      setActiveTab('schedule'); setScheduleFocusId(task.id); setEditingTask(task); setInsertAfterId(null); setIsModalOpen(true);
     } else if (item) {
       const tab = todo.originType === 'register' ? todo.originRegisterType : 'tracker';
       setActiveTab(tab); setSourceFocus({ tab, itemId: todo.originItemId });
@@ -201,7 +239,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     }
     consumedSourceRequest.current = sourceNavigation.id;
     onSourceNavigationHandled?.();
-  }, [sourceNavigation, currentUserId, project.id, readyProjectId, loadingData, usingOfflineSnapshot, saveError, projectData, registers, tracker, onSourceNavigationHandled]);
+  }, [sourceNavigation, currentUserId, project.id, readyProjectId, loadingData, usingOfflineSnapshot, saveError, projectData, registers, tracker, onSourceNavigationHandled, isExternalView, isReadOnly]);
 
   const handleOpenFeedback = useCallback(() => {
     openFeedbackEmail({
@@ -567,7 +605,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
         }}
       />
 
-      {isMobile && !showPricing && !showBilling ? (
+      {isMobile && !isExternalView && !showPricing && !showBilling ? (
         <ProjectFocusReadinessPanel
           tasks={projectData}
           registers={registers}
@@ -577,21 +615,23 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
         />
       ) : null}
 
-      <main className="relative flex-grow min-h-0 overflow-hidden">
+      <main className="relative flex-grow min-h-0 overflow-hidden" inert={planTransactionBusy ? '' : undefined}>
         {sourceMessage ? <p role="alert" className="absolute left-3 right-3 top-3 z-[90] rounded-xl border bg-amber-50 p-3 text-sm">{sourceMessage}<button type="button" onClick={() => setSourceMessage('')} className="ml-3 underline">Dismiss</button></p> : null}
         <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-slate-500">Loading view...</div>}>
           {activeTab === 'schedule' ? (
             <ScheduleView
-              tasks={projectData}
+              focusTaskId={scheduleFocusId}
+              onFocusTaskHandled={() => setScheduleFocusId(null)}
+              tasks={isExternalView ? externalPlanTasks : projectData}
               viewMode={viewMode}
               baseline={baseline}
               isMobile={isMobile}
               onUpdateTask={updateTask}
-              onDeleteTask={deleteTask}
+              onDeleteTask={handleDeletePlanTask}
               onModifyHierarchy={modifyHierarchy}
               onToggleTrack={toggleTrackTask}
               onInsertTask={(taskId) => handleOpenModal(null, true, taskId)}
-              onReorderTask={handleReorderTask}
+              onReorderTask={isExternalView ? undefined : handleReorderTask}
               onSendToTracker={sendToTracker}
               onSendToRiskLog={sendToRiskLog}
               onSendToActionLog={handleSendToActionLog}
@@ -615,10 +655,12 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
             <TrackerView
               focusItemId={sourceFocus?.tab === 'tracker' ? sourceFocus.itemId : null}
               onFocusItemHandled={() => setSourceFocus(null)}
-              trackerItems={tracker}
+              trackerItems={projectedTracker}
+              onMoveToPlan={isReadOnly || isExternalView ? undefined : (item) => handleMoveToPlan(promotionTodoFromSource('tracker', item, project.id), project.id)}
+              onReturnFromPlan={isReadOnly || isExternalView ? undefined : (item) => handleReturnFromPlan(promotionTodoFromSource('tracker', item, project.id))}
               tasks={projectData}
               onUpdateItem={updateTrackerItem}
-              onRemoveItem={removeFromTracker}
+              onRemoveItem={(id) => { const item = tracker.find((entry) => entry._id === id); if (item?.projectPlanLink) handleReturnFromPlan(promotionTodoFromSource('tracker', item, project.id)); else removeFromTracker(id); }}
               onAddManualItem={addManualTrackerItem}
               onReorderItems={reorderTrackerItems}
               onNavigateToSchedule={handleNavigateToSchedule}
@@ -648,6 +690,9 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
           ) : activeTab === 'todo' ? (
             <BlurOverlay tabId="todo" onUpgrade={handleOpenPricing}>
               <TodoView
+                onMoveToPlan={isReadOnly || isExternalView ? undefined : handleMoveToPlan}
+                onReturnFromPlan={isReadOnly || isExternalView ? undefined : handleReturnFromPlan}
+                onOpenPlan={handleOpenPlan}
                 onOpenSourceTodo={handleOpenSourceTodo}
                 todos={todos}
                 projectData={projectData}
@@ -701,10 +746,13 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
                 focusItemId={sourceFocus?.tab === activeTab ? sourceFocus.itemId : null}
                 onFocusItemHandled={() => setSourceFocus(null)}
                 registerType={activeTab}
-                items={registers[activeTab] || []}
+                items={projectedRegisters[activeTab] || []}
+                onMoveToPlan={activeTab === 'actions' && !isReadOnly && !isExternalView ? (item) => handleMoveToPlan(promotionTodoFromSource('action', item, project.id), project.id) : undefined}
+                onOpenPlan={activeTab === 'actions' ? (item) => handleOpenPlan(promotionTodoFromSource('action', item, project.id)) : undefined}
+                onReturnFromPlan={activeTab === 'actions' && !isReadOnly && !isExternalView ? (item) => handleReturnFromPlan(promotionTodoFromSource('action', item, project.id)) : undefined}
                 isExternalView={isExternalView}
                 onUpdateItem={updateRegisterItem}
-                onDeleteItem={handleDeleteRegisterItemWithUndo}
+                onDeleteItem={(type, id) => { const item = registers[type]?.find((entry) => entry._id === id); if (type === 'actions' && item?.projectPlanLink) handleReturnFromPlan(promotionTodoFromSource('action', item, project.id)); else handleDeleteRegisterItemWithUndo(type, id); }}
                 onTogglePublic={toggleItemPublic}
               />
             </BlurOverlay>
@@ -773,6 +821,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
         task={editingTask}
         insertAfterId={insertAfterId}
       />
+      {planSetup ? <ScheduleTaskSetup key={`${currentUserId}:${project.id}:${planSetup.key}`} reference={planSetup.reference} title={planSetup.title} returning={planSetup.returning} onPrepare={preparePlanPromotion} onCommit={commitPlanPromotion} onClose={() => setPlanSetup(null)} onSaved={(ack) => { setPlanSetup(null); if (!planSetup.returning) setPendingScheduledTaskId(ack.task_id); }} /> : null}
 
       {showPricing ? (
         <Suspense fallback={null}>

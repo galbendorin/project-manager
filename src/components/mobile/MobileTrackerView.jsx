@@ -112,6 +112,8 @@ const TrackerDetailSheet = ({
   onReorderItems,
   onNavigateToSchedule,
   onPatchCurrent,
+  onMoveToPlan,
+  onReturnFromPlan,
 }) => {
   const progress = getTaskProgress(tasks, item.taskId);
   const isManual = !item.taskId;
@@ -132,8 +134,8 @@ const TrackerDetailSheet = ({
   return (
     <div className="fixed inset-0 z-[70] flex flex-col">
       <div className="absolute inset-0 bg-slate-950/45" onClick={onClose} />
-      <div className="relative mt-12 flex-1 overflow-hidden rounded-t-[28px] bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+      <div className="relative mt-12 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <button onClick={onClose} className="text-sm font-semibold text-indigo-600">
             Back
           </button>
@@ -153,7 +155,9 @@ const TrackerDetailSheet = ({
           </button>
         </div>
 
-        <div className="h-full overflow-y-auto px-4 pb-16 pt-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-4">
+          {!item.taskId && onMoveToPlan ? <button type="button" disabled={['Completed', 'Cancelled'].includes(item.status)} onClick={() => { onMoveToPlan(item); onClose(); }} className="mb-3 min-h-11 rounded-xl border px-3 text-sm font-semibold text-indigo-600 disabled:opacity-40">Move to Project Plan</button> : null}
+          {item.projectPlanLink && onReturnFromPlan ? <button type="button" onClick={() => { onReturnFromPlan(item); onClose(); }} className="mb-3 min-h-11 rounded-xl border px-3 text-sm">Return to source</button> : null}
           <div
             className="rounded-[24px] border border-slate-200 bg-slate-50 p-4"
             style={getRowColorSurfaceStyle(item.rowColor) || undefined}
@@ -259,6 +263,7 @@ const TrackerDetailSheet = ({
                 {STATUS_OPTIONS.map((option) => (
                   <button
                     key={option}
+                    disabled={Boolean(item.projectPlanLink)}
                     onClick={() => applyUpdate('status', option)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
                       (item.status || 'Not Started') === option
@@ -369,6 +374,8 @@ const MobileTrackerView = ({
   onAddManualItem,
   onReorderItems,
   onNavigateToSchedule,
+  onMoveToPlan,
+  onReturnFromPlan,
   focusItemId,
   onFocusItemHandled,
 }) => {
@@ -485,6 +492,8 @@ const MobileTrackerView = ({
           onUpdateItem={onUpdateItem}
           onReorderItems={onReorderItems}
           onNavigateToSchedule={onNavigateToSchedule}
+          onMoveToPlan={onMoveToPlan}
+          onReturnFromPlan={onReturnFromPlan}
           onPatchCurrent={(key, value) => {
             setSelectedItem((current) => (
               current

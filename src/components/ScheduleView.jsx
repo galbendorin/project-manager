@@ -7,6 +7,8 @@ import { usePlan } from '../contexts/PlanContext';
 
 const ScheduleView = ({ 
   tasks,
+  focusTaskId,
+  onFocusTaskHandled,
   viewMode,
   baseline,
   isMobile = false,
@@ -36,6 +38,20 @@ const ScheduleView = ({
 
   // Collapsed state lives here so both grid + Gantt stay in sync
   const [collapsedIndices, setCollapsedIndices] = useState(new Set());
+  useEffect(() => {
+    const target = tasks.findIndex((task) => task.id === focusTaskId);
+    if (target < 0) return;
+    setCollapsedIndices((previous) => {
+      const next = new Set(previous);
+      previous.forEach((index) => {
+        if (index >= target) return;
+        let end = index + 1;
+        while (end < tasks.length && (tasks[end].indent || 0) > (tasks[index].indent || 0)) end += 1;
+        if (end > target) next.delete(index);
+      });
+      return next.size === previous.size ? previous : next;
+    });
+  }, [focusTaskId, tasks]);
 
   const toggleCollapse = useCallback((index) => {
     setCollapsedIndices(prev => {
@@ -250,6 +266,8 @@ const ScheduleView = ({
           }}
         >
           <ScheduleGrid
+            focusTaskId={focusTaskId}
+            onFocusTaskHandled={onFocusTaskHandled}
             allTasks={tasks}
             visibleTasks={visibleTasks}
             isMobile={isMobile}

@@ -1,5 +1,8 @@
 export const getTodoCompletionDescriptor = (todo, currentDate, nowIso) => {
   if (!todo) return null;
+  if (todo.planLinkUnavailable) return null;
+  const link = todo.planLink || todo.meta?.projectPlanLink;
+  if (link) return { kind: 'schedule', taskId: link.taskId, patch: { pct: 100 } };
 
   if (!todo.isDerived) {
     return {

@@ -22,6 +22,9 @@ const RegisterView = ({
   onTogglePublic,
   focusItemId,
   onFocusItemHandled,
+  onMoveToPlan,
+  onOpenPlan,
+  onReturnFromPlan,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [columnFilters, setColumnFilters] = useState({});
@@ -101,6 +104,9 @@ const RegisterView = ({
       <MobileRegisterList
         focusItemId={focusItemId}
         onFocusItemHandled={onFocusItemHandled}
+        onMoveToPlan={onMoveToPlan}
+        onOpenPlan={onOpenPlan}
+        onReturnFromPlan={onReturnFromPlan}
         schema={schema}
         items={items}
         isExternalView={isExternalView}
@@ -249,11 +255,13 @@ const RegisterView = ({
                       onSetExpandedCell={setExpandedCell}
                       onCommitCell={handleCellEdit}
                       onTogglePublic={onTogglePublic}
-                      readOnly={Boolean(item.deadlineManaged && AUTO_DEADLINE_COLUMNS.has(col))}
+                      readOnly={Boolean(item.deadlineManaged && AUTO_DEADLINE_COLUMNS.has(col)) || Boolean(item.projectPlanLink && ['Description', 'Target', 'Status', 'Completed'].includes(col))}
                     />
                   ))}
                   <td className={`px-3 py-2.5 text-center ${allowRowColor ? 'w-24' : 'w-12'}`}>
                     <div className="flex items-center justify-center gap-2">
+                      {onMoveToPlan && !item.projectPlanLink && item.sourceTaskId == null ? <button type="button" disabled={/^(done|completed|closed|cancelled)$/i.test(item.status || '') || Boolean(item.completed)} onClick={() => onMoveToPlan(item)} className="min-h-11 whitespace-nowrap rounded-lg border px-2 text-xs text-indigo-600 disabled:opacity-40">Move to Plan</button> : null}
+                      {item.projectPlanLink ? <><button type="button" onClick={() => onOpenPlan?.(item)} className="min-h-11 whitespace-nowrap rounded-lg border px-2 text-xs text-indigo-600">Open Plan</button><button type="button" onClick={() => onReturnFromPlan?.(item)} className="min-h-11 whitespace-nowrap rounded-lg border px-2 text-xs">Return to source</button></> : null}
                       {allowRowColor && (
                         <RowColorControl
                           value={item.rowColor || null}

@@ -34,7 +34,7 @@ export default function TaskPlanningControls({ todo, matrix, today, onUpdateTodo
     } finally { busy.current = false; if (current.current.identity === identity) setSaving(false); }
   };
   const reschedule = async () => {
-    if (busy.current || !available || !validCalendarDay(deadline) || todo.isDerived) return;
+    if (busy.current || !available || !validCalendarDay(deadline) || todo.isDerived || todo.planLink || todo.meta?.projectPlanLink) return;
     const submitted = deadline;
     busy.current = true; setSaving(true); setMessage('');
     try {
@@ -62,7 +62,7 @@ export default function TaskPlanningControls({ todo, matrix, today, onUpdateTodo
       </label>
       <button type="button" disabled={!available || waiting || !validCalendarDay(workDay)} onClick={() => void saveWorkDay(workDay)} className="min-h-11 rounded-lg border px-3 disabled:opacity-50">Save personal day</button>
       <p>Choosing a work day does not change the deadline.</p>
-      {todo.isDerived ? (
+      {todo.isDerived || todo.planLink || todo.meta?.projectPlanLink ? (
         <button type="button" disabled={!onOpenSourceTodo} onClick={() => onOpenSourceTodo?.(todo)} className="min-h-11 rounded-lg border px-3 disabled:opacity-50">Reschedule in source</button>
       ) : (
         <div className="space-y-2 border-t pt-3">

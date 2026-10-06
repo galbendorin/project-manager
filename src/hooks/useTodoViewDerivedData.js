@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { taskViewIdentity } from '../utils/todoEisenhower';
+import { projectLinkedSource } from './projectData/taskPlanTransactions';
 import {
   filterBySearch,
   collectDerivedTodos,
@@ -86,7 +87,7 @@ export function useTodoCandidateData({
       ? mergeManualTodoCollections(allProjectManualTodos, todos)
       : (todos || []);
     const manualTodos = sourceTodos.map((item) => ({
-      ...item,
+      ...projectLinkedSource(item, 'manual', projectsForDerived.find((project) => project.id === item.projectId)?.tasks || []),
       isDerived: false,
       source: 'Manual',
       projectId: item.projectId || null,
@@ -103,7 +104,7 @@ export function useTodoCandidateData({
       if (!currentProject?.id) return item.projectId === null;
       return item.projectId === currentProject.id || item.projectId === null;
     });
-  }, [allProjectManualTodos, todos, scope, currentProject?.id, projectNameMap, allProjectsData, sourcesConfirmed]);
+  }, [allProjectManualTodos, todos, scope, currentProject?.id, projectNameMap, allProjectsData, sourcesConfirmed, projectsForDerived]);
 
   const derivedTodosByScope = useMemo(() => (
     projectsForDerived.flatMap((project) => {

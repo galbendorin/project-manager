@@ -817,16 +817,23 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
   const changes = Array.isArray(registers.changes) ? registers.changes : [];
   const trackerItems = Array.isArray(tracker) ? tracker : [];
   const tasks = Array.isArray(projectData) ? projectData : [];
+  const promotedTask = (item) => item?.projectPlanLink ? tasks.find((task) => task.id === item.projectPlanLink.taskId && task.originRef?.sourceKey === item.projectPlanLink.sourceKey) : null;
+  const promotionInfo = (item) => ({ planLink: item.projectPlanLink || null, planProgress: Number(promotedTask(item)?.pct) || 0, planLinkUnavailable: Boolean(item.projectPlanLink && !promotedTask(item)) });
+  const extraPlanAlias = (kind, item) => {
+    const id = kind === 'action' ? item.sourceTaskId ?? (/^track_\d+$/.test(item._id || '') ? Number(item._id.slice(6)) : null) : item.taskId;
+    const origin = id != null ? tasks.find((task) => String(task.id) === String(id))?.originRef : null;
+    return origin && (origin.sourceKind !== kind || origin.sourceId !== item._id);
+  };
 
   const actionTodos = actions
-    .filter(item => item && (item.description || item.currentstatus || item.target))
-    .map((item, idx) => makeDerivedTodo({
+    .filter(item => item && !extraPlanAlias('action', item) && (item.description || item.currentstatus || item.target))
+    .map((item, idx) => ({ ...makeDerivedTodo({
       id: `action_${item._id || idx}`,
       source: 'Action Log',
-      title: item.description || item.currentstatus || `Action ${idx + 1}`,
+      title: promotedTask(item)?.name || item.description || item.currentstatus || `Action ${idx + 1}`,
       owner: item.actionassignedto,
-      dueDate: item.target,
-      status: item.status || item.currentstatus,
+      dueDate: promotedTask(item) ? getFinishDate(promotedTask(item).start, promotedTask(item).dur || 0) : item.target,
+      status: promotedTask(item) ? Number(promotedTask(item).pct) >= 100 ? 'Done' : 'Open' : item.status || item.currentstatus,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt || item.update,
       completedAt: item.completed,
@@ -835,8 +842,8 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       originRegisterType: 'actions',
       hasStableOriginId: Boolean(item._id),
       originItemId: item._id || String(idx),
-      originTaskId: null
-    }));
+      originTaskId: item.projectPlanLink?.taskId ?? item.sourceTaskId ?? (/^track_\d+$/.test(item._id || '') ? Number(item._id.slice(6)) : null)
+    }), ...promotionInfo(item) }));
 
   const issueTodos = issues
     .filter(item => item && (item.description || item.currentstatus || item.target))
@@ -882,7 +889,7 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
   const trackerTaskIds = new Set();
 
   const trackerTodos = trackerItems
-    .filter(item => item && item.taskName)
+    .filter(item => item && item.taskName && !extraPlanAlias('tracker', item))
     .map((item, idx) => {
       if (item.taskId !== undefined && item.taskId !== null) {
         trackerTaskIds.add(item.taskId);
@@ -890,15 +897,15 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
       const linkedTask = taskById.get(item.taskId);
       const dueDate = linkedTask
         ? getFinishDate(linkedTask.start, linkedTask.dur || 0)
-        : '';
+        : item.dueDate || '';
 
-      return makeDerivedTodo({
+      return { ...makeDerivedTodo({
         id: `tracker_${item._id || idx}`,
         source: 'Master Tracker',
-        title: item.taskName,
+        title: item.projectPlanLink && linkedTask ? linkedTask.name : item.taskName,
         owner: item.owner,
         dueDate,
-        status: item.status,
+        status: item.projectPlanLink && linkedTask ? Number(linkedTask.pct) >= 100 ? 'Done' : 'Open' : item.status,
         createdAt: item.createdAt || item.dateAdded,
         updatedAt: item.updatedAt || item.lastUpdated,
         completedAt: item.status === 'Completed' ? (item.updatedAt || item.lastUpdated || '') : '',
@@ -908,12 +915,12 @@ export const collectDerivedTodos = (projectData = [], registers = {}, tracker = 
         originRegisterType: '',
         originItemId: item._id || String(idx),
         originTaskId: item.taskId ?? null
-      });
+      }), ...promotionInfo(item) };
     });
 
   // Optional schedule-derived todos: tracked tasks with due dates not already represented in tracker.
   const scheduleTodos = tasks
-    .filter(task => task && task.tracked && !trackerTaskIds.has(task.id))
+    .filter(task => task && task.tracked && !task.originRef && !trackerTaskIds.has(task.id))
     .map((task, idx) => makeDerivedTodo({
       id: `schedule_${task.id || idx}`,
       source: 'Project Plan',

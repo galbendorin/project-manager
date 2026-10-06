@@ -20,6 +20,7 @@ import TodoBucketSection from './TodoBucketSection';
 import TodoKanbanBoard from './TodoKanbanBoard';
 import TodoEisenhowerMatrix from './TodoEisenhowerMatrix';
 import TaskPlanningControls from './TaskPlanningControls';
+import TaskPlanSourceControls from './TaskPlanSourceControls';
 import { useTodoEisenhowerMatrix } from '../hooks/useTodoEisenhowerMatrix';
 import { useLocalCalendarDay } from '../hooks/useLocalCalendarDay';
 import { groupMatrixTasks, taskViewIdentity } from '../utils/todoEisenhower';
@@ -157,6 +158,9 @@ const TodoView = ({
   onDeleteTodo,
   onCompleteTodo,
   onOpenSourceTodo,
+  onMoveToPlan,
+  onReturnFromPlan,
+  onOpenPlan,
 }) => {
   const initialCommandStateRef = useRef(null);
   if (!initialCommandStateRef.current) {
@@ -546,7 +550,7 @@ const TodoView = ({
 
   const completeCrossProjectTodo = useCallback(async (todo) => {
     if (currentOwner.current !== currentUserId) return;
-    if (!todo?.projectId || !todo?.isDerived) {
+    if (!todo?.projectId || (!todo?.isDerived && !todo?.planLink && !todo?.meta?.projectPlanLink)) {
       if (onCompleteTodo) {
         await onCompleteTodo(todo);
       }
@@ -555,22 +559,15 @@ const TodoView = ({
 
     const targetProject = allProjectsData.find((project) => project.id === todo.projectId);
     if (!targetProject) {
-      if (onCompleteTodo) {
-        await onCompleteTodo(todo);
-      }
-      return;
+      throw new Error('The source project is not loaded. Refresh Tasks before completing this item.');
     }
 
     const nowIso = new Date().toISOString();
+    if ((todo.planLink || todo.meta?.projectPlanLink) && !Number.isInteger(targetProject.version)) throw new Error('The source project version could not be checked. Refresh Tasks before completing this item.');
     const completion = getTodoCompletionDescriptor(todo, getCurrentDate(), nowIso);
     const prepared = buildCrossProjectTodoUpdateData(targetProject, completion, nowIso);
 
-    if (!prepared) {
-      if (onCompleteTodo) {
-        await onCompleteTodo(todo);
-      }
-      return;
-    }
+    if (!prepared) throw new Error('The linked source could not be verified. Refresh Tasks before completing this item.');
 
     let updateQuery = supabase
       .from('projects')
@@ -606,7 +603,7 @@ const TodoView = ({
   }, [allProjectsData, onCompleteTodo, currentUserId]);
 
   const persistCompletedTodo = useCallback(async (todo) => {
-    if (!todo?.isDerived) {
+    if (!todo?.isDerived && !todo?.planLink && !todo?.meta?.projectPlanLink) {
       await handleUpdateTodo(todo._id, 'status', 'Done');
       return;
     }
@@ -649,6 +646,7 @@ const TodoView = ({
 
   const handleCompleteTodo = useCallback((todo, bucketKey, displayIndex) => {
     if (!todo || isExternalView || !onCompleteTodo) return;
+    if (todo.planLinkUnavailable) { setPlanNotice('The linked plan task is unavailable. Reload its source project before completing it.'); return; }
     if (!todo.isDerived && deadlineOperations.current.ids.has(todo._id)) { setPlanNotice('Wait for the deadline save before completing this task.'); return; }
 
     const key = taskViewIdentity(todo);
@@ -944,6 +942,10 @@ const TodoView = ({
   });
   const selectedTodoChecklists = selectedTodo ? getChecklistsForTodo(selectedTodo) : [];
   const selectedTodoCanEditChecklist = !isExternalView && selectedTodo?.status !== 'Done';
+  const selectedPlanningControls = !isExternalView && selectedTodo ? <>
+    {selectedTodo.status !== 'Done' ? <TaskPlanningControls key={taskViewIdentity(selectedTodo)} todo={selectedTodo} matrix={personalPlan} today={today} deadlinePending={Boolean(currentDeadlineSaves[selectedTodo._id])} draft={currentDrafts[taskViewIdentity(selectedTodo)]} onDraftChange={(field, value, expected) => updatePlanningDraft(selectedTodo, field, value, expected)} onUpdateTodo={handleUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={setPlanNotice} /> : null}
+    {onMoveToPlan || selectedTodo.planLink || selectedTodo.meta?.projectPlanLink ? <TaskPlanSourceControls key={`promotion:${taskViewIdentity(selectedTodo)}`} todo={selectedTodo} projects={projectOptions} onMove={onMoveToPlan} onOpen={onOpenPlan} onReturn={onReturnFromPlan} /> : null}
+  </> : null;
 
   return (
     <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
@@ -1095,7 +1097,7 @@ const TodoView = ({
 
       {sourceCurrent && isMobile && selectedTodo ? (
         <MobileTodoDetailSheet
-          planningControls={!isExternalView && selectedTodo.status !== 'Done' ? <TaskPlanningControls key={taskViewIdentity(selectedTodo)} todo={selectedTodo} matrix={personalPlan} today={today} deadlinePending={Boolean(currentDeadlineSaves[selectedTodo._id])} draft={currentDrafts[taskViewIdentity(selectedTodo)]} onDraftChange={(field, value, expected) => updatePlanningDraft(selectedTodo, field, value, expected)} onUpdateTodo={handleUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={setPlanNotice} /> : null}
+          planningControls={selectedPlanningControls}
           todo={selectedTodo}
           canEdit={selectedTodoCanEdit}
           projectOptions={projectOptions}
@@ -1125,7 +1127,7 @@ const TodoView = ({
 
       {sourceCurrent && !isMobile && selectedTodo ? (
         <DesktopTodoDetailModal
-          planningControls={!isExternalView && selectedTodo.status !== 'Done' ? <TaskPlanningControls key={taskViewIdentity(selectedTodo)} todo={selectedTodo} matrix={personalPlan} today={today} deadlinePending={Boolean(currentDeadlineSaves[selectedTodo._id])} draft={currentDrafts[taskViewIdentity(selectedTodo)]} onDraftChange={(field, value, expected) => updatePlanningDraft(selectedTodo, field, value, expected)} onUpdateTodo={handleUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={setPlanNotice} /> : null}
+          planningControls={selectedPlanningControls}
           todo={selectedTodo}
           canEdit={selectedTodoCanEdit}
           projectOptions={projectOptions}
