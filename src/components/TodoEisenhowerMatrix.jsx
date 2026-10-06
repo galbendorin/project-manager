@@ -1,13 +1,23 @@
 import React, { useRef, useState } from "react";
-import { MATRIX_QUADRANTS } from "../utils/todoEisenhower";
+import { deadlineDescription, MATRIX_QUADRANTS, taskViewIdentity } from "../utils/todoEisenhower";
 import TaskChecklistBadge from "./TaskChecklistBadge";
-import { formatDate } from "../utils/helpers";
+import { useTodoMatrixLayout } from '../hooks/useTodoMatrixLayout';
+import TodoQuadrantPanel from './TodoQuadrantPanel';
+import TaskPlanningControls from './TaskPlanningControls';
 
 export default function TodoEisenhowerMatrix({
   matrix,
+  currentUserId,
+  today,
   isMobile,
   isExternalView,
   onOpenTodo,
+  onUpdateTodo,
+  onOpenSourceTodo,
+  onNotice,
+  planningDrafts,
+  onPlanningDraftChange,
+  deadlineSaves,
   handleCompleteTodo,
   getChecklistSummary,
   transientTodos = [],
@@ -16,12 +26,11 @@ export default function TodoEisenhowerMatrix({
   const [dropTarget, setDropTarget] = useState("");
   const sections = useRef(new Map());
   const moveControls = useRef(new Map());
+  const layout = useTodoMatrixLayout(isExternalView ? null : currentUserId, isMobile);
   const moveTask = async (todo, quadrant) => {
     if (await matrix.move(todo, quadrant))
       requestAnimationFrame(() =>
-        moveControls.current
-          .get(`${todo.projectId || "personal"}:${todo._id}`)
-          ?.focus(),
+        { const control = moveControls.current.get(`${todo.projectId || "personal"}:${todo._id}`); control?.focus({ preventScroll: true }); control?.scrollIntoView({ block: 'nearest' }); },
       );
   };
   if (!matrix.ready && !isExternalView)
@@ -46,8 +55,9 @@ export default function TodoEisenhowerMatrix({
     <div className="space-y-4 p-3 sm:p-4">
       <div className="text-sm text-slate-500">
         {isExternalView
-          ? "Read-only task overview. Overdue tasks are shown in Do."
-          : "Your personal priorities. Overdue tasks stay in Do until completed or rescheduled."}
+          ? "Read-only task overview. Due and overdue tasks are shown in Do now."
+          : "Your personal priorities. Due and overdue tasks stay in Do now until completed or rescheduled."}
+        <button type="button" onClick={layout.reset} className="ml-2 min-h-11 px-2 text-xs underline">Reset sizes</button>
       </div>
       {matrix.offline ? (
         <p role="status" className="text-sm text-amber-700">
@@ -93,7 +103,7 @@ export default function TodoEisenhowerMatrix({
           ))}
         </nav>
       ) : null}
-      <div className={`grid gap-4 ${isMobile ? "grid-cols-1" : "grid-cols-2"}`}>
+      <div className={`grid items-start gap-4 ${isMobile ? "grid-cols-1" : "grid-cols-2"}`}>
         {matrix.groups.map((q, index) => {
           const transient = transientTodos
             .filter((entry) => entry.bucketKey === `matrix:${q.id}`)
@@ -103,13 +113,19 @@ export default function TodoEisenhowerMatrix({
               completing: true,
             }));
           return (
-            <section
+            <TodoQuadrantPanel
               key={q.id}
-              ref={(element) => {
+              title={`Q${index + 1} · ${q.title}`}
+              label={q.label}
+              count={q.cards.length}
+              height={layout.heights[q.id]}
+              limits={layout.limits}
+              onHeightChange={(height) => layout.setHeight(q.id, height)}
+              isMobile={isMobile}
+              panelRef={(element) => {
                 if (element) sections.current.set(q.id, element);
                 else sections.current.delete(q.id);
               }}
-              aria-label={q.label}
               onDragOver={(event) => {
                 if (!dragged.current) return;
                 event.preventDefault();
@@ -123,23 +139,16 @@ export default function TodoEisenhowerMatrix({
                 setDropTarget("");
                 if (todo) void moveTask(todo, q.id);
               }}
-              className={`min-w-0 scroll-mt-4 rounded-2xl border p-3 sm:p-4 ${dropTarget === q.id ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-slate-50"}`}
+              className={dropTarget === q.id ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-slate-50"}
             >
-              <header className="mb-3">
-                <h3 className="text-base font-semibold text-slate-900">
-                  Q{index + 1} · {q.title}{" "}
-                  <span className="text-sm font-normal text-slate-500">
-                    ({q.cards.length})
-                  </span>
-                </h3>
-                <p className="mt-1 text-sm text-slate-600">{q.label}</p>
-              </header>
               <div className="space-y-3">
                 {[...q.cards, ...transient].map((card) => {
                   const {
                     todo,
                     reference,
                     overdue,
+                    dueToday,
+                    deadlinePriority,
                     automatic,
                     unclassified,
                     completing,
@@ -148,7 +157,7 @@ export default function TodoEisenhowerMatrix({
                   const canMove =
                     !isExternalView &&
                     !matrix.offline &&
-                    !overdue &&
+                    !deadlinePriority &&
                     !completing &&
                     Boolean(reference) &&
                     !saving;
@@ -217,7 +226,7 @@ export default function TodoEisenhowerMatrix({
                           <span className="break-words">{todo.owner}</span>
                         ) : null}
                         {todo.dueDate ? (
-                          <span>Due {formatDate(todo.dueDate)}</span>
+                          <span className={deadlinePriority ? 'font-medium text-rose-700' : ''}>{deadlineDescription(todo, today)}</span>
                         ) : null}
                         <TaskChecklistBadge
                           compact
@@ -225,10 +234,10 @@ export default function TodoEisenhowerMatrix({
                         />
                         {automatic ? (
                           <span className="rounded-lg bg-rose-50 px-2 py-1 font-semibold text-rose-700">
-                            Auto: deadline passed
+                            Auto: {dueToday ? 'due today' : 'deadline passed'}
                           </span>
-                        ) : overdue ? (
-                          <span className="text-rose-700">Overdue</span>
+                          ) : deadlinePriority ? (
+                          <span className="text-rose-700">{overdue ? 'Overdue' : 'Due today'}</span>
                         ) : unclassified ? (
                           <span>Not prioritised yet</span>
                         ) : null}
@@ -261,7 +270,7 @@ export default function TodoEisenhowerMatrix({
                           </select>
                           {overdue ? (
                             <span className="mt-1 block">
-                              Overdue tasks stay here until completed or
+                              Due and overdue tasks stay here until completed or
                               rescheduled.
                             </span>
                           ) : !reference ? (
@@ -272,6 +281,7 @@ export default function TodoEisenhowerMatrix({
                           ) : null}
                         </label>
                       ) : null}
+                      {!isExternalView && !completing ? <TaskPlanningControls compact todo={todo} matrix={matrix} today={today} deadlinePending={Boolean(deadlineSaves?.[todo._id])} draft={planningDrafts?.[taskViewIdentity(todo)]} onDraftChange={onPlanningDraftChange ? (field, value, expected) => onPlanningDraftChange(todo, field, value, expected) : undefined} onUpdateTodo={onUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={onNotice} /> : null}
                     </article>
                   );
                 })}
@@ -281,7 +291,7 @@ export default function TodoEisenhowerMatrix({
                   </p>
                 ) : null}
               </div>
-            </section>
+            </TodoQuadrantPanel>
           );
         })}
       </div>

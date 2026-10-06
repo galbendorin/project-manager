@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { getCurrentDate } from '../utils/helpers';
 import { readLocalJson, writeLocalJson } from '../utils/offlineState';
-import { useTodoViewDerivedData } from '../hooks/useTodoViewDerivedData';
+import { useTodoCandidateData, useTodoViewDerivedData } from '../hooks/useTodoViewDerivedData';
+import { readCompleteTodoRows } from '../utils/todoSourceLoading';
 import { getTodoCompletionDescriptor } from '../hooks/projectData/todoCompletion';
 import {
   buildTodoCalendarSections,
@@ -18,9 +19,10 @@ import TodoBoardView from './TodoBoardView';
 import TodoBucketSection from './TodoBucketSection';
 import TodoKanbanBoard from './TodoKanbanBoard';
 import TodoEisenhowerMatrix from './TodoEisenhowerMatrix';
+import TaskPlanningControls from './TaskPlanningControls';
 import { useTodoEisenhowerMatrix } from '../hooks/useTodoEisenhowerMatrix';
 import { useLocalCalendarDay } from '../hooks/useLocalCalendarDay';
-import { taskViewIdentity } from '../utils/todoEisenhower';
+import { groupMatrixTasks, taskViewIdentity } from '../utils/todoEisenhower';
 import DesktopTodoDetailModal from './DesktopTodoDetailModal';
 import MobileTodoDetailSheet from './MobileTodoDetailSheet';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
@@ -31,7 +33,6 @@ import {
   MANUAL_TODO_SELECT,
   SHOPPING_MANUAL_TODO_EXTRA_FIELDS,
   SHOPPING_MANUAL_TODO_SELECT,
-  isMissingRelationError,
   isMissingSchemaFieldError,
   mapManualTodoRow,
 } from '../hooks/projectData/manualTodoUtils';
@@ -114,27 +115,27 @@ const readTodoCommandState = () => {
 
 const loadAllManualTodos = async () => {
   let selectClause = SHOPPING_MANUAL_TODO_SELECT;
-  let response = await supabase
+  let response = await readCompleteTodoRows(() => supabase
     .from('manual_todos')
-    .select(selectClause)
+    .select(selectClause, { count: 'exact' })
     .neq('status', 'Done')
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true }).order('id', { ascending: true }));
 
   if (response.error && isMissingSchemaFieldError(response.error, SHOPPING_MANUAL_TODO_EXTRA_FIELDS)) {
     selectClause = MANUAL_TODO_SELECT;
-    response = await supabase
+    response = await readCompleteTodoRows(() => supabase
       .from('manual_todos')
-      .select(selectClause)
+      .select(selectClause, { count: 'exact' })
       .neq('status', 'Done')
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }).order('id', { ascending: true }));
   }
 
   if (response.error && isMissingSchemaFieldError(response.error, ['description', 'kanban_column_id', 'kanban_position'])) {
-    response = await supabase
+    response = await readCompleteTodoRows(() => supabase
       .from('manual_todos')
-      .select(LEGACY_MANUAL_TODO_SELECT)
+      .select(LEGACY_MANUAL_TODO_SELECT, { count: 'exact' })
       .neq('status', 'Done')
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }).order('id', { ascending: true }));
   }
 
   return response;
@@ -154,7 +155,8 @@ const TodoView = ({
   onAddTodo,
   onUpdateTodo,
   onDeleteTodo,
-  onCompleteTodo
+  onCompleteTodo,
+  onOpenSourceTodo,
 }) => {
   const initialCommandStateRef = useRef(null);
   if (!initialCommandStateRef.current) {
@@ -165,9 +167,9 @@ const TodoView = ({
   const matrixMemoryKey = `pmworkspace:todo-matrix-focus:v1:${currentUserId}`;
   const initialMatrixMemory = useRef(readLocalJson(matrixMemoryKey,{}));
   const [focusView, setFocusView] = useState(() => readLocalJson(TODO_VIEW_MODE_KEY,{})?.mode==='matrix'
-    ? normalizeTodoFocusView(initialMatrixMemory.current.matrixFocus || TODO_FOCUS_VIEWS.all) : initialCommandState.focusView);
+    ? normalizeTodoFocusView(initialMatrixMemory.current.matrixFocus || TODO_FOCUS_VIEWS.today) : initialCommandState.focusView);
   const today = useLocalCalendarDay();
-  const matrixFocus = useRef(normalizeTodoFocusView(initialMatrixMemory.current.matrixFocus || TODO_FOCUS_VIEWS.all));
+  const matrixFocus = useRef(normalizeTodoFocusView(initialMatrixMemory.current.matrixFocus || TODO_FOCUS_VIEWS.today));
   const previousFocus = useRef(normalizeTodoFocusView(initialMatrixMemory.current.previousFocus || initialCommandState.focusView));
   const [scope, setScope] = useState(initialCommandState.scope);
   const [projectFilter, setProjectFilter] = useState(initialCommandState.projectFilter);
@@ -180,6 +182,29 @@ const TodoView = ({
   const [allProjectsData, setAllProjectsData] = useState([]);
   const [allProjectManualTodos, setAllProjectManualTodos] = useState([]);
   const [loadingAllProjects, setLoadingAllProjects] = useState(false);
+  const [sourceLoadState, setSourceLoadState] = useState({ owner: currentUserId, confirmed: false, error: '' });
+  const [sourceReloadNonce, setSourceReloadNonce] = useState(0);
+  const [planNotice, setPlanNotice] = useState('');
+  const [planningDrafts, setPlanningDrafts] = useState({ owner: currentUserId, values: {} });
+  const updatePlanningDraft = (todo, field, value, expected) => setPlanningDrafts((previous) => {
+    if (currentOwner.current !== currentUserId) return previous;
+    const values = previous.owner === currentUserId ? previous.values : {};
+    const key = taskViewIdentity(todo);
+    const next = { ...values[key] };
+    if (value === undefined && expected !== undefined && next[field] !== expected) return previous;
+    if (value === undefined) delete next[field]; else next[field] = value;
+    return { owner: currentUserId, values: { ...values, [key]: next } };
+  });
+  const currentDrafts = planningDrafts.owner === currentUserId ? planningDrafts.values : {};
+  const sourceOwner = useRef(currentUserId);
+  const currentOwner = useRef(currentUserId);
+  currentOwner.current = currentUserId;
+  const sourceMutationRevision = useRef(0);
+  const deadlineOperations = useRef({ owner: currentUserId, ids: new Set() });
+  if (deadlineOperations.current.owner !== currentUserId) deadlineOperations.current = { owner: currentUserId, ids: new Set() };
+  const [deadlineSaves, setDeadlineSaves] = useState({ owner: currentUserId, ids: {} });
+  const currentDeadlineSaves = deadlineSaves.owner === currentUserId ? deadlineSaves.ids : {};
+  const sourceCurrent = sourceLoadState.owner === currentUserId;
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [selectedTodo, setSelectedTodo] = useState(null);
   const [viewMode, setViewMode] = useState(() => {
@@ -291,20 +316,34 @@ const TodoView = ({
   }, [currentProject?.id, scope]);
 
   useEffect(() => {
+    if (sourceOwner.current === currentUserId) return;
+    sourceOwner.current = currentUserId;
+    setProjectOptions([]);
+    setAllProjectsData([]);
+    setAllProjectManualTodos([]);
+    setSourceLoadState({ owner: currentUserId, confirmed: false, error: '' });
+    setSelectedTodo(null);
+    setPendingCompletedTodos({});
+    completionTimeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout));
+    completionTimeoutsRef.current.clear();
+    setPlanNotice('');
+    setPlanningDrafts({ owner: currentUserId, values: {} });
+  }, [currentUserId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const loadProjectOptions = async () => {
       if (!currentUserId) return;
 
-      const { data, error } = await supabase
+      const { data, error } = await readCompleteTodoRows(() => supabase
         .from('projects')
-        .select('id, name')
-        .order('updated_at', { ascending: false });
+        .select('id, name', { count: 'exact' })
+        .order('id', { ascending: true }));
 
       if (cancelled) return;
       if (error) {
         console.error('Failed to load project options:', error);
-        setProjectOptions([]);
         return;
       }
 
@@ -315,7 +354,7 @@ const TodoView = ({
     return () => {
       cancelled = true;
     };
-  }, [currentUserId]);
+  }, [currentUserId, sourceReloadNonce]);
 
   useEffect(() => {
     let cancelled = false;
@@ -327,37 +366,39 @@ const TodoView = ({
       }
 
       setLoadingAllProjects(true);
+      const revision = sourceMutationRevision.current;
+      try {
       const [projectResponse, manualTodoResponse] = await Promise.all([
-        supabase
+        readCompleteTodoRows(() => supabase
           .from('projects')
-          .select('id, name, tasks, registers, tracker, version')
-          .order('updated_at', { ascending: false }),
+          .select('id, name, tasks, registers, tracker, version', { count: 'exact' })
+          .order('id', { ascending: true })),
         loadAllManualTodos(),
       ]);
 
       if (cancelled) return;
-      if (projectResponse.error) {
-        console.error('Failed to load all-project task data:', projectResponse.error);
-        setAllProjectsData([]);
-        setAllProjectManualTodos([]);
+      if (revision !== sourceMutationRevision.current) {
+        setSourceReloadNonce((value) => value + 1);
+        return;
+      }
+      if (projectResponse.error || manualTodoResponse.error) {
+        setSourceLoadState((previous) => ({ ...previous, owner: currentUserId, error: 'Some projects or tasks could not be checked. Confirmed tasks are retained; retry loading for a complete Today view.' }));
       } else {
         const professionalProjects = (projectResponse.data || [])
           .filter((project) => !isShoppingListProject(project));
         const professionalProjectIds = new Set(professionalProjects.map((project) => project.id));
         setAllProjectsData(professionalProjects);
-
-        if (!manualTodoResponse.error) {
           setAllProjectManualTodos((manualTodoResponse.data || [])
             .map(mapManualTodoRow)
             .filter((todo) => !todo.projectId || professionalProjectIds.has(todo.projectId)));
-        } else if (isMissingRelationError(manualTodoResponse.error, 'manual_todos')) {
-          setAllProjectManualTodos([]);
-        } else {
-          console.error('Failed to load all-project manual tasks:', manualTodoResponse.error);
-          setAllProjectManualTodos([]);
-        }
+        setProjectOptions(professionalProjects.map(({ id, name }) => ({ id, name })));
+        setSourceLoadState({ owner: currentUserId, confirmed: true, error: '' });
       }
-      setLoadingAllProjects(false);
+      } catch {
+        if (!cancelled) setSourceLoadState((previous) => ({ ...previous, owner: currentUserId, error: 'Unable to check all projects. Retry loading; confirmed tasks are retained.' }));
+      } finally {
+        if (!cancelled) setLoadingAllProjects(false);
+      }
     };
 
     loadAllProjectData();
@@ -365,7 +406,7 @@ const TodoView = ({
     return () => {
       cancelled = true;
     };
-  }, [scope, currentUserId]);
+  }, [scope, currentUserId, sourceReloadNonce]);
 
   useEffect(() => {
     setQuickAddProjectId((currentValue) => {
@@ -376,6 +417,16 @@ const TodoView = ({
     });
   }, [currentProject, projectOptions]);
 
+  const candidates = useTodoCandidateData({
+    sourcesConfirmed: sourceCurrent && sourceLoadState.confirmed,
+    allProjectManualTodos: sourceCurrent ? allProjectManualTodos : [],
+    allProjectsData: sourceCurrent ? allProjectsData : [],
+    currentProject, projectData, projectOptions: sourceCurrent ? projectOptions : [], registers, scope, todos, tracker,
+  });
+  const personalPlan = useTodoEisenhowerMatrix({
+    currentUserId, isExternalView, enabled: !isExternalView || viewMode === 'matrix',
+    todos: candidates.mergedOpenTodos, today,
+  });
   const {
     activeFilterCount,
     allTodoItems,
@@ -386,9 +437,9 @@ const TodoView = ({
     projectSelectOptions,
     visibleOpenTodos,
   } = useTodoViewDerivedData({
+    candidates,
+    preferences: personalPlan.preferences,
     today,
-    allProjectManualTodos,
-    allProjectsData,
     bucketFilter,
     currentProject,
     currentUserId,
@@ -397,16 +448,12 @@ const TodoView = ({
     isExternalView,
     ownerFilter,
     pendingCompletedTodos,
-    projectData,
     projectFilter,
     projectOptions,
     recurrenceFilter,
-    registers,
     scope,
     searchQuery,
     sourceFilter,
-    todos,
-    tracker,
   });
 
   useEffect(() => {
@@ -421,7 +468,7 @@ const TodoView = ({
   }, [mergedOpenTodos, onTodoFocusHandled, pendingFocusTodoId]);
 
   useEffect(() => {
-    if (!selectedTodo) return;
+    if (!sourceCurrent || !selectedTodo) return;
     const nextSelected = allTodoItems.find((item) => taskViewIdentity(item) === taskViewIdentity(selectedTodo)) || null;
     if (!nextSelected) {
       setSelectedTodo(null);
@@ -430,28 +477,48 @@ const TodoView = ({
     if (nextSelected !== selectedTodo) {
       setSelectedTodo(nextSelected);
     }
-  }, [allTodoItems, selectedTodo]);
+  }, [allTodoItems, selectedTodo, sourceCurrent]);
 
   const applyManualMutationResult = useCallback((result) => {
     const changedTodos = [result?.updatedTodo, result?.followUpTodo].filter(Boolean);
     if (changedTodos.length === 0) return;
+    sourceMutationRevision.current += 1;
     setAllProjectManualTodos((currentTodos) => (
       mergeManualTodoCollections(currentTodos, changedTodos)
     ));
   }, []);
 
-  const handleUpdateTodo = useCallback(async (todoId, key, value) => {
-    if (!onUpdateTodo) return null;
+  const handleUpdateTodo = useCallback(async (todoId, key, value, options) => {
+    if (!onUpdateTodo || currentOwner.current !== currentUserId) return null;
+    const operationScope = deadlineOperations.current;
+    if (operationScope.ids.has(todoId)) return null;
+    const confirmedDateWrite = key === 'dueDate' && options?.requireConfirmation;
+    if (confirmedDateWrite && pendingCompletedTodos[`manual:${todoId}`]) { setPlanNotice('Undo or finish the pending completion before changing this deadline.'); return null; }
+    if (confirmedDateWrite) {
+      operationScope.ids.add(todoId);
+      setDeadlineSaves((previous) => ({ owner: currentUserId, ids: { ...(previous.owner === currentUserId ? previous.ids : {}), [todoId]: true } }));
+    }
+    try {
     const originalTodo = allTodoItems.find((todo) => (todo._id || todo.id) === todoId) || null;
-    const result = await onUpdateTodo(todoId, key, value, originalTodo);
+    const result = await onUpdateTodo(todoId, key, value, originalTodo, options);
+    if (currentOwner.current !== currentUserId) return null;
     applyManualMutationResult(result);
     return result;
-  }, [allTodoItems, applyManualMutationResult, onUpdateTodo]);
+    } finally {
+      if (confirmedDateWrite) {
+        operationScope.ids.delete(todoId);
+        if (deadlineOperations.current === operationScope && currentOwner.current === currentUserId) setDeadlineSaves((previous) => { const ids = { ...previous.ids }; delete ids[todoId]; return { owner: currentUserId, ids }; });
+      }
+    }
+  }, [allTodoItems, applyManualMutationResult, onUpdateTodo, currentUserId, pendingCompletedTodos]);
 
   const handleDeleteTodo = useCallback(async (todoId) => {
-    if (!onDeleteTodo) return false;
+    if (!onDeleteTodo || currentOwner.current !== currentUserId) return false;
+    if (deadlineOperations.current.ids.has(todoId)) { setPlanNotice('Wait for the deadline save before deleting this task.'); return false; }
     const deleted = await onDeleteTodo(todoId);
+    if (currentOwner.current !== currentUserId) return false;
     if (deleted === false) return false;
+    sourceMutationRevision.current += 1;
 
     setAllProjectManualTodos((currentTodos) => (
       currentTodos.filter((todo) => (todo._id || todo.id) !== todoId)
@@ -460,7 +527,7 @@ const TodoView = ({
       currentTodo && (currentTodo._id || currentTodo.id) === todoId ? null : currentTodo
     ));
     return true;
-  }, [onDeleteTodo]);
+  }, [onDeleteTodo, currentUserId]);
 
   const clearPendingCompletion = useCallback((todoId) => {
     const existingTimeoutId = completionTimeoutsRef.current.get(todoId);
@@ -478,6 +545,7 @@ const TodoView = ({
   }, []);
 
   const completeCrossProjectTodo = useCallback(async (todo) => {
+    if (currentOwner.current !== currentUserId) return;
     if (!todo?.projectId || !todo?.isDerived) {
       if (onCompleteTodo) {
         await onCompleteTodo(todo);
@@ -516,6 +584,7 @@ const TodoView = ({
     const { data, error } = await updateQuery
       .select('version')
       .maybeSingle();
+    if (currentOwner.current !== currentUserId) return;
 
     if (error) {
       throw error;
@@ -525,6 +594,7 @@ const TodoView = ({
       throw new Error('The other project changed before this task could be completed. Please reload the task list and try again.');
     }
 
+    sourceMutationRevision.current += 1;
     setAllProjectsData((prev) => prev.map((project) => (
       project.id === todo.projectId
         ? {
@@ -533,7 +603,7 @@ const TodoView = ({
           }
         : project
     )));
-  }, [allProjectsData, onCompleteTodo]);
+  }, [allProjectsData, onCompleteTodo, currentUserId]);
 
   const persistCompletedTodo = useCallback(async (todo) => {
     if (!todo?.isDerived) {
@@ -579,6 +649,7 @@ const TodoView = ({
 
   const handleCompleteTodo = useCallback((todo, bucketKey, displayIndex) => {
     if (!todo || isExternalView || !onCompleteTodo) return;
+    if (!todo.isDerived && deadlineOperations.current.ids.has(todo._id)) { setPlanNotice('Wait for the deadline save before completing this task.'); return; }
 
     const key = taskViewIdentity(todo);
     if (Object.prototype.hasOwnProperty.call(pendingCompletedTodos, key)) {
@@ -605,7 +676,7 @@ const TodoView = ({
   const handleQuickAddSubmit = useCallback(async (bucketKey) => {
     const rawTitle = quickAddValues[bucketKey] || '';
     const title = rawTitle.trim();
-    if (!title || !onAddTodo || isExternalView) return;
+    if (!title || !onAddTodo || isExternalView || currentOwner.current !== currentUserId) return;
 
     setQuickAddValue(bucketKey, '');
 
@@ -617,7 +688,9 @@ const TodoView = ({
       projectId: destinationProjectId,
       dueDate: getTodoSectionDefaultDueDate(bucketKey)
     });
+    if (currentOwner.current !== currentUserId) return;
     if (addedTodo) {
+      sourceMutationRevision.current += 1;
       setAllProjectManualTodos((currentTodos) => (
         mergeManualTodoCollections(currentTodos, [addedTodo])
       ));
@@ -629,7 +702,7 @@ const TodoView = ({
         input.focus();
       }
     });
-  }, [currentProject?.id, isExternalView, onAddTodo, quickAddProjectId, quickAddValues, scope]);
+  }, [currentProject?.id, currentUserId, isExternalView, onAddTodo, quickAddProjectId, quickAddValues, scope]);
 
   const showCompletionTick = !isExternalView;
   const showQuickAdd = !isExternalView;
@@ -679,7 +752,7 @@ const TodoView = ({
     : allBucketSections.filter((bucket) => !bucket.key.startsWith('month:'));
   const matrixSections = buildTodoCalendarSections(visibleOpenTodos,{today,showFutureMonths:true}).sections;
   const matrixTodos = matrixSections.filter(section=>!bucketFilter.length||bucketFilter.includes(section.key)).flatMap(section=>section.items);
-  const matrix = useTodoEisenhowerMatrix({currentUserId,isExternalView,enabled:viewMode==='matrix',todos:matrixTodos,today});
+  const matrix = { ...personalPlan, groups: groupMatrixTasks(matrixTodos, personalPlan.preferences, today) };
 
   const filteredBucketSections = filterableBucketSections.filter((bucket) => (
     bucketFilter.length === 0 || bucketFilter.includes(bucket.key)
@@ -836,7 +909,7 @@ const TodoView = ({
     if (nextScope === 'all' && viewMode === 'kanban') setViewMode('list');
   }, [viewMode]);
 
-  const selectedTodoCanEdit = !isExternalView && !selectedTodo?.isDerived && selectedTodo?.status !== 'Done';
+  const selectedTodoCanEdit = !isExternalView && !currentDeadlineSaves[selectedTodo?._id] && !selectedTodo?.isDerived && selectedTodo?.status !== 'Done';
   const checklistSourceTodos = useMemo(() => {
     const todoMap = new Map();
     visibleOpenTodos.forEach((todo) => {
@@ -913,8 +986,22 @@ const TodoView = ({
           visibleOpenTodos={visibleOpenTodos}
         />
 
-        {viewMode === 'matrix' ? (
-          <TodoEisenhowerMatrix matrix={matrix} isMobile={isMobile} isExternalView={isExternalView} onOpenTodo={setSelectedTodo} handleCompleteTodo={handleCompleteTodo} getChecklistSummary={getChecklistSummaryForTodo} transientTodos={filteredTransientTodos}/>
+        {scope === 'all' ? <div className="flex justify-end px-3 pt-2"><button type="button" disabled={loadingAllProjects} onClick={() => { setSourceReloadNonce((value) => value + 1); void personalPlan.reload(); }} className="min-h-11 rounded-lg border px-3 text-xs text-slate-600 disabled:opacity-50">Refresh tasks</button></div> : null}
+        {scope === 'all' && (loadingAllProjects || sourceLoadState.error || !sourceCurrent) ? (
+          <div role={sourceLoadState.error ? 'alert' : 'status'} className="m-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
+            {sourceCurrent && sourceLoadState.error ? sourceLoadState.error : 'Checking tasks across all projects…'}
+            <button type="button" disabled={loadingAllProjects} onClick={() => setSourceReloadNonce((value) => value + 1)} className="ml-2 min-h-11 px-3 font-semibold underline">Retry loading</button>
+          </div>
+        ) : null}
+        {sourceCurrent && planNotice ? <p role="status" className="m-3 rounded-xl border bg-indigo-50 p-3 text-sm">{planNotice}</p> : null}
+        {!isExternalView && (personalPlan.loading || personalPlan.error || !personalPlan.ready) ? (
+          <div role={personalPlan.error ? 'alert' : 'status'} className="m-3 rounded-xl border bg-slate-50 p-3 text-sm">
+            {personalPlan.error || 'Checking your personal plan…'}
+            <button type="button" disabled={personalPlan.loading || personalPlan.offline || Object.keys(personalPlan.pending).length > 0} onClick={personalPlan.reload} className="ml-2 min-h-11 px-3 font-semibold underline">Retry personal plan</button>
+          </div>
+        ) : null}
+        {((scope === 'all' && !sourceLoadState.confirmed) || (!isExternalView && !personalPlan.ready)) && !visibleOpenTodos.length ? null : viewMode === 'matrix' ? (
+          <TodoEisenhowerMatrix matrix={matrix} currentUserId={currentUserId} today={today} isMobile={isMobile} isExternalView={isExternalView} onOpenTodo={setSelectedTodo} onOpenSourceTodo={onOpenSourceTodo} onUpdateTodo={handleUpdateTodo} onNotice={setPlanNotice} planningDrafts={currentDrafts} onPlanningDraftChange={updatePlanningDraft} deadlineSaves={currentDeadlineSaves} handleCompleteTodo={handleCompleteTodo} getChecklistSummary={getChecklistSummaryForTodo} transientTodos={filteredTransientTodos}/>
         ) : viewMode === 'timeline' ? (
           <TodoBoardView
             bucketSections={bucketSections}
@@ -1006,8 +1093,9 @@ const TodoView = ({
         )}
       </div>
 
-      {isMobile && selectedTodo ? (
+      {sourceCurrent && isMobile && selectedTodo ? (
         <MobileTodoDetailSheet
+          planningControls={!isExternalView && selectedTodo.status !== 'Done' ? <TaskPlanningControls key={taskViewIdentity(selectedTodo)} todo={selectedTodo} matrix={personalPlan} today={today} deadlinePending={Boolean(currentDeadlineSaves[selectedTodo._id])} draft={currentDrafts[taskViewIdentity(selectedTodo)]} onDraftChange={(field, value, expected) => updatePlanningDraft(selectedTodo, field, value, expected)} onUpdateTodo={handleUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={setPlanNotice} /> : null}
           todo={selectedTodo}
           canEdit={selectedTodoCanEdit}
           projectOptions={projectOptions}
@@ -1035,8 +1123,9 @@ const TodoView = ({
         />
       ) : null}
 
-      {!isMobile && selectedTodo ? (
+      {sourceCurrent && !isMobile && selectedTodo ? (
         <DesktopTodoDetailModal
+          planningControls={!isExternalView && selectedTodo.status !== 'Done' ? <TaskPlanningControls key={taskViewIdentity(selectedTodo)} todo={selectedTodo} matrix={personalPlan} today={today} deadlinePending={Boolean(currentDeadlineSaves[selectedTodo._id])} draft={currentDrafts[taskViewIdentity(selectedTodo)]} onDraftChange={(field, value, expected) => updatePlanningDraft(selectedTodo, field, value, expected)} onUpdateTodo={handleUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={setPlanNotice} /> : null}
           todo={selectedTodo}
           canEdit={selectedTodoCanEdit}
           projectOptions={projectOptions}

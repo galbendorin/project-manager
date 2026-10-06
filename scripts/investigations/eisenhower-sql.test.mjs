@@ -32,6 +32,7 @@ before(async () => {
       "utf8",
     ),
   );
+  await db.exec(await readFile(new URL('../sql/2026-10-05_add_personal_task_planned_day.sql', import.meta.url), 'utf8'));
 });
 after(() => db.close());
 async function probe(user, fn, role = "authenticated") {
@@ -51,6 +52,21 @@ const insert = (user = a) =>
     "insert into public.task_eisenhower_preferences(user_id,manual_todo_id,manual_quadrant) values($1,$2,'not_urgent_important') returning *",
     [user, todo],
   );
+test('personal work-day writes preserve priority and priority writes preserve the date through CAS', async () => probe(a, async () => {
+  const row = (await insert()).rows[0];
+  const planned = (await db.query("update public.task_eisenhower_preferences set planned_day='2026-10-05' where id=$1 and version=1 returning planned_day::text,manual_quadrant,version", [row.id])).rows[0];
+  assert.equal(planned.planned_day, '2026-10-05'); assert.equal(planned.manual_quadrant, 'not_urgent_important'); assert.equal(planned.version, 2);
+  const moved = (await db.query("update public.task_eisenhower_preferences set manual_quadrant='urgent_not_important' where id=$1 and version=2 returning planned_day::text,version", [row.id])).rows[0];
+  assert.equal(moved.planned_day, '2026-10-05'); assert.equal(moved.version, 3);
+  assert.equal((await db.query("update public.task_eisenhower_preferences set planned_day=null where id=$1 and version=2 returning id", [row.id])).rows.length, 0);
+}));
+test('another account cannot read or replace a personal work day', async () => probe(a, async () => {
+  const row = (await insert()).rows[0];
+  await db.query("update public.task_eisenhower_preferences set planned_day='2026-10-05' where id=$1", [row.id]);
+  await db.query("select set_config('request.jwt.claim.sub',$1,true)", [b]);
+  assert.equal((await db.query('update public.task_eisenhower_preferences set planned_day=null where id=$1 returning id', [row.id])).rows.length, 0);
+  assert.equal((await db.query('select * from public.task_eisenhower_preferences where id=$1', [row.id])).rows.length, 0);
+}));
 test("personal owner/member placements are separately visible with server-derived keys", async () =>
   probe(a, async () => {
     const row = (await insert()).rows[0];

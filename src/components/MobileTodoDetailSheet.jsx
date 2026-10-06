@@ -44,6 +44,7 @@ export default function MobileTodoDetailSheet({
   onRenameChecklist,
   onRenameChecklistItem,
   onToggleChecklistItem,
+  planningControls,
 }) {
   if (!todo) return null;
 
@@ -52,7 +53,7 @@ export default function MobileTodoDetailSheet({
   return (
     <div className="fixed inset-0 z-[70] flex flex-col">
       <div className="absolute inset-0 bg-slate-950/45" onClick={onClose} />
-      <div className="relative mt-12 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-label="Task details" className="relative mt-12 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl">
         <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <button onClick={onClose} className="text-sm font-semibold text-indigo-600">
             Back
@@ -77,6 +78,7 @@ export default function MobileTodoDetailSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom,0px)+4rem)]">
           <div className="space-y-4 px-4 py-4">
+            {planningControls}
             <div className={`rounded-[24px] border p-4 ${isCompleted ? 'border-emerald-200 bg-emerald-50/80' : 'border-slate-200 bg-slate-50'}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600">
@@ -155,7 +157,7 @@ export default function MobileTodoDetailSheet({
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <MobileField label="Due Date">
-                  {canEdit ? (
+                  {canEdit && !planningControls ? (
                     <input
                       type="date"
                       value={todo.dueDate || ''}

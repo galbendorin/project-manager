@@ -62,12 +62,12 @@ export function mockTransport(handler) {
     from(table){
       const request={table,operation:'select',filters:[],single:false,select:null};
       const builder={};
-      for(const method of ['select','update','insert','delete','upsert','eq','in','is','order','limit','range','maybeSingle','single']) {
+      for(const method of ['select','update','insert','delete','upsert','eq','neq','in','is','order','limit','range','maybeSingle','single']) {
         builder[method]=(...args)=>{
           if(['update','insert','delete','upsert'].includes(method)){request.operation=method;request.payload=args[0];}
           if(method==='select')request.select=args[0];
           if(method==='range')request.range=args;
-          if(['eq','in','is'].includes(method))request.filters.push({method,args});
+          if(['eq','neq','in','is'].includes(method))request.filters.push({method,args});
           if(['single','maybeSingle'].includes(method))request.single=true;
           return builder;
         };

@@ -1,15 +1,15 @@
 export const MATRIX_QUADRANTS = Object.freeze([
-  { id: "urgent_important", title: "Do", label: "Urgent & Important" },
-  { id: "not_urgent_important", title: "Plan", label: "Important, Not Urgent" },
+  { id: "urgent_important", title: "Do now", label: "Important & urgent" },
+  { id: "not_urgent_important", title: "Make progress", label: "Important, not urgent" },
   {
     id: "urgent_not_important",
-    title: "Delegate",
-    label: "Urgent, Not Important",
+    title: "Handle soon",
+    label: "Urgent, less important",
   },
   {
     id: "not_urgent_not_important",
-    title: "Defer",
-    label: "Neither Urgent nor Important",
+    title: "If time allows",
+    label: "Optional, not urgent",
   },
 ]);
 export const DEFAULT_MATRIX_QUADRANT = "not_urgent_important";
@@ -74,12 +74,31 @@ export const matrixPlacement = (todo, preference, today) => {
     validCalendarDay(today) &&
     validCalendarDay(todo.dueDate) &&
     todo.dueDate < today;
+  const dueToday = todo.status !== "Done" && validCalendarDay(today) && todo.dueDate === today;
+  const deadlinePriority = overdue || dueToday;
   return {
-    quadrant: overdue ? "urgent_important" : manual,
+    quadrant: deadlinePriority ? "urgent_important" : manual,
     overdue,
-    automatic: overdue && manual !== "urgent_important",
+    dueToday,
+    deadlinePriority,
+    automatic: deadlinePriority && manual !== "urgent_important",
     unclassified: !preference,
   };
+};
+export const plannedDayForTask = (todo, preferences = {}) => {
+  const reference = matrixReference(todo);
+  const day = reference ? preferences[reference.task_key]?.planned_day : null;
+  return validCalendarDay(day) ? day : null;
+};
+export const deadlineDescription = (todo, today) => {
+  if (!validCalendarDay(todo?.dueDate)) return "No deadline";
+  const date = new Date(`${todo.dueDate}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const { overdue, dueToday } = matrixPlacement(todo, null, today);
+  if (dueToday) return `Due today · ${date}`;
+  if (!overdue) return `Due ${date}`;
+  const dayNumber = (value) => { const [year, month, day] = value.split("-").map(Number); return Date.UTC(year, month - 1, day); };
+  const days = Math.round((dayNumber(today) - dayNumber(todo.dueDate)) / 86400000);
+  return `Overdue · due ${date} · ${days} ${days === 1 ? "day" : "days"} late`;
 };
 export const groupMatrixTasks = (todos, preferences, today) =>
   MATRIX_QUADRANTS.map((quadrant) => ({

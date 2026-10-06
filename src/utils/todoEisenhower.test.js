@@ -15,7 +15,7 @@ test("date boundary and overdue automation preserve the manual preference", () =
   const preference = { manual_quadrant: "not_urgent_not_important" };
   assert.equal(
     matrixPlacement(todo, preference, "2026-10-05").quadrant,
-    "not_urgent_not_important",
+    "urgent_important",
   );
   assert.equal(
     matrixPlacement(todo, preference, "2026-10-06").quadrant,

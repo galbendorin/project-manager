@@ -76,7 +76,9 @@ const TrackerView = ({
   onRemoveItem,
   onAddManualItem,
   onReorderItems,
-  onNavigateToSchedule
+  onNavigateToSchedule,
+  focusItemId,
+  onFocusItemHandled,
 }) => {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [searchQuery, setSearchQuery] = useState('');
@@ -86,7 +88,17 @@ const TrackerView = ({
   const [draggedItemId, setDraggedItemId] = useState(null);
   const [dropTargetId, setDropTargetId] = useState(null);
   const expandAnchorRef = useRef(null);
+  const rowRefs = useRef(new Map());
   const closePopover = useCallback(() => setExpandedCell(null), []);
+  useEffect(() => {
+    if (!focusItemId || isMobile) return undefined;
+    setSearchQuery(''); setFilterStatus('all');
+    const frame = requestAnimationFrame(() => {
+      const row = rowRefs.current.get(focusItemId);
+      if (row) { row.scrollIntoView({ block: 'center' }); row.focus({ preventScroll: true }); onFocusItemHandled?.(); }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusItemId, isMobile, onFocusItemHandled]);
 
   // Filter items
   const filteredItems = useMemo(() => {
@@ -129,6 +141,8 @@ const TrackerView = ({
   if (isMobile) {
     return (
       <MobileTrackerView
+        focusItemId={focusItemId}
+        onFocusItemHandled={onFocusItemHandled}
         trackerItems={trackerItems}
         tasks={tasks}
         onUpdateItem={onUpdateItem}
@@ -499,6 +513,8 @@ const TrackerView = ({
                     return (
                   <tr
                     key={item._id}
+                    tabIndex={-1}
+                    ref={(row) => { if (row) rowRefs.current.set(item._id, row); else rowRefs.current.delete(item._id); }}
                     className="border-b border-slate-100 hover:bg-slate-50 transition-all group"
                     style={item.rowColor ? { backgroundColor: getRowColorBackground(item.rowColor) } : undefined}
                     onDragOver={(event) => handleDragOver(event, item._id)}

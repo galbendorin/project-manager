@@ -424,6 +424,8 @@ const MobileRegisterList = ({
   allowRowColor = false,
   onUpdateItem,
   onDeleteItem,
+  focusItemId,
+  onFocusItemHandled,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [columnFilters, setColumnFilters] = useState({});
@@ -444,6 +446,12 @@ const MobileRegisterList = ({
     setSelectedItem(null);
     setShowFilters(false);
   }, [schema.title, filterColumnsKey, viewConfig.defaultFilters, viewConfig.defaultSort]);
+
+  useEffect(() => {
+    if (!focusItemId) return;
+    const item = items.find((entry) => entry._id === focusItemId);
+    if (item) { setSelectedItem(item); onFocusItemHandled?.(); }
+  }, [focusItemId, items, onFocusItemHandled]);
 
   const filteredItems = useMemo(() => applyRegisterView({
     items,

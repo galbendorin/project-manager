@@ -4,6 +4,7 @@ import { usePlan } from './contexts/PlanContext';
 import { useCheckoutStatus, CheckoutToast } from './hooks/useCheckoutStatus.jsx';
 import OfflineBanner from './components/OfflineBanner';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { useTodoSourceNavigation } from './hooks/useTodoSourceNavigation';
 import { applyAccentTheme, loadAccentTheme, saveAccentTheme } from './utils/appearance';
 import {
   clearLastProject,
@@ -135,6 +136,8 @@ function App() {
   const checkoutStatus = useCheckoutStatus();
   const isOnline = useOnlineStatus();
   const [currentProject, setCurrentProject] = useState(null);
+  const selectSourceProject = useCallback((project) => { setCurrentProject(project); saveLastProject(project); }, []);
+  const sourceNavigation = useTodoSourceNavigation(user?.id, selectSourceProject);
   const [accentTheme, setAccentTheme] = useState(() => loadAccentTheme());
   const [currentPath, setCurrentPath] = useState(() => getInitialAppPath());
   const [launchShortcut, setLaunchShortcut] = useState(() => (
@@ -437,6 +440,10 @@ function App() {
       {updateNotice}
       {renderLazyPage(
         <MainApp
+          key={currentProject.id}
+          sourceNavigation={sourceNavigation.request}
+          onSourceNavigationHandled={sourceNavigation.clear}
+          onOpenSourceTodo={sourceNavigation.openSource}
           project={currentProject}
           currentUserId={user.id}
           currentUserName={getUserDisplayName(user)}
@@ -453,6 +460,7 @@ function App() {
         'Loading project...'
       )}
       <CheckoutToast status={checkoutStatus} />
+      {sourceNavigation.error ? <p role="alert" className="fixed bottom-4 left-4 right-4 z-[90] rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">{sourceNavigation.error}</p> : null}
     </>
   );
 }

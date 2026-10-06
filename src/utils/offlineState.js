@@ -278,7 +278,8 @@ export const shouldClearUserOfflineKey = (key, userId) => {
     || normalizedKey.startsWith(`${ITIL_QUIZ_PREFIX}:${normalizedUserId}:`)
     || normalizedKey === buildOfflineUserKey(normalizedUserId)
     || normalizedKey === buildHouseholdAccessKey(normalizedUserId)
-    || normalizedKey === `pmworkspace:todo-matrix-focus:v1:${normalizedUserId}`;
+    || normalizedKey === `pmworkspace:todo-matrix-focus:v1:${normalizedUserId}`
+    || normalizedKey === `pmworkspace:todo-matrix-layout:v1:${normalizedUserId}`;
 };
 
 const listLocalStorageKeys = () => {

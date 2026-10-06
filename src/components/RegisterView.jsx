@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { SCHEMAS } from '../utils/constants';
 import { applyRegisterView, getRegisterViewConfig } from '../utils/registerViewUtils';
 import { IconEyeOpen, IconTrash } from './Icons';
@@ -19,7 +19,9 @@ const RegisterView = ({
   isExternalView,
   onUpdateItem,
   onDeleteItem,
-  onTogglePublic
+  onTogglePublic,
+  focusItemId,
+  onFocusItemHandled,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [columnFilters, setColumnFilters] = useState({});
@@ -28,6 +30,7 @@ const RegisterView = ({
   const [editingCell, setEditingCell] = useState(null);
   const [expandedCell, setExpandedCell] = useState(null);
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const rowRefs = useRef(new Map());
 
   const schema = SCHEMAS[registerType];
   const safeSchema = schema || { cols: [] };
@@ -55,6 +58,16 @@ const RegisterView = ({
     setSortKey(viewConfig.defaultSort);
     setHeaderMenu(null);
   }, [registerType, filterColumnsKey, viewConfig.defaultFilters, viewConfig.defaultSort]);
+
+  useEffect(() => {
+    if (!focusItemId || isMobile) return undefined;
+    setSearchQuery(''); setColumnFilters({});
+    const frame = requestAnimationFrame(() => {
+      const row = rowRefs.current.get(focusItemId);
+      if (row) { row.scrollIntoView({ block: 'center' }); row.focus({ preventScroll: true }); onFocusItemHandled?.(); }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusItemId, isMobile, onFocusItemHandled]);
 
   const filteredItems = useMemo(() => applyRegisterView({
     items,
@@ -86,6 +99,8 @@ const RegisterView = ({
   if (isMobile) {
     return (
       <MobileRegisterList
+        focusItemId={focusItemId}
+        onFocusItemHandled={onFocusItemHandled}
         schema={schema}
         items={items}
         isExternalView={isExternalView}
@@ -215,6 +230,8 @@ const RegisterView = ({
               {filteredItems.map(item => (
                 <tr
                   key={item._id}
+                  tabIndex={-1}
+                  ref={(row) => { if (row) rowRefs.current.set(item._id, row); else rowRefs.current.delete(item._id); }}
                   className={`group border-b border-slate-100 hover:bg-slate-50/80 transition-colors ${
                     !item.public && !item.rowColor ? 'bg-slate-50/50' : ''
                   }`}

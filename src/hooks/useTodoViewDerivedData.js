@@ -27,28 +27,17 @@ const sourceFilterKeyForItem = (item) => {
   return 'derived';
 };
 
-export function useTodoViewDerivedData({
+export function useTodoCandidateData({
   allProjectManualTodos,
   allProjectsData,
-  bucketFilter,
   currentProject,
-  currentUserId,
-  currentUserName,
-  focusView,
-  isExternalView,
-  ownerFilter,
-  pendingCompletedTodos,
   projectData,
-  projectFilter,
   projectOptions,
-  recurrenceFilter,
   registers,
   scope,
-  searchQuery,
-  sourceFilter,
   todos,
   tracker,
-  today = getCurrentDate(),
+  sourcesConfirmed = false,
 }) {
   const projectsForDerived = useMemo(() => {
     if (scope !== 'all') {
@@ -73,13 +62,13 @@ export function useTodoViewDerivedData({
       };
       if (idx >= 0) {
         allProjects[idx] = currentPayload;
-      } else {
+      } else if (!sourcesConfirmed) {
         allProjects.push(currentPayload);
       }
     }
 
     return allProjects;
-  }, [scope, allProjectsData, currentProject?.id, currentProject?.name, projectData, registers, tracker]);
+  }, [scope, allProjectsData, currentProject?.id, currentProject?.name, projectData, registers, tracker, sourcesConfirmed]);
 
   const projectNameMap = useMemo(() => {
     const map = new Map();
@@ -105,13 +94,16 @@ export function useTodoViewDerivedData({
       public: true,
     }));
 
-    if (scope === 'all') return manualTodos;
+    if (scope === 'all') {
+      const permitted = new Set(allProjectsData.map((project) => project.id));
+      return sourcesConfirmed ? manualTodos.filter((todo) => !todo.projectId || permitted.has(todo.projectId)) : manualTodos;
+    }
 
     return manualTodos.filter((item) => {
       if (!currentProject?.id) return item.projectId === null;
       return item.projectId === currentProject.id || item.projectId === null;
     });
-  }, [allProjectManualTodos, todos, scope, currentProject?.id, projectNameMap]);
+  }, [allProjectManualTodos, todos, scope, currentProject?.id, projectNameMap, allProjectsData, sourcesConfirmed]);
 
   const derivedTodosByScope = useMemo(() => (
     projectsForDerived.flatMap((project) => {
@@ -129,11 +121,36 @@ export function useTodoViewDerivedData({
     return merged.filter((item) => item.status !== 'Done');
   }, [manualTodosByScope, derivedTodosByScope]);
 
+  return { manualTodosByScope, derivedTodosByScope, mergedOpenTodos };
+}
+
+export function useTodoViewDerivedData({
+  candidates,
+  bucketFilter,
+  currentProject,
+  currentUserId,
+  currentUserName,
+  focusView,
+  isExternalView,
+  ownerFilter,
+  pendingCompletedTodos,
+  projectFilter,
+  projectOptions,
+  recurrenceFilter,
+  scope,
+  searchQuery,
+  sourceFilter,
+  preferences = {},
+  today = getCurrentDate(),
+}) {
+  const { manualTodosByScope, derivedTodosByScope, mergedOpenTodos } = candidates;
+
   const focusCounts = useMemo(() => getTodoFocusCounts(mergedOpenTodos, {
     currentUserId,
     currentUserName,
     today,
-  }), [currentUserId, currentUserName, mergedOpenTodos, today]);
+    preferences,
+  }), [currentUserId, currentUserName, mergedOpenTodos, today, preferences]);
 
   const allTodoItems = useMemo(
     () => [...manualTodosByScope, ...derivedTodosByScope],
@@ -161,6 +178,7 @@ export function useTodoViewDerivedData({
       currentUserId,
       currentUserName,
       today,
+      preferences,
     }));
     nextItems = filterBySearch(nextItems, searchQuery);
 
@@ -180,6 +198,7 @@ export function useTodoViewDerivedData({
     currentUserId,
     currentUserName,
     today,
+    preferences,
   ]);
 
   const filteredOpenTodos = useMemo(
