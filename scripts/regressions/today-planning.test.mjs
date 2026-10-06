@@ -7,6 +7,107 @@ const todo = { _id: '33333333-3333-4333-8333-333333333333', title: 'Synthetic fu
 const key = `manual:${todo._id}`;
 const preference = { id: '44444444-4444-4444-8444-444444444444', user_id: owner, task_key: key, manual_quadrant: 'urgent_not_important', planned_day: '2026-10-05', version: 1 };
 const props = { currentUserId: owner, enabled: true, isExternalView: false, todos: [todo], today: '2026-10-05' };
+
+async function quickAddFixture({ mobile = false, add, derived = false } = {}) {
+  const project = { id: other, name: 'Synthetic personal project', tasks: [], registers: {}, tracker: [] };
+  const storage = { getItem: (key) => key === 'pmworkspace:todo-command-state:v1' ? '{"scope":"project","focusView":"all"}' : null, setItem() {}, removeItem() {} };
+  const window = { localStorage: storage, sessionStorage: storage, addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame: (fn) => setTimeout(fn, 0), matchMedia: () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }) };
+  const document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  const transport = mockTransport((r) => r.table === 'projects' ? { data: [project], count: 1 } : { data: [], count: 0 });
+  const load = await sourceModules(transport, { window, document, navigator: { onLine: true } });
+  const TodoView = (await load('src/components/TodoView.jsx')).default;
+  const Bucket = (await load('src/components/TodoBucketSection.jsx')).default;
+  const Header = (await load('src/components/TodoViewHeaderControls.jsx')).default;
+  const { getTodoSectionDefaultDueDate } = await load('src/utils/todoCalendarSections.js');
+  const dueDate = getTodoSectionDefaultDueDate('this_week');
+  if (derived) project.registers.actions = [{ _id: 'action-b', description: 'B derived task', target: dueDate, status: 'Open' }, { _id: 'action-c', description: 'C derived task', target: dueDate, status: 'Open' }];
+  const existing = derived ? [] : [{ ...todo, projectId: other, dueDate, kanbanPosition: 1024, title: 'Existing first task' }, { ...todo, _id: '55555555-5555-4555-8555-555555555555', projectId: other, dueDate, kanbanPosition: 2048, title: 'Existing last task' }];
+  let root; const calls = [];
+  function Fixture() {
+    const [todos, setTodos] = React.useState(existing);
+    return React.createElement(TodoView, { todos, currentProject: project, projectData: project.tasks, registers: project.registers, tracker: project.tracker, currentUserId: owner, currentUserName: '', isExternalView: false, onUpdateTodo: async () => null, onAddTodo: async (payload) => {
+      calls.push(payload);
+      const saved = add ? await add(payload) : { ...payload, _id: `saved-${calls.length}`, status: 'Open', owner: 'PM' };
+      if (saved) setTodos((previous) => [...previous, saved]);
+      return saved;
+    } });
+  }
+  await act(async () => { root = create(React.createElement(Fixture)); });
+  const bucket = () => root.root.findAllByType(Bucket).find((item) => item.props.bucket.key === 'this_week');
+  const input = () => bucket().findByType('input');
+  return { root, calls, bucket, input, header: () => root.root.findByType(Header), async type(value) { await act(async () => input().props.onChange({ target: { value } })); }, async close() { await act(async () => root.unmount()); } };
+}
+
+test('weekly quick-add appends beside its composer instead of sorting above existing tasks', async () => {
+  const f = await quickAddFixture();
+  try {
+    await f.type('De returnat adidasii');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls[0].kanbanPosition, 3072);
+    assert.deepEqual(Array.from(f.bucket().props.displayItems, (item) => item.title), ['Existing first task', 'Existing last task', 'De returnat adidasii']);
+    assert.equal(f.input().props.value, '');
+  } finally { await f.close(); }
+});
+
+test('quick-add stays last when its title shifts fallback order for derived tasks', async () => {
+  const f = await quickAddFixture({ derived: true });
+  try {
+    await f.type('A new task');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.deepEqual(Array.from(f.bucket().props.displayItems, (item) => item.title), ['B derived task', 'C derived task', 'A new task']);
+  } finally { await f.close(); }
+});
+
+test('phone quick-add retains a failed draft and retries through the Add task button', async () => {
+  let fail = true;
+  const f = await quickAddFixture({ mobile: true, add: async (payload) => { if (fail) throw new Error('Synthetic save failure'); return { ...payload, _id: 'saved-phone', status: 'Open' }; } });
+  const addButton = () => f.bucket().findAllByType('button').find((button) => button.children.join('') === 'Add task');
+  try {
+    await f.type('Synthetic phone task');
+    await act(async () => addButton().props.onClick());
+    assert.equal(f.input().props.value, 'Synthetic phone task');
+    assert.equal(f.bucket().findAll((item) => item.props.role === 'alert').length, 1);
+    fail = false;
+    await act(async () => addButton().props.onClick());
+    assert.equal(f.bucket().props.displayItems.at(-1).title, 'Synthetic phone task');
+    assert.equal(f.input().props.value, '');
+  } finally { await f.close(); }
+});
+
+test('pending quick-add ignores repeated Enter and preserves the next typed draft', async () => {
+  let finish;
+  const f = await quickAddFixture({ add: (payload) => new Promise((resolve) => { finish = () => resolve({ ...payload, _id: 'saved-once', status: 'Open' }); }) });
+  try {
+    await f.type('Synthetic first task');
+    let saving;
+    await act(async () => { saving = f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }); });
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls.length, 1);
+    await f.type('Synthetic next draft');
+    await act(async () => { finish(); await saving; });
+    assert.equal(f.input().props.value, 'Synthetic next draft');
+    assert.equal(f.bucket().props.displayItems.at(-1).title, 'Synthetic first task');
+  } finally { await f.close(); }
+});
+
+test('pending quick-add survives a scope change and cannot clear a different destination draft', async () => {
+  let finish;
+  const f = await quickAddFixture({ add: (payload) => new Promise((resolve) => { finish = () => resolve({ ...payload, _id: 'saved-original-project', status: 'Open' }); }) });
+  try {
+    await f.type('Synthetic retained draft');
+    let saving;
+    await act(async () => { saving = f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }); });
+    await act(async () => f.header().props.onScopeChange('all'));
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls.length, 1);
+    await act(async () => f.bucket().props.setQuickAddProjectId('other'));
+    await act(async () => { finish(); await saving; });
+    assert.equal(f.input().props.value, 'Synthetic retained draft');
+    await act(async () => { const next = f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }); await Promise.resolve(); finish(); await next; });
+    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls[1].projectId, null);
+  } finally { await f.close(); }
+});
 test('work day and priority patches preserve each other and reject an altered acknowledgement', async () => {
   let saved = { ...preference }; let altered = false;
   const transport = mockTransport((r) => {

@@ -253,6 +253,7 @@ export default function TodoBucketSection({
   projectOptions,
   quickAddProjectId,
   quickAddValues,
+  quickAddStatus = {},
   setQuickAddInputRef,
   setQuickAddProjectId,
   setQuickAddValue,
@@ -345,11 +346,12 @@ export default function TodoBucketSection({
               type="text"
               ref={(element) => setQuickAddInputRef(bucket.key, element)}
               value={quickAddValues[bucket.key] || ''}
+              aria-busy={Boolean(quickAddStatus[bucket.key]?.saving)}
               onChange={(e) => setQuickAddValue(bucket.key, e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  handleQuickAddSubmit(bucket.key);
+                  return handleQuickAddSubmit(bucket.key);
                 }
               }}
               placeholder={isMobile ? `Quick add to ${bucket.label.toLowerCase()}` : `Add a task to ${bucket.label.toLowerCase()} and press Enter`}
@@ -376,13 +378,17 @@ export default function TodoBucketSection({
                 <button
                   type="button"
                   onClick={() => handleQuickAddSubmit(bucket.key)}
-                  className="rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800"
+                  disabled={Boolean(quickAddStatus[bucket.key]?.saving)}
+                  className="rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
                 >
                   Add task
                 </button>
               ) : null}
             </div>
           </div>
+          {quickAddStatus[bucket.key] ? <p role={quickAddStatus[bucket.key].error ? 'alert' : 'status'} className="mt-2 text-xs text-slate-600">
+            {quickAddStatus[bucket.key].saving ? 'Adding task…' : quickAddStatus[bucket.key].error || quickAddStatus[bucket.key].message}
+          </p> : null}
         </div>
       )}
     </section>

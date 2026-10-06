@@ -258,6 +258,7 @@ export default function TodoBoardView({
   projectOptions,
   quickAddProjectId,
   quickAddValues,
+  quickAddStatus = {},
   setQuickAddInputRef,
   setQuickAddProjectId,
   setQuickAddValue,
@@ -375,11 +376,12 @@ export default function TodoBoardView({
                   type="text"
                   ref={(element) => setQuickAddInputRef(bucket.key, element)}
                   value={quickAddValues[bucket.key] || ''}
+                  aria-busy={Boolean(quickAddStatus[bucket.key]?.saving)}
                   onChange={(event) => setQuickAddValue(bucket.key, event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
                       event.preventDefault();
-                      handleQuickAddSubmit(bucket.key);
+                      return handleQuickAddSubmit(bucket.key);
                     }
                   }}
                   placeholder={`Add a task to ${bucket.label.toLowerCase()}`}
@@ -403,6 +405,9 @@ export default function TodoBoardView({
                     {formatQuickAddDueHint(bucket.key)}
                   </div>
                 </div>
+                {quickAddStatus[bucket.key] ? <p role={quickAddStatus[bucket.key].error ? 'alert' : 'status'} className="mt-2 text-xs text-slate-600">
+                  {quickAddStatus[bucket.key].saving ? 'Adding task…' : quickAddStatus[bucket.key].error || quickAddStatus[bucket.key].message}
+                </p> : null}
               </div>
             ) : null}
           </section>

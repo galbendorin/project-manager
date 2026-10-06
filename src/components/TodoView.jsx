@@ -13,6 +13,8 @@ import {
 import {
   calculateTodoReorderPosition,
   canReorderTodo as canReorderTodoItem,
+  getStoredTodoOrder,
+  TODO_ORDER_STEP,
 } from '../utils/todoManualOrdering';
 import { buildCrossProjectTodoUpdateData } from '../utils/crossProjectTodoCompletion';
 import TodoBoardView from './TodoBoardView';
@@ -224,6 +226,17 @@ const TodoView = ({
   });
   const [quickAddValues, setQuickAddValues] = useState({});
   const [quickAddProjectId, setQuickAddProjectId] = useState(initialCommandState.quickAddProjectId);
+  const quickAddContext = `${currentUserId}:${scope}:${currentProject?.id || ''}:${quickAddProjectId}`;
+  const quickAddUiScope = useRef({ context: quickAddContext });
+  if (quickAddUiScope.current.context !== quickAddContext) quickAddUiScope.current = { context: quickAddContext };
+  const quickAddOperations = useRef({ owner: currentUserId, pending: new Set() });
+  if (quickAddOperations.current.owner !== currentUserId) {
+    quickAddOperations.current = { owner: currentUserId, pending: new Set() };
+  }
+  const quickAddDraftVersions = useRef({});
+  const [quickAddStatus, setQuickAddStatus] = useState({ context: quickAddContext, values: {} });
+  const currentQuickAddStatus = { ...(quickAddStatus.context === quickAddContext ? quickAddStatus.values : {}) };
+  quickAddOperations.current.pending.forEach((key) => { currentQuickAddStatus[key] = { saving: true }; });
   const [pendingCompletedTodos, setPendingCompletedTodos] = useState({});
   const [todoDragState, setTodoDragState] = useState({ todo: null, sourceBucketKey: '', target: null });
   const quickAddInputRefs = useRef(new Map());
@@ -249,6 +262,7 @@ const TodoView = ({
   };
 
   const setQuickAddValue = (bucketKey, value) => {
+    quickAddDraftVersions.current[bucketKey] = (quickAddDraftVersions.current[bucketKey] || 0) + 1;
     setQuickAddValues((prev) => ({
       ...prev,
       [bucketKey]: value
@@ -671,37 +685,6 @@ const TodoView = ({
     schedulePendingCompletion(todo, isMobile ? MOBILE_COMPLETE_DELAY_MS : DESKTOP_COMPLETE_DELAY_MS);
   }, [clearPendingCompletion, isExternalView, isMobile, onCompleteTodo, pendingCompletedTodos, schedulePendingCompletion]);
 
-  const handleQuickAddSubmit = useCallback(async (bucketKey) => {
-    const rawTitle = quickAddValues[bucketKey] || '';
-    const title = rawTitle.trim();
-    if (!title || !onAddTodo || isExternalView || currentOwner.current !== currentUserId) return;
-
-    setQuickAddValue(bucketKey, '');
-
-    const destinationProjectId = scope === 'all'
-      ? (quickAddProjectId === 'other' ? null : quickAddProjectId)
-      : (currentProject?.id || null);
-    const addedTodo = await onAddTodo({
-      title,
-      projectId: destinationProjectId,
-      dueDate: getTodoSectionDefaultDueDate(bucketKey)
-    });
-    if (currentOwner.current !== currentUserId) return;
-    if (addedTodo) {
-      sourceMutationRevision.current += 1;
-      setAllProjectManualTodos((currentTodos) => (
-        mergeManualTodoCollections(currentTodos, [addedTodo])
-      ));
-    }
-
-    window.requestAnimationFrame(() => {
-      const input = quickAddInputRefs.current.get(bucketKey);
-      if (input) {
-        input.focus();
-      }
-    });
-  }, [currentProject?.id, currentUserId, isExternalView, onAddTodo, quickAddProjectId, quickAddValues, scope]);
-
   const showCompletionTick = !isExternalView;
   const showQuickAdd = !isExternalView;
 
@@ -771,6 +754,67 @@ const TodoView = ({
       displayItems,
     };
   });
+
+  const handleQuickAddSubmit = useCallback(async (bucketKey) => {
+    const rawTitle = quickAddValues[bucketKey] || '';
+    const title = rawTitle.trim();
+    const operation = quickAddOperations.current;
+    const uiScope = quickAddUiScope.current;
+    const draftVersion = quickAddDraftVersions.current[bucketKey] || 0;
+    if (!title || !onAddTodo || isExternalView || currentOwner.current !== currentUserId || operation.pending.has(bucketKey)) return;
+    operation.pending.add(bucketKey);
+    const publishStatus = (value) => {
+      if (quickAddOperations.current !== operation || quickAddUiScope.current !== uiScope) return;
+      setQuickAddStatus((previous) => ({ context: uiScope.context, values: { ...(previous.context === uiScope.context ? previous.values : {}), [bucketKey]: value } }));
+    };
+    publishStatus({ saving: true });
+    const destinationProjectId = scope === 'all'
+      ? (quickAddProjectId === 'other' ? null : quickAddProjectId)
+      : (currentProject?.id || null);
+    // Include filtered-out tasks so adding at the end never disturbs their order.
+    const section = buildTodoCalendarSections(mergedOpenTodos.map((item) => {
+      const position = cardOrderOverrides[buildTodoCardKey(item)];
+      return Number.isFinite(Number(position)) ? { ...item, boardPosition: Number(position) } : item;
+    }), { today, showFutureMonths: true }).sections.find((item) => item.key === bucketKey);
+    const items = section?.items || [];
+    // A new title may shift fallback indices for derived tasks without an order.
+    const appendPosition = Math.max(
+      calculateTodoReorderPosition(items, items.length),
+      items.some((item) => getStoredTodoOrder(item) === null) ? (items.length + 2) * TODO_ORDER_STEP : -Infinity,
+    );
+    try {
+      const addedTodo = await onAddTodo({
+        title,
+        projectId: destinationProjectId,
+        dueDate: getTodoSectionDefaultDueDate(bucketKey, today),
+        kanbanPosition: appendPosition,
+      });
+      if (quickAddOperations.current !== operation || currentOwner.current !== currentUserId) return;
+      if (!addedTodo) {
+        publishStatus({ error: 'Task was not added. Your text is kept; try again.' });
+        return;
+      }
+      sourceMutationRevision.current += 1;
+      setAllProjectManualTodos((currentTodos) => mergeManualTodoCollections(currentTodos, [addedTodo]));
+      if (quickAddUiScope.current !== uiScope) return;
+      setQuickAddValues((previous) => (quickAddDraftVersions.current[bucketKey] || 0) === draftVersion && previous[bucketKey] === rawTitle ? { ...previous, [bucketKey]: '' } : previous);
+      const filterHint = activeFilterCount || searchQuery || focusView !== TODO_FOCUS_VIEWS.all
+        ? ' Current filters may hide it.' : '';
+      publishStatus({ message: `Added “${title}”.${filterHint}` });
+      window.requestAnimationFrame(() => {
+        if (quickAddOperations.current === operation && quickAddUiScope.current === uiScope) quickAddInputRefs.current.get(bucketKey)?.focus();
+      });
+    } catch {
+      publishStatus({ error: 'Unable to add task. Your text is kept; try again.' });
+    } finally {
+      operation.pending.delete(bucketKey);
+      if (quickAddOperations.current === operation) setQuickAddStatus((previous) => {
+        const values = { ...previous.values };
+        if (values[bucketKey]?.saving) delete values[bucketKey];
+        return { ...previous, values };
+      });
+    }
+  }, [activeFilterCount, cardOrderOverrides, currentProject?.id, currentUserId, focusView, isExternalView, mergedOpenTodos, onAddTodo, quickAddProjectId, quickAddValues, scope, searchQuery, today]);
 
   const canDragReorderTodo = useCallback((todo) => (
     Boolean(onUpdateTodo)
@@ -1026,6 +1070,7 @@ const TodoView = ({
             projectOptions={projectOptions}
             quickAddProjectId={quickAddProjectId}
             quickAddValues={quickAddValues}
+            quickAddStatus={currentQuickAddStatus}
             setQuickAddInputRef={setQuickAddInputRef}
             setQuickAddProjectId={setQuickAddProjectId}
             setQuickAddValue={setQuickAddValue}
@@ -1081,6 +1126,7 @@ const TodoView = ({
                 projectOptions={projectOptions}
                 quickAddProjectId={quickAddProjectId}
                 quickAddValues={quickAddValues}
+                quickAddStatus={currentQuickAddStatus}
                 setSelectedMobileTodo={setSelectedTodo}
                 setQuickAddInputRef={setQuickAddInputRef}
                 setQuickAddProjectId={setQuickAddProjectId}
