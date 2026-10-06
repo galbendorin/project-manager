@@ -84,7 +84,7 @@ const badgeTone = (value, type) => {
   return 'bg-slate-100 text-slate-600 border-slate-200';
 };
 
-const RegisterDetailSheet = ({ item, schema, allowRowColor, onClose, onDeleteItem, onUpdateItem }) => {
+const RegisterDetailSheet = ({ item, schema, allowRowColor, onClose, onDeleteItem, onUpdateItem, onMoveToPlan, onOpenPlan, onReturnFromPlan }) => {
   const [editingColumn, setEditingColumn] = useState(null);
   const [draftValue, setDraftValue] = useState('');
   const [showEmptyFields, setShowEmptyFields] = useState(false);
@@ -139,7 +139,7 @@ const RegisterDetailSheet = ({ item, schema, allowRowColor, onClose, onDeleteIte
     const isLevelField = column === 'Level';
     const options = isStatusField ? STATUS_OPTIONS : isLevelField ? LEVEL_OPTIONS : null;
     const empty = !hasValue(value);
-    const readOnly = Boolean(item.deadlineManaged && AUTO_DEADLINE_COLUMNS.has(column));
+    const readOnly = Boolean(item.deadlineManaged && AUTO_DEADLINE_COLUMNS.has(column)) || Boolean(item.projectPlanLink && ['Description', 'Target', 'Status', 'Completed'].includes(column));
 
     return (
       <div key={column} className="border-b border-slate-100 px-4 py-3 last:border-b-0">
@@ -220,8 +220,8 @@ const RegisterDetailSheet = ({ item, schema, allowRowColor, onClose, onDeleteIte
   return (
     <div className="fixed inset-0 z-[70] flex flex-col">
       <div className="absolute inset-0 bg-slate-950/45" onClick={onClose} />
-      <div className="relative mt-12 flex-1 overflow-hidden rounded-t-[28px] bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+      <div className="relative mt-12 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <button onClick={onClose} className="text-sm font-semibold text-indigo-600">
             Back
           </button>
@@ -247,7 +247,9 @@ const RegisterDetailSheet = ({ item, schema, allowRowColor, onClose, onDeleteIte
           )}
         </div>
 
-        <div className="h-full overflow-y-auto pb-16">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(4rem+env(safe-area-inset-bottom))]">
+          {onMoveToPlan && !item.projectPlanLink && item.sourceTaskId == null ? <button type="button" disabled={/^(done|completed|closed|cancelled)$/i.test(item.status || '') || Boolean(item.completed)} onClick={() => { onMoveToPlan(item); onClose(); }} className="m-4 min-h-11 rounded-xl border px-3 text-sm font-semibold text-indigo-600 disabled:opacity-40">Move to Project Plan</button> : null}
+          {item.projectPlanLink ? <div className="m-4 flex flex-wrap gap-2"><button type="button" onClick={() => { onOpenPlan?.(item); onClose(); }} className="min-h-11 rounded-xl border px-3 text-sm">Open in Project Plan</button><button type="button" onClick={() => { onReturnFromPlan?.(item); onClose(); }} className="min-h-11 rounded-xl border px-3 text-sm">Return to source</button></div> : null}
           <div className="space-y-4 px-4 py-4">
             {item.deadlineManaged && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
@@ -424,6 +426,9 @@ const MobileRegisterList = ({
   allowRowColor = false,
   onUpdateItem,
   onDeleteItem,
+  onMoveToPlan,
+  onOpenPlan,
+  onReturnFromPlan,
   focusItemId,
   onFocusItemHandled,
 }) => {
@@ -570,6 +575,9 @@ const MobileRegisterList = ({
           allowRowColor={allowRowColor}
           onClose={() => setSelectedItem(null)}
           onDeleteItem={onDeleteItem}
+          onMoveToPlan={onMoveToPlan}
+          onOpenPlan={onOpenPlan}
+          onReturnFromPlan={onReturnFromPlan}
           onUpdateItem={(itemId, key, value) => {
             onUpdateItem(itemId, key, value);
             setSelectedItem((current) => (

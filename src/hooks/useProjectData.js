@@ -96,6 +96,9 @@ export const useProjectData = (projectId, userId = null) => {
     saveConflict,
     saveError,
     saving,
+    planTransactionBusy,
+    preparePlanPromotion,
+    commitPlanPromotion,
   } = useProjectPersistence({
     baseline,
     isOnline,
@@ -123,7 +126,7 @@ export const useProjectData = (projectId, userId = null) => {
   });
 
   useEffect(() => {
-    if (!projectId || readyProjectId !== projectId) return;
+    if (!projectId || readyProjectId !== projectId || planTransactionBusy) return;
 
     const ts = now();
     const reconciliation = reconcileActionDeadlineRisks(registers, {
@@ -167,7 +170,7 @@ export const useProjectData = (projectId, userId = null) => {
         }));
       }
     });
-  }, [projectData, projectId, queueProjectSyncOp, readyProjectId, registers, riskAutomationDate]);
+  }, [projectData, projectId, queueProjectSyncOp, readyProjectId, registers, riskAutomationDate, planTransactionBusy]);
 
   const {
     addRegisterItem,
@@ -286,6 +289,9 @@ export const useProjectData = (projectId, userId = null) => {
   }, []);
 
   return {
+    planTransactionBusy,
+    preparePlanPromotion,
+    commitPlanPromotion,
     projectData,
     readyProjectId,
     hasPendingProjectSave,

@@ -46,6 +46,7 @@ export default function DesktopTodoDetailModal({
   if (!todo) return null;
 
   const isCompleted = todo.status === 'Done';
+  const canEditSchedule = canEdit && !todo.planLink && !todo.meta?.projectPlanLink;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 sm:p-6">
@@ -64,7 +65,7 @@ export default function DesktopTodoDetailModal({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {!todo.isDerived && !isCompleted ? (
+            {!todo.isDerived && !isCompleted && !todo.planLink && !todo.meta?.projectPlanLink ? (
               <button
                 type="button"
                 onClick={() => {
@@ -125,7 +126,7 @@ export default function DesktopTodoDetailModal({
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <FieldLabel>Title</FieldLabel>
-                {canEdit ? (
+                {canEditSchedule ? (
                   <input
                     type="text"
                     value={todo.title || ''}
@@ -154,7 +155,7 @@ export default function DesktopTodoDetailModal({
 
               <label className="block">
                 <FieldLabel>Project</FieldLabel>
-                {canEdit ? (
+                {canEditSchedule ? (
                   <select
                     value={todo.projectId || 'other'}
                     onChange={(event) => onUpdateTodo(todo._id, 'projectId', event.target.value === 'other' ? null : event.target.value)}
@@ -200,7 +201,7 @@ export default function DesktopTodoDetailModal({
 
               <label className="block">
                 <FieldLabel>Repeat</FieldLabel>
-                {canEdit ? (
+                {canEditSchedule ? (
                   <select
                     value={todo.recurrence?.type || 'none'}
                     onChange={(event) => onUpdateTodo(
@@ -221,7 +222,7 @@ export default function DesktopTodoDetailModal({
 
               <label className="block">
                 <FieldLabel>Status</FieldLabel>
-                {canEdit ? (
+                {canEditSchedule ? (
                   <select
                     value={todo.status || 'Open'}
                     onChange={(event) => onUpdateTodo(todo._id, 'status', event.target.value)}

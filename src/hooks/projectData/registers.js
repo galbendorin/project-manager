@@ -257,7 +257,9 @@ export const reconcileActionDeadlineRisks = (
   const currentRisks = Array.isArray(registers?.risks) ? registers.risks : [];
   const desiredById = new Map();
 
-  actions.forEach((action) => {
+  actions.forEach((sourceAction) => {
+    const linked = sourceAction?.projectPlanLink && tasks.find((task) => task.id === sourceAction.projectPlanLink.taskId);
+    const action = linked ? { ...sourceAction, description: linked.name, target: getFinishDate(linked.start, linked.dur || 0), status: Number(linked.pct) >= 100 ? 'Completed' : 'Open', completed: Number(linked.pct) >= 100 ? getCurrentDate() : '' } : sourceAction;
     if (!action?._id || isActionClosed(action)) return;
     const targetDate = toISODateString(action.target);
     const daysRemaining = getCalendarDaysUntil(targetDate, todayDate);

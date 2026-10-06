@@ -143,6 +143,8 @@ const TaskRow = React.memo(({
   return (
     <tr
       key={task.id}
+      data-plan-task-id={task.id}
+      tabIndex={-1}
       className="group"
       draggable
       onDragStart={(e) => onDragStart(e, origIdx)}
@@ -225,7 +227,7 @@ const TaskRow = React.memo(({
       </EditableCell>
 
       <td className="text-center">
-        <input type="checkbox" checked={task.tracked || false} onChange={(e) => onToggleTrack(task.id, e.target.checked)} className="accent-indigo-600 cursor-pointer w-3.5 h-3.5" />
+        <input type="checkbox" checked={task.tracked || false} disabled={Boolean(task.originRef)} title={task.originRef ? 'Linked to its original source' : undefined} onChange={(e) => onToggleTrack(task.id, e.target.checked)} className="accent-indigo-600 cursor-pointer w-3.5 h-3.5" />
       </td>
 
       <td className="text-center">
@@ -238,15 +240,17 @@ const TaskRow = React.memo(({
               <button
                 onClick={() => onRemoveFromTracker && onRemoveFromTracker(task.id)}
                 className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-violet-700 border-violet-200 bg-violet-50 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
-                title="Remove from Master Tracker"
+                disabled={Boolean(task.originRef)}
+                title={task.originRef ? 'Return to its original source to remove this link' : 'Remove from Master Tracker'}
               >
                 MT✓
               </button>
             ) : (
               <button
+                disabled={Boolean(task.originRef)}
                 onClick={() => onSendToTracker(task.id)}
                 className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-slate-500 border-slate-200 hover:text-violet-600 hover:border-violet-300 hover:bg-violet-50"
-                title="Send to Master Tracker"
+                title={task.originRef ? 'This task already has a retained source' : 'Send to Master Tracker'}
               >
                 MT+
               </button>
@@ -256,15 +260,17 @@ const TaskRow = React.memo(({
             <button
               onClick={() => onRemoveFromActionLog && onRemoveFromActionLog(task.id)}
               className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
-              title="Remove from Action Log"
+              disabled={Boolean(task.originRef)}
+              title={task.originRef ? 'Linked to its original source' : 'Remove from Action Log'}
             >
               AL✓
             </button>
           ) : (
             <button
+              disabled={Boolean(task.originRef)}
               onClick={() => onSendToActionLog && onSendToActionLog(task.id)}
               className="px-1.5 py-0.5 text-[9px] font-semibold border rounded text-slate-500 border-slate-200 hover:text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50"
-              title="Send to Action Log"
+              title={task.originRef ? 'This task already has a retained source' : 'Send to Action Log'}
             >
               AL+
             </button>
@@ -384,6 +390,8 @@ TaskRow.displayName = 'TaskRow';
 // ── Main ScheduleGrid Component ──────────────────────────────────────
 
 const ScheduleGrid = ({
+  focusTaskId,
+  onFocusTaskHandled,
   allTasks,
   visibleTasks,
   isMobile = false,
@@ -725,6 +733,21 @@ const ScheduleGrid = ({
       renderTasks: visibleTasks.slice(nextStart, nextEnd)
     };
   }, [isVirtualized, scrollTop, viewportHeight, visibleTasks]);
+  useEffect(() => {
+    if (focusTaskId == null || !gridBodyRef.current) return undefined;
+    const index = visibleTasks.findIndex((task) => task.id === focusTaskId);
+    if (index < 0) return undefined;
+    const top = Math.max(0, index * ROW_HEIGHT - ROW_HEIGHT * 2);
+    gridBodyRef.current.scrollTop = top; setScrollTop(top);
+    const frame = requestAnimationFrame(() => {
+      const row = [...(gridBodyRef.current?.querySelectorAll('[data-plan-task-id]') || [])].find((element) => element.getAttribute('data-plan-task-id') === String(focusTaskId));
+      if (!row) return;
+      row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (!document.querySelector('[role="dialog"][aria-modal="true"]')) row.focus({ preventScroll: true });
+      onFocusTaskHandled?.();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusTaskId, visibleTasks, startIndex, onFocusTaskHandled]);
 
   const todayMidnightTs = useMemo(() => {
     const today = new Date();

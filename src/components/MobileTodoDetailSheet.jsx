@@ -49,6 +49,7 @@ export default function MobileTodoDetailSheet({
   if (!todo) return null;
 
   const isCompleted = todo.status === 'Done';
+  const canEditSchedule = canEdit && !todo.planLink && !todo.meta?.projectPlanLink;
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col">
@@ -61,7 +62,7 @@ export default function MobileTodoDetailSheet({
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
             Tasks
           </div>
-          {!todo.isDerived && !isCompleted ? (
+            {!todo.isDerived && !isCompleted && !todo.planLink && !todo.meta?.projectPlanLink ? (
             <button
               onClick={() => {
                 onDeleteTodo(todo._id);
@@ -111,8 +112,8 @@ export default function MobileTodoDetailSheet({
             </div>
 
             <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white p-4 space-y-3">
-              <MobileField label="Title">
-                {canEdit ? (
+                <MobileField label="Title">
+                {canEditSchedule ? (
                   <input
                     type="text"
                     value={todo.title || ''}
@@ -138,8 +139,8 @@ export default function MobileTodoDetailSheet({
                 )}
               </MobileField>
 
-              <MobileField label="Project">
-                {canEdit ? (
+                <MobileField label="Project">
+                {canEditSchedule ? (
                   <select
                     value={todo.projectId || 'other'}
                     onChange={(e) => onUpdateTodo(todo._id, 'projectId', e.target.value === 'other' ? null : e.target.value)}
@@ -170,7 +171,7 @@ export default function MobileTodoDetailSheet({
                 </MobileField>
 
                 <MobileField label="Recurring">
-                  {canEdit ? (
+                {canEditSchedule ? (
                     <select
                       value={todo.recurrence?.type || 'none'}
                       onChange={(e) => onUpdateTodo(
@@ -205,7 +206,7 @@ export default function MobileTodoDetailSheet({
                 </MobileField>
 
                 <MobileField label="Status">
-                  {canEdit ? (
+                {canEditSchedule ? (
                     <select
                       value={todo.status || 'Open'}
                       onChange={(e) => onUpdateTodo(todo._id, 'status', e.target.value)}

@@ -5,8 +5,8 @@ const toNullableFiniteNumber = (value) => {
   return Number.isFinite(next) ? next : null;
 };
 
-export const MANUAL_TODO_SELECT = 'id, project_id, title, description, due_date, owner_text, assignee_user_id, status, recurrence, kanban_column_id, kanban_position, created_at, updated_at, completed_at';
-export const LEGACY_MANUAL_TODO_SELECT = 'id, project_id, title, due_date, owner_text, assignee_user_id, status, recurrence, created_at, updated_at, completed_at';
+export const MANUAL_TODO_SELECT = 'id, project_id, title, description, due_date, owner_text, assignee_user_id, status, recurrence, kanban_column_id, kanban_position, source_type, source_batch_id, meta, created_at, updated_at, completed_at';
+export const LEGACY_MANUAL_TODO_SELECT = 'id, project_id, title, due_date, owner_text, assignee_user_id, status, recurrence, source_type, source_batch_id, meta, created_at, updated_at, completed_at';
 export const SHOPPING_MANUAL_TODO_SELECT = 'id, project_id, title, description, due_date, owner_text, assignee_user_id, status, recurrence, kanban_column_id, kanban_position, quantity_value, quantity_unit, source_type, source_batch_id, meta, created_at, updated_at, completed_at';
 export const SHOPPING_MANUAL_TODO_EXTRA_FIELDS = ['quantity_value', 'quantity_unit', 'source_type', 'source_batch_id', 'meta'];
 

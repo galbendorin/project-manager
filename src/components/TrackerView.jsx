@@ -77,6 +77,8 @@ const TrackerView = ({
   onAddManualItem,
   onReorderItems,
   onNavigateToSchedule,
+  onMoveToPlan,
+  onReturnFromPlan,
   focusItemId,
   onFocusItemHandled,
 }) => {
@@ -150,6 +152,8 @@ const TrackerView = ({
         onAddManualItem={onAddManualItem}
         onReorderItems={onReorderItems}
         onNavigateToSchedule={onNavigateToSchedule}
+        onMoveToPlan={onMoveToPlan}
+        onReturnFromPlan={onReturnFromPlan}
       />
     );
   }
@@ -197,6 +201,7 @@ const TrackerView = ({
   };
 
   const EditableCell = ({ item, col }) => {
+    if (item.projectPlanLink && col.key === 'status') return <td className="px-4 py-3"><button type="button" className="text-indigo-600" onClick={() => onNavigateToSchedule?.(item.taskId)}>{item.status} · Plan</button></td>;
     const cellId = `${item._id}-${col.key}`;
     const isEditing = editingCell === cellId;
     const value = item[col.key] || '';
@@ -530,6 +535,8 @@ const TrackerView = ({
                         : undefined}
                     >
                       <div className="flex items-center justify-center gap-2 opacity-75 transition-all group-hover:opacity-100">
+                        {!item.taskId && onMoveToPlan ? <button type="button" disabled={['Completed', 'Cancelled'].includes(item.status)} onClick={() => onMoveToPlan(item)} className="min-h-11 rounded-lg border px-2 text-xs font-semibold text-indigo-600 disabled:opacity-40">Move to Plan</button> : null}
+                        {item.projectPlanLink && onReturnFromPlan ? <button type="button" onClick={() => onReturnFromPlan(item)} className="min-h-11 rounded-lg border px-2 text-xs">Return to source</button> : null}
                         <button
                           type="button"
                           onClick={() => moveTrackerItem(item._id, -1)}

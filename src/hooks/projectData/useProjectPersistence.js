@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { createEmptyRegisters, createEmptyStatusReport } from './defaults';
+import { readPromotionSnapshot, writePromotionTransaction } from './taskPlanTransactions';
+import { mapManualTodoRow } from './manualTodoUtils';
 import { normalizeLoadedProjectState, buildProjectUpdatePayload } from './loadSave';
 import {
   enqueueProjectSyncOp,
@@ -70,6 +72,11 @@ export function useProjectPersistence({
   const [readyProjectId, setReadyProjectId] = useState(null);
   const [projectSyncQueue, setProjectSyncQueue] = useState([]);
   const [projectSyncRetryToken, setProjectSyncRetryToken] = useState(0);
+  const [planTransactionBusy, setPlanTransactionBusy] = useState(false);
+  const planTransactionRef = useRef(null);
+  const livePlanState = useRef(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef(null);
@@ -82,6 +89,9 @@ export function useProjectPersistence({
   const lastPersistedPlanSignatureRef = useRef('');
   const lastPersistedCollaborativeSignatureRef = useRef('');
   const snapshotKey = buildProjectSnapshotKey(projectId, userId || 'anon');
+  const planSignature = buildProjectPlanSignature({ projectData, tracker, baseline });
+  const collaborativeSignature = buildProjectCollaborativeSignature({ registers, statusReport });
+  livePlanState.current = { projectId, userId, planSignature, collaborativeSignature, blocked: !isOnline || loadingData || readyProjectId !== projectId || saving || saveConflict || Boolean(saveError) || projectSyncQueue.length > 0 || todoQueue.length > 0 || syncingProjectQueueRef.current || planSignature !== lastPersistedPlanSignatureRef.current || collaborativeSignature !== lastPersistedCollaborativeSignatureRef.current };
 
   useEffect(() => {
     projectSyncQueueRef.current = projectSyncQueue;
@@ -96,7 +106,7 @@ export function useProjectPersistence({
   }, [statusReport]);
 
   const loadProject = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || planTransactionRef.current) return;
 
     setLoadingData(true);
     setReadyProjectId(null);
@@ -234,7 +244,7 @@ export function useProjectPersistence({
   }, [loadProject]);
 
   useEffect(() => {
-    if (!projectId || !initialLoadDone.current || saveConflict) return undefined;
+    if (!projectId || !initialLoadDone.current || saveConflict || planTransactionRef.current) return undefined;
 
     if (saveTimeoutRef.current) {
       window.clearTimeout(saveTimeoutRef.current);
@@ -268,6 +278,7 @@ export function useProjectPersistence({
     }
 
     saveTimeoutRef.current = window.setTimeout(async () => {
+      if (planTransactionRef.current) return;
       setSaving(true);
       setSaveError(null);
       const updateData = buildProjectUpdatePayload({
@@ -327,6 +338,7 @@ export function useProjectPersistence({
     setUsingOfflineSnapshot,
     statusReport,
     tracker,
+    planTransactionBusy,
   ]);
 
   useEffect(() => {
@@ -358,7 +370,7 @@ export function useProjectPersistence({
   }, []);
 
   useEffect(() => {
-    if (!projectId || loadingData || !isOnline) return undefined;
+    if (!projectId || loadingData || !isOnline || planTransactionRef.current) return undefined;
 
     let cancelled = false;
 
@@ -386,10 +398,10 @@ export function useProjectPersistence({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [isOnline, loadingData, projectId]);
+  }, [isOnline, loadingData, projectId, planTransactionBusy]);
 
   useEffect(() => {
-    if (!projectId || !isOnline || projectSyncQueue.length === 0 || !supportsDirectProjectMutationsRef.current) {
+    if (!projectId || !isOnline || projectSyncQueue.length === 0 || !supportsDirectProjectMutationsRef.current || planTransactionRef.current) {
       return undefined;
     }
 
@@ -494,7 +506,64 @@ export function useProjectPersistence({
     return () => {
       cancelled = true;
     };
-  }, [isOnline, projectId, projectSyncQueue.length, projectSyncRetryToken, setLastSaved, setOfflinePendingSync, setUsingOfflineSnapshot, todoQueueRef]);
+  }, [isOnline, projectId, projectSyncQueue.length, projectSyncRetryToken, planTransactionBusy, setLastSaved, setOfflinePendingSync, setUsingOfflineSnapshot, todoQueueRef]);
+
+  const assertPlanGate = useCallback(() => {
+    const state = livePlanState.current;
+    if (!mounted.current || !userId || state.userId !== userId || state.projectId !== projectId) throw Object.assign(new Error('The signed-in workspace changed. Reopen this task.'), { transactionRejected: true });
+    if (!initialLoadDone.current || state.blocked || planTransactionRef.current) throw Object.assign(new Error('Reconnect and wait for this project and its pending edits to finish saving before continuing.'), { transactionRejected: true });
+    return state;
+  }, [projectId, userId]);
+
+  const adoptPlanSnapshot = useCallback((project, source, reference) => {
+    const state = normalizeLoadedProjectState(project, now);
+    lastPersistedPlanSignatureRef.current = buildProjectPlanSignature({ projectData: state.tasks, tracker: state.tracker, baseline: state.baseline });
+    lastPersistedCollaborativeSignatureRef.current = buildProjectCollaborativeSignature({ registers: state.registers, statusReport: state.statusReport });
+    projectVersionRef.current = state.version;
+    registersRef.current = state.registers; statusReportRef.current = state.statusReport;
+    setProjectData(state.tasks); setTracker(state.tracker); setRegisters(state.registers); setBaselineState(state.baseline); setStatusReport(state.statusReport);
+    if (reference.kind === 'manual') setTodos((items) => {
+      const saved = mapManualTodoRow(source);
+      return items.some((item) => item._id === saved._id) ? items.map((item) => item._id === saved._id ? saved : item) : [...items, saved];
+    });
+    setSaveError(null); setSaveConflict(false); setRemoteUpdateAvailable(false); setUsingOfflineSnapshot(false);
+  }, [now, setProjectData, setTracker, setRegisters, setBaselineState, setStatusReport, setTodos, setUsingOfflineSnapshot]);
+
+  const preparePlanPromotion = useCallback(async (reference, { adoptLatest = false } = {}) => {
+    assertPlanGate();
+    const snapshot = await readPromotionSnapshot(supabase, projectId, reference);
+    assertPlanGate();
+    if (snapshot.project.version < projectVersionRef.current) throw new Error('The project read was stale. Review latest again before continuing.');
+    if (snapshot.project.version !== projectVersionRef.current) {
+      if (!adoptLatest) throw new Error('The project changed in another session. Review latest before continuing.');
+      adoptPlanSnapshot(snapshot.project, snapshot.source, reference);
+    }
+    return snapshot;
+  }, [assertPlanGate, adoptPlanSnapshot, projectId]);
+
+  const commitPlanPromotion = useCallback(async (operation) => {
+    const start = assertPlanGate();
+    if (operation.snapshot.projectId !== projectId || (!operation.replay && operation.snapshot.project.version !== projectVersionRef.current)) throw Object.assign(new Error('Review the latest project before saving.'), { transactionRejected: true });
+    const token = { userId, projectId };
+    planTransactionRef.current = token;
+    if (saveTimeoutRef.current) { window.clearTimeout(saveTimeoutRef.current); saveTimeoutRef.current = null; }
+    setPlanTransactionBusy(true);
+    try {
+      const ack = await writePromotionTransaction(supabase, operation);
+      const latest = livePlanState.current;
+      if (!mounted.current || latest.userId !== userId || latest.projectId !== projectId) throw new Error('The workspace changed while saving. Reopen the original source to check its saved state.');
+      if (ack.project.version < projectVersionRef.current) throw new Error('The saved response is older than the current project. Review latest to resolve the original save; your inputs are retained.');
+      if (latest.planSignature !== start.planSignature || latest.collaborativeSignature !== start.collaborativeSignature || projectSyncQueueRef.current.length || todoQueueRef.current.length) {
+        setSaveConflict(true); setRemoteUpdateAvailable(true);
+        throw new Error('The transaction saved on the server, but newer local edits were retained. Reload Latest after preserving those edits.');
+      }
+      adoptPlanSnapshot(ack.project, ack.source, operation.reference); setLastSaved(new Date());
+      return ack;
+    } finally {
+      if (planTransactionRef.current === token) planTransactionRef.current = null;
+      if (mounted.current && livePlanState.current.userId === userId && livePlanState.current.projectId === projectId) setPlanTransactionBusy(false);
+    }
+  }, [assertPlanGate, adoptPlanSnapshot, projectId, userId, setLastSaved, todoQueueRef]);
 
   useEffect(() => {
     if (todoQueue.length === 0 && projectSyncQueue.length === 0 && !saveTimeoutRef.current && !saving) {
@@ -520,6 +589,9 @@ export function useProjectPersistence({
   }, [setOfflinePendingSync]);
 
   return {
+    planTransactionBusy,
+    preparePlanPromotion,
+    commitPlanPromotion,
     hasPendingProjectSave: readyProjectId === projectId && (
       saving || projectSyncQueue.length > 0 ||
       buildProjectPlanSignature({ projectData, tracker, baseline }) !== lastPersistedPlanSignatureRef.current ||

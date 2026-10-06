@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { deadlineDescription, MATRIX_QUADRANTS, taskViewIdentity } from "../utils/todoEisenhower";
 import TaskChecklistBadge from "./TaskChecklistBadge";
 import { useTodoMatrixLayout } from '../hooks/useTodoMatrixLayout';
@@ -23,15 +23,46 @@ export default function TodoEisenhowerMatrix({
   transientTodos = [],
 }) {
   const dragged = useRef(null);
+  const pointerDrag = useRef(null);
+  const [draggingTitle, setDraggingTitle] = useState('');
   const [dropTarget, setDropTarget] = useState("");
   const sections = useRef(new Map());
   const moveControls = useRef(new Map());
   const layout = useTodoMatrixLayout(isExternalView ? null : currentUserId, isMobile);
+  const cancelDrag = () => { dragged.current = null; pointerDrag.current = null; setDraggingTitle(''); setDropTarget(''); };
+  useEffect(() => { dragged.current = null; pointerDrag.current = null; setDraggingTitle(''); setDropTarget(''); }, [currentUserId, isExternalView, matrix.offline]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const cancel = (event) => { if (event.key === 'Escape') { dragged.current = null; pointerDrag.current = null; setDraggingTitle(''); setDropTarget(''); } };
+    window.addEventListener('keydown', cancel); return () => window.removeEventListener('keydown', cancel);
+  }, []);
   const moveTask = async (todo, quadrant) => {
+    const latest = matrix.groups.flatMap((group) => group.cards).find((card) => taskViewIdentity(card.todo) === taskViewIdentity(todo));
+    if (!latest?.reference || latest.quadrant === quadrant || latest.deadlinePriority || latest.completing || matrix.offline || isExternalView || matrix.pending[latest.reference.task_key]) return;
     if (await matrix.move(todo, quadrant))
       requestAnimationFrame(() =>
         { const control = moveControls.current.get(`${todo.projectId || "personal"}:${todo._id}`); control?.focus({ preventScroll: true }); control?.scrollIntoView({ block: 'nearest' }); },
       );
+  };
+  const pointerTarget = (event) => document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-matrix-quadrant]')?.getAttribute('data-matrix-quadrant') || '';
+  const startPointerDrag = (event, todo) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointerDrag.current = { pointerId: event.pointerId, todo, owner: currentUserId };
+    setDraggingTitle(todo.title || 'Untitled');
+  };
+  const updatePointerDrag = (event) => {
+    if (pointerDrag.current?.pointerId !== event.pointerId) return;
+    event.preventDefault(); setDropTarget(pointerTarget(event));
+  };
+  const finishPointerDrag = (event) => {
+    const active = pointerDrag.current;
+    if (active?.pointerId !== event.pointerId) return;
+    const target = pointerTarget(event);
+    cancelDrag();
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (active.owner === currentUserId && target) void moveTask(active.todo, target);
   };
   if (!matrix.ready && !isExternalView)
     return (
@@ -57,6 +88,7 @@ export default function TodoEisenhowerMatrix({
         {isExternalView
           ? "Read-only task overview. Due and overdue tasks are shown in Do now."
           : "Your personal priorities. Due and overdue tasks stay in Do now until completed or rescheduled."}
+        {!isExternalView ? <span className="ml-1">Drag a card or its ⠿ handle to another quadrant, or use Move to.</span> : null}
         <button type="button" onClick={layout.reset} className="ml-2 min-h-11 px-2 text-xs underline">Reset sizes</button>
       </div>
       {matrix.offline ? (
@@ -90,8 +122,9 @@ export default function TodoEisenhowerMatrix({
           {matrix.groups.map((q, index) => (
             <button
               key={q.id}
+              data-matrix-quadrant={q.id}
               type="button"
-              className="min-h-11 rounded-xl border bg-white px-3 text-left text-sm"
+              className={`min-h-11 rounded-xl border px-3 text-left text-sm ${dropTarget === q.id ? 'border-indigo-500 bg-indigo-50' : 'bg-white'}`}
               onClick={() =>
                 sections.current
                   .get(q.id)
@@ -114,6 +147,7 @@ export default function TodoEisenhowerMatrix({
             }));
           return (
             <TodoQuadrantPanel
+              data-matrix-quadrant={q.id}
               key={q.id}
               title={`Q${index + 1} · ${q.title}`}
               label={q.label}
@@ -165,6 +199,14 @@ export default function TodoEisenhowerMatrix({
                     <article
                       key={`${todo.projectId || "personal"}:${todo._id}`}
                       className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                      draggable={!isMobile && canMove}
+                      onPointerDown={(event) => { if (!isMobile && canMove && !event.target.closest('button,input,select,textarea,a,summary')) startPointerDrag(event, todo); }}
+                      onPointerMove={updatePointerDrag}
+                      onPointerUp={finishPointerDrag}
+                      onPointerCancel={cancelDrag}
+                      onLostPointerCapture={cancelDrag}
+                      onDragStart={(event) => { if (!canMove) { event.preventDefault(); return; } dragged.current = todo; event.dataTransfer.setData('text/plain', reference.task_key); event.dataTransfer.effectAllowed = 'move'; }}
+                      onDragEnd={cancelDrag}
                     >
                       <div className="flex items-start gap-2">
                         {!isExternalView ? (
@@ -198,27 +240,22 @@ export default function TodoEisenhowerMatrix({
                             {todo.source || "Manual"}
                           </span>
                         </button>
-                        {!isMobile && canMove ? (
-                          <span
-                            draggable
-                            onDragStart={(event) => {
-                              dragged.current = todo;
-                              event.dataTransfer.setData(
-                                "text/plain",
-                                reference.task_key,
-                              );
-                              event.dataTransfer.effectAllowed = "move";
-                            }}
-                            onDragEnd={() => {
-                              dragged.current = null;
-                              setDropTarget("");
-                            }}
+                        {canMove ? (
+                          <button
+                            type="button"
+                            draggable={false}
+                            style={{ touchAction: 'none' }}
+                            onPointerDown={(event) => startPointerDrag(event, todo)}
+                            onPointerMove={updatePointerDrag}
+                            onPointerUp={finishPointerDrag}
+                            onPointerCancel={cancelDrag}
+                            onLostPointerCapture={cancelDrag}
                             aria-label={`Drag ${todo.title} to a quadrant`}
                             title="Drag to a quadrant"
-                            className="cursor-grab px-2 py-3 text-slate-400"
+                            className="min-h-11 min-w-11 cursor-grab select-none rounded-lg px-2 py-3 text-slate-400 focus:ring-2 focus:ring-indigo-400"
                           >
                             ⠿
-                          </span>
+                          </button>
                         ) : null}
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
@@ -295,6 +332,10 @@ export default function TodoEisenhowerMatrix({
           );
         })}
       </div>
+      {draggingTitle ? <div className="fixed inset-x-3 bottom-3 z-[90] rounded-2xl border border-indigo-200 bg-white p-3 pb-[calc(.75rem+env(safe-area-inset-bottom))] shadow-2xl">
+        <p role="status" className="mb-2 truncate text-sm font-medium">Drag “{draggingTitle}” to a quadrant, then release.</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{MATRIX_QUADRANTS.map((quadrant) => <div key={quadrant.id} data-matrix-quadrant={quadrant.id} className={`flex min-h-14 items-center justify-center rounded-xl border p-2 text-center text-sm font-semibold ${dropTarget === quadrant.id ? 'border-indigo-600 bg-indigo-100 text-indigo-900' : 'border-slate-200 bg-slate-50'}`}>{quadrant.title}</div>)}</div>
+      </div> : null}
     </div>
   );
 }

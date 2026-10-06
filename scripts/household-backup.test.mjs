@@ -41,6 +41,10 @@ test('read-only export independently restores exact bigint, decimal, JSON and re
     await source.query('INSERT INTO auth.users VALUES ($1)',[owner]);
     await source.query(`INSERT INTO public.projects VALUES ($1,$2,$3::jsonb,9007199254740993)`,[project,owner,'[{"title":"Cumpărături","done":false,"amount":9007199254740993}]']);
     await source.query(`INSERT INTO public.manual_todos VALUES ($1,$2,$3,'Lapte',123456789.123456789,9007199254740993)`,[item,owner,project]);
+    const link = { version: 1, projectId: project, taskId: 1, sourceKind: 'manual', sourceId: item, sourceKey: `manual:${item}`, operationId: parent, originalDeadline: '2026-10-02' };
+    await source.exec('ALTER TABLE public.manual_todos ADD COLUMN meta jsonb; ALTER TABLE public.projects ADD COLUMN registers jsonb; ALTER TABLE public.projects ADD COLUMN tracker jsonb');
+    await source.query("UPDATE public.projects SET tasks=jsonb_set(tasks,'{0,originRef}',$1::jsonb),registers=$2::jsonb,tracker=$3::jsonb", [JSON.stringify(link), JSON.stringify({ actions: [{ _id: 'retained-action', projectPlanOperationIds: [parent], projectPlanLastLink: link }] }), JSON.stringify([{ _id: 'retained-tracker', projectPlanLastReturn: { operationId: parent, link }, dueDate: '2026-10-14' }])]);
+    await source.query('UPDATE public.manual_todos SET meta=$1::jsonb', [JSON.stringify({ projectPlanLink: link, projectPlanOperationIds: [parent], retainedNote: 'Original notes' })]);
     await source.query('INSERT INTO public.profiles(id,user_id) VALUES ($1,$1)',[owner]);
     await source.query('INSERT INTO public.task_card_checklists VALUES ($1,$2,$3)',[parent,owner,project]);
     await source.query('INSERT INTO public.task_card_checklist_items VALUES ($1,$2,$3,$4,true)',[item,owner,project,parent]);

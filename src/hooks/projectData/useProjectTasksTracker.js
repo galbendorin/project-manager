@@ -84,6 +84,7 @@ export function useProjectTasksTracker({
         if (updates.name) updatedItem.taskName = updates.name;
         if (updates.pct !== undefined) {
           if (updates.pct === 100) updatedItem.status = 'Completed';
+          else if (item.projectPlanLink) updatedItem.status = updates.pct > 0 ? 'In Progress' : 'Not Started';
           else if (updates.pct > 0 && updatedItem.status === 'Not Started') updatedItem.status = 'In Progress';
         }
         return updatedItem;
@@ -99,13 +100,14 @@ export function useProjectTasksTracker({
   }, [now, projectData, setProjectData, setRegisters, setTracker]);
 
   const deleteTask = useCallback((taskId) => {
+    if (projectData.find((task) => task.id === taskId)?.originRef) throw new Error('Return this linked task to its original source before deleting it.');
     setProjectData((prev) => prev.filter((task) => task.id !== taskId));
     setRegisters((prev) => removeLinkedRisksForTask({
       ...prev,
       actions: (prev.actions || []).filter((action) => action._id !== `track_${taskId}`),
     }, taskId));
     setTracker((prev) => prev.filter((item) => item.taskId !== taskId));
-  }, [setProjectData, setRegisters, setTracker]);
+  }, [projectData, setProjectData, setRegisters, setTracker]);
 
   const modifyHierarchy = useCallback((taskId, delta) => {
     setProjectData((prev) => prev.map((task) => (
@@ -116,6 +118,7 @@ export function useProjectTasksTracker({
   }, [now, setProjectData]);
 
   const toggleTrackTask = useCallback((taskId, isTracked) => {
+    if (projectData.find((item) => item.id === taskId)?.originRef) return false;
     updateTask(taskId, { tracked: isTracked });
 
     const task = projectData.find((item) => item.id === taskId);
@@ -198,6 +201,7 @@ export function useProjectTasksTracker({
   const sendToTracker = useCallback((taskId) => {
     const task = projectData.find((item) => item.id === taskId);
     if (!task) return;
+    if (task.originRef) return false;
 
     setTracker((prev) => {
       if (prev.find((item) => item.taskId === taskId)) return prev;
