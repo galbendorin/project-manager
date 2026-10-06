@@ -86,6 +86,7 @@ export const useProjectData = (projectId, userId = null) => {
   });
   const {
     loadingData,
+    hasPendingProjectSave,
     readyProjectId,
     projectSyncQueue,
     queueProjectSyncOp,
@@ -286,6 +287,8 @@ export const useProjectData = (projectId, userId = null) => {
 
   return {
     projectData,
+    readyProjectId,
+    hasPendingProjectSave,
     registers,
     tracker,
     statusReport,

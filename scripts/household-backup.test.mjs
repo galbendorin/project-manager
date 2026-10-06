@@ -44,7 +44,8 @@ test('read-only export independently restores exact bigint, decimal, JSON and re
     await source.query('INSERT INTO public.profiles(id,user_id) VALUES ($1,$1)',[owner]);
     await source.query('INSERT INTO public.task_card_checklists VALUES ($1,$2,$3)',[parent,owner,project]);
     await source.query('INSERT INTO public.task_card_checklist_items VALUES ($1,$2,$3,$4,true)',[item,owner,project,parent]);
-    await source.query("INSERT INTO public.task_eisenhower_preferences(id,user_id,manual_todo_id,task_key,manual_quadrant) VALUES($1,$2,$3,$4,'urgent_important')",[item,owner,item,`manual:${item}`]);
+    await source.exec('ALTER TABLE public.task_eisenhower_preferences ADD COLUMN planned_day date');
+    await source.query("INSERT INTO public.task_eisenhower_preferences(id,user_id,manual_todo_id,task_key,manual_quadrant,planned_day) VALUES($1,$2,$3,$4,'urgent_important','2026-10-05')",[item,owner,item,`manual:${item}`]);
     const tables = (await source.query(`SELECT c.relname AS name,
       (SELECT jsonb_agg(jsonb_build_object('name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'nullable',not a.attnotnull) ORDER BY a.attnum) FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) AS columns,
       (SELECT coalesce(jsonb_agg(jsonb_build_object('kind',con.contype,'columns',(SELECT jsonb_agg(a.attname ORDER BY k.ord) FROM unnest(con.conkey) WITH ORDINALITY k(num,ord) JOIN pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=k.num),'parent_schema',pn.nspname,'parent_table',pc.relname,'parent_columns',(SELECT jsonb_agg(a.attname ORDER BY k.ord) FROM unnest(con.confkey) WITH ORDINALITY k(num,ord) JOIN pg_attribute a ON a.attrelid=con.confrelid AND a.attnum=k.num))), '[]'::jsonb) FROM pg_constraint con LEFT JOIN pg_class pc ON pc.oid=con.confrelid LEFT JOIN pg_namespace pn ON pn.oid=pc.relnamespace WHERE con.conrelid=c.oid) AS constraints
@@ -54,6 +55,7 @@ test('read-only export independently restores exact bigint, decimal, JSON and re
     const result = await source.exec(sql);
     bundle = result.flatMap(r=>r.rows).find(r=>r.household_backup)?.household_backup;
     assert.ok(bundle);
+    assert.match(bundle.tables.find(t=>t.name==='task_eisenhower_preferences').rows_json, /2026-10-05/);
     assert.match(bundle.tables.find(t=>t.name==='manual_todos').rows_json,/9007199254740993/);
     assert.match(bundle.tables.find(t=>t.name==='manual_todos').rows_json,/123456789\.123456789/);
     const report = await verifyBackup(bundle,()=>new PGlite());

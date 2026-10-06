@@ -35,6 +35,7 @@ function fixture({ path = '/shopping', pending = true, activation = Promise.reso
     useAuth: () => ({ user: { id: 'test-owner', email: 'owner@example.test' }, loading: false }),
     usePlan: () => ({ householdToolsEnabled: true, financeToolsEnabled: true, loading: false }),
     useCheckoutStatus: () => null, useOnlineStatus: () => true,
+    useTodoSourceNavigation: () => ({ request: null, error: '', openSource() {}, clear() {} }),
     OfflineBanner: () => null, CheckoutToast: () => null, AppStartupReady: () => null,
     loadAccentTheme: () => 'orchid', applyAccentTheme() {}, saveAccentTheme() {},
     loadLastAppPath: () => '/', readAppShortcutIntent: () => null,

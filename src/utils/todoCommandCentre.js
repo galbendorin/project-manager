@@ -1,3 +1,5 @@
+import { plannedDayForTask, validCalendarDay } from './todoEisenhower.js';
+
 export const TODO_FOCUS_VIEWS = Object.freeze({
   today: 'today',
   mine: 'mine',
@@ -11,7 +13,7 @@ const normalizeText = (value = '') => String(value || '').trim().toLowerCase();
 
 const parseIsoDate = (value) => {
   const normalized = String(value || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+  if (!validCalendarDay(normalized)) return null;
   const date = new Date(`${normalized}T00:00:00`);
   return Number.isNaN(date.getTime()) ? null : date;
 };
@@ -50,6 +52,7 @@ export const matchesTodoFocusView = (item = {}, focusView = TODO_FOCUS_VIEWS.all
   currentUserId = '',
   currentUserName = '',
   today = '',
+  preferences = {},
 } = {}) => {
   const normalizedView = normalizeTodoFocusView(focusView);
   if (normalizedView === TODO_FOCUS_VIEWS.all) return true;
@@ -60,6 +63,7 @@ export const matchesTodoFocusView = (item = {}, focusView = TODO_FOCUS_VIEWS.all
 
   const todayDate = parseIsoDate(today) || new Date();
   const todayIso = toIsoDate(todayDate);
+  if (normalizedView === TODO_FOCUS_VIEWS.today && plannedDayForTask(item, preferences) === todayIso) return true;
   const dueDate = parseIsoDate(item?.dueDate);
   if (!dueDate) return false;
   const dueIso = toIsoDate(dueDate);

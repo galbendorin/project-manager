@@ -478,9 +478,10 @@ export function useProjectTodos({
     return localTodo;
   }, [isOnline, now, projectId, setOfflinePendingSync, userId]);
 
-  const updateTodo = useCallback(async (todoId, key, value, todoOverride = null) => {
+  const updateTodo = useCallback(async (todoId, key, value, todoOverride = null, { requireConfirmation = false } = {}) => {
     const todo = todos.find((item) => item._id === todoId) || todoOverride;
     if (!todo) return null;
+    if (requireConfirmation && (!userId || !supportsManualTodosTableRef.current || !isOnline || isOfflineTempId(todoId))) return null;
 
     const ts = now();
     const {
@@ -581,11 +582,12 @@ export function useProjectTodos({
 
     if (updateError && isMissingRelationError(updateError, 'manual_todos')) {
       supportsManualTodosTableRef.current = false;
+      if (requireConfirmation) return null;
       setTodos((prev) => applyTodoUpdateToState(prev, todoId, localUpdated, followUpLocal));
       return { updatedTodo: localUpdated, followUpTodo: followUpLocal };
     }
 
-    if (updateError || !updatedRow) {
+    if (updateError || !updatedRow || (requireConfirmation && (updatedRow.id !== todoId || (key === 'dueDate' && updatedRow.due_date !== value)))) {
       console.error('Failed to update manual todo:', updateError);
       return null;
     }
@@ -631,7 +633,7 @@ export function useProjectTodos({
       }
       return next;
     });
-    return { updatedTodo, followUpTodo };
+    return { updatedTodo, followUpTodo, confirmed: true };
   }, [isOnline, now, setOfflinePendingSync, todos, userId]);
 
   const deleteTodo = useCallback(async (todoId) => {

@@ -520,6 +520,11 @@ export function useProjectPersistence({
   }, [setOfflinePendingSync]);
 
   return {
+    hasPendingProjectSave: readyProjectId === projectId && (
+      saving || projectSyncQueue.length > 0 ||
+      buildProjectPlanSignature({ projectData, tracker, baseline }) !== lastPersistedPlanSignatureRef.current ||
+      buildProjectCollaborativeSignature({ registers, statusReport }) !== lastPersistedCollaborativeSignatureRef.current
+    ),
     loadingData,
     projectSyncQueue,
     readyProjectId,

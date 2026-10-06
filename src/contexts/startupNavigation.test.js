@@ -80,6 +80,7 @@ async function fixture(t, { path = '/shopping', savedPath = '/', cachedAccess = 
   const renderApp = vm.runInNewContext(`${routing}\nreturn { currentPath, planLoading };\n}\nApp`, {
     ...appHooks.hooks, ...financeAccess, window,
     useAuth: () => auth, usePlan: () => plan, useCheckoutStatus: () => null, useOnlineStatus: () => true,
+    useTodoSourceNavigation: () => ({ request: null, error: '', openSource() {}, clear() {} }),
     loadAccentTheme: () => 'orchid', applyAccentTheme() {}, saveAccentTheme() {},
     getInitialAppPath: () => path === '/' ? savedPath : path, readAppShortcutIntent: () => null,
     hasPendingServiceWorker: () => false, getFeatureByRoute: () => null, canAccessItilQuiz: () => false,

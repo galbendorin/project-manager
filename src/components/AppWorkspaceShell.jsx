@@ -33,7 +33,7 @@ const TimesheetView = lazy(() => import('./TimesheetView'));
 const PricingPage = lazy(() => import('./PricingPage'));
 const BillingScreen = lazy(() => import('./BillingScreen'));
 
-export function MainApp({ project, currentUserId, currentUserName, accentTheme, onAccentThemeChange, onBackToProjects, isOnline, launchShortcut }) {
+export function MainApp({ project, currentUserId, currentUserName, accentTheme, onAccentThemeChange, onBackToProjects, isOnline, launchShortcut, sourceNavigation, onSourceNavigationHandled, onOpenSourceTodo }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const {
     canUseAiReport, aiReportsRemaining, canUsePlatformAi,
@@ -49,6 +49,11 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
   const [pendingTodoFocusId, setPendingTodoFocusId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [sourceFocus, setSourceFocus] = useState(null);
+  const [sourceMessage, setSourceMessage] = useState('');
+  const consumedSourceRequest = useRef(null);
+  const sourceLeaveState = useRef({ active: true });
+  useEffect(() => { sourceLeaveState.current.active = true; return () => { sourceLeaveState.current.active = false; }; }, []);
   const [insertAfterId, setInsertAfterId] = useState(null);
   const [importStatus, setImportStatus] = useState(null);
   const [isBenefitsOpen, setIsBenefitsOpen] = useState(false);
@@ -86,6 +91,8 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     saving,
     lastSaved,
     loadingData,
+    readyProjectId,
+    hasPendingProjectSave,
     saveConflict,
     saveError,
     remoteUpdateAvailable,
@@ -154,9 +161,47 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     });
   }, [setProjectData]);
 
-  const handleNavigateToSchedule = useCallback(() => {
+  const handleNavigateToSchedule = useCallback((taskId) => {
     setActiveTab('schedule');
-  }, []);
+    const task = projectData.find((item) => item.id === taskId);
+    if (task) { setEditingTask(task); setIsModalOpen(true); }
+  }, [projectData]);
+  const handleOpenSourceTodo = useCallback((todo) => {
+    if (todo.projectId !== project.id && (readyProjectId !== project.id || hasPendingProjectSave || saving || offlinePendingSync || pendingProjectSyncCount || saveError)) {
+      setSourceMessage('Finish loading or saving this project before opening another project. Your current edits are retained; try again shortly.');
+      return false;
+    }
+    setSourceMessage('');
+    const originProjectId = project.id;
+    return onOpenSourceTodo?.(todo, { canLeave: (targetId) => {
+      const latest = sourceLeaveState.current;
+      return latest.active && latest.owner === currentUserId && latest.projectId === originProjectId && (targetId === originProjectId || !latest.blocked);
+    } });
+  }, [project.id, currentUserId, readyProjectId, hasPendingProjectSave, saving, offlinePendingSync, pendingProjectSyncCount, saveError, onOpenSourceTodo]);
+  sourceLeaveState.current = { active: true, owner: currentUserId, projectId: project.id, blocked: readyProjectId !== project.id || hasPendingProjectSave || saving || offlinePendingSync || pendingProjectSyncCount > 0 || Boolean(saveError) };
+
+  useEffect(() => {
+    if (!sourceNavigation || sourceNavigation.ownerId !== currentUserId || sourceNavigation.projectId !== project.id || readyProjectId !== project.id || loadingData || consumedSourceRequest.current === sourceNavigation.id) return;
+    if (usingOfflineSnapshot || String(saveError || '').startsWith('Unable to load project:')) {
+      setSourceMessage('Reconnect and reload this project. The requested source will open after its data loads successfully.');
+      return;
+    }
+    setSourceMessage('');
+    const todo = sourceNavigation.todo;
+    // Do not consume a request against the previous project's still-loading arrays.
+    const task = todo.originTaskId != null ? projectData.find((item) => item.id === todo.originTaskId) : null;
+    const item = todo.originType === 'register' ? registers[todo.originRegisterType]?.find((entry) => entry._id === todo.originItemId) : tracker.find((entry) => entry._id === todo.originItemId);
+    if (task) {
+      setActiveTab('schedule'); setEditingTask(task); setInsertAfterId(null); setIsModalOpen(true);
+    } else if (item) {
+      const tab = todo.originType === 'register' ? todo.originRegisterType : 'tracker';
+      setActiveTab(tab); setSourceFocus({ tab, itemId: todo.originItemId });
+    } else {
+      setSourceMessage('This source item is unavailable. Reload the project or check your access.');
+    }
+    consumedSourceRequest.current = sourceNavigation.id;
+    onSourceNavigationHandled?.();
+  }, [sourceNavigation, currentUserId, project.id, readyProjectId, loadingData, usingOfflineSnapshot, saveError, projectData, registers, tracker, onSourceNavigationHandled]);
 
   const handleOpenFeedback = useCallback(() => {
     openFeedbackEmail({
@@ -533,6 +578,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
       ) : null}
 
       <main className="relative flex-grow min-h-0 overflow-hidden">
+        {sourceMessage ? <p role="alert" className="absolute left-3 right-3 top-3 z-[90] rounded-xl border bg-amber-50 p-3 text-sm">{sourceMessage}<button type="button" onClick={() => setSourceMessage('')} className="ml-3 underline">Dismiss</button></p> : null}
         <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-slate-500">Loading view...</div>}>
           {activeTab === 'schedule' ? (
             <ScheduleView
@@ -567,6 +613,8 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
             />
           ) : activeTab === 'tracker' ? (
             <TrackerView
+              focusItemId={sourceFocus?.tab === 'tracker' ? sourceFocus.itemId : null}
+              onFocusItemHandled={() => setSourceFocus(null)}
               trackerItems={tracker}
               tasks={projectData}
               onUpdateItem={updateTrackerItem}
@@ -600,6 +648,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
           ) : activeTab === 'todo' ? (
             <BlurOverlay tabId="todo" onUpgrade={handleOpenPricing}>
               <TodoView
+                onOpenSourceTodo={handleOpenSourceTodo}
                 todos={todos}
                 projectData={projectData}
                 registers={registers}
@@ -649,6 +698,8 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
           ) : (
             <BlurOverlay tabId={activeTab} onUpgrade={handleOpenPricing}>
               <RegisterView
+                focusItemId={sourceFocus?.tab === activeTab ? sourceFocus.itemId : null}
+                onFocusItemHandled={() => setSourceFocus(null)}
                 registerType={activeTab}
                 items={registers[activeTab] || []}
                 isExternalView={isExternalView}

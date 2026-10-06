@@ -4,14 +4,18 @@ import {
   groupMatrixTasks,
   matrixPlacement,
   matrixReference,
+  DEFAULT_MATRIX_QUADRANT,
+  validCalendarDay,
   validMatrixQuadrant,
 } from "../utils/todoEisenhower";
+const EMPTY_PREFERENCES = Object.freeze({});
 
 export function useTodoEisenhowerMatrix({
   currentUserId,
   isExternalView,
   enabled,
   todos,
+  visibleTodos = todos,
   today,
 }) {
   const [preferences, setPreferences] = useState({});
@@ -103,7 +107,7 @@ export function useTodoEisenhowerMatrix({
         while (true) {
           const result = await supabase
             .from("task_eisenhower_preferences")
-            .select("*", { count: "exact" })
+            .select("*, planned_day", { count: "exact" })
             .eq("user_id", currentUserId)
             .in("task_key", batch)
             .order("task_key", { ascending: true })
@@ -169,8 +173,8 @@ export function useTodoEisenhowerMatrix({
         revision === scope.revision
       ) {
         setError(
-          failure?.code === "PGRST205" || failure?.code === "42P01"
-            ? "Matrix needs the database update before saved priorities are available."
+          ["PGRST205", "42P01", "42703", "PGRST204"].includes(failure?.code)
+            ? "Today planning needs the database update before saved priorities are available."
             : "Unable to load your saved priorities. Retry loading.",
         );
       }
@@ -184,8 +188,9 @@ export function useTodoEisenhowerMatrix({
   useEffect(() => {
     void reload();
   }, [reload, reloadNonce]);
-  const move = useCallback(
-    async (todo, quadrant) => {
+  const patchPreference = useCallback(
+    async (todo, patch) => {
+      const quadrant = patch.manual_quadrant;
       const scope = session.current;
       const reference = matrixReference(todo);
       if (
@@ -196,11 +201,12 @@ export function useTodoEisenhowerMatrix({
         !scope?.active ||
         scope.context !== context ||
         !reference ||
-        !validMatrixQuadrant(quadrant)
+        (quadrant !== undefined && !validMatrixQuadrant(quadrant)) ||
+        (patch.planned_day !== undefined && patch.planned_day !== null && !validCalendarDay(patch.planned_day))
       )
         return false;
       if (typeof navigator !== "undefined" && !navigator.onLine) {
-        setError("Reconnect to move tasks. Your saved priority is kept.");
+        setError("Reconnect to save your plan. Your confirmed choices are kept.");
         return false;
       }
       const key = reference.task_key;
@@ -211,8 +217,8 @@ export function useTodoEisenhowerMatrix({
       if (
         !current ||
         current.status === "Done" ||
-        matrixPlacement(current, preferences[key], latest.current.today)
-          .overdue ||
+        (quadrant !== undefined && matrixPlacement(current, preferences[key], latest.current.today)
+          .deadlinePriority) ||
         scope.writes.has(key)
       )
         return false;
@@ -226,7 +232,7 @@ export function useTodoEisenhowerMatrix({
         if (old)
           request = supabase
             .from("task_eisenhower_preferences")
-            .update({ manual_quadrant: quadrant })
+            .update(patch)
             .eq("id", old.id)
             .eq("user_id", currentUserId)
             .eq("version", old.version);
@@ -238,7 +244,8 @@ export function useTodoEisenhowerMatrix({
             .insert({
               ...fields,
               user_id: currentUserId,
-              manual_quadrant: quadrant,
+              manual_quadrant: quadrant ?? DEFAULT_MATRIX_QUADRANT,
+              ...patch,
             });
         }
         const { data, error: failure } = await request.select("*");
@@ -248,13 +255,16 @@ export function useTodoEisenhowerMatrix({
           data?.length !== 1 ||
           data[0].task_key !== key ||
           data[0].user_id !== currentUserId ||
-          data[0].manual_quadrant !== quadrant ||
+          (quadrant !== undefined && data[0].manual_quadrant !== quadrant) ||
+          (patch.planned_day !== undefined && (data[0].planned_day ?? null) !== patch.planned_day) ||
+          (old && quadrant === undefined && data[0].manual_quadrant !== old.manual_quadrant) ||
+          (old && patch.planned_day === undefined && (data[0].planned_day ?? null) !== (old.planned_day ?? null)) ||
           data[0].version !== (old ? old.version + 1 : 1)
         ) {
           throw new Error(
             failure?.code === "23505" || (!failure && !data?.length)
-              ? "This priority changed elsewhere. Reload priorities before moving again."
-              : "Move was not saved. Your previous quadrant is kept. Try again.",
+              ? "This task's plan changed elsewhere. Reload priorities and try again."
+              : "Your plan was not saved. Previous choices are kept. Try again.",
           );
         }
         setPreferences((prev) => ({ ...prev, [key]: data[0] }));
@@ -290,17 +300,19 @@ export function useTodoEisenhowerMatrix({
       coveredKeys,
     ],
   );
+  const move = useCallback((todo, quadrant) => patchPreference(todo, { manual_quadrant: quadrant }), [patchPreference]);
+  const planDay = useCallback((todo, day) => patchPreference(todo, { planned_day: day || null }), [patchPreference]);
   const groups = useMemo(
     () =>
       enabled
         ? groupMatrixTasks(
-            todos,
-            isExternalView || loadedContext !== context ? {} : preferences,
+            visibleTodos,
+            isExternalView || loadedContext !== context ? EMPTY_PREFERENCES : preferences,
             today,
           )
         : [],
     [
-      todos,
+      visibleTodos,
       preferences,
       today,
       isExternalView,
@@ -310,6 +322,7 @@ export function useTodoEisenhowerMatrix({
     ],
   );
   return {
+    preferences: loadedContext === context && !isExternalView ? preferences : EMPTY_PREFERENCES,
     groups,
     ready:
       isExternalView ||
@@ -324,6 +337,7 @@ export function useTodoEisenhowerMatrix({
         : "",
     pending: loadedContext === context ? pending : {},
     move,
+    planDay,
     reload,
   };
 }

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { filterBySearch } from '../../utils/helpers';
 import RowColorControl from '../RowColorControl';
 import { getRowColorSurfaceStyle } from '../../utils/rowColors';
@@ -369,10 +369,17 @@ const MobileTrackerView = ({
   onAddManualItem,
   onReorderItems,
   onNavigateToSchedule,
+  focusItemId,
+  onFocusItemHandled,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedItem, setSelectedItem] = useState(null);
+  useEffect(() => {
+    if (!focusItemId) return;
+    const item = trackerItems.find((entry) => entry._id === focusItemId);
+    if (item) { setSelectedItem(item); onFocusItemHandled?.(); }
+  }, [focusItemId, trackerItems, onFocusItemHandled]);
 
   const filteredItems = useMemo(() => {
     let items = trackerItems;
