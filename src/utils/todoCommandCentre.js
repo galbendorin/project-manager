@@ -2,6 +2,7 @@ import { plannedDayForTask, validCalendarDay } from './todoEisenhower.js';
 
 export const TODO_FOCUS_VIEWS = Object.freeze({
   today: 'today',
+  tomorrow: 'tomorrow',
   mine: 'mine',
   nextSevenDays: 'next-seven-days',
   all: 'all',
@@ -63,6 +64,10 @@ export const matchesTodoFocusView = (item = {}, focusView = TODO_FOCUS_VIEWS.all
 
   const todayDate = parseIsoDate(today) || new Date();
   const todayIso = toIsoDate(todayDate);
+  if (normalizedView === TODO_FOCUS_VIEWS.tomorrow) {
+    const tomorrowIso = toIsoDate(addDays(todayDate, 1));
+    return item.dueDate === tomorrowIso || plannedDayForTask(item, preferences) === tomorrowIso;
+  }
   if (normalizedView === TODO_FOCUS_VIEWS.today && plannedDayForTask(item, preferences) === todayIso) return true;
   const dueDate = parseIsoDate(item?.dueDate);
   if (!dueDate) return false;
@@ -81,6 +86,7 @@ export const matchesTodoFocusView = (item = {}, focusView = TODO_FOCUS_VIEWS.all
 
 export const getTodoFocusCounts = (items = [], options = {}) => ({
   [TODO_FOCUS_VIEWS.today]: items.filter((item) => matchesTodoFocusView(item, TODO_FOCUS_VIEWS.today, options)).length,
+  [TODO_FOCUS_VIEWS.tomorrow]: items.filter((item) => matchesTodoFocusView(item, TODO_FOCUS_VIEWS.tomorrow, options)).length,
   [TODO_FOCUS_VIEWS.mine]: items.filter((item) => matchesTodoFocusView(item, TODO_FOCUS_VIEWS.mine, options)).length,
   [TODO_FOCUS_VIEWS.nextSevenDays]: items.filter((item) => matchesTodoFocusView(item, TODO_FOCUS_VIEWS.nextSevenDays, options)).length,
   [TODO_FOCUS_VIEWS.all]: items.length,

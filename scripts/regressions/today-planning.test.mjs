@@ -164,6 +164,22 @@ test('candidate-before-filter makes future personal selections visible in Today 
     assert.equal(hook.value.visibleOpenTodos.length, 0);
   } finally { await hook.close(); }
 });
+test('Tomorrow combines project deadlines and personal plans, and retains project filtering', async () => {
+  const project = { id: other, name: 'Synthetic project', tasks: [], registers: {}, tracker: [] };
+  const dueTomorrow = { ...todo, _id: other, projectId: other, dueDate: '2026-10-06' };
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const { useTodoCandidateData, useTodoViewDerivedData } = await load('src/hooks/useTodoViewDerivedData.js');
+  const options = { allProjectManualTodos: [], allProjectsData: [project], currentProject: project, projectData: [], projectOptions: [project], registers: {}, scope: 'all', todos: [todo, dueTomorrow], tracker: [], currentUserId: owner, currentUserName: '', today: '2026-10-05', bucketFilter: [], projectFilter: [], sourceFilter: [], ownerFilter: [], recurrenceFilter: [], searchQuery: '', pendingCompletedTodos: {}, focusView: 'tomorrow', isExternalView: false, sourcesConfirmed: true, preferences: { [key]: { ...preference, planned_day: '2026-10-06' } } };
+  const hook = await mountHook(p => useTodoViewDerivedData({ ...p, candidates: useTodoCandidateData(p) }), options);
+  try {
+    assert.equal(hook.value.focusCounts.tomorrow, 2);
+    assert.deepEqual(Array.from(hook.value.visibleOpenTodos, t => t._id).sort(), [todo._id, other].sort());
+    await hook.update({ ...options, projectFilter: [other] });
+    assert.deepEqual(Array.from(hook.value.visibleOpenTodos, t => t._id), [other]);
+    await hook.update({ ...options, allProjectsData: [], projectOptions: [] });
+    assert.deepEqual(Array.from(hook.value.visibleOpenTodos, t => t._id), [todo._id]);
+  } finally { await hook.close(); }
+});
 test('date controls sync pristine changes but retain dirty dates across delayed saves and failures', async () => {
   const load = await sourceModules(mockTransport(() => ({ data: [] })));
   const Controls = (await load('src/components/TaskPlanningControls.jsx')).default;
