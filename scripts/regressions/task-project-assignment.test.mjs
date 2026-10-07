@@ -73,3 +73,17 @@ test('actual update hook confirms destination, clears old board column and refus
     const before = transport.calls.length; assert.equal(await hook.value.updateTodo(id, 'projectId', projectId, todo, { requireConfirmation: true }), null); assert.equal(transport.calls.length, before);
   } finally { await hook.close(); }
 });
+test('legacy task schema can assign twice without writing an unavailable Kanban column', async () => {
+  const transport = mockTransport((request) => Object.hasOwn(request.payload, 'kanban_column_id')
+    ? { data: null, error: { message: 'column kanban_column_id does not exist' } }
+    : { data: { id, project_id: request.payload.project_id, title: todo.title, status: 'Open', updated_at: '2026-10-07T10:00:00Z' } });
+  const load = await sourceModules(transport, { window: { setTimeout, clearTimeout } });
+  const hook = await mountHook((await load('src/hooks/projectData/useProjectTodos.js')).useProjectTodos, { userId: owner, projectId, isOnline: true, now: () => '2026-10-07T10:00:00Z', setOfflinePendingSync() {} });
+  try {
+    let first; await act(async () => { first = await hook.value.updateTodo(id, 'projectId', projectId, todo, { requireConfirmation: true }); });
+    assert.equal(first.confirmed, true);
+    let second; await act(async () => { second = await hook.value.updateTodo(id, 'projectId', null, first.updatedTodo, { requireConfirmation: true }); });
+    assert.equal(second.confirmed, true); assert.equal(second.updatedTodo.projectId, null);
+    assert.equal(transport.calls.length, 3); assert.equal(Object.hasOwn(transport.calls[2].payload, 'kanban_column_id'), false);
+  } finally { await hook.close(); }
+});

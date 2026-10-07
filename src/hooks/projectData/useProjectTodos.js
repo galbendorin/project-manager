@@ -561,6 +561,10 @@ export function useProjectTodos({
       ? MANUAL_TODO_SELECT
       : LEGACY_MANUAL_TODO_SELECT;
     let updatePayload = patch;
+    if (key === 'projectId' && !supportsExtendedManualTodoFieldsRef.current) {
+      updatePayload = { ...patch };
+      delete updatePayload.kanban_column_id;
+    }
     const saveUpdate = (payload, fields) => {
       let query = supabase.from('manual_todos').update(payload).eq('id', todoId);
       if (requireConfirmation && key === 'projectId') {
