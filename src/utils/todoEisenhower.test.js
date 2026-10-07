@@ -11,6 +11,14 @@ import { shouldClearUserOfflineKey } from "./offlineState.js";
 const id = "11111111-1111-4111-8111-111111111111";
 const project = "22222222-2222-4222-8222-222222222222";
 const todo = { _id: id, title: "Task", status: "Open", dueDate: "2026-10-05" };
+test('each Matrix quadrant groups projects A–Z before deadline order', () => {
+  const tasks = [
+    { ...todo, _id: 'z', projectId: 'z', projectName: 'Zebra', dueDate: '2026-10-01' },
+    { ...todo, _id: 'a', projectId: 'a', projectName: 'Alpha', dueDate: '2026-10-05' },
+    { ...todo, _id: 'other', projectName: 'Other', dueDate: '2026-10-01' },
+  ];
+  assert.deepEqual(groupMatrixTasks(tasks, {}, '2026-10-07')[0].cards.map((card) => card.todo._id), ['a', 'z', 'other']);
+});
 test("date boundary and overdue automation preserve the manual preference", () => {
   const preference = { manual_quadrant: "not_urgent_not_important" };
   assert.equal(

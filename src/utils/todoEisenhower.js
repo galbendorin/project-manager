@@ -1,3 +1,5 @@
+import { compareTodoProjects } from './todoManualOrdering.js';
+
 export const MATRIX_QUADRANTS = Object.freeze([
   { id: "urgent_important", title: "Do now", label: "Important & urgent" },
   { id: "not_urgent_important", title: "Make progress", label: "Important, not urgent" },
@@ -115,6 +117,7 @@ export const groupMatrixTasks = (todos, preferences, today) =>
       .filter((card) => card.quadrant === quadrant.id)
       .sort(
         (a, b) =>
+          compareTodoProjects(a.todo, b.todo) ||
           (a.todo.dueDate || "9999").localeCompare(b.todo.dueDate || "9999") ||
           (a.todo.title || "").localeCompare(b.todo.title || "") ||
           String(a.reference?.task_key || a.todo._id).localeCompare(

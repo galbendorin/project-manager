@@ -1,5 +1,23 @@
 export const TODO_ORDER_STEP = 1024;
 
+export const compareTodoProjects = (left = {}, right = {}) => {
+  if (Boolean(left.projectId) !== Boolean(right.projectId)) return left.projectId ? -1 : 1;
+  return String(left.projectName || '').localeCompare(String(right.projectName || ''), undefined, { sensitivity: 'base', numeric: true })
+    || String(left.projectId || '').localeCompare(String(right.projectId || ''));
+};
+
+export const sortTodosByProject = (items = [], sortWithinProject = sortTodosForManualOrder) => {
+  const groups = new Map();
+  items.forEach((item) => {
+    const key = item.projectId || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  });
+  return [...groups.values()]
+    .sort((left, right) => compareTodoProjects(left[0], right[0]))
+    .flatMap((group) => sortWithinProject(group));
+};
+
 export const getTodoIdentity = (todo = {}) => String(todo?._id || todo?.id || '');
 
 export const canReorderTodo = (todo = {}, options = {}) => {

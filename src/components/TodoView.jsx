@@ -780,7 +780,7 @@ const TodoView = ({
       const position = cardOrderOverrides[buildTodoCardKey(item)];
       return Number.isFinite(Number(position)) ? { ...item, boardPosition: Number(position) } : item;
     }), { today, showFutureMonths: true }).sections.find((item) => item.key === bucketKey);
-    const items = section?.items || [];
+    const items = (section?.items || []).filter((item) => (item.projectId || null) === destinationProjectId);
     // A new title may shift fallback indices for derived tasks without an order.
     const appendPosition = Math.max(
       calculateTodoReorderPosition(items, items.length),
@@ -841,7 +841,10 @@ const TodoView = ({
     const adjustedTargetIndex = sourceBucketKey === targetBucketKey && sourceIndex >= 0 && sourceIndex < targetIndex
       ? Math.max(0, targetIndex - 1)
       : targetIndex;
-    const nextPosition = calculateTodoReorderPosition(itemsWithoutDragged, adjustedTargetIndex);
+    const projectItems = itemsWithoutDragged.filter((item) => (item.projectId || null) === (todo.projectId || null));
+    const projectTargetIndex = itemsWithoutDragged.slice(0, adjustedTargetIndex)
+      .filter((item) => (item.projectId || null) === (todo.projectId || null)).length;
+    const nextPosition = calculateTodoReorderPosition(projectItems, projectTargetIndex);
     const nextDueDate = getTodoSectionDefaultDueDate(targetBucketKey);
 
     if (!todo.isDerived && (todo.dueDate || '') !== nextDueDate) {
@@ -867,12 +870,14 @@ const TodoView = ({
     if (currentIndex < 0) return false;
     const targetIndex = currentIndex + direction;
     if (targetIndex < 0 || targetIndex >= items.length) return false;
+    if (items[targetIndex]?.bucketKey === items[currentIndex]?.bucketKey
+      && (items[targetIndex]?.item.projectId || null) !== (todo.projectId || null)) return false;
     if (todo.isDerived && items[targetIndex]?.bucketKey !== items[currentIndex]?.bucketKey) return false;
     return true;
   }, [canDragReorderTodo, getFlattenedReorderItems]);
 
   const handleTodoReorderMove = useCallback(async (todo, sourceBucketKey, displayIndex, direction) => {
-    if (!canDragReorderTodo(todo)) return;
+    if (!canMoveTodoByOffset(todo, direction)) return;
 
     const items = getFlattenedReorderItems();
     const currentIndex = items.findIndex((entry) => entry.item._id === todo._id);
@@ -890,7 +895,7 @@ const TodoView = ({
     if (todo.isDerived && targetEntry.bucketKey !== items[resolvedCurrentIndex]?.bucketKey) return;
     const targetIndex = direction < 0 ? targetEntry.index : targetEntry.index + 1;
     await persistTodoReorder(todo, sourceBucketKey, targetEntry.bucketKey, targetIndex);
-  }, [canDragReorderTodo, getFlattenedReorderItems, persistTodoReorder]);
+  }, [canMoveTodoByOffset, getFlattenedReorderItems, persistTodoReorder]);
 
   const handleTodoReorderDragStart = useCallback((event, todo, sourceBucketKey) => {
     if (!canDragReorderTodo(todo)) return;
