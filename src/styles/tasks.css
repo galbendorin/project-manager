@@ -19,7 +19,7 @@
 .pm-task-ui :is(button,input,select,textarea),.pm-task-dialog :is(button,input,select,textarea) {font-size:14px}
 .pm-task-ui :is(input,select,textarea),.pm-task-dialog :is(input,select,textarea) {color:var(--task-ink);background:var(--task-surface);border-color:var(--task-control);max-width:100%;min-width:0}
 .pm-task-ui :is(input,textarea)::placeholder,.pm-task-dialog :is(input,textarea)::placeholder {color:var(--task-muted);opacity:1}
-.pm-task-ui :is(button,input,select,textarea,summary):focus-visible,.pm-task-dialog :is(button,input,select,textarea,summary):focus-visible {outline:2px solid var(--task-accent);outline-offset:2px}
+.pm-task-ui :is(button,input,select,textarea,summary):focus-visible,.pm-task-dialog :is(button,input,select,textarea,summary):focus-visible {outline:2px solid var(--task-blue);outline-offset:2px}
 .task-header-controls {background:var(--task-surface)}
 .task-header-controls h2 {font-size:20px}
 .task-header-controls :is(p,span) {font-size:12px}
@@ -108,7 +108,7 @@
 .nav-tabs .nav-tab.active,.nav-more-menu .nav-more-menu__item.active {background:var(--pm-accent-strong);color:#fff;border-color:var(--pm-accent-strong);box-shadow:none}
 .nav-tabs .nav-tab--locked,.nav-more-menu__lock,.nav-sheet__lock {color:var(--pm-text-soft)}
 .nav-tabs .nav-tab.active .nav-tab__meta {color:#fff}
-.nav-tabs .nav-tab:focus-visible {outline:2px solid var(--pm-accent-strong);outline-offset:2px}
+.nav-tabs .nav-tab:focus-visible {outline:2px solid var(--pm-text-soft);outline-offset:2px}
 @media(max-width:767px) {
   .task-matrix-row {grid-template-columns:44px 44px minmax(0,1fr) 44px;gap:3px}
   .task-matrix-handle,.task-matrix-complete,.task-matrix-action {min-width:44px;min-height:44px;grid-row:1/3}
