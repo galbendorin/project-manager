@@ -31,9 +31,11 @@ export default function TodoViewHeaderControls({
   ownerFilter,
   ownerOptions,
   onFocusViewChange,
+  onQuickCapture,
   onScopeChange,
   projectFilter,
   projectSelectOptions,
+  quickCaptureStatus,
   recurrenceFilter,
   recurrenceOptions,
   scope,
@@ -61,18 +63,23 @@ export default function TodoViewHeaderControls({
       : 'Show next 12 months';
 
   return (
-    <div className="task-header-controls px-4 sm:px-6 py-4 border-b border-slate-200 rounded-t-xl space-y-3">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
+    <div className="task-header-controls px-4 sm:px-6 py-4 border-b border-slate-200 rounded-t-xl space-y-2 sm:space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+        <div className="task-header-heading">
+          <div className="task-header-title-row">
           <h2 className="text-base font-bold text-slate-800 tracking-tight">Tasks</h2>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Focus on what needs attention, then refine by project or source.
+          {isMobile && onQuickCapture ? <button type="button" onClick={onQuickCapture} className="task-inline-capture md:hidden"><span aria-hidden="true">+</span> Capture</button> : null}
+          </div>
+          <p className="task-header-description text-[11px] text-slate-400 mt-1">
+            Your tasks, across projects.
           </p>
+          {isMobile && quickCaptureStatus ? <p role="status" className="task-inline-capture-status md:hidden">{quickCaptureStatus}</p> : null}
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div aria-label="Task view" className="grid grid-cols-2 items-center rounded-xl border border-slate-200 bg-slate-50 p-1 sm:grid-cols-4">
+          <div aria-label="Task view" className="task-view-options grid grid-cols-4 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
             <button
               type="button"
+              aria-pressed={viewMode === 'list'}
               onClick={() => setViewMode('list')}
               className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'list'
@@ -84,6 +91,7 @@ export default function TodoViewHeaderControls({
             </button>
             <button
               type="button"
+              aria-pressed={viewMode === 'timeline'}
               onClick={() => setViewMode('timeline')}
               className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'timeline'
@@ -95,6 +103,7 @@ export default function TodoViewHeaderControls({
             </button>
             <button
               type="button"
+              aria-pressed={viewMode === 'kanban'}
               onClick={() => setViewMode('kanban')}
               className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'kanban'
@@ -108,12 +117,13 @@ export default function TodoViewHeaderControls({
           </div>
           <input
             type="text"
+            aria-label="Search tasks"
             placeholder="Search tasks..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
           />
-          {viewMode !== 'matrix' && futureMonthCount > 0 ? (
+          {!isMobile && viewMode !== 'matrix' && futureMonthCount > 0 ? (
             <button
               type="button"
               onClick={() => setShowFutureMonths((value) => !value)}
@@ -144,8 +154,8 @@ export default function TodoViewHeaderControls({
                   : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
               }`}
             >
-              <span className="w-full truncate text-[11px] font-semibold sm:text-xs">{option.label}</span>
-              <span className={`mt-0.5 text-[10px] font-medium ${isActive ? 'text-[var(--pm-accent)]' : 'text-slate-400'}`}>
+              <span className="task-focus-label w-full text-[11px] font-semibold sm:text-xs">{option.label}</span>
+              <span className={`task-focus-count mt-0.5 text-[10px] font-medium ${isActive ? 'text-[var(--pm-accent)]' : 'text-slate-400'}`}>
                 {focusCounts?.[option.value] || 0}
               </span>
             </button>
@@ -157,11 +167,12 @@ export default function TodoViewHeaderControls({
 
       {isMobile ? (
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="task-mobile-summary flex items-center justify-between gap-3">
             <div>
               <div className="text-[11px] font-semibold text-slate-500">
                 {visibleOpenTodos.length} active item{visibleOpenTodos.length !== 1 ? 's' : ''}
               </div>
+              <div className="task-scope-summary">{scope === 'project' ? 'This project + Other' : 'All projects + Other'}</div>
             </div>
             <button
               type="button"
@@ -176,10 +187,7 @@ export default function TodoViewHeaderControls({
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600">
-              {scope === 'project' ? 'This project + Other' : 'All projects + Other'}
-            </span>
+          {activeFilterCount > 0 || (viewMode !== 'matrix' && futureMonthCount > 0) ? <div className="flex flex-wrap items-center gap-2">
             {activeFilterCount > 0 ? (
               <span className="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700">
                 {activeFilterCount} active filter{activeFilterCount !== 1 ? 's' : ''}
@@ -207,7 +215,7 @@ export default function TodoViewHeaderControls({
                 {showFutureMonths ? 'Hide next 12 months' : `Show next 12 months (${futureMonthCount})`}
               </button>
             ) : null}
-          </div>
+          </div> : null}
 
           {viewMode !== 'matrix' && !showFutureMonths && futureItemCount > 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500">

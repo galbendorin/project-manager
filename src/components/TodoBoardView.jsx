@@ -1,4 +1,5 @@
 import React from 'react';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import { taskViewIdentity } from '../utils/todoEisenhower';
 import { formatDate } from '../utils/helpers';
 import TaskRecurrenceIndicator from './TaskRecurrenceIndicator';
@@ -292,13 +293,20 @@ export default function TodoBoardView({
     onReorderDrop(event, bucketKey, resolvedIndex);
   };
 
+  const compactLayout = useMediaQuery('(max-width: 639px)');
+  // Keep empty composers available below populated phone sections. Render in
+  // that order so keyboard and screen-reader navigation match the layout.
+  const displayedSections = compactLayout
+    ? [...bucketSections].sort((left, right) => Number(Boolean(right.displayItems.length)) - Number(Boolean(left.displayItems.length)))
+    : bucketSections;
+
   return (
-    <div className="overflow-x-auto px-5 py-4">
-      <div className="grid min-w-max grid-flow-col auto-cols-[minmax(280px,320px)] gap-4 pb-2">
-        {bucketSections.map((bucket) => (
+    <div className="task-timeline-view overflow-x-auto px-5 py-4">
+      <div className="task-timeline-grid grid min-w-max grid-flow-col auto-cols-[minmax(280px,320px)] gap-4 pb-2">
+        {displayedSections.map((bucket) => (
           <section
             key={bucket.key}
-            className="flex min-h-[420px] flex-col rounded-[24px] border border-slate-200 bg-slate-50/80"
+            className="task-timeline-section flex min-h-[420px] flex-col rounded-[24px] border border-slate-200 bg-slate-50/80"
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <h3 className="text-[12px] font-semibold uppercase tracking-wide text-slate-700">{bucket.label}</h3>

@@ -690,6 +690,8 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
           ) : activeTab === 'todo' ? (
             <BlurOverlay tabId="todo" onUpgrade={handleOpenPricing}>
               <TodoView
+                onQuickCapture={handleOpenQuickCapture}
+                quickCaptureStatus={quickCaptureStatus}
                 onMoveToPlan={isReadOnly || isExternalView ? undefined : handleMoveToPlan}
                 onReturnFromPlan={isReadOnly || isExternalView ? undefined : handleReturnFromPlan}
                 onOpenPlan={handleOpenPlan}
@@ -762,6 +764,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
 
       {isMobile && !showPricing && !showBilling && !isModalOpen ? (
         <MobileQuickCapture
+          hideTrigger={activeTab === 'todo' && !isExternalView}
           isOpen={isQuickCaptureOpen}
           mode={quickCaptureMode}
           value={quickCaptureText}
