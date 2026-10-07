@@ -42,6 +42,7 @@ export default function DesktopTodoDetailModal({
   onRenameChecklistItem,
   onToggleChecklistItem,
   planningControls,
+  projectAssignmentControls,
 }) {
   if (!todo) return null;
 
@@ -90,6 +91,7 @@ export default function DesktopTodoDetailModal({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="border-b border-slate-100 px-5 py-5 lg:border-b-0 lg:border-r">
+            {projectAssignmentControls}
             {planningControls}
             <div className={`rounded-[24px] border p-5 ${isCompleted ? 'border-emerald-200 bg-emerald-50/80' : 'border-slate-200 bg-slate-50/70'}`}>
               <div className="flex flex-wrap items-center gap-2">
@@ -153,7 +155,7 @@ export default function DesktopTodoDetailModal({
                 )}
               </label>
 
-              <label className="block">
+              {!projectAssignmentControls ? <label className="block">
                 <FieldLabel>Project</FieldLabel>
                 {canEditSchedule ? (
                   <select
@@ -169,7 +171,7 @@ export default function DesktopTodoDetailModal({
                 ) : (
                   <ReadValue>{todo.projectName || 'Other'}</ReadValue>
                 )}
-              </label>
+              </label> : null}
 
               <label className="block">
                 <FieldLabel>Due date</FieldLabel>

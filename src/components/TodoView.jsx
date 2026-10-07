@@ -23,6 +23,7 @@ import TodoKanbanBoard from './TodoKanbanBoard';
 import TodoEisenhowerMatrix from './TodoEisenhowerMatrix';
 import TaskPlanningControls from './TaskPlanningControls';
 import TaskPlanSourceControls from './TaskPlanSourceControls';
+import TaskProjectAssignment from './TaskProjectAssignment';
 import { useTodoEisenhowerMatrix } from '../hooks/useTodoEisenhowerMatrix';
 import { useLocalCalendarDay } from '../hooks/useLocalCalendarDay';
 import { groupMatrixTasks, taskViewIdentity } from '../utils/todoEisenhower';
@@ -990,6 +991,7 @@ const TodoView = ({
     {selectedTodo.status !== 'Done' ? <TaskPlanningControls key={taskViewIdentity(selectedTodo)} todo={selectedTodo} matrix={personalPlan} today={today} deadlinePending={Boolean(currentDeadlineSaves[selectedTodo._id])} draft={currentDrafts[taskViewIdentity(selectedTodo)]} onDraftChange={(field, value, expected) => updatePlanningDraft(selectedTodo, field, value, expected)} onUpdateTodo={handleUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={setPlanNotice} /> : null}
     {onMoveToPlan || selectedTodo.planLink || selectedTodo.meta?.projectPlanLink ? <TaskPlanSourceControls key={`promotion:${taskViewIdentity(selectedTodo)}`} todo={selectedTodo} projects={projectOptions} onMove={onMoveToPlan} onOpen={onOpenPlan} onReturn={onReturnFromPlan} /> : null}
   </> : null;
+  const selectedProjectAssignment = selectedTodo ? <TaskProjectAssignment key={`assignment:${taskViewIdentity(selectedTodo)}`} todo={selectedTodo} projects={projectOptions} canEdit={selectedTodoCanEdit} onUpdateTodo={handleUpdateTodo} /> : null;
 
   return (
     <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
@@ -1143,6 +1145,7 @@ const TodoView = ({
 
       {sourceCurrent && isMobile && selectedTodo ? (
         <MobileTodoDetailSheet
+          projectAssignmentControls={selectedProjectAssignment}
           planningControls={selectedPlanningControls}
           todo={selectedTodo}
           canEdit={selectedTodoCanEdit}
@@ -1173,6 +1176,7 @@ const TodoView = ({
 
       {sourceCurrent && !isMobile && selectedTodo ? (
         <DesktopTodoDetailModal
+          projectAssignmentControls={selectedProjectAssignment}
           planningControls={selectedPlanningControls}
           todo={selectedTodo}
           canEdit={selectedTodoCanEdit}

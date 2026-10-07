@@ -12,7 +12,8 @@ export default function TaskPlanSourceControls({ todo, onMove, onOpen, onReturn,
   if (!eligibility.eligible) return <p className="mt-3 text-xs text-slate-500">{eligibility.reason}</p>;
   return <div className="mt-3 space-y-2 border-t pt-3">
     {!todo.projectId ? <>
-      <label className="block text-sm">Destination project<select className="mt-1 min-h-11 w-full rounded-lg border bg-white px-3" value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Choose a project…</option>{projects.filter((project) => project.id && project.name?.trim().toLowerCase() !== 'shopping list').map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+      <label className="block text-sm">Project Plan destination<select className="mt-1 min-h-11 w-full rounded-lg border bg-white px-3" value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Choose a project…</option>{projects.filter((project) => project.id && project.name?.trim().toLowerCase() !== 'shopping list').map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+      <p className="text-xs text-slate-500">Choose Move to Project Plan to enter duration and dependencies. This selection alone does not assign the task.</p>
       <p className="text-xs text-slate-500">Moving this personal task into a project makes it accessible to that project’s collaborators.</p>
     </> : null}
     <button type="button" disabled={!onMove || (!todo.projectId && !projectId)} onClick={() => onMove(todo, todo.projectId || projectId)} className="min-h-11 rounded-lg border border-indigo-200 px-3 text-sm font-semibold text-indigo-700 disabled:opacity-40">Move to Project Plan</button>

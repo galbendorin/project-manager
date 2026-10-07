@@ -18,6 +18,7 @@ before(async () => {
   create table public.projects(id uuid primary key,user_id uuid,name text,tasks jsonb default '[]',registers jsonb default '{}',tracker jsonb default '[]',version bigint default 1,updated_at timestamptz);
   create table public.project_members(project_id uuid,user_id uuid);
   create function public.can_access_project(target uuid,subject uuid) returns boolean language sql stable security definer set search_path='' as $$select subject is not null and(exists(select 1 from public.projects where id=target and user_id=subject) or exists(select 1 from public.project_members where project_id=target and user_id=subject))$$;
+  create function public.can_access_manual_todo(target_project_id uuid,row_user_id uuid,subject_user uuid) returns boolean language sql stable security definer set search_path='' as $$select subject_user is not null and(case when target_project_id is null then row_user_id=subject_user else public.can_access_project(target_project_id,subject_user) end)$$;
   create function public.can_write_project(target uuid,owner_id uuid,subject uuid) returns boolean language sql stable security definer set search_path='' as $$select public.can_access_project(target,subject) and exists(select 1 from public.projects where id=target and user_id=owner_id)$$;
   create function public.bump_version() returns trigger language plpgsql as $$begin new.version:=old.version+1; return new; end$$;
   create trigger version before update on public.projects for each row execute function public.bump_version();
@@ -42,6 +43,7 @@ before(async () => {
   // This also verifies its guarded idempotent rollout against the final bodies.
   await db.exec(await readFile(new URL('../sql/2026-10-06_task_plan_promotion_review_corrections.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../sql/2026-10-06_task_plan_promotion_metadata_guard.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../sql/2026-10-07_preserve_task_project_checklists.sql', import.meta.url), 'utf8'));
 });
 after(() => db.close());
 async function probe(user, fn, role = 'authenticated') {
