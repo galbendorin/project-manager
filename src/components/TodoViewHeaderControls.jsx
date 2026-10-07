@@ -4,6 +4,7 @@ import { TODO_FOCUS_VIEWS } from '../utils/todoCommandCentre';
 
 const FOCUS_OPTIONS = [
   { value: TODO_FOCUS_VIEWS.today, label: 'Today' },
+  { value: TODO_FOCUS_VIEWS.tomorrow, label: 'Tomorrow' },
   { value: TODO_FOCUS_VIEWS.mine, label: 'My Work' },
   { value: TODO_FOCUS_VIEWS.nextSevenDays, label: 'Next 7' },
   { value: TODO_FOCUS_VIEWS.all, label: 'All Work' },
@@ -128,7 +129,7 @@ export default function TodoViewHeaderControls({
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" aria-label="Task focus">
+      <div className="task-focus-options grid grid-cols-5 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" aria-label="Task focus">
         {FOCUS_OPTIONS.map((option) => {
           const isActive = focusView === option.value;
           return (
@@ -151,6 +152,8 @@ export default function TodoViewHeaderControls({
           );
         })}
       </div>
+
+      {focusView === TODO_FOCUS_VIEWS.tomorrow ? <p className="text-xs text-slate-500">Tasks due tomorrow or personally planned for tomorrow.</p> : null}
 
       {isMobile ? (
         <div className="space-y-3">
