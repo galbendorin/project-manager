@@ -160,6 +160,8 @@ const TodoView = ({
   onDeleteTodo,
   onCompleteTodo,
   onOpenSourceTodo,
+  onQuickCapture,
+  quickCaptureStatus,
   onMoveToPlan,
   onReturnFromPlan,
   onOpenPlan,
@@ -1019,6 +1021,8 @@ const TodoView = ({
           ownerFilter={ownerFilter}
           ownerOptions={ownerOptions}
           onFocusViewChange={handleFocusViewChange}
+          onQuickCapture={isExternalView ? undefined : onQuickCapture}
+          quickCaptureStatus={isExternalView ? undefined : quickCaptureStatus}
           onScopeChange={handleScopeChange}
           projectFilter={projectFilter}
           projectSelectOptions={projectSelectOptions}

@@ -22,14 +22,38 @@
 .pm-task-ui :is(button,input,select,textarea,summary):focus-visible,.pm-task-dialog :is(button,input,select,textarea,summary):focus-visible {outline:2px solid var(--task-blue);outline-offset:2px}
 .task-header-controls {background:var(--task-surface)}
 .task-header-controls h2 {font-size:20px}
+.task-header-title-row {display:flex;align-items:center;justify-content:space-between;gap:12px}
+.task-inline-capture {display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 12px;border:1px solid var(--task-border);border-radius:8px;color:var(--task-blue);background:var(--task-surface);font-weight:600}
+.task-header-controls .task-inline-capture span {font-size:18px;line-height:1}
+.task-scope-summary {font-size:11px;color:var(--task-muted);margin-top:2px}
+.task-inline-capture-status {padding:8px;border:1px solid var(--task-border);border-radius:8px;color:var(--task-muted);overflow-wrap:anywhere}
 .task-header-controls :is(p,span) {font-size:12px}
 .task-header-controls button {min-height:44px}
 .task-header-controls .task-active-view {background:var(--task-accent);color:#fff}
 .task-header-controls [aria-label="Task focus"] button[aria-pressed="true"] {background:var(--task-accent);color:#fff}
 .task-header-controls [aria-label="Task focus"] button[aria-pressed="true"] span {color:#fff}
 .task-focus-options button {min-width:0}
-@media(max-width:479px) {
- .task-header-controls .task-focus-options {grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:639px) {
+ .pm-task-ui {padding:10px}
+ .pm-task-ui .task-header-controls {padding:12px;}
+ .task-header-controls h2 {font-size:18px}
+ .task-header-controls .task-header-description {display:none}
+ .task-header-controls .task-view-options {grid-template-columns:repeat(4,minmax(0,1fr));border-radius:10px}
+ .task-header-controls .task-view-options button {padding:4px 3px;font-size:12px;white-space:nowrap}
+ .task-header-controls .task-focus-options {grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;border-radius:10px}
+ .task-header-controls .task-focus-options button {padding:4px 1px;min-height:44px}
+ .task-header-controls .task-focus-label {font-size:12px;white-space:nowrap}
+ .task-header-controls .task-focus-count {font-size:11px;line-height:1.2}
+ .task-header-controls .task-mobile-summary button {font-size:12px;padding:4px 12px;border-radius:8px}
+ .pm-task-ui .task-list-title {font-size:14px!important;line-height:1.35!important}
+ .pm-task-ui .task-list-meta {gap:4px 7px;margin-top:4px}
+ .pm-task-ui .task-list-meta>span {font-size:11px}
+ .pm-task-ui .task-timeline-view {padding:10px;overflow-x:visible}
+ .pm-task-ui .task-timeline-grid {min-width:0;grid-auto-flow:row;grid-template-columns:minmax(0,1fr);grid-auto-columns:auto;gap:12px}
+ .pm-task-ui .task-timeline-section {min-height:0;min-width:0;border-radius:12px}
+}
+@media(max-width:374px) {
+ .task-header-controls .task-focus-options {grid-template-columns:repeat(5,minmax(62px,1fr));overflow-x:auto}
 }
 .task-repeat {display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--task-muted);white-space:nowrap}
 .task-repeat svg {flex-shrink:0}
@@ -60,6 +84,10 @@
 .task-matrix-actions select {min-height:44px}
 .task-matrix-feedback {font-size:12px;padding:2px 8px;color:var(--task-muted)}
 .task-list-bucket {border:1px solid var(--task-border);border-radius:10px;background:var(--task-surface)}
+.pm-task-ui .task-timeline-section {background:var(--task-surface);border-color:var(--task-border);overflow:hidden}
+.task-timeline-section>div:first-child {background:var(--task-neutral-bg);border-color:var(--task-border)}
+.task-timeline-section h3 {color:var(--task-ink)}
+.task-timeline-section [class~="bg-white/80"] {background:var(--task-surface)}
 .task-list-bucket>div:first-child {background:var(--task-neutral-bg)}
 .task-list-bucket h3 {font-size:14px;letter-spacing:0;text-transform:none;color:var(--task-ink)}
 .task-list-card {border:0;border-bottom:1px solid var(--task-border);border-radius:0;box-shadow:none;padding:9px 4px;background:var(--task-surface)}

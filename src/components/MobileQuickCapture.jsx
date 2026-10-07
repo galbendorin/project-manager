@@ -3,6 +3,7 @@ import { formatDate } from '../utils/helpers';
 
 export default function MobileQuickCapture({
   isOpen,
+  hideTrigger = false,
   mode,
   value,
   saving,
@@ -24,7 +25,7 @@ export default function MobileQuickCapture({
 }) {
   return (
     <>
-      <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+72px)] right-4 z-30 flex md:hidden">
+      {!hideTrigger ? <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+72px)] right-4 z-30 flex md:hidden">
         <div className="pointer-events-auto">
           <button
             type="button"
@@ -42,7 +43,7 @@ export default function MobileQuickCapture({
             </div>
           ) : null}
         </div>
-      </div>
+      </div> : null}
 
       {isOpen ? (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Quick capture">
