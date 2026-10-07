@@ -126,17 +126,31 @@ test('work day and priority patches preserve each other and reject an altered ac
     assert.equal(hook.value.preferences[key].planned_day, '2026-10-09');
   } finally { await hook.close(); }
 });
-test('due today refuses quadrant changes but permits personal-day edits', async () => {
-  const task = { ...todo, dueDate: props.today };
-  const transport = mockTransport((r) => r.operation === 'update' ? { data: [{ ...preference, ...r.payload, version: 2 }] } : { data: [preference], count: 1 });
-  const load = await sourceModules(transport); const hook = await mountHook((await load('src/hooks/useTodoEisenhowerMatrix.js')).useTodoEisenhowerMatrix, { ...props, todos: [task] });
+test('due-today choices persist for today and overdue restores Q1 after day rollover', async () => {
+  const task = { ...todo, dueDate: props.today }; let saved = { ...preference };
+  const transport = mockTransport(r => { if(r.operation === 'update')saved = {...saved,...r.payload,version:saved.version+1};return {data:[saved],count:1}; });
+  const load = await sourceModules(transport);
+  const hook = await mountHook((await load('src/hooks/useTodoEisenhowerMatrix.js')).useTodoEisenhowerMatrix, { ...props, todos: [task] });
   try {
-    assert.equal(await hook.value.move(task, 'not_urgent_important'), false);
-    await act(async () => assert.equal(await hook.value.planDay(task, '2026-10-08'), true));
-    assert.equal(hook.value.groups[0].cards.length, 1);
-    assert.equal(transport.calls.filter((r) => r.operation === 'update').length, 1);
+    assert.equal(hook.value.groups[0].cards.length,1);
+    for(const quadrant of ['not_urgent_important','urgent_not_important','not_urgent_not_important']) {
+      await act(async () => assert.equal(await hook.value.move(task,quadrant),true));
+      assert.equal(hook.value.groups.find(q=>q.cards.length).id,quadrant);
+      assert.equal(hook.value.preferences[key].manual_quadrant_day,props.today);
+    }
+    await act(async () => assert.equal(await hook.value.planDay(task,'2026-10-08'),true));
+    assert.equal(hook.value.preferences[key].manual_quadrant_day,props.today);
+    await act(async () => hook.value.reload());
+    assert.equal(hook.value.groups.find(q=>q.cards.length).id,'not_urgent_not_important');
+    await hook.update({...props,todos:[task],today:'2026-10-06'});
+    assert.equal(hook.value.groups[0].cards.length,1);
+    assert.equal(hook.value.groups[0].cards[0].automatic,true);
+    const before=transport.calls.length;
+    assert.equal(await hook.value.move(task,'not_urgent_important'),false);
+    assert.equal(transport.calls.length,before);
   } finally { await hook.close(); }
 });
+
 test('candidate-before-filter makes future personal selections visible in Today and excludes confirmed revoked projects', async () => {
   const project = { id: other, name: 'Synthetic project', tasks: [], registers: {}, tracker: [] };
   const load = await sourceModules(mockTransport(() => ({ data: [preference], count: 1 })));
@@ -257,7 +271,7 @@ test('a delayed all-project refresh cannot restore a cross-project deadline alre
   } finally { await act(async () => root.unmount()); }
 });
 
-test('opened task details retain both dirty dates across phone/desktop remount and clear them on account change', async () => {
+test('opened task details retain both dirty dates across phone/desktop layout changes and clear them on account change', async () => {
   const project = { id: other, name: 'Synthetic project', tasks: [], registers: {}, tracker: [] };
   const manual = { ...todo, projectId: other, dueDate: '2020-01-01' };
   const mediaListeners = new Set();
@@ -272,31 +286,30 @@ test('opened task details retain both dirty dates across phone/desktop remount a
   const load = await sourceModules(transport, { window, document, navigator: { onLine: true } });
   const TodoView = (await load('src/components/TodoView.jsx')).default;
   const Matrix = (await load('src/components/TodoEisenhowerMatrix.jsx')).default;
-  const Mobile = (await load('src/components/MobileTodoDetailSheet.jsx')).default;
-  const Desktop = (await load('src/components/DesktopTodoDetailModal.jsx')).default;
+  const Dialog = (await load('src/components/TodoDetailDialog.jsx')).default;
   const input = (component, prefix) => root.root.findByType(component).findAllByType('input').find((node) => node.props['aria-label']?.startsWith(prefix));
   const componentProps = { todos: [manual], currentProject: project, projectData: [], registers: {}, tracker: [], currentUserId: owner, currentUserName: '', isExternalView: false, onCompleteTodo: async () => {}, onUpdateTodo: async (_id, field, value, original) => { await dateWrite; return { confirmed: true, updatedTodo: { ...original, [field]: value } }; } };
   let root;
   await act(async () => { root = create(React.createElement(TodoView, componentProps)); });
   try {
     await act(async () => { const matrix = root.root.findByType(Matrix); matrix.props.onOpenTodo(matrix.props.matrix.groups[0].cards[0].todo); });
-    await act(async () => input(Mobile, 'Deadline').props.onChange({ target: { value: '2099-12-03' } }));
-    await act(async () => input(Mobile, 'Personal').props.onChange({ target: { value: '2099-12-07' } }));
-    await act(async () => root.root.findByType(Mobile).findAllByType('button').find((node) => node.children.includes('Reschedule deadline')).props.onClick());
+    await act(async () => input(Dialog, 'Deadline').props.onChange({ target: { value: '2099-12-03' } }));
+    await act(async () => input(Dialog, 'Personal').props.onChange({ target: { value: '2099-12-07' } }));
+    await act(async () => root.root.findByType(Dialog).findAllByType('button').find((node) => node.children.includes('Reschedule deadline')).props.onClick());
     await act(async () => { media.matches = false; [...mediaListeners].forEach((fn) => fn({ matches: false })); });
-    assert.equal(input(Desktop, 'Deadline').props.value, '2099-12-03'); assert.equal(input(Desktop, 'Personal').props.value, '2099-12-07');
-    await act(async () => input(Desktop, 'Deadline').props.onChange({ target: { value: '2099-12-09' } }));
-    assert.equal(root.root.findByType(Desktop).findAllByType('button').find((node) => node.children.includes('Reschedule deadline')).props.disabled, true);
+    assert.equal(input(Dialog, 'Deadline').props.value, '2099-12-03'); assert.equal(input(Dialog, 'Personal').props.value, '2099-12-07');
+    await act(async () => input(Dialog, 'Deadline').props.onChange({ target: { value: '2099-12-09' } }));
+    assert.equal(root.root.findByType(Dialog).findAllByType('button').find((node) => node.children.includes('Reschedule deadline')).props.disabled, true);
     await act(async () => { confirmDate(); await dateWrite; });
-    assert.equal(input(Desktop, 'Deadline').props.value, '2099-12-09');
-    await act(async () => root.root.findByType(Desktop).findAllByType('button').find((node) => node.children.includes('Save personal day')).props.onClick());
+    assert.equal(input(Dialog, 'Deadline').props.value, '2099-12-09');
+    await act(async () => root.root.findByType(Dialog).findAllByType('button').find((node) => node.children.includes('Save personal day')).props.onClick());
     await act(async () => { media.matches = true; [...mediaListeners].forEach((fn) => fn({ matches: true })); });
-    assert.equal(input(Mobile, 'Deadline').props.value, '2099-12-09'); assert.equal(input(Mobile, 'Personal').props.value, '2099-12-07');
-    await act(async () => input(Mobile, 'Personal').props.onChange({ target: { value: '2099-12-11' } }));
+    assert.equal(input(Dialog, 'Deadline').props.value, '2099-12-09'); assert.equal(input(Dialog, 'Personal').props.value, '2099-12-07');
+    await act(async () => input(Dialog, 'Personal').props.onChange({ target: { value: '2099-12-11' } }));
     await act(async () => { confirmWork(); await workWrite; });
-    assert.equal(input(Mobile, 'Personal').props.value, '2099-12-11'); assert.equal(input(Mobile, 'Deadline').props.value, '2099-12-09');
+    assert.equal(input(Dialog, 'Personal').props.value, '2099-12-11'); assert.equal(input(Dialog, 'Deadline').props.value, '2099-12-09');
     await act(async () => root.update(React.createElement(TodoView, { ...componentProps, currentUserId: other })));
-    assert.equal(root.root.findAllByType(Mobile).length, 0);
+    assert.equal(root.root.findAllByType(Dialog).length, 0);
   } finally { await act(async () => root.unmount()); }
 });
 

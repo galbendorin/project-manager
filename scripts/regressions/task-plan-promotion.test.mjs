@@ -111,7 +111,7 @@ test('pointer and native Matrix drops move only the intended unlocked task and c
       root.root.findAllByType('section').find((node) => node.props['data-matrix-quadrant'] === target).props.onDrop({ preventDefault() {} });
     });
     assert.equal(moves.length, 2);
-    await act(async () => root.update(React.createElement(Matrix, { ...props, matrix: { ...props.matrix, groups: groups.map((group) => ({ ...group, cards: group.cards.map((item) => ({ ...item, deadlinePriority: true })) })) } })));
+    await act(async () => root.update(React.createElement(Matrix, { ...props, matrix: { ...props.matrix, groups: groups.map((group) => ({ ...group, cards: group.cards.map((item) => ({ ...item, deadlinePriority: true, overdue: true })) })) } })));
     assert.equal(control(), undefined);
   } finally { await act(async () => root.unmount()); }
 });

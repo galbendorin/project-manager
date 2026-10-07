@@ -18,6 +18,30 @@ const todo = {
   projectName: "Synthetic project",
 };
 const key = `manual:${todo._id}`;
+
+test('Matrix Actions preserves a date draft when collapsed or resized and exposes no nested planning disclosure', async () => {
+  const f = await fixture(() => ({ data: [], count: 0 }));
+  const Component = (await f.load('src/components/TodoEisenhowerMatrix.jsx')).default;
+  const componentProps = { matrix: f.hook.value, currentUserId: user, today: props.today, isMobile: false, isExternalView: false, onOpenTodo() {}, handleCompleteTodo() {} };
+  let root;
+  await act(async () => { root = create(React.createElement(Component, componentProps)); });
+  const actions = () => root.root.findAllByType('button').find(node => node.props['aria-label'] === `Actions for ${todo.title}`);
+  const date = () => root.root.findAllByType('input').find(node => node.props['aria-label']?.startsWith('Personal work day'));
+  try {
+    await act(async () => actions().props.onClick());
+    await act(async () => date().props.onChange({ target: { value: '2099-11-09' } }));
+    await act(async () => actions().props.onClick());
+    assert.equal(actions().props['aria-expanded'], false);
+    assert.equal(date().props.value, '2099-11-09');
+    await act(async () => root.update(React.createElement(Component, { ...componentProps, isMobile: true })));
+    await act(async () => actions().props.onClick());
+    assert.equal(date().props.value, '2099-11-09');
+    assert.equal(root.root.findAllByType('details').length, 0);
+    await act(async () => root.update(React.createElement(Component, { ...componentProps, deadlineSaves: { [todo._id]: true } })));
+    assert.equal(actions().props.disabled, true);
+    assert.ok(root.root.findAllByProps({ role: 'status' }).some(node => node.children.join('').includes('Saving')));
+  } finally { await act(async () => root.unmount()); await f.hook.close(); }
+});
 const preference = {
   id: "44444444-4444-4444-8444-444444444444",
   user_id: user,

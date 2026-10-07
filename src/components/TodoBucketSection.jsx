@@ -2,6 +2,7 @@ import React from 'react';
 import { taskViewIdentity } from '../utils/todoEisenhower';
 import { formatDate } from '../utils/helpers';
 import { IconArrowDown, IconArrowUp } from './Icons';
+import TaskRecurrenceIndicator from './TaskRecurrenceIndicator';
 import TaskChecklistBadge from './TaskChecklistBadge';
 
 const CompletionTickButton = ({ checked, onClick, label }) => (
@@ -9,7 +10,7 @@ const CompletionTickButton = ({ checked, onClick, label }) => (
     type="button"
     onClick={onClick}
     aria-label={label}
-    className={`inline-flex h-6 w-6 items-center justify-center rounded-full border transition-all ${
+    className={`task-list-complete inline-flex h-6 w-6 items-center justify-center rounded-full border transition-all ${
       checked
         ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
         : 'border-slate-300 bg-white text-transparent hover:border-slate-400 hover:bg-slate-50'
@@ -109,7 +110,7 @@ const TodoListCard = ({
       onDragEnd={canDragTodo ? onDragEnd : undefined}
       onDragOver={onDragOverTodo}
       onDrop={onDropTodo}
-      className={`group rounded-[14px] border px-2.5 py-2.5 shadow-[0_1px_0_rgba(9,30,66,0.08),0_1px_3px_rgba(9,30,66,0.14)] transition-all duration-150 ${
+      className={`task-list-card group rounded-[14px] border px-2.5 py-2.5 shadow-[0_1px_0_rgba(9,30,66,0.08),0_1px_3px_rgba(9,30,66,0.14)] transition-all duration-150 ${
         isCompleted
           ? 'border-emerald-200 bg-emerald-50/90'
           : draggedTodoId === todo._id
@@ -162,35 +163,23 @@ const TodoListCard = ({
               <span className={`inline-flex h-1.5 min-w-8 rounded-full ${sourceAccentClass(todo.source)}`} />
             </div>
 
-            <div className={`text-[12px] font-medium leading-[1.28] ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+            <div className={`task-list-title text-[12px] font-medium leading-[1.28] ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
               {todo.title || 'Untitled'}
             </div>
 
             {todo.description ? (
-              <div className="mt-1 line-clamp-2 text-[10px] leading-[1.3] text-slate-500">
+              <div className="task-list-description mt-1 line-clamp-2 text-[10px] leading-[1.3] text-slate-500">
                 {todo.description}
               </div>
             ) : null}
 
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {isPendingCompletion || (todo.status && todo.status !== 'Open') ? (
-                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[8px] font-semibold ${statusClass(todo.status)}`}>
-                  {isPendingCompletion ? 'Completing...' : todo.status}
-                </span>
-              ) : null}
-              {todo.owner ? (
-                <span
-                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-200 px-1.5 text-[8px] font-semibold text-slate-600"
-                  title={todo.owner}
-                >
-                  {ownerBadgeLabel(todo.owner)}
-                </span>
-              ) : null}
-              {todo.dueDate ? (
-                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[8px] font-medium text-slate-500">
-                  {formatDate(todo.dueDate)}
-                </span>
-              ) : null}
+            <div className="task-list-meta">
+              {isPendingCompletion || (todo.status && todo.status !== 'Open') ? <span className={statusClass(todo.status)}>{isPendingCompletion ? 'Completing…' : todo.status}</span> : null}
+              <span>{todo.projectName || 'Other'}</span>
+              <span>{todo.source || 'Manual'}</span>
+              {todo.owner ? <span title={todo.owner}>{ownerBadgeLabel(todo.owner)}</span> : null}
+              {todo.dueDate ? <span className={bucketKey === 'overdue' ? 'task-overdue' : ''}>{formatDate(todo.dueDate)}{bucketKey === 'overdue' ? ' · Overdue' : ''}</span> : null}
+              <TaskRecurrenceIndicator recurrence={todo.recurrence} />
               <TaskChecklistBadge compact summary={getChecklistSummary?.(todo)} />
             </div>
           </button>
@@ -219,7 +208,7 @@ const TodoListCard = ({
           <button
             type="button"
             onClick={() => onDeleteTodo(todo._id)}
-            className="rounded-md p-0.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
+            className="task-list-delete rounded-md p-0.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
             title="Delete Task"
           >
             x
@@ -286,7 +275,7 @@ export default function TodoBucketSection({
   };
 
   return (
-    <section className="overflow-hidden rounded-lg border border-slate-200">
+    <section className="task-list-bucket overflow-hidden rounded-lg border border-slate-200">
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
         <h3 className="text-[12px] font-semibold uppercase tracking-wide text-slate-700">{bucket.label}</h3>
         <span className="text-[11px] text-slate-500">{displayItems.length}</span>
