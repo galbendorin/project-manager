@@ -503,7 +503,7 @@ export function useProjectTodos({
     if (key === 'description') queuePatch.description = localUpdated.description;
     if (key === 'dueDate') queuePatch.dueDate = localUpdated.dueDate;
     if (key === 'owner') queuePatch.owner = localUpdated.owner;
-    if (key === 'projectId') queuePatch.projectId = localUpdated.projectId;
+    if (key === 'projectId') { queuePatch.projectId = localUpdated.projectId; queuePatch.kanbanColumnId = null; }
     if (key === 'assigneeUserId') queuePatch.assigneeUserId = localUpdated.assigneeUserId;
     if (key === 'recurrence') queuePatch.recurrence = localUpdated.recurrence;
     if (key === 'kanbanColumnId') queuePatch.kanbanColumnId = localUpdated.kanbanColumnId;
@@ -561,23 +561,25 @@ export function useProjectTodos({
       ? MANUAL_TODO_SELECT
       : LEGACY_MANUAL_TODO_SELECT;
     let updatePayload = patch;
-    let { data: updatedRow, error: updateError } = await supabase
-      .from('manual_todos')
-      .update(updatePayload)
-      .eq('id', todoId)
-      .select(selectClause)
-      .single();
+    if (key === 'projectId' && !supportsExtendedManualTodoFieldsRef.current) {
+      updatePayload = { ...patch };
+      delete updatePayload.kanban_column_id;
+    }
+    const saveUpdate = (payload, fields) => {
+      let query = supabase.from('manual_todos').update(payload).eq('id', todoId);
+      if (requireConfirmation && key === 'projectId') {
+        query = todo.projectId ? query.eq('project_id', todo.projectId) : query.is('project_id', null);
+        if (todo.updatedAt) query = query.eq('updated_at', todo.updatedAt);
+      }
+      return query.select(fields).single();
+    };
+    let { data: updatedRow, error: updateError } = await saveUpdate(updatePayload, selectClause);
 
     if (updateError && supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(updateError, EXTENDED_MANUAL_TODO_FIELDS)) {
       supportsExtendedManualTodoFieldsRef.current = false;
       selectClause = LEGACY_MANUAL_TODO_SELECT;
       updatePayload = buildManualTodoUpdatePayload(queuePatch, false);
-      ({ data: updatedRow, error: updateError } = await supabase
-        .from('manual_todos')
-        .update(updatePayload)
-        .eq('id', todoId)
-        .select(selectClause)
-        .single());
+      ({ data: updatedRow, error: updateError } = await saveUpdate(updatePayload, selectClause));
     }
 
     if (updateError && isMissingRelationError(updateError, 'manual_todos')) {
@@ -587,7 +589,7 @@ export function useProjectTodos({
       return { updatedTodo: localUpdated, followUpTodo: followUpLocal };
     }
 
-    if (updateError || !updatedRow || (requireConfirmation && (updatedRow.id !== todoId || (key === 'dueDate' && updatedRow.due_date !== value)))) {
+    if (updateError || !updatedRow || (requireConfirmation && (updatedRow.id !== todoId || (key === 'dueDate' && updatedRow.due_date !== value) || (key === 'projectId' && (updatedRow.project_id || null) !== (value || null))))) {
       console.error('Failed to update manual todo:', updateError);
       return null;
     }

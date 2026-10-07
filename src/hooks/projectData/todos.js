@@ -44,7 +44,7 @@ export const buildLocalTodoUpdate = ({ todo, key, value, userId, ts }) => {
   if (key === 'description') localUpdated.description = value;
   if (key === 'dueDate') localUpdated.dueDate = value;
   if (key === 'owner') localUpdated.owner = value;
-  if (key === 'projectId') localUpdated.projectId = value || null;
+  if (key === 'projectId') { localUpdated.projectId = value || null; localUpdated.kanbanColumnId = null; }
   if (key === 'assigneeUserId') localUpdated.assigneeUserId = value || null;
   if (key === 'recurrence') localUpdated.recurrence = normalizedRecurrence;
   if (key === 'kanbanColumnId') localUpdated.kanbanColumnId = value || null;
@@ -106,7 +106,7 @@ export const buildTodoUpdatePatch = ({ todo, key, value, normalizedRecurrence, n
   if (key === 'description') patch.description = value || '';
   if (key === 'dueDate') patch.due_date = value || null;
   if (key === 'owner') patch.owner_text = value || '';
-  if (key === 'projectId') patch.project_id = value || null;
+  if (key === 'projectId') { patch.project_id = value || null; patch.kanban_column_id = null; }
   if (key === 'assigneeUserId') patch.assignee_user_id = value || null;
   if (key === 'recurrence') patch.recurrence = normalizedRecurrence;
   if (key === 'kanbanColumnId') patch.kanban_column_id = value || null;

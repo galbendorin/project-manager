@@ -23,6 +23,7 @@ import TodoKanbanBoard from './TodoKanbanBoard';
 import TodoEisenhowerMatrix from './TodoEisenhowerMatrix';
 import TaskPlanningControls from './TaskPlanningControls';
 import TaskPlanSourceControls from './TaskPlanSourceControls';
+import TaskProjectAssignment from './TaskProjectAssignment';
 import { useTodoEisenhowerMatrix } from '../hooks/useTodoEisenhowerMatrix';
 import { useLocalCalendarDay } from '../hooks/useLocalCalendarDay';
 import { groupMatrixTasks, taskViewIdentity } from '../utils/todoEisenhower';
@@ -521,6 +522,10 @@ const TodoView = ({
     const result = await onUpdateTodo(todoId, key, value, originalTodo, options);
     if (currentOwner.current !== currentUserId) return null;
     applyManualMutationResult(result);
+    if (key === 'projectId' && result?.confirmed) {
+      const name = projectOptions.find((project) => project.id === result.updatedTodo?.projectId)?.name || 'Other / no project';
+      setPlanNotice(`Project saved: ${name}. The task remains in Tasks; project filters may hide it.`);
+    }
     return result;
     } finally {
       if (confirmedDateWrite) {
@@ -528,7 +533,7 @@ const TodoView = ({
         if (deadlineOperations.current === operationScope && currentOwner.current === currentUserId) setDeadlineSaves((previous) => { const ids = { ...previous.ids }; delete ids[todoId]; return { owner: currentUserId, ids }; });
       }
     }
-  }, [allTodoItems, applyManualMutationResult, onUpdateTodo, currentUserId, pendingCompletedTodos]);
+  }, [allTodoItems, applyManualMutationResult, onUpdateTodo, currentUserId, pendingCompletedTodos, projectOptions]);
 
   const handleDeleteTodo = useCallback(async (todoId) => {
     if (!onDeleteTodo || currentOwner.current !== currentUserId) return false;
@@ -990,6 +995,7 @@ const TodoView = ({
     {selectedTodo.status !== 'Done' ? <TaskPlanningControls key={taskViewIdentity(selectedTodo)} todo={selectedTodo} matrix={personalPlan} today={today} deadlinePending={Boolean(currentDeadlineSaves[selectedTodo._id])} draft={currentDrafts[taskViewIdentity(selectedTodo)]} onDraftChange={(field, value, expected) => updatePlanningDraft(selectedTodo, field, value, expected)} onUpdateTodo={handleUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={setPlanNotice} /> : null}
     {onMoveToPlan || selectedTodo.planLink || selectedTodo.meta?.projectPlanLink ? <TaskPlanSourceControls key={`promotion:${taskViewIdentity(selectedTodo)}`} todo={selectedTodo} projects={projectOptions} onMove={onMoveToPlan} onOpen={onOpenPlan} onReturn={onReturnFromPlan} /> : null}
   </> : null;
+  const selectedProjectAssignment = selectedTodo ? <TaskProjectAssignment key={`assignment:${taskViewIdentity(selectedTodo)}`} todo={selectedTodo} projects={projectOptions} canEdit={selectedTodoCanEdit} onUpdateTodo={handleUpdateTodo} /> : null;
 
   return (
     <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
@@ -1143,6 +1149,7 @@ const TodoView = ({
 
       {sourceCurrent && isMobile && selectedTodo ? (
         <MobileTodoDetailSheet
+          projectAssignmentControls={selectedProjectAssignment}
           planningControls={selectedPlanningControls}
           todo={selectedTodo}
           canEdit={selectedTodoCanEdit}
@@ -1173,6 +1180,7 @@ const TodoView = ({
 
       {sourceCurrent && !isMobile && selectedTodo ? (
         <DesktopTodoDetailModal
+          projectAssignmentControls={selectedProjectAssignment}
           planningControls={selectedPlanningControls}
           todo={selectedTodo}
           canEdit={selectedTodoCanEdit}

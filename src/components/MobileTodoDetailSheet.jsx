@@ -45,6 +45,7 @@ export default function MobileTodoDetailSheet({
   onRenameChecklistItem,
   onToggleChecklistItem,
   planningControls,
+  projectAssignmentControls,
 }) {
   if (!todo) return null;
 
@@ -79,6 +80,7 @@ export default function MobileTodoDetailSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom,0px)+4rem)]">
           <div className="space-y-4 px-4 py-4">
+            {projectAssignmentControls}
             {planningControls}
             <div className={`rounded-[24px] border p-4 ${isCompleted ? 'border-emerald-200 bg-emerald-50/80' : 'border-slate-200 bg-slate-50'}`}>
               <div className="flex flex-wrap items-center gap-2">
@@ -139,7 +141,7 @@ export default function MobileTodoDetailSheet({
                 )}
               </MobileField>
 
-                <MobileField label="Project">
+                {!projectAssignmentControls ? <MobileField label="Project">
                 {canEditSchedule ? (
                   <select
                     value={todo.projectId || 'other'}
@@ -154,7 +156,7 @@ export default function MobileTodoDetailSheet({
                 ) : (
                   <MobileValue>{todo.projectName || 'Other'}</MobileValue>
                 )}
-              </MobileField>
+              </MobileField> : null}
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <MobileField label="Due Date">
