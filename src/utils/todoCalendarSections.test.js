@@ -6,6 +6,20 @@ import {
   getTodoSectionDefaultDueDate,
 } from './todoCalendarSections.js';
 
+test('calendar sections group projects alphabetically before saved order, with unassigned tasks last', () => {
+  const items = [
+    { _id: 'other', projectName: 'Other', kanbanPosition: 1 },
+    { _id: 'z', projectId: 'z', projectName: 'Zebra', kanbanPosition: 2 },
+    { _id: 'a2', projectId: 'a', projectName: 'alpha', kanbanPosition: 4096 },
+    { _id: 'a1', projectId: 'a', projectName: 'alpha', kanbanPosition: 3072 },
+    { _id: 'b', projectId: 'b', projectName: 'Beta', kanbanPosition: 3 },
+  ].map((item) => ({ ...item, title: item._id, status: 'Open', dueDate: '2026-10-09' }));
+  const original = items.map((item) => item._id);
+  const section = buildTodoCalendarSections(items, { today: '2026-10-07' }).sections.find((item) => item.key === 'this_week');
+  assert.deepEqual(section.items.map((item) => item._id), ['a1', 'a2', 'b', 'z', 'other']);
+  assert.deepEqual(items.map((item) => item._id), original);
+});
+
 test('formatTodoMonthLabel returns month and short year', () => {
   assert.equal(formatTodoMonthLabel('2026-05'), "May '26");
 });

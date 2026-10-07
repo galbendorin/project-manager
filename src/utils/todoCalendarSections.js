@@ -1,5 +1,5 @@
 import { bucketByDeadline, getTodoBucketDefaultDueDate } from './helpers.js';
-import { sortTodosForManualOrder } from './todoManualOrdering.js';
+import { sortTodosByProject, sortTodosForManualOrder } from './todoManualOrdering.js';
 
 const MONTH_SECTION_PREFIX = 'month:';
 const CORE_SECTION_KEYS = ['overdue', 'today', 'this_week', 'next_week', 'later'];
@@ -36,7 +36,7 @@ const compareTodos = (a, b) => {
   return String(a.title || '').localeCompare(String(b.title || ''));
 };
 
-const sortSectionItems = (items = []) => sortTodosForManualOrder([...items].sort(compareTodos));
+const sortSectionItems = (items = []) => sortTodosByProject(items, (group) => sortTodosForManualOrder([...group].sort(compareTodos)));
 
 export const isMonthSectionKey = (key = '') => String(key).startsWith(MONTH_SECTION_PREFIX);
 
