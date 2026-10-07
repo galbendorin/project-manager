@@ -87,3 +87,30 @@ test('legacy task schema can assign twice without writing an unavailable Kanban 
     assert.equal(transport.calls.length, 3); assert.equal(Object.hasOwn(transport.calls[2].payload, 'kanban_column_id'), false);
   } finally { await hook.close(); }
 });
+test('assignment confirms in the task page when the current project filter removes the moved card', async () => {
+  const currentProject = { id: '44444444-4444-4444-8444-444444444444', name: 'Current project', tasks: [], registers: {}, tracker: [] };
+  const storage = { getItem: (key) => key === 'pmworkspace:todo-command-state:v1' ? '{"scope":"project","focusView":"all"}' : null, setItem() {}, removeItem() {} };
+  const window = { localStorage: storage, sessionStorage: storage, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame: (fn) => setTimeout(fn, 0), addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+  const document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  const load = await sourceModules(mockTransport((r) => r.table === 'projects' ? { data: [currentProject, ...projects], count: 2 } : { data: [], count: 0 }), { window, document, navigator: { onLine: true } });
+  const TodoView = (await load('src/components/TodoView.jsx')).default;
+  const Bucket = (await load('src/components/TodoBucketSection.jsx')).default;
+  const Assignment = (await load('src/components/TaskProjectAssignment.jsx')).default;
+  const Modal = (await load('src/components/DesktopTodoDetailModal.jsx')).default;
+  const empty = []; let assigned; let root;
+  function Parent() {
+    const [todos, setTodos] = React.useState([todo]);
+    return React.createElement(TodoView, { todos, currentProject, currentUserId: owner, projectData: currentProject.tasks, registers: currentProject.registers, tracker: empty, isExternalView: false, onUpdateTodo: async (_id, _key, value) => { assigned = { ...todo, projectId: value }; setTodos([assigned]); return { confirmed: true, updatedTodo: assigned }; } });
+  }
+  await act(async () => { root = create(React.createElement(Parent)); });
+  try {
+    const bucket = root.root.findAllByType(Bucket).find((b) => b.props.displayItems.length);
+    await act(async () => bucket.props.setSelectedMobileTodo(bucket.props.displayItems[0]));
+    await act(async () => root.root.findByType(Assignment).findByType('select').props.onChange({ target: { value: projectId } }));
+    await act(async () => root.root.findByType(Assignment).findByType('button').props.onClick());
+    assert.equal(assigned._id, id); assert.equal(assigned.projectId, projectId);
+    assert.equal(root.root.findAllByType(Modal).length, 0);
+    assert.equal(root.root.findAllByType(Bucket).flatMap((b) => Array.from(b.props.displayItems)).length, 0);
+    assert.ok(root.root.findAll((node) => node.props.role === 'status').some((node) => node.children.join('').includes('Project saved: Synthetic IKO project.')));
+  } finally { await act(async () => root.unmount()); }
+});

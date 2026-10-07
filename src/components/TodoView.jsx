@@ -522,6 +522,10 @@ const TodoView = ({
     const result = await onUpdateTodo(todoId, key, value, originalTodo, options);
     if (currentOwner.current !== currentUserId) return null;
     applyManualMutationResult(result);
+    if (key === 'projectId' && result?.confirmed) {
+      const name = projectOptions.find((project) => project.id === result.updatedTodo?.projectId)?.name || 'Other / no project';
+      setPlanNotice(`Project saved: ${name}. The task remains in Tasks; project filters may hide it.`);
+    }
     return result;
     } finally {
       if (confirmedDateWrite) {
@@ -529,7 +533,7 @@ const TodoView = ({
         if (deadlineOperations.current === operationScope && currentOwner.current === currentUserId) setDeadlineSaves((previous) => { const ids = { ...previous.ids }; delete ids[todoId]; return { owner: currentUserId, ids }; });
       }
     }
-  }, [allTodoItems, applyManualMutationResult, onUpdateTodo, currentUserId, pendingCompletedTodos]);
+  }, [allTodoItems, applyManualMutationResult, onUpdateTodo, currentUserId, pendingCompletedTodos, projectOptions]);
 
   const handleDeleteTodo = useCallback(async (todoId) => {
     if (!onDeleteTodo || currentOwner.current !== currentUserId) return false;
