@@ -35,7 +35,7 @@ export default function TaskProjectAssignment({ todo, projects = [], canEdit, on
       if (session.active) setSaving(false);
     }
   };
-  return <div className="rounded-xl border border-slate-200 bg-white p-3">
+  return <div className="task-project-assignment rounded-xl border border-slate-200 bg-white p-3">
     <label className="block text-sm font-semibold text-slate-700">Task project
       {editable ? <select aria-label="Task project" value={selection} disabled={saving} onChange={(event) => { dirty.current = true; setSelection(event.target.value); setMessage(''); setFailed(false); }} className="mt-2 min-h-[44px] w-full min-w-0 rounded-lg border bg-white px-3 text-sm font-normal">
         <option value="other">Other / no project</option>

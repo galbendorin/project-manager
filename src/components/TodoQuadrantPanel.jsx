@@ -10,12 +10,12 @@ export default function TodoQuadrantPanel({ title, label, count, height, limits,
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   return (
-    <section ref={panelRef} aria-label={label} style={{ height }} className={`flex min-h-0 min-w-0 flex-col overflow-hidden scroll-mt-4 rounded-2xl border ${className}`} {...dragEvents}>
+    <section ref={panelRef} aria-label={label} style={{ height }} className={`flex min-h-0 min-w-0 flex-col overflow-hidden scroll-mt-4 rounded-2xl border task-quadrant ${className}`} {...dragEvents}>
       <header className="shrink-0 px-3 pb-3 pt-3 sm:px-4 sm:pt-4">
         <h3 id={`${id}-title`} className="text-base font-semibold text-slate-900">{title} <span className="text-sm font-normal text-slate-500">({count})</span></h3>
         <p className="mt-1 text-sm text-slate-600">{label}</p>
       </header>
-      <div id={`${id}-body`} aria-labelledby={`${id}-title`} role="region" className={`min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-4 sm:px-4 ${isMobile ? '' : 'overscroll-contain'}`}>
+      <div id={`${id}-body`} aria-labelledby={`${id}-title`} role="region" className={`task-quadrant-body min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-4 sm:px-4 ${isMobile ? '' : 'overscroll-contain'}`}>
         {children}
       </div>
       <footer className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-white/70 px-2">

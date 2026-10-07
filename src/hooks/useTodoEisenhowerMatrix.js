@@ -202,7 +202,8 @@ export function useTodoEisenhowerMatrix({
         scope.context !== context ||
         !reference ||
         (quadrant !== undefined && !validMatrixQuadrant(quadrant)) ||
-        (patch.planned_day !== undefined && patch.planned_day !== null && !validCalendarDay(patch.planned_day))
+        (patch.planned_day !== undefined && patch.planned_day !== null && !validCalendarDay(patch.planned_day)) ||
+        (patch.manual_quadrant_day !== undefined && !validCalendarDay(patch.manual_quadrant_day))
       )
         return false;
       if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -218,7 +219,7 @@ export function useTodoEisenhowerMatrix({
         !current ||
         current.status === "Done" ||
         (quadrant !== undefined && matrixPlacement(current, preferences[key], latest.current.today)
-          .deadlinePriority) ||
+          .overdue) ||
         scope.writes.has(key)
       )
         return false;
@@ -256,6 +257,8 @@ export function useTodoEisenhowerMatrix({
           data[0].task_key !== key ||
           data[0].user_id !== currentUserId ||
           (quadrant !== undefined && data[0].manual_quadrant !== quadrant) ||
+          (patch.manual_quadrant_day !== undefined && data[0].manual_quadrant_day !== patch.manual_quadrant_day) ||
+          (old && patch.manual_quadrant_day === undefined && (data[0].manual_quadrant_day ?? null) !== (old.manual_quadrant_day ?? null)) ||
           (patch.planned_day !== undefined && (data[0].planned_day ?? null) !== patch.planned_day) ||
           (old && quadrant === undefined && data[0].manual_quadrant !== old.manual_quadrant) ||
           (old && patch.planned_day === undefined && (data[0].planned_day ?? null) !== (old.planned_day ?? null)) ||
@@ -300,7 +303,7 @@ export function useTodoEisenhowerMatrix({
       coveredKeys,
     ],
   );
-  const move = useCallback((todo, quadrant) => patchPreference(todo, { manual_quadrant: quadrant }), [patchPreference]);
+  const move = useCallback((todo, quadrant) => patchPreference(todo, { manual_quadrant: quadrant, manual_quadrant_day: latest.current.today }), [patchPreference]);
   const planDay = useCallback((todo, day) => patchPreference(todo, { planned_day: day || null }), [patchPreference]);
   const groups = useMemo(
     () =>

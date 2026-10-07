@@ -27,8 +27,7 @@ import TaskProjectAssignment from './TaskProjectAssignment';
 import { useTodoEisenhowerMatrix } from '../hooks/useTodoEisenhowerMatrix';
 import { useLocalCalendarDay } from '../hooks/useLocalCalendarDay';
 import { groupMatrixTasks, taskViewIdentity } from '../utils/todoEisenhower';
-import DesktopTodoDetailModal from './DesktopTodoDetailModal';
-import MobileTodoDetailSheet from './MobileTodoDetailSheet';
+import TodoDetailDialog from './TodoDetailDialog';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
 import { buildTodoCardKey, useTodoKanbanBoard } from '../hooks/useTodoKanbanBoard';
 import { useTaskCardChecklists } from '../hooks/useTaskCardChecklists';
@@ -991,14 +990,15 @@ const TodoView = ({
   });
   const selectedTodoChecklists = selectedTodo ? getChecklistsForTodo(selectedTodo) : [];
   const selectedTodoCanEditChecklist = !isExternalView && selectedTodo?.status !== 'Done';
-  const selectedPlanningControls = !isExternalView && selectedTodo ? <>
-    {selectedTodo.status !== 'Done' ? <TaskPlanningControls key={taskViewIdentity(selectedTodo)} todo={selectedTodo} matrix={personalPlan} today={today} deadlinePending={Boolean(currentDeadlineSaves[selectedTodo._id])} draft={currentDrafts[taskViewIdentity(selectedTodo)]} onDraftChange={(field, value, expected) => updatePlanningDraft(selectedTodo, field, value, expected)} onUpdateTodo={handleUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={setPlanNotice} /> : null}
-    {onMoveToPlan || selectedTodo.planLink || selectedTodo.meta?.projectPlanLink ? <TaskPlanSourceControls key={`promotion:${taskViewIdentity(selectedTodo)}`} todo={selectedTodo} projects={projectOptions} onMove={onMoveToPlan} onOpen={onOpenPlan} onReturn={onReturnFromPlan} /> : null}
+  const selectedPlanningControls = !isExternalView && selectedTodo && selectedTodo.status !== 'Done' ? <>
+    {selectedTodo.status !== 'Done' ? <TaskPlanningControls presentation="editor" key={taskViewIdentity(selectedTodo)} todo={selectedTodo} matrix={personalPlan} today={today} deadlinePending={Boolean(currentDeadlineSaves[selectedTodo._id])} draft={currentDrafts[taskViewIdentity(selectedTodo)]} onDraftChange={(field, value, expected) => updatePlanningDraft(selectedTodo, field, value, expected)} onUpdateTodo={handleUpdateTodo} onOpenSourceTodo={onOpenSourceTodo} onNotice={setPlanNotice} /> : null}
+
   </> : null;
+  const selectedSourcePlanControls = !isExternalView && selectedTodo && (onMoveToPlan || selectedTodo.planLink || selectedTodo.meta?.projectPlanLink) ? <TaskPlanSourceControls key={`promotion:${taskViewIdentity(selectedTodo)}`} todo={selectedTodo} projects={projectOptions} onMove={onMoveToPlan} onOpen={onOpenPlan} onReturn={onReturnFromPlan} /> : null;
   const selectedProjectAssignment = selectedTodo ? <TaskProjectAssignment key={`assignment:${taskViewIdentity(selectedTodo)}`} todo={selectedTodo} projects={projectOptions} canEdit={selectedTodoCanEdit} onUpdateTodo={handleUpdateTodo} /> : null;
 
   return (
-    <div className="w-full h-full bg-slate-50 p-4 sm:p-6 overflow-auto">
+    <div className="pm-task-ui w-full h-full p-4 sm:p-6 overflow-auto">
       <div className="max-w-[1480px] mx-auto bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-h-[500px]">
         <TodoViewHeaderControls
           activeFilterCount={activeFilterCount}
@@ -1147,39 +1147,11 @@ const TodoView = ({
         )}
       </div>
 
-      {sourceCurrent && isMobile && selectedTodo ? (
-        <MobileTodoDetailSheet
-          projectAssignmentControls={selectedProjectAssignment}
-          planningControls={selectedPlanningControls}
-          todo={selectedTodo}
-          canEdit={selectedTodoCanEdit}
-          projectOptions={projectOptions}
-          onClose={() => setSelectedTodo(null)}
-          onDeleteTodo={handleDeleteTodo}
-          onUpdateTodo={handleUpdateTodo}
-          recurrenceOptions={RECURRENCE_OPTIONS}
-          recurrenceLabel={recurrenceLabel}
-          statusClass={statusClass}
-          checklists={selectedTodoChecklists}
-          checklistCanEdit={selectedTodoCanEditChecklist}
-          checklistsAvailable={checklistsAvailable}
-          checklistsLoading={checklistsLoading}
-          checklistMessage={checklistMessage}
-          checklistsSaving={checklistsSaving}
-          onRetryChecklists={retryChecklists}
-          onAddChecklist={() => addChecklist(selectedTodo)}
-          onAddChecklistItems={addChecklistItems}
-          onDeleteChecklist={deleteChecklist}
-          onDeleteChecklistItem={deleteChecklistItem}
-          onMoveChecklistItem={moveChecklistItem}
-          onRenameChecklist={renameChecklist}
-          onRenameChecklistItem={renameChecklistItem}
-          onToggleChecklistItem={toggleChecklistItem}
-        />
-      ) : null}
-
-      {sourceCurrent && !isMobile && selectedTodo ? (
-        <DesktopTodoDetailModal
+      {sourceCurrent && selectedTodo ? (
+        <TodoDetailDialog
+          key={`${currentUserId}:${taskViewIdentity(selectedTodo)}`}
+          isMobile={isMobile}
+          sourcePlanControls={selectedSourcePlanControls}
           projectAssignmentControls={selectedProjectAssignment}
           planningControls={selectedPlanningControls}
           todo={selectedTodo}

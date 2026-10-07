@@ -14,7 +14,7 @@ export default function TaskChecklistBadge({ summary, compact = false }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-semibold ${
+      className={`task-checklist-badge inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-semibold ${
         compact ? 'text-[8px]' : 'text-[10px]'
       } ${
         isComplete

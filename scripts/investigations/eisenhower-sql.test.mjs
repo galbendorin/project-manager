@@ -33,6 +33,8 @@ before(async () => {
     ),
   );
   await db.exec(await readFile(new URL('../sql/2026-10-05_add_personal_task_planned_day.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../sql/2026-10-07_task_quadrant_choice_day.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../sql/2026-10-07_task_quadrant_choice_day.sql', import.meta.url), 'utf8'));
 });
 after(() => db.close());
 async function probe(user, fn, role = "authenticated") {
@@ -200,3 +202,12 @@ test("manual priority follows its task between projects and requires current sou
     await db.exec("rollback");
   }
 });
+test('quadrant choice day survives personal-day edits and stays private', async () => probe(a, async () => {
+ const row=(await insert()).rows[0];
+ await db.query("update public.task_eisenhower_preferences set manual_quadrant_day='2026-10-07',manual_quadrant='urgent_not_important' where id=$1 and version=1",[row.id]);
+ const saved=(await db.query("update public.task_eisenhower_preferences set planned_day='2026-10-08' where id=$1 and version=2 returning manual_quadrant_day::text,manual_quadrant,version",[row.id])).rows[0];
+ assert.equal(saved.manual_quadrant_day,'2026-10-07');assert.equal(saved.manual_quadrant,'urgent_not_important');assert.equal(saved.version,3);
+ await db.query("select set_config('request.jwt.claim.sub',$1,true)",[b]);
+ assert.equal((await db.query('select * from public.task_eisenhower_preferences where id=$1',[row.id])).rows.length,0);
+ assert.equal((await db.query("update public.task_eisenhower_preferences set manual_quadrant_day='2026-10-08' where id=$1 returning id",[row.id])).rows.length,0);
+}));

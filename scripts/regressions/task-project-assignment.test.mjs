@@ -6,6 +6,49 @@ const projectId = '22222222-2222-4222-8222-222222222222';
 const id = '33333333-3333-4333-8333-333333333333';
 const todo = { _id: id, projectId: null, title: 'Synthetic task', status: 'Open', updatedAt: '2026-10-07T09:00:00Z', description: 'Keep notes', dueDate: '2026-10-11' };
 const projects = [{ id: projectId, name: 'Synthetic IKO project' }];
+
+test('responsive task editor retains dirty project choice and checklist composer across layout changes', async () => {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const Dialog = (await load('src/components/TodoDetailDialog.jsx')).default;
+  const Assignment = (await load('src/components/TaskProjectAssignment.jsx')).default;
+  const props = {
+    todo, canEdit: true, checklistCanEdit: true, projectOptions: projects,
+    checklists: [{ id: 'synthetic-checklist', title: 'Checklist', items: [] }],
+    recurrenceOptions: [{ value: 'none', label: 'One-time' }],
+    onClose() {}, onUpdateTodo() {}, onAddChecklistItems: async () => false,
+    projectAssignmentControls: React.createElement(Assignment, { todo, projects, canEdit: true, onUpdateTodo: async () => null }),
+  };
+  let root;
+  await act(async () => { root = create(React.createElement(Dialog, props)); });
+  const composer = () => root.root.findAllByType('input').find(node => node.props.placeholder === 'Add item or paste rows');
+  try {
+    const assignment = root.root.findByType(Assignment);
+    await act(async () => assignment.findByType('select').props.onChange({ target: { value: projectId } }));
+    await act(async () => composer().props.onChange({ target: { value: 'Retain unfinished checklist item' } }));
+    for (const isMobile of [true, false, true]) {
+      await act(async () => root.update(React.createElement(Dialog, { ...props, isMobile })));
+      assert.equal(root.root.findByType(Assignment), assignment);
+      assert.equal(assignment.findByType('select').props.value, projectId);
+      assert.equal(composer().props.value, 'Retain unfinished checklist item');
+    }
+    await act(async () => root.root.findAllByType('button').find(node => node.children.includes('Add')).props.onClick());
+    assert.equal(composer().props.value, 'Retain unfinished checklist item');
+    assert.ok(root.root.findAllByProps({ role: 'alert' }).length);
+  } finally { await act(async () => root.unmount()); }
+});
+
+test('recurrence display distinguishes supported schedules from one-time and unsupported metadata', async () => {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const Repeat = (await load('src/components/TaskRecurrenceIndicator.jsx')).default;
+  for (const type of ['weekdays','weekly','monthly','yearly',null,'none','unsupported','constructor','__proto__']) {
+    let root;
+    await act(async () => { root = create(React.createElement(Repeat, { recurrence: type ? { type } : null, compact: true })); });
+    try {
+      if (['weekdays','weekly','monthly','yearly'].includes(type)) assert.equal(root.root.findByProps({ 'aria-label': `Repeats ${type}` }).props['aria-label'], `Repeats ${type}`);
+      else assert.equal(root.toJSON(), null);
+    } finally { await act(async () => root.unmount()); }
+  }
+});
 async function fixture(save) {
   const load = await sourceModules(mockTransport(() => ({ data: [] })));
   const Assignment = (await load('src/components/TaskProjectAssignment.jsx')).default;
@@ -96,7 +139,7 @@ test('assignment confirms in the task page when the current project filter remov
   const TodoView = (await load('src/components/TodoView.jsx')).default;
   const Bucket = (await load('src/components/TodoBucketSection.jsx')).default;
   const Assignment = (await load('src/components/TaskProjectAssignment.jsx')).default;
-  const Modal = (await load('src/components/DesktopTodoDetailModal.jsx')).default;
+  const Modal = (await load('src/components/TodoDetailDialog.jsx')).default;
   const empty = []; let assigned; let root;
   function Parent() {
     const [todos, setTodos] = React.useState([todo]);

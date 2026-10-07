@@ -87,6 +87,8 @@ const ChecklistTitleInput = ({ canEdit, checklist, onRenameChecklist }) => {
           event.currentTarget.blur();
         }
         if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
           resetTitle();
           event.currentTarget.blur();
         }
@@ -112,7 +114,7 @@ const ChecklistItemRow = ({
   );
 
   return (
-    <div className="group flex items-start gap-2 rounded-xl px-1 py-1.5 transition hover:bg-slate-50">
+    <div className="task-checklist-item group flex items-start gap-2 rounded-xl px-1 py-1.5 transition hover:bg-slate-50">
       <button
         type="button"
         disabled={!canEdit}
@@ -141,6 +143,8 @@ const ChecklistItemRow = ({
                 event.currentTarget.blur();
               }
               if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
                 resetTitle();
                 event.currentTarget.blur();
               }
@@ -157,7 +161,7 @@ const ChecklistItemRow = ({
       </div>
 
       {canEdit ? (
-        <div className="flex flex-shrink-0 items-center gap-1 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100">
+        <div className="task-checklist-item-actions flex flex-shrink-0 items-center gap-1 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100">
           <SmallIconButton
             disabled={!canMoveUp}
             label="Move checklist item up"
@@ -276,7 +280,7 @@ export default function TaskCardChecklistPanel({
   const summary = useMemo(() => summarizeTaskChecklists(checklists), [checklists]);
 
   return (
-    <section className="mt-5 rounded-[24px] border border-slate-200 bg-white p-4">
+    <section className="task-checklists mt-5 rounded-[24px] border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <div className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">

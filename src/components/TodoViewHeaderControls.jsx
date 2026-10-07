@@ -60,7 +60,7 @@ export default function TodoViewHeaderControls({
       : 'Show next 12 months';
 
   return (
-    <div className="px-4 sm:px-6 py-4 border-b border-slate-200 rounded-t-xl space-y-3">
+    <div className="task-header-controls px-4 sm:px-6 py-4 border-b border-slate-200 rounded-t-xl space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-800 tracking-tight">Tasks</h2>
@@ -69,13 +69,13 @@ export default function TodoViewHeaderControls({
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="grid grid-cols-2 items-center rounded-xl border border-slate-200 bg-slate-50 p-1 sm:grid-cols-4">
+          <div aria-label="Task view" className="grid grid-cols-2 items-center rounded-xl border border-slate-200 bg-slate-50 p-1 sm:grid-cols-4">
             <button
               type="button"
               onClick={() => setViewMode('list')}
               className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'list'
-                  ? 'bg-[var(--pm-accent)] text-white shadow-sm'
+                  ? 'task-active-view bg-[var(--pm-accent)] text-white shadow-sm'
                   : 'text-slate-500'
               }`}
             >
@@ -86,7 +86,7 @@ export default function TodoViewHeaderControls({
               onClick={() => setViewMode('timeline')}
               className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'timeline'
-                  ? 'bg-[var(--pm-accent)] text-white shadow-sm'
+                  ? 'task-active-view bg-[var(--pm-accent)] text-white shadow-sm'
                   : 'text-slate-500'
               }`}
             >
@@ -97,13 +97,13 @@ export default function TodoViewHeaderControls({
               onClick={() => setViewMode('kanban')}
               className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 viewMode === 'kanban'
-                  ? 'bg-[var(--pm-accent)] text-white shadow-sm'
+                  ? 'task-active-view bg-[var(--pm-accent)] text-white shadow-sm'
                   : 'text-slate-500'
               }`}
             >
               Kanban
             </button>
-            <button type="button" aria-label="Eisenhower matrix" aria-pressed={viewMode==='matrix'} onClick={()=>setViewMode('matrix')} className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold ${viewMode==='matrix'?'bg-[var(--pm-accent)] text-white shadow-sm':'text-slate-500'}`}>Matrix</button>
+            <button type="button" aria-label="Eisenhower matrix" aria-pressed={viewMode==='matrix'} onClick={()=>setViewMode('matrix')} className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold ${viewMode==='matrix'?'task-active-view bg-[var(--pm-accent)] text-white shadow-sm':'text-slate-500'}`}>Matrix</button>
           </div>
           <input
             type="text"
@@ -307,49 +307,49 @@ export default function TodoViewHeaderControls({
           ) : null}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
-          <select
+          <div className="task-filter-field"><span>Scope</span><select
             value={scope}
             onChange={(e) => onScopeChange(e.target.value)}
             className="px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-lg bg-white"
           >
             <option value="project">This Project + Other</option>
             <option value="all">All Projects + Other</option>
-          </select>
+          </select></div>
 
-          <TodoMultiSelectFilter
+          <div className="task-filter-field"><span>Projects</span><TodoMultiSelectFilter
             allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
             options={projectSelectOptions}
             selectedValues={projectFilter}
             onChange={setProjectFilter}
-          />
+          /></div>
 
-          <TodoMultiSelectFilter
+          <div className="task-filter-field"><span>Sources</span><TodoMultiSelectFilter
             allLabel="All Sources"
             options={sourceOptions}
             selectedValues={sourceFilter}
             onChange={setSourceFilter}
-          />
+          /></div>
 
-          <TodoMultiSelectFilter
+          <div className="task-filter-field"><span>Owners</span><TodoMultiSelectFilter
             allLabel="All Owners"
             options={ownerOptions}
             selectedValues={ownerFilter}
             onChange={setOwnerFilter}
-          />
+          /></div>
 
-          <TodoMultiSelectFilter
+          <div className="task-filter-field"><span>Repeat</span><TodoMultiSelectFilter
             allLabel="All Recurrence"
             options={recurrenceOptions}
             selectedValues={recurrenceFilter}
             onChange={setRecurrenceFilter}
-          />
+          /></div>
 
-          <TodoMultiSelectFilter
+          <div className="task-filter-field"><span>Buckets</span><TodoMultiSelectFilter
             allLabel="All Buckets"
             options={bucketOptions}
             selectedValues={bucketFilter}
             onChange={setBucketFilter}
-          />
+          /></div>
           </div>
         </div>
       )}

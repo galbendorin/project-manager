@@ -1,6 +1,7 @@
 import React from 'react';
 import { taskViewIdentity } from '../utils/todoEisenhower';
 import { formatDate } from '../utils/helpers';
+import TaskRecurrenceIndicator from './TaskRecurrenceIndicator';
 import { IconArrowDown, IconArrowUp } from './Icons';
 import TaskChecklistBadge from './TaskChecklistBadge';
 
@@ -9,7 +10,7 @@ const CompletionTickButton = ({ checked, onClick, label }) => (
     type="button"
     onClick={onClick}
     aria-label={label}
-    className={`inline-flex h-6 w-6 items-center justify-center rounded-full border transition-all ${
+    className={`task-list-complete inline-flex h-6 w-6 items-center justify-center rounded-full border transition-all ${
       checked
         ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
         : 'border-slate-300 bg-white text-transparent hover:border-slate-400 hover:bg-slate-50'
@@ -109,7 +110,7 @@ const TodoBoardCard = ({
       onDragEnd={canDragTodo ? onDragEnd : undefined}
       onDragOver={onDragOverTodo}
       onDrop={onDropTodo}
-      className={`group rounded-[14px] border px-2.5 py-2.5 shadow-[0_1px_0_rgba(9,30,66,0.08),0_1px_3px_rgba(9,30,66,0.14)] transition-all duration-150 ${
+      className={`task-list-card group rounded-[14px] border px-2.5 py-2.5 shadow-[0_1px_0_rgba(9,30,66,0.08),0_1px_3px_rgba(9,30,66,0.14)] transition-all duration-150 ${
         isCompleted
           ? 'border-emerald-200 bg-emerald-50/90'
           : draggedTodoId === todo._id
@@ -162,7 +163,7 @@ const TodoBoardCard = ({
               <span className={`inline-flex h-1.5 min-w-8 rounded-full ${sourceAccentClass(todo.source)}`} />
             </div>
 
-            <div className={`text-[12px] font-medium leading-[1.28] ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+            <div className={`task-list-title text-[12px] font-medium leading-[1.28] ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
               {todo.title || 'Untitled'}
             </div>
 
@@ -172,7 +173,8 @@ const TodoBoardCard = ({
               </div>
             ) : null}
 
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <div className="task-list-meta mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span title={`Project: ${todo.projectName || 'Other / no project'}`}>{todo.projectName || 'Other / no project'}</span>
               {isPendingCompletion || (todo.status && todo.status !== 'Open') ? (
                 <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[8px] font-semibold ${statusClass(todo.status)}`}>
                   {isPendingCompletion ? 'Completing...' : todo.status}
@@ -192,6 +194,7 @@ const TodoBoardCard = ({
                 </span>
               ) : null}
               <TaskChecklistBadge compact summary={getChecklistSummary?.(todo)} />
+              <TaskRecurrenceIndicator recurrence={todo.recurrence} />
             </div>
           </button>
 
