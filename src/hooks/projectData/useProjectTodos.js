@@ -402,7 +402,7 @@ export function useProjectTodos({
       if (!userId || !supportsManualTodosTableRef.current || !/^[0-9a-f-]{36}$/i.test(operationId || '')) return null;
       const session = creationSession.current;
       const active = () => session.active && creationSession.current === session;
-      let select = supportsExtendedManualTodoFieldsRef.current ? MANUAL_TODO_SELECT : LEGACY_MANUAL_TODO_SELECT;
+      let select = `${supportsExtendedManualTodoFieldsRef.current ? MANUAL_TODO_SELECT : LEGACY_MANUAL_TODO_SELECT}, user_id`;
       const reconcile = async () => {
         const result = await supabase.from('manual_todos').select(select).eq('id', operationId).eq('user_id', userId).maybeSingle();
         if (result.error) throw new Error('Unable to confirm this task. Your draft is kept; retry when connected.');
@@ -422,7 +422,7 @@ export function useProjectTodos({
       if (!active()) return null;
       if (result.error && supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(result.error, EXTENDED_MANUAL_TODO_FIELDS)) {
         supportsExtendedManualTodoFieldsRef.current = false;
-        select = LEGACY_MANUAL_TODO_SELECT;
+        select = `${LEGACY_MANUAL_TODO_SELECT}, user_id`;
         payload = { ...buildManualTodoInsertPayload(localTodoBase, userId, false), id: operationId };
         result = await supabase.from('manual_todos').insert(payload).select(select).single();
       }
