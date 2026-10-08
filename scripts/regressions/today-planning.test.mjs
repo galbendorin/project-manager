@@ -41,6 +41,26 @@ test('confirmed creation reconciles a lost acknowledgement and retries the same 
   } finally { await hook.close(); }
 });
 
+test('confirmed creation requests the owner column in actual database projections and reconciles the saved row', async () => {
+  let row = null, inserts = 0;
+  const project = (request, value) => value ? Object.fromEntries(request.select.split(',').map(field => field.trim()).map(field => [field, value[field]])) : null;
+  const transport = mockTransport(request => {
+    if (request.operation === 'insert') { inserts++; row = { ...request.payload, created_at: '2026-10-08T00:00:00Z' }; }
+    return { data: project(request, row) };
+  });
+  const load = await sourceModules(transport, { window: { clearTimeout, setTimeout } });
+  const useTodos = (await load('src/hooks/projectData/useProjectTodos.js')).useProjectTodos;
+  const hook = await mountHook(useTodos, { userId: owner, projectId: other, isOnline: true, now: () => '2026-10-08T00:00:00Z', setLastSaved() {}, setOfflinePendingSync() {}, setUsingOfflineSnapshot() {} });
+  try {
+    let saved;
+    await act(async () => { saved = await hook.value.addTodo({ title: 'Synthetic projected confirmation' }, { requireConfirmation: true, operationId: todo._id }); });
+    assert.equal(saved?.creationConfirmed, true); assert.equal(saved?._id, todo._id);
+    await act(async () => { saved = await hook.value.addTodo({ title: 'Retry must not duplicate' }, { requireConfirmation: true, operationId: todo._id }); });
+    assert.equal(saved?.creationConfirmed, true); assert.equal(inserts, 1); assert.equal(hook.value.todos.length, 1);
+    assert.ok(transport.calls.every(request => request.select.split(',').map(field => field.trim()).includes('user_id')));
+  } finally { await hook.close(); }
+});
+
 test('confirmed creation failure never queues a duplicate or claims a personal plan saved', async () => {
   const transport = mockTransport(r => r.operation === 'insert' ? { error: { code: '42501' } } : { data: null });
   const load = await sourceModules(transport, { window: { clearTimeout, setTimeout } });
