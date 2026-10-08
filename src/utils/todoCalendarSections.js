@@ -59,6 +59,19 @@ export const getTodoSectionDefaultDueDate = (sectionKey, today) => {
   return toIsoDateStringLocal(endOfMonth(new Date(year, month - 1, 1)));
 };
 
+// Creation suggestions are separate from calendar boundaries and drag rescheduling.
+export const getTodoCreationDueDate = (sectionKey, today, focus = 'all') => {
+  const date = parseIsoDate(today) || new Date();
+  if (focus === 'tomorrow') { date.setDate(date.getDate() + 1); return toIsoDateStringLocal(date); }
+  if (focus === 'today' || sectionKey === 'today' || sectionKey === 'overdue') return toIsoDateStringLocal(date);
+  if (sectionKey === 'this_week' || sectionKey === 'next_week') {
+    const weekday = (date.getDay() + 6) % 7;
+    date.setDate(date.getDate() + (sectionKey === 'next_week' ? 11 - weekday : (4 - weekday + 7) % 7));
+    return toIsoDateStringLocal(date);
+  }
+  return getTodoSectionDefaultDueDate(sectionKey, today);
+};
+
 export const buildTodoCalendarSections = (items = [], options = {}) => {
   const {
     today,
