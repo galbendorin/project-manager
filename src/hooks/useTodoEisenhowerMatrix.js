@@ -189,7 +189,7 @@ export function useTodoEisenhowerMatrix({
     void reload();
   }, [reload, reloadNonce]);
   const patchPreference = useCallback(
-    async (todo, patch) => {
+    async (todo, patch, expected) => {
       const quadrant = patch.manual_quadrant;
       const scope = session.current;
       const reference = matrixReference(todo);
@@ -223,11 +223,20 @@ export function useTodoEisenhowerMatrix({
         scope.writes.has(key)
       )
         return false;
+      const old = preferences[key];
+      // A fresh read can confirm a previously lost write acknowledgement.
+      if (expected && old && patch.planned_day !== undefined && (old.planned_day || null) === patch.planned_day &&
+        (quadrant === undefined || (old.manual_quadrant === quadrant && old.manual_quadrant_day === patch.manual_quadrant_day))) return true;
       scope.writes.add(key);
       scope.revision += 1;
       if (scope.loading) scope.reloadNeeded = true;
       setPending((prev) => ({ ...prev, [key]: true }));
-      const old = preferences[key];
+      if (expected && ((old?.id || null) !== expected.id || (old?.version || null) !== expected.version || (old?.planned_day || null) !== expected.day)) {
+        scope.writes.delete(key);
+        setPending(prev => { const next = { ...prev }; delete next[key]; return next; });
+        setError('Your personal day changed elsewhere. Check it before trying again.');
+        return false;
+      }
       try {
         let request;
         if (old)
@@ -274,6 +283,7 @@ export function useTodoEisenhowerMatrix({
         setError("");
         return true;
       } catch (failure) {
+        if (expected) scope.reloadNeeded = true;
         if (scope.active && scope === session.current)
           setError(failure?.message || "Move was not saved. Try again.");
         return false;
@@ -304,7 +314,11 @@ export function useTodoEisenhowerMatrix({
     ],
   );
   const move = useCallback((todo, quadrant) => patchPreference(todo, { manual_quadrant: quadrant, manual_quadrant_day: latest.current.today }), [patchPreference]);
-  const planDay = useCallback((todo, day) => patchPreference(todo, { planned_day: day || null }), [patchPreference]);
+  const planDay = useCallback((todo, day, expected) => patchPreference(todo, { planned_day: day || null }, expected), [patchPreference]);
+  const planTask = useCallback((todo, { day, quadrant }, expected) => patchPreference(todo, {
+    planned_day: day || null,
+    ...(quadrant ? { manual_quadrant: quadrant, manual_quadrant_day: latest.current.today } : {}),
+  }, expected), [patchPreference]);
   const groups = useMemo(
     () =>
       enabled
@@ -341,6 +355,7 @@ export function useTodoEisenhowerMatrix({
     pending: loadedContext === context ? pending : {},
     move,
     planDay,
+    planTask,
     reload,
   };
 }

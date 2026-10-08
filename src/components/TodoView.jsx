@@ -9,6 +9,7 @@ import { getTodoCompletionDescriptor } from '../hooks/projectData/todoCompletion
 import {
   buildTodoCalendarSections,
   getTodoSectionDefaultDueDate,
+  getTodoCreationDueDate,
 } from '../utils/todoCalendarSections';
 import {
   calculateTodoReorderPosition,
@@ -22,11 +23,13 @@ import TodoBucketSection from './TodoBucketSection';
 import TodoKanbanBoard from './TodoKanbanBoard';
 import TodoEisenhowerMatrix from './TodoEisenhowerMatrix';
 import TaskPlanningControls from './TaskPlanningControls';
+import TaskCreationFields from './TaskCreationFields';
+import TaskCreationDialog from './TaskCreationDialog';
 import TaskPlanSourceControls from './TaskPlanSourceControls';
 import TaskProjectAssignment from './TaskProjectAssignment';
 import { useTodoEisenhowerMatrix } from '../hooks/useTodoEisenhowerMatrix';
 import { useLocalCalendarDay } from '../hooks/useLocalCalendarDay';
-import { groupMatrixTasks, taskViewIdentity } from '../utils/todoEisenhower';
+import { groupMatrixTasks, taskViewIdentity, matrixReference, validCalendarDay, DEFAULT_MATRIX_QUADRANT } from '../utils/todoEisenhower';
 import TodoDetailDialog from './TodoDetailDialog';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
 import { buildTodoCardKey, useTodoKanbanBoard } from '../hooks/useTodoKanbanBoard';
@@ -80,8 +83,7 @@ const statusClass = (status) => {
   return 'text-amber-700 bg-amber-50 border border-amber-100';
 };
 
-const formatQuickAddDueHint = (bucketKey) => {
-  const defaultDueDate = getTodoSectionDefaultDueDate(bucketKey);
+const dueHint = (defaultDueDate) => {
   if (!defaultDueDate) return 'No deadline';
 
   const parsed = new Date(`${defaultDueDate}T00:00:00`);
@@ -227,6 +229,11 @@ const TodoView = ({
     return cached?.show === true;
   });
   const [quickAddValues, setQuickAddValues] = useState({});
+  const [creationDrafts, setCreationDrafts] = useState({ owner: currentUserId, values: {} });
+  const [creationOpen, setCreationOpen] = useState(false);
+  const [, setCreationRevision] = useState(0);
+  const creationRecords = useRef({ owner: currentUserId, records: new Map() });
+  if (creationRecords.current.owner !== currentUserId) creationRecords.current = { owner: currentUserId, records: new Map() };
   const [quickAddProjectId, setQuickAddProjectId] = useState(initialCommandState.quickAddProjectId);
   const quickAddContext = `${currentUserId}:${scope}:${currentProject?.id || ''}:${quickAddProjectId}`;
   const quickAddUiScope = useRef({ context: quickAddContext });
@@ -269,7 +276,23 @@ const TodoView = ({
       ...prev,
       [bucketKey]: value
     }));
+    if (!creationRecords.current.records.has(bucketKey) && !quickAddOperations.current.pending.has(bucketKey)) setQuickAddStatus(previous => {
+      const values = { ...previous.values }; delete values[bucketKey]; return { ...previous, values };
+    });
   };
+
+  const creationDraft = (bucketKey) => {
+    const fallbackDay = focusView === 'today' || focusView === 'tomorrow' ? getTodoCreationDueDate('today', today, focusView) : '';
+    const dueDate = bucketKey === 'matrix' ? '' : getTodoCreationDueDate(bucketKey, today, focusView);
+    const projectId = scope === 'project' ? currentProject?.id || null : bucketKey === 'matrix' ? (projectFilter.length === 1 && projectOptions.some(p => p.id === projectFilter[0]) ? projectFilter[0] : null) : (quickAddProjectId === 'other' ? null : quickAddProjectId || null);
+    return { dueDate, workDay: dueDate || fallbackDay, fallbackDay, projectId, repeat: 'none', quadrant: DEFAULT_MATRIX_QUADRANT, ...(creationDrafts.owner === currentUserId ? creationDrafts.values[bucketKey] : {}) };
+  };
+  const changeCreationDraft = (bucketKey, patch) => {
+    quickAddDraftVersions.current[bucketKey] = (quickAddDraftVersions.current[bucketKey] || 0) + 1;
+    const base = creationDraft(bucketKey);
+    setCreationDrafts(previous => ({ owner: currentUserId, values: { ...(previous.owner === currentUserId ? previous.values : {}), [bucketKey]: { ...base, ...patch } } }));
+  };
+  const formatQuickAddDueHint = bucketKey => dueHint(creationDraft(bucketKey).dueDate);
 
   useEffect(() => {
     writeLocalJson(TODO_VIEW_MODE_KEY, { mode: viewMode });
@@ -348,6 +371,7 @@ const TodoView = ({
     completionTimeoutsRef.current.clear();
     setPlanNotice('');
     setPlanningDrafts({ owner: currentUserId, values: {} });
+    setQuickAddValues({}); setCreationDrafts({ owner: currentUserId, values: {} }); setCreationOpen(false);
   }, [currentUserId]);
 
   useEffect(() => {
@@ -443,10 +467,13 @@ const TodoView = ({
     allProjectsData: sourceCurrent ? allProjectsData : [],
     currentProject, projectData, projectOptions: sourceCurrent ? projectOptions : [], registers, scope, todos, tracker,
   });
+  const personalPlanTodos = [...new Map([...candidates.mergedOpenTodos, ...[...creationRecords.current.records.values()].map(record => record.task ? allProjectManualTodos.find(task => task._id === record.task._id) || record.task : null).filter(Boolean)].map(task => [taskViewIdentity(task), task])).values()];
   const personalPlan = useTodoEisenhowerMatrix({
     currentUserId, isExternalView, enabled: !isExternalView || viewMode === 'matrix',
-    todos: candidates.mergedOpenTodos, today,
+    todos: personalPlanTodos, today,
   });
+  const latestPersonalPlan = useRef(personalPlan);
+  latestPersonalPlan.current = personalPlan;
   const {
     activeFilterCount,
     allTodoItems,
@@ -520,9 +547,30 @@ const TodoView = ({
     }
     try {
     const originalTodo = allTodoItems.find((todo) => (todo._id || todo.id) === todoId) || null;
-    const result = await onUpdateTodo(todoId, key, value, originalTodo, options);
-    if (currentOwner.current !== currentUserId) return null;
+    if (options?.moveWorkDay && options.expectedPreference) {
+      const preference = latestPersonalPlan.current.preferences[matrixReference(originalTodo)?.task_key];
+      const expected = options.expectedPreference;
+      if (!(options.retryPersonalOnly && preference?.planned_day === value) && ((preference?.id || null) !== expected.id || (preference?.version || null) !== expected.version || (preference?.planned_day || null) !== expected.day)) {
+        setPlanNotice('Your personal day changed. Check it before rescheduling.'); return null;
+      }
+    }
+    if (options?.retryPersonalOnly && originalTodo?.dueDate !== value) return null;
+    const result = options?.retryPersonalOnly ? { confirmed: true, updatedTodo: originalTodo } : await onUpdateTodo(todoId, key, value, originalTodo, options);
+    if (currentOwner.current !== currentUserId || deadlineOperations.current !== operationScope) return null;
     applyManualMutationResult(result);
+    if (confirmedDateWrite && options?.moveWorkDay && result?.confirmed && result.updatedTodo?.dueDate === value) {
+      const saved = await latestPersonalPlan.current.planDay(result.updatedTodo, value, options.expectedPreference);
+      if (currentOwner.current !== currentUserId || deadlineOperations.current !== operationScope) return null;
+      const identity = taskViewIdentity(result.updatedTodo);
+      setPlanningDrafts(previous => {
+        const values = previous.owner === currentUserId ? previous.values : {};
+        const taskDraft = { ...values[identity] };
+        if (saved) delete taskDraft.reschedulePending;
+        else taskDraft.reschedulePending = { deadline: value, expectedPreference: options.expectedPreference };
+        return { owner: currentUserId, values: { ...values, [identity]: taskDraft } };
+      });
+      return { ...result, personalPlanConfirmed: saved, personalPlanPending: !saved };
+    }
     if (key === 'projectId' && result?.confirmed) {
       const name = projectOptions.find((project) => project.id === result.updatedTodo?.projectId)?.name || 'Other / no project';
       setPlanNotice(`Project saved: ${name}. The task remains in Tasks; project filters may hide it.`);
@@ -761,66 +809,143 @@ const TodoView = ({
     };
   });
 
-  const handleQuickAddSubmit = useCallback(async (bucketKey) => {
+  const handleQuickAddSubmit = async (bucketKey, reviewLatest = false) => {
     const rawTitle = quickAddValues[bucketKey] || '';
     const title = rawTitle.trim();
     const operation = quickAddOperations.current;
     const uiScope = quickAddUiScope.current;
     const draftVersion = quickAddDraftVersions.current[bucketKey] || 0;
-    if (!title || !onAddTodo || isExternalView || currentOwner.current !== currentUserId || operation.pending.has(bucketKey)) return;
+    const records = creationRecords.current;
+    let record = records.records.get(bucketKey);
+    if ((!title && !record) || !onAddTodo || isExternalView || currentOwner.current !== currentUserId || operation.pending.has(bucketKey)) return;
+    if (bucketKey === 'matrix' && typeof navigator !== 'undefined' && !navigator.onLine) {
+      setQuickAddStatus(previous => ({ context: quickAddContext, values: { ...(previous.context === quickAddContext ? previous.values : {}), [bucketKey]: { error: 'Reconnect to save a Matrix task and its personal plan. Your draft is kept.' } } }));
+      return;
+    }
     operation.pending.add(bucketKey);
     const publishStatus = (value) => {
       if (quickAddOperations.current !== operation || quickAddUiScope.current !== uiScope) return;
       setQuickAddStatus((previous) => ({ context: uiScope.context, values: { ...(previous.context === uiScope.context ? previous.values : {}), [bucketKey]: value } }));
     };
     publishStatus({ saving: true });
-    const destinationProjectId = scope === 'all'
-      ? (quickAddProjectId === 'other' ? null : quickAddProjectId)
-      : (currentProject?.id || null);
+    if (record?.task) {
+      if (reviewLatest) {
+        const preference = latestPersonalPlan.current.preferences[matrixReference(record.task)?.task_key];
+        record.expectedPreference = { id: preference?.id || null, version: preference?.version || null, day: preference?.planned_day || null };
+      }
+      record.stage = 'planning'; record.failed = false;
+      setCreationRevision(value => value + 1);
+      return;
+    }
+    const draft = record?.draft || creationDraft(bucketKey);
+    if ((draft.dueDate && !validCalendarDay(draft.dueDate)) || (draft.workDay && !validCalendarDay(draft.workDay)) || (draft.projectId && !projectOptions.some(project => project.id === draft.projectId))) {
+      operation.pending.delete(bucketKey);
+      publishStatus({ error: 'Choose a valid date and an available project. Your draft is kept.' });
+      return;
+    }
+    const destinationProjectId = draft.projectId || null;
+    const targetSectionKey = buildTodoCalendarSections([{ dueDate: draft.dueDate, status: 'Open' }], { today, showFutureMonths: true }).sections.find(item => item.items.length)?.key || 'later';
     // Include filtered-out tasks so adding at the end never disturbs their order.
     const section = buildTodoCalendarSections(mergedOpenTodos.map((item) => {
       const position = cardOrderOverrides[buildTodoCardKey(item)];
       return Number.isFinite(Number(position)) ? { ...item, boardPosition: Number(position) } : item;
-    }), { today, showFutureMonths: true }).sections.find((item) => item.key === bucketKey);
+    }), { today, showFutureMonths: true }).sections.find((item) => item.key === targetSectionKey);
     const items = (section?.items || []).filter((item) => (item.projectId || null) === destinationProjectId);
     // A new title may shift fallback indices for derived tasks without an order.
     const appendPosition = Math.max(
       calculateTodoReorderPosition(items, items.length),
       items.some((item) => getStoredTodoOrder(item) === null) ? (items.length + 2) * TODO_ORDER_STEP : -Infinity,
     );
+    if (!record) {
+      record = { id: crypto.randomUUID(), draft, title, rawTitle, draftVersion, uiScope, operation, bucketKey,
+        confirmedMode: bucketKey === 'matrix' || typeof navigator === 'undefined' || navigator.onLine,
+        payload: { title, projectId: destinationProjectId, dueDate: draft.dueDate || '', recurrence: draft.repeat === 'none' ? null : { type: draft.repeat, interval: 1 }, kanbanPosition: appendPosition } };
+      records.records.set(bucketKey, record);
+    }
     try {
-      const addedTodo = await onAddTodo({
-        title,
-        projectId: destinationProjectId,
-        dueDate: getTodoSectionDefaultDueDate(bucketKey, today),
-        kanbanPosition: appendPosition,
-      });
+      const addedTodo = await onAddTodo(record.payload, { requireConfirmation: record.confirmedMode, operationId: record.id });
       if (quickAddOperations.current !== operation || currentOwner.current !== currentUserId) return;
       if (!addedTodo) {
+        record.uncertain = true;
         publishStatus({ error: 'Task was not added. Your text is kept; try again.' });
         return;
       }
       sourceMutationRevision.current += 1;
       setAllProjectManualTodos((currentTodos) => mergeManualTodoCollections(currentTodos, [addedTodo]));
+      if (addedTodo.creationConfirmed && matrixReference(addedTodo)) {
+        record.task = addedTodo; record.stage = 'planning'; record.failed = false;
+        setCreationRevision(value => value + 1);
+        return;
+      }
+      records.records.delete(bucketKey);
       if (quickAddUiScope.current !== uiScope) return;
       setQuickAddValues((previous) => (quickAddDraftVersions.current[bucketKey] || 0) === draftVersion && previous[bucketKey] === rawTitle ? { ...previous, [bucketKey]: '' } : previous);
       const filterHint = activeFilterCount || searchQuery || focusView !== TODO_FOCUS_VIEWS.all
         ? ' Current filters may hide it.' : '';
-      publishStatus({ message: `Added “${title}”.${filterHint}` });
+      publishStatus({ task: addedTodo, message: `Added “${record.title}”.${filterHint} Personal day is not confirmed${String(addedTodo._id).startsWith('offline-') ? '; task queued until reconnect' : ''}.` });
       window.requestAnimationFrame(() => {
         if (quickAddOperations.current === operation && quickAddUiScope.current === uiScope) quickAddInputRefs.current.get(bucketKey)?.focus();
       });
-    } catch {
-      publishStatus({ error: 'Unable to add task. Your text is kept; try again.' });
+    } catch (failure) {
+      const definitelyAbsent = failure?.definiteRejection && !record.uncertain;
+      if (definitelyAbsent && !record.task) records.records.delete(bucketKey);
+      else record.uncertain = true;
+      publishStatus({ error: definitelyAbsent ? 'Task was rejected. Check the project and dates, then retry your retained draft.' : `Unable to confirm “${record.title}”. Retry this attempt; any newer draft is kept.` });
     } finally {
-      operation.pending.delete(bucketKey);
+      if (!record.task) operation.pending.delete(bucketKey);
       if (quickAddOperations.current === operation) setQuickAddStatus((previous) => {
         const values = { ...previous.values };
-        if (values[bucketKey]?.saving) delete values[bucketKey];
+        if (!record.task && values[bucketKey]?.saving) delete values[bucketKey];
         return { ...previous, values };
       });
     }
-  }, [activeFilterCount, cardOrderOverrides, currentProject?.id, currentUserId, focusView, isExternalView, mergedOpenTodos, onAddTodo, quickAddProjectId, quickAddValues, scope, searchQuery, today]);
+  };
+
+  // Newly created tasks must enter the unfiltered candidate set and finish the
+  // preference read before writing. Never bypass ready/covered-key protection.
+  useEffect(() => {
+    const records = creationRecords.current;
+    if (records.owner !== currentUserId || !personalPlan.ready || personalPlan.offline) return;
+    for (const record of records.records.values()) {
+      if (!record.task || record.stage !== 'planning' || record.failed || record.processing) continue;
+      const task = personalPlanTodos.find(item => item._id === record.task._id);
+      if (!task) continue;
+      record.processing = true;
+      if (!record.expectedPreference) {
+        const preference = personalPlan.preferences[matrixReference(task)?.task_key];
+        record.expectedPreference = { id: preference?.id || null, version: preference?.version || null, day: preference?.planned_day || null };
+      }
+      const quadrant = record.bucketKey === 'matrix' && !(task.dueDate && task.dueDate < today) ? record.draft.quadrant : undefined;
+      void personalPlan.planTask(task, { day: record.draft.workDay || null, quadrant }, record.expectedPreference).then(saved => {
+        if (creationRecords.current !== records || currentOwner.current !== records.owner) return;
+        record.processing = false;
+        record.operation.pending.delete(record.bucketKey);
+        if (saved) {
+          records.records.delete(record.bucketKey);
+          if (quickAddUiScope.current === record.uiScope && (quickAddDraftVersions.current[record.bucketKey] || 0) === record.draftVersion) {
+            setQuickAddValues(previous => previous[record.bucketKey] === record.rawTitle ? { ...previous, [record.bucketKey]: '' } : previous);
+            setCreationDrafts(previous => { const values = { ...previous.values }; delete values[record.bucketKey]; return { ...previous, values }; });
+          }
+        } else record.failed = true;
+        if (quickAddUiScope.current !== record.uiScope) return;
+        const name = projectOptions.find(project => project.id === task.projectId)?.name || 'Other / no project';
+        setQuickAddStatus(previous => ({ context: record.uiScope.context, values: { ...(previous.context === record.uiScope.context ? previous.values : {}), [record.bucketKey]: saved
+          ? { task, message: `Added “${record.title}” · ${name} · ${dueHint(task.dueDate)}. Personal plan saved. Filters may hide it.` }
+          : { task, retry: true, error: `“${record.title}” was added. Personal plan was not saved. Retry only the unfinished personal plan.` } } }));
+      });
+    }
+  });
+
+  const showCreatedTask = task => {
+    clearAllFilters(); setSearchQuery(''); setScope('all'); setFocusView(TODO_FOCUS_VIEWS.all); setShowFutureMonths(true);
+    setCreationOpen(false); setSelectedTodo(task);
+  };
+  const creationControls = bucketKey => <>
+    {quickAddValues[bucketKey]?.trim() ? <TaskCreationFields draft={creationDraft(bucketKey)} onChange={patch => changeCreationDraft(bucketKey, patch)} today={today} projects={projectOptions} showProject={scope === 'all'} /> : null}
+    {currentQuickAddStatus[bucketKey]?.retry ? <button type="button" className="min-h-11 px-3 text-xs font-semibold underline" onClick={() => handleQuickAddSubmit(bucketKey)}>Retry personal plan</button> : null}
+    {currentQuickAddStatus[bucketKey]?.retry ? <p className="text-xs">Current personal day: {personalPlan.preferences[matrixReference(currentQuickAddStatus[bucketKey].task)?.task_key]?.planned_day || 'not set'}. Requested: {creationRecords.current.records.get(bucketKey)?.draft.workDay || 'not set'}. <button type="button" className="min-h-11 px-3 underline" onClick={() => handleQuickAddSubmit(bucketKey, true)}>Replace with my requested plan</button></p> : null}
+    {currentQuickAddStatus[bucketKey]?.task ? <button type="button" className="min-h-11 px-3 text-xs font-semibold underline" onClick={() => showCreatedTask(currentQuickAddStatus[bucketKey].task)}>Show task</button> : null}
+  </>;
 
   const canDragReorderTodo = useCallback((todo) => (
     Boolean(onUpdateTodo)
@@ -1022,6 +1147,7 @@ const TodoView = ({
           ownerOptions={ownerOptions}
           onFocusViewChange={handleFocusViewChange}
           onQuickCapture={isExternalView ? undefined : onQuickCapture}
+          onAddMatrixTask={!isExternalView && onAddTodo ? () => setCreationOpen(true) : undefined}
           quickCaptureStatus={isExternalView ? undefined : quickCaptureStatus}
           onScopeChange={handleScopeChange}
           projectFilter={projectFilter}
@@ -1086,6 +1212,7 @@ const TodoView = ({
             quickAddProjectId={quickAddProjectId}
             quickAddValues={quickAddValues}
             quickAddStatus={currentQuickAddStatus}
+            creationControls={creationControls}
             setQuickAddInputRef={setQuickAddInputRef}
             setQuickAddProjectId={setQuickAddProjectId}
             setQuickAddValue={setQuickAddValue}
@@ -1142,6 +1269,7 @@ const TodoView = ({
                 quickAddProjectId={quickAddProjectId}
                 quickAddValues={quickAddValues}
                 quickAddStatus={currentQuickAddStatus}
+                creationControls={creationControls}
                 setSelectedMobileTodo={setSelectedTodo}
                 setQuickAddInputRef={setQuickAddInputRef}
                 setQuickAddProjectId={setQuickAddProjectId}
@@ -1156,6 +1284,7 @@ const TodoView = ({
         )}
       </div>
 
+      {creationOpen && !isExternalView ? <TaskCreationDialog key={currentUserId} title={quickAddValues.matrix || ''} setTitle={value => setQuickAddValue('matrix', value)} draft={creationDraft('matrix')} onChange={patch => changeCreationDraft('matrix', patch)} today={today} projects={projectOptions} onSubmit={() => handleQuickAddSubmit('matrix')} onReviewRetry={() => handleQuickAddSubmit('matrix', true)} currentPersonalDay={personalPlan.preferences[matrixReference(currentQuickAddStatus.matrix?.task)?.task_key]?.planned_day} requestedPersonalDay={creationRecords.current.records.get('matrix')?.draft.workDay} onClose={() => setCreationOpen(false)} status={currentQuickAddStatus.matrix} onShowTask={showCreatedTask} /> : null}
       {sourceCurrent && selectedTodo ? (
         <TodoDetailDialog
           key={`${currentUserId}:${taskViewIdentity(selectedTodo)}`}

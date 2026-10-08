@@ -263,6 +263,7 @@ export default function TodoBoardView({
   quickAddProjectId,
   quickAddValues,
   quickAddStatus = {},
+  creationControls,
   setQuickAddInputRef,
   setQuickAddProjectId,
   setQuickAddValue,
@@ -399,7 +400,7 @@ export default function TodoBoardView({
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
                 />
                 <div className="mt-2 flex items-center gap-2">
-                  {showProjectPicker ? (
+                  {showProjectPicker && !creationControls ? (
                     <select
                       aria-label="Project for new task"
                       value={quickAddProjectId || 'other'}
@@ -416,6 +417,8 @@ export default function TodoBoardView({
                     {formatQuickAddDueHint(bucket.key)}
                   </div>
                 </div>
+                {creationControls?.(bucket.key)}
+                {compactLayout ? <button type="button" className="mt-2 min-h-11 rounded-lg border px-3 text-xs font-semibold" disabled={Boolean(quickAddStatus[bucket.key]?.saving)} onClick={() => handleQuickAddSubmit(bucket.key)}>Add task</button> : null}
                 {quickAddStatus[bucket.key] ? <p role={quickAddStatus[bucket.key].error ? 'alert' : 'status'} className="mt-2 text-xs text-slate-600">
                   {quickAddStatus[bucket.key].saving ? 'Adding task…' : quickAddStatus[bucket.key].error || quickAddStatus[bucket.key].message}
                 </p> : null}

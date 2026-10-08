@@ -23,7 +23,7 @@
 .task-header-controls {background:var(--task-surface)}
 .task-header-controls h2 {font-size:20px}
 .task-header-title-row {display:flex;align-items:center;justify-content:space-between;gap:12px}
-.task-inline-capture {display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 12px;border:1px solid var(--task-border);border-radius:8px;color:var(--task-blue);background:var(--task-surface);font-weight:600}
+.task-inline-capture {display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 12px;border:1px solid var(--task-border);border-radius:8px;color:var(--task-blue);background:var(--task-surface);font-weight:600}
 .task-header-controls .task-inline-capture span {font-size:18px;line-height:1}
 .task-scope-summary {font-size:11px;color:var(--task-muted);margin-top:2px}
 .task-inline-capture-status {padding:8px;border:1px solid var(--task-border);border-radius:8px;color:var(--task-muted);overflow-wrap:anywhere}
@@ -196,3 +196,11 @@
  .task-matrix-action {grid-column:4}
  .task-matrix-meta {white-space:normal;flex-wrap:wrap}
 }
+/* One shared composer for quick-add and Matrix; dates stay visible before save. */
+.task-creation-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 10px; margin-top: 10px; }
+.task-creation-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--task-muted); }
+.task-creation-fields input, .task-creation-fields select { min-width: 0; width: 100%; min-height: 44px; border: 1px solid var(--task-border); border-radius: 8px; padding: 6px 9px; background: var(--task-surface); color: var(--task-ink); font-size: 14px; }
+.task-creation-window { max-width: 620px; }
+.task-reschedule-controls input[type="checkbox"] { width: 18px; min-height: 18px; flex-shrink: 0; }
+.task-creation-window .task-dialog-body { overflow-y: auto; }
+@media (max-width: 639px) { .task-creation-fields { grid-template-columns: 1fr; } .task-creation-fields input, .task-creation-fields select { font-size: 16px; } .task-creation-window { width: calc(100% - 20px); max-height: calc(100dvh - 24px); } }

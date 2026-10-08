@@ -243,6 +243,7 @@ export default function TodoBucketSection({
   quickAddProjectId,
   quickAddValues,
   quickAddStatus = {},
+  creationControls,
   setQuickAddInputRef,
   setQuickAddProjectId,
   setQuickAddValue,
@@ -346,7 +347,7 @@ export default function TodoBucketSection({
               placeholder={isMobile ? `Quick add to ${bucket.label.toLowerCase()}` : `Add a task to ${bucket.label.toLowerCase()} and press Enter`}
               className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10 sm:text-[12px]"
             />
-            {showProjectPicker ? (
+            {showProjectPicker && !creationControls ? (
               <select
                 aria-label="Project for new task"
                 value={quickAddProjectId || 'other'}
@@ -375,6 +376,7 @@ export default function TodoBucketSection({
               ) : null}
             </div>
           </div>
+          {creationControls?.(bucket.key)}
           {quickAddStatus[bucket.key] ? <p role={quickAddStatus[bucket.key].error ? 'alert' : 'status'} className="mt-2 text-xs text-slate-600">
             {quickAddStatus[bucket.key].saving ? 'Adding task…' : quickAddStatus[bucket.key].error || quickAddStatus[bucket.key].message}
           </p> : null}

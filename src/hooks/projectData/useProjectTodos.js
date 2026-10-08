@@ -155,6 +155,16 @@ export function useProjectTodos({
   const todoQueueRef = useRef([]);
   const syncingTodoQueueRef = useRef(false);
   const todoQueueRetryTimeoutRef = useRef(null);
+  const creationSession = useRef({ userId, active: true });
+  if (creationSession.current.userId !== userId) {
+    creationSession.current.active = false;
+    creationSession.current = { userId, active: true };
+  }
+  useEffect(() => {
+    const session = creationSession.current;
+    session.active = true;
+    return () => { session.active = false; };
+  }, [userId]);
 
   useEffect(() => {
     todoQueueRef.current = todoQueue;
@@ -381,9 +391,49 @@ export function useProjectTodos({
     };
   }, [isOnline, now, projectId, setLastSaved, setUsingOfflineSnapshot, todoQueue.length, todoQueueRetryToken, userId]);
 
-  const addTodo = useCallback(async (todoData = {}) => {
+  const addTodo = useCallback(async (todoData = {}, { requireConfirmation = false, operationId } = {}) => {
     const ts = now();
     const localTodoBase = createLocalManualTodo({ todoData, projectId, userId, ts });
+    if (requireConfirmation && !isOnline) return null;
+
+    // Personal planning needs a server acknowledgement. Retry the same UUID,
+    // reconcile first, and never turn an ambiguous online result into a duplicate.
+    if (requireConfirmation && isOnline) {
+      if (!userId || !supportsManualTodosTableRef.current || !/^[0-9a-f-]{36}$/i.test(operationId || '')) return null;
+      const session = creationSession.current;
+      const active = () => session.active && creationSession.current === session;
+      let select = supportsExtendedManualTodoFieldsRef.current ? MANUAL_TODO_SELECT : LEGACY_MANUAL_TODO_SELECT;
+      const reconcile = async () => {
+        const result = await supabase.from('manual_todos').select(select).eq('id', operationId).eq('user_id', userId).maybeSingle();
+        if (result.error) throw new Error('Unable to confirm this task. Your draft is kept; retry when connected.');
+        return result.data;
+      };
+      const publish = (row) => {
+        if (!active() || row?.id !== operationId || row?.user_id !== userId) return null;
+        const saved = { ...mapManualTodoRow(row), creationConfirmed: true };
+        setTodos((previous) => [...previous.filter((item) => item._id !== saved._id), saved]);
+        return saved;
+      };
+      let row = await reconcile();
+      if (!active()) return null;
+      if (row) return publish(row);
+      let payload = { ...buildManualTodoInsertPayload(localTodoBase, userId, supportsExtendedManualTodoFieldsRef.current), id: operationId };
+      let result = await supabase.from('manual_todos').insert(payload).select(select).single();
+      if (!active()) return null;
+      if (result.error && supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(result.error, EXTENDED_MANUAL_TODO_FIELDS)) {
+        supportsExtendedManualTodoFieldsRef.current = false;
+        select = LEGACY_MANUAL_TODO_SELECT;
+        payload = { ...buildManualTodoInsertPayload(localTodoBase, userId, false), id: operationId };
+        result = await supabase.from('manual_todos').insert(payload).select(select).single();
+      }
+      if (!active()) return null;
+      if (!result.error && result.data) return publish(result.data);
+      row = await reconcile();
+      if (row) return publish(row);
+      const failure = new Error('Task was not confirmed. Your draft is kept; retry without creating another task.');
+      failure.definiteRejection = /^(42501|22\w{3}|23\w{3})$/.test(result.error?.code || '') && result.error?.code !== '23505';
+      throw failure;
+    }
 
     if (!userId || !supportsManualTodosTableRef.current) {
       setTodos((prev) => [...prev, localTodoBase]);

@@ -32,6 +32,7 @@ export default function TodoViewHeaderControls({
   ownerOptions,
   onFocusViewChange,
   onQuickCapture,
+  onAddMatrixTask,
   onScopeChange,
   projectFilter,
   projectSelectOptions,
@@ -68,7 +69,7 @@ export default function TodoViewHeaderControls({
         <div className="task-header-heading">
           <div className="task-header-title-row">
           <h2 className="text-base font-bold text-slate-800 tracking-tight">Tasks</h2>
-          {isMobile && onQuickCapture ? <button type="button" onClick={onQuickCapture} className="task-inline-capture md:hidden"><span aria-hidden="true">+</span> Capture</button> : null}
+          {viewMode === 'matrix' && onAddMatrixTask ? <button type="button" onClick={onAddMatrixTask} className="task-inline-capture"><span aria-hidden="true">+</span> Add task</button> : isMobile && onQuickCapture ? <button type="button" onClick={onQuickCapture} className="task-inline-capture md:hidden"><span aria-hidden="true">+</span> Capture</button> : null}
           </div>
           <p className="task-header-description text-[11px] text-slate-400 mt-1">
             Your tasks, across projects.

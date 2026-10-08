@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { React, act, create, mountHook, mockTransport, sourceModules } from './react-source-runtime.mjs';
+import { getTodoCreationDueDate, getTodoSectionDefaultDueDate } from '../../src/utils/todoCalendarSections.js';
 const owner = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
 const todo = { _id: '33333333-3333-4333-8333-333333333333', title: 'Synthetic future task', dueDate: '2026-11-01', status: 'Open' };
@@ -8,13 +9,83 @@ const key = `manual:${todo._id}`;
 const preference = { id: '44444444-4444-4444-8444-444444444444', user_id: owner, task_key: key, manual_quadrant: 'urgent_not_important', planned_day: '2026-10-05', version: 1 };
 const props = { currentUserId: owner, enabled: true, isExternalView: false, todos: [todo], today: '2026-10-05' };
 
-async function quickAddFixture({ mobile = false, add, derived = false } = {}) {
+test('creation uses visible Friday suggestions without changing Sunday calendar boundaries', () => {
+  assert.equal(getTodoCreationDueDate('this_week', '2026-10-08'), '2026-10-09');
+  assert.equal(getTodoCreationDueDate('this_week', '2026-10-09'), '2026-10-09');
+  assert.equal(getTodoCreationDueDate('this_week', '2026-10-10'), '2026-10-16');
+  assert.equal(getTodoCreationDueDate('this_week', '2026-10-11'), '2026-10-16');
+  assert.equal(getTodoCreationDueDate('next_week', '2026-10-11'), '2026-10-16');
+  assert.equal(getTodoCreationDueDate('overdue', '2026-10-08'), '2026-10-08');
+  assert.equal(getTodoCreationDueDate('later', '2026-10-08', 'tomorrow'), '2026-10-09');
+  assert.equal(getTodoCreationDueDate('later', '2026-10-08'), '');
+  assert.equal(getTodoCreationDueDate('month:2026-12', '2026-10-08'), '2026-12-31');
+  assert.equal(getTodoSectionDefaultDueDate('this_week', '2026-10-08'), '2026-10-11');
+});
+
+test('confirmed creation reconciles a lost acknowledgement and retries the same ID without duplication', async () => {
+  let row = null, inserts = 0;
+  const transport = mockTransport(r => {
+    if (r.operation === 'insert') { inserts++; row = { ...r.payload }; return { error: { message: 'Synthetic lost acknowledgement' } }; }
+    return { data: row };
+  });
+  const load = await sourceModules(transport, { window: { clearTimeout, setTimeout } });
+  const useTodos = (await load('src/hooks/projectData/useProjectTodos.js')).useProjectTodos;
+  const args = { userId: owner, projectId: other, isOnline: true, now: () => '2026-10-08T00:00:00Z', setLastSaved() {}, setOfflinePendingSync() {}, setUsingOfflineSnapshot() {} };
+  const hook = await mountHook(useTodos, args);
+  try {
+    let saved;
+    await act(async () => { saved = await hook.value.addTodo({ title: 'Synthetic retry', dueDate: '' }, { requireConfirmation: true, operationId: todo._id }); });
+    assert.equal(saved.creationConfirmed, true); assert.equal(saved._id, todo._id); assert.equal(row.due_date, null);
+    await act(async () => { await hook.value.addTodo({ title: 'Changed draft must not overwrite' }, { requireConfirmation: true, operationId: todo._id }); });
+    assert.equal(inserts, 1); assert.equal(hook.value.todos.length, 1); assert.equal(hook.value.todos[0].title, 'Synthetic retry');
+  } finally { await hook.close(); }
+});
+
+test('confirmed creation failure never queues a duplicate or claims a personal plan saved', async () => {
+  const transport = mockTransport(r => r.operation === 'insert' ? { error: { code: '42501' } } : { data: null });
+  const load = await sourceModules(transport, { window: { clearTimeout, setTimeout } });
+  const useTodos = (await load('src/hooks/projectData/useProjectTodos.js')).useProjectTodos;
+  const hook = await mountHook(useTodos, { userId: owner, projectId: other, isOnline: true, now: () => '', setLastSaved() {}, setOfflinePendingSync() {}, setUsingOfflineSnapshot() {} });
+  try {
+    await act(async () => { await assert.rejects(hook.value.addTodo({ title: 'Synthetic denied' }, { requireConfirmation: true, operationId: todo._id }), /not confirmed/); });
+    assert.equal(hook.value.todos.length, 0); assert.equal(hook.value.todoQueue.length, 0);
+  } finally { await hook.close(); }
+});
+
+test('confirmed creation ignores a late acknowledgement after an account change', async () => {
+  let finish;
+  const transport = mockTransport(r => r.operation === 'insert' ? new Promise(resolve => { finish = () => resolve({ data: r.payload }); }) : { data: null });
+  const load = await sourceModules(transport, { window: { clearTimeout, setTimeout } });
+  const useTodos = (await load('src/hooks/projectData/useProjectTodos.js')).useProjectTodos;
+  const args = { userId: owner, projectId: other, isOnline: true, now: () => '', setLastSaved() {}, setOfflinePendingSync() {}, setUsingOfflineSnapshot() {} };
+  const hook = await mountHook(useTodos, args);
+  try {
+    let pending;
+    await act(async () => { pending = hook.value.addTodo({ title: 'Synthetic late' }, { requireConfirmation: true, operationId: todo._id }); });
+    await hook.update({ ...args, userId: other });
+    await act(async () => { finish(); assert.equal(await pending, null); });
+    assert.equal(hook.value.todos.length, 0);
+  } finally { await hook.close(); }
+});
+
+async function quickAddFixture({ mobile = false, add, update, derived = false, extraProject = null, failPlan = () => false } = {}) {
   const project = { id: other, name: 'Synthetic personal project', tasks: [], registers: {}, tracker: [] };
   const storage = { getItem: (key) => key === 'pmworkspace:todo-command-state:v1' ? '{"scope":"project","focusView":"all"}' : null, setItem() {}, removeItem() {} };
   const window = { localStorage: storage, sessionStorage: storage, addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame: (fn) => setTimeout(fn, 0), matchMedia: () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }) };
   const document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
-  const transport = mockTransport((r) => r.table === 'projects' ? { data: [project], count: 1 } : { data: [], count: 0 });
-  const load = await sourceModules(transport, { window, document, navigator: { onLine: true } });
+  const preferences = [];
+  const transport = mockTransport((r) => {
+    if (r.table === 'projects') return { data: [project, ...(extraProject ? [extraProject] : [])], count: extraProject ? 2 : 1 };
+    if (r.table === 'task_eisenhower_preferences') {
+      if ((r.operation === 'insert' || r.operation === 'update') && failPlan()) return { error: { code: '42501', message: 'Synthetic preference failure' } };
+      if (r.operation === 'insert') { const row = { ...r.payload, id: '66666666-6666-4666-8666-666666666666', task_key: `manual:${r.payload.manual_todo_id}`, version: 1 }; preferences.push(row); return { data: structuredClone([row]) }; }
+      if (r.operation === 'update') { const row = preferences.find(row => r.filters.every(filter => row[filter.args[0]] === filter.args[1])); if (!row) return { data: [] }; Object.assign(row, r.payload, { version: row.version + 1 }); return { data: structuredClone([row]) }; }
+      return { data: structuredClone(preferences), count: preferences.length };
+    }
+    return { data: [], count: 0 };
+  });
+  const navigator = { onLine: true };
+  const load = await sourceModules(transport, { window, document, navigator });
   const TodoView = (await load('src/components/TodoView.jsx')).default;
   const Bucket = (await load('src/components/TodoBucketSection.jsx')).default;
   const Header = (await load('src/components/TodoViewHeaderControls.jsx')).default;
@@ -22,20 +93,21 @@ async function quickAddFixture({ mobile = false, add, derived = false } = {}) {
   const dueDate = getTodoSectionDefaultDueDate('this_week');
   if (derived) project.registers.actions = [{ _id: 'action-b', description: 'B derived task', target: dueDate, status: 'Open' }, { _id: 'action-c', description: 'C derived task', target: dueDate, status: 'Open' }];
   const existing = derived ? [] : [{ ...todo, projectId: other, dueDate, kanbanPosition: 1024, title: 'Existing first task' }, { ...todo, _id: '55555555-5555-4555-8555-555555555555', projectId: other, dueDate, kanbanPosition: 2048, title: 'Existing last task' }];
-  let root; const calls = [];
+  let root; const calls = [], optionsCalls = [];
   function Fixture() {
     const [todos, setTodos] = React.useState(existing);
-    return React.createElement(TodoView, { todos, currentProject: project, projectData: project.tasks, registers: project.registers, tracker: project.tracker, currentUserId: owner, currentUserName: '', isExternalView: false, onUpdateTodo: async () => null, onAddTodo: async (payload) => {
+    return React.createElement(TodoView, { todos, currentProject: project, projectData: project.tasks, registers: project.registers, tracker: project.tracker, currentUserId: owner, currentUserName: '', isExternalView: false, onUpdateTodo: async (...args) => { const result = update ? await update(...args) : null; if (result?.updatedTodo) setTodos(previous => previous.map(task => task._id === result.updatedTodo._id ? result.updatedTodo : task)); return result; }, onAddTodo: async (payload, options) => {
       calls.push(payload);
-      const saved = add ? await add(payload) : { ...payload, _id: `saved-${calls.length}`, status: 'Open', owner: 'PM' };
+      optionsCalls.push(options);
+      const saved = add ? await add(payload, options) : { ...payload, _id: `saved-${calls.length}`, status: 'Open', owner: 'PM' };
       if (saved) setTodos((previous) => [...previous, saved]);
       return saved;
     } });
   }
   await act(async () => { root = create(React.createElement(Fixture)); });
   const bucket = () => root.root.findAllByType(Bucket).find((item) => item.props.bucket.key === 'this_week');
-  const input = () => bucket().findByType('input');
-  return { root, calls, bucket, input, header: () => root.root.findByType(Header), async type(value) { await act(async () => input().props.onChange({ target: { value } })); }, async close() { await act(async () => root.unmount()); } };
+  const input = () => bucket().findAllByType('input').find(item => item.props.type === 'text');
+  return { root, calls, optionsCalls, navigator, bucket, input, load, transport, header: () => root.root.findByType(Header), async type(value) { await act(async () => input().props.onChange({ target: { value } })); }, async close() { await act(async () => root.unmount()); } };
 }
 
 test('weekly quick-add appends beside its composer instead of sorting above existing tasks', async () => {
@@ -46,6 +118,146 @@ test('weekly quick-add appends beside its composer instead of sorting above exis
     assert.equal(f.calls[0].kanbanPosition, 3072);
     assert.deepEqual(Array.from(f.bucket().props.displayItems, (item) => item.title), ['Existing first task', 'Existing last task', 'De returnat adidasii']);
     assert.equal(f.input().props.value, '');
+  } finally { await f.close(); }
+});
+
+test('an ambiguous online creation never switches to the offline queue on retry', async () => {
+  let attempts = 0;
+  const f = await quickAddFixture({ add: async () => { const error = new Error('Synthetic ambiguous result'); error.definiteRejection = ++attempts === 3; throw error; } });
+  try {
+    await f.type('Synthetic uncertain create');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    f.navigator.onLine = false;
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.optionsCalls.length, 2); assert.equal(f.optionsCalls[0].requireConfirmation, true); assert.equal(f.optionsCalls[1].requireConfirmation, true);
+    assert.equal(f.optionsCalls[0].operationId, f.optionsCalls[1].operationId);
+    assert.match(f.optionsCalls[0].operationId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    f.navigator.onLine = true;
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.optionsCalls[3].operationId, f.optionsCalls[0].operationId);
+  } finally { await f.close(); }
+});
+
+test('a definitely rejected first attempt allows a corrected draft with a new operation ID', async () => {
+  let attempts = 0;
+  const f = await quickAddFixture({ add: async payload => { if (++attempts === 1) { const error = new Error('Synthetic definite rejection'); error.definiteRejection = true; throw error; } return { ...payload, _id: 'saved-corrected', status: 'Open' }; } });
+  try {
+    await f.type('Synthetic rejected draft');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    await f.type('Synthetic corrected draft');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls[1].title, 'Synthetic corrected draft'); assert.notEqual(f.optionsCalls[0].operationId, f.optionsCalls[1].operationId);
+  } finally { await f.close(); }
+});
+
+test('quick-add Enter saves the selected date, project and repeat and follows the date personally', async () => {
+  const f = await quickAddFixture({ add: async payload => ({ ...payload, _id: todo._id, creationConfirmed: true, status: 'Open' }) });
+  try {
+    const Fields = (await f.load('src/components/TaskCreationFields.jsx')).default;
+    await f.type('Synthetic selected choices');
+    await act(async () => f.bucket().findByType(Fields).props.onChange({ dueDate: '2026-12-03', workDay: '2026-12-03', repeat: 'monthly', projectId: other }));
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls[0].dueDate, '2026-12-03'); assert.equal(f.calls[0].recurrence.type, 'monthly');
+    const write = f.transport.calls.find(r => r.table === 'task_eisenhower_preferences' && r.operation === 'insert');
+    assert.equal(write.payload.planned_day, '2026-12-03');
+  } finally { await f.close(); }
+});
+
+test('Matrix creates in Other in all-project scope and retains personal-only retry without another task', async () => {
+  let fail = true;
+  const f = await quickAddFixture({ failPlan: () => fail, add: async payload => ({ ...payload, _id: todo._id, creationConfirmed: true, status: 'Open' }) });
+  try {
+    const Dialog = (await f.load('src/components/TaskCreationDialog.jsx')).default;
+    await act(async () => f.header().props.onScopeChange('all'));
+    await act(async () => f.header().props.setViewMode('matrix'));
+    await act(async () => f.header().props.onAddMatrixTask());
+    const dialog = () => f.root.root.findByType(Dialog);
+    assert.equal(dialog().props.draft.projectId, null);
+    await act(async () => dialog().props.setTitle('Synthetic Matrix creation'));
+    const today = dialog().props.today;
+    await act(async () => dialog().props.onChange({ dueDate: today, workDay: today, quadrant: 'not_urgent_not_important' }));
+    await act(async () => dialog().props.onSubmit());
+    assert.equal(f.calls.length, 1); assert.equal(dialog().props.status.retry, true);
+    fail = false;
+    await act(async () => dialog().props.onClose());
+    await act(async () => f.header().props.onAddMatrixTask());
+    assert.equal(dialog().props.title, 'Synthetic Matrix creation');
+    await act(async () => dialog().props.onSubmit());
+    assert.equal(f.calls.length, 1); assert.match(dialog().props.status.message, /Personal plan saved/);
+    const writes = f.transport.calls.filter(r => r.table === 'task_eisenhower_preferences' && r.operation === 'insert');
+    assert.equal(writes.at(-1).payload.manual_quadrant, 'not_urgent_not_important'); assert.equal(writes.at(-1).payload.manual_quadrant_day, today);
+  } finally { await f.close(); }
+});
+
+test('Matrix overdue creation writes only the work day and cannot override Q1', async () => {
+  const f = await quickAddFixture({ add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }) });
+  try {
+    const Dialog = (await f.load('src/components/TaskCreationDialog.jsx')).default;
+    await act(async () => f.header().props.setViewMode('matrix'));
+    await act(async () => f.header().props.onAddMatrixTask());
+    const dialog = () => f.root.root.findByType(Dialog);
+    await act(async () => dialog().props.setTitle('Synthetic overdue creation'));
+    await act(async () => dialog().props.onChange({ dueDate: '2020-01-01', workDay: '2020-01-01', quadrant: 'not_urgent_not_important' }));
+    await act(async () => dialog().props.onSubmit());
+    const write = f.transport.calls.find(r => r.table === 'task_eisenhower_preferences' && r.operation === 'insert');
+    assert.equal(write.payload.manual_quadrant_day, undefined); assert.equal(write.payload.planned_day, '2020-01-01');
+    assert.match(dialog().props.status.message, /Personal plan saved/);
+  } finally { await f.close(); }
+});
+
+test('Matrix can confirm a personal plan for a new task outside the current project scope', async () => {
+  const destination = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Synthetic other destination', tasks: [], registers: {}, tracker: [] };
+  const f = await quickAddFixture({ extraProject: destination, add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }) });
+  try {
+    const Dialog = (await f.load('src/components/TaskCreationDialog.jsx')).default;
+    await act(async () => f.header().props.setViewMode('matrix'));
+    await act(async () => f.header().props.onFocusViewChange('today'));
+    await act(async () => f.header().props.onAddMatrixTask());
+    const dialog = () => f.root.root.findByType(Dialog);
+    assert.equal(dialog().props.draft.dueDate, ''); assert.equal(dialog().props.draft.workDay, dialog().props.today);
+    await act(async () => dialog().props.setTitle('Synthetic cross-project Matrix task'));
+    await act(async () => dialog().props.onChange({ projectId: destination.id }));
+    await act(async () => dialog().props.onSubmit());
+    assert.match(dialog().props.status.message, /Personal plan saved/); assert.equal(f.calls[0].projectId, destination.id);
+    assert.equal(f.transport.calls.filter(r => r.table === 'task_eisenhower_preferences' && r.operation === 'insert').length, 1);
+  } finally { await f.close(); }
+});
+
+test('paired reschedule retains partial retry across closing the editor and never repeats the deadline write', async () => {
+  let fail = false, updates = 0;
+  const f = await quickAddFixture({ failPlan: () => fail, add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }), update: async (id, field, value, original) => { updates++; return { confirmed: true, updatedTodo: { ...original, [field]: value } }; } });
+  try {
+    const Fields = (await f.load('src/components/TaskCreationFields.jsx')).default;
+    const Controls = (await f.load('src/components/TaskPlanningControls.jsx')).default;
+    const Detail = (await f.load('src/components/TodoDetailDialog.jsx')).default;
+    await f.type('Synthetic paired dates');
+    await act(async () => f.bucket().findByType(Fields).props.onChange({ dueDate: '2026-12-03', workDay: '2026-12-03' }));
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    await act(async () => f.root.root.findAllByType('button').find(button => button.children.includes('Show task')).props.onClick());
+    const controls = () => f.root.root.findByType(Controls);
+    assert.equal(controls().findByProps({ type: 'checkbox' }).props.checked, true);
+    await act(async () => controls().findByProps({ 'aria-label': 'Deadline for Synthetic paired dates' }).props.onChange({ target: { value: '2026-12-10' } }));
+    fail = true;
+    await act(async () => controls().findAllByType('button').find(button => button.children.includes('Reschedule deadline')).props.onClick());
+    assert.equal(updates, 1); assert.equal(controls().props.todo.dueDate, '2026-12-10');
+    assert.equal(controls().props.draft.reschedulePending.deadline, '2026-12-10');
+    const savedTask = controls().props.todo;
+    await act(async () => f.root.root.findByType(Detail).props.onClose());
+    await act(async () => f.bucket().props.setSelectedMobileTodo(savedTask));
+    await act(async () => controls().findByProps({ 'aria-label': 'Deadline for Synthetic paired dates' }).props.onChange({ target: { value: '' } }));
+    fail = false;
+    await act(async () => controls().findAllByType('button').find(button => button.children.includes('Retry personal day')).props.onClick());
+    assert.equal(updates, 1);
+    const row = controls().props.matrix.preferences[`manual:${savedTask._id}`];
+    assert.equal(row.planned_day, '2026-12-10'); assert.equal(controls().props.draft.deadline, '');
+    await act(async () => controls().findByProps({ 'aria-label': 'Deadline for Synthetic paired dates' }).props.onChange({ target: { value: '2026-12-20' } }));
+    fail = true;
+    await act(async () => controls().findAllByType('button').find(button => button.children.includes('Reschedule deadline')).props.onClick());
+    await act(async () => controls().findByProps({ 'aria-label': 'Deadline for Synthetic paired dates' }).props.onChange({ target: { value: '2026-12-25' } }));
+    await act(async () => controls().findAllByType('button').find(button => button.children.includes('Keep my current personal day')).props.onClick());
+    assert.equal(controls().props.draft.reschedulePending, undefined); assert.equal(controls().props.draft.deadline, '2026-12-25');
+    assert.equal(controls().props.todo.dueDate, '2026-12-20'); assert.equal(updates, 2);
   } finally { await f.close(); }
 });
 
@@ -125,6 +337,40 @@ test('work day and priority patches preserve each other and reject an altered ac
     await act(async () => assert.equal(await hook.value.planDay(todo, '2026-10-11'), false));
     assert.equal(hook.value.preferences[key].planned_day, '2026-10-09');
   } finally { await hook.close(); }
+});
+
+test('paired work day refuses a newer personal plan unless explicitly reviewed, and reconciles matching saved intent', async () => {
+  let saved = { ...preference };
+  const transport = mockTransport(r => { if (r.operation === 'update') saved = { ...saved, ...r.payload, version: saved.version + 1 }; return { data: [saved], count: 1 }; });
+  const load = await sourceModules(transport);
+  const hook = await mountHook((await load('src/hooks/useTodoEisenhowerMatrix.js')).useTodoEisenhowerMatrix, props);
+  try {
+    const expected = { id: saved.id, version: saved.version, day: saved.planned_day };
+    saved = { ...saved, planned_day: '2026-10-12', version: 2 };
+    await act(async () => hook.value.reload());
+    await act(async () => assert.equal(await hook.value.planDay(todo, '2026-10-16', expected), false));
+    assert.equal(saved.planned_day, '2026-10-12');
+    await act(async () => assert.equal(await hook.value.planDay(todo, '2026-10-16', { id: saved.id, version: saved.version, day: saved.planned_day }), true));
+    const writes = transport.calls.filter(r => r.operation === 'update').length;
+    await act(async () => assert.equal(await hook.value.planDay(todo, '2026-10-16', expected), true));
+    assert.equal(transport.calls.filter(r => r.operation === 'update').length, writes);
+  } finally { await hook.close(); }
+});
+
+test('a distinct personal work day is preserved by default and deadline failure never plans another day', async () => {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const Controls = (await load('src/components/TaskPlanningControls.jsx')).default;
+  const calls = [];
+  let root;
+  const matrix = { ready: true, offline: false, preferences: { [key]: { ...preference, planned_day: '2026-10-09' } }, pending: {}, planDay: async () => { throw new Error('Personal write forbidden'); } };
+  await act(async () => { root = create(React.createElement(Controls, { todo, matrix, today: '2026-10-08', onUpdateTodo: async (...args) => { calls.push(args); return null; } })); });
+  try {
+    assert.equal(root.root.findByProps({ type: 'checkbox' }).props.checked, false);
+    await act(async () => root.root.findByProps({ 'aria-label': `Deadline for ${todo.title}` }).props.onChange({ target: { value: '2026-12-01' } }));
+    await act(async () => root.root.findAllByType('button').find(button => button.children.includes('Reschedule deadline')).props.onClick());
+    assert.equal(calls[0][3].moveWorkDay, false);
+    assert.match(root.root.findAllByProps({ role: 'status' }).map(node => node.children.join('')).join(''), /not confirmed/);
+  } finally { await act(async () => root.unmount()); }
 });
 test('due-today choices persist for today and overdue restores Q1 after day rollover', async () => {
   const task = { ...todo, dueDate: props.today }; let saved = { ...preference };
