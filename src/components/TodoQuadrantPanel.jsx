@@ -1,6 +1,6 @@
 import React, { useId, useRef } from 'react';
 
-export default function TodoQuadrantPanel({ title, label, count, height, limits, onHeightChange, panelRef, isMobile, className, children, ...dragEvents }) {
+export default function TodoQuadrantPanel({ title, label, count, height, limits, onHeightChange, panelRef, isMobile, className, children, composer, ...dragEvents }) {
   const id = useId();
   const gesture = useRef(null);
   const clamp = (value) => Math.max(limits.min, Math.min(limits.max, value));
@@ -18,6 +18,7 @@ export default function TodoQuadrantPanel({ title, label, count, height, limits,
       <div id={`${id}-body`} aria-labelledby={`${id}-title`} role="region" className={`task-quadrant-body min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-4 sm:px-4 ${isMobile ? '' : 'overscroll-contain'}`}>
         {children}
       </div>
+      {composer ? <div className="task-matrix-composer">{composer}</div> : null}
       <footer className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-white/70 px-2">
         <button type="button" aria-label={`Make ${title} smaller`} disabled={height <= limits.min} onClick={() => onHeightChange(clamp(height - 32))} className="min-h-11 min-w-11 rounded-lg px-2 text-xs text-slate-600 disabled:text-slate-300">Smaller</button>
         <div tabIndex={0} role="separator" aria-orientation="horizontal" aria-label={`Resize ${title}`} aria-controls={`${id}-body`} aria-valuemin={limits.min} aria-valuemax={limits.max} aria-valuenow={height} aria-valuetext={`${height} pixels high`}

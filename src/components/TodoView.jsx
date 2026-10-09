@@ -100,6 +100,7 @@ const MOBILE_COMPLETE_DELAY_MS = 3200;
 const TODO_VIEW_MODE_KEY = 'pmworkspace:todo-view-mode:v1';
 const TODO_FUTURE_MONTHS_KEY = 'pmworkspace:todo-future-months:v1';
 const TODO_COMMAND_STATE_KEY = 'pmworkspace:todo-command-state:v1';
+const isMatrixCreation = key => key === 'matrix' || key.startsWith('matrix:');
 
 const readTodoCommandState = () => {
   const cached = readLocalJson(TODO_COMMAND_STATE_KEY, {});
@@ -231,6 +232,7 @@ const TodoView = ({
   const [quickAddValues, setQuickAddValues] = useState({});
   const [creationDrafts, setCreationDrafts] = useState({ owner: currentUserId, values: {} });
   const [creationOpen, setCreationOpen] = useState(false);
+  const [creationKey, setCreationKey] = useState('matrix');
   const [, setCreationRevision] = useState(0);
   const creationRecords = useRef({ owner: currentUserId, records: new Map() });
   if (creationRecords.current.owner !== currentUserId) creationRecords.current = { owner: currentUserId, records: new Map() };
@@ -283,9 +285,9 @@ const TodoView = ({
 
   const creationDraft = (bucketKey) => {
     const fallbackDay = focusView === 'today' || focusView === 'tomorrow' ? getTodoCreationDueDate('today', today, focusView) : '';
-    const dueDate = bucketKey === 'matrix' ? '' : getTodoCreationDueDate(bucketKey, today, focusView);
-    const projectId = scope === 'project' ? currentProject?.id || null : bucketKey === 'matrix' ? (projectFilter.length === 1 && projectOptions.some(p => p.id === projectFilter[0]) ? projectFilter[0] : null) : (quickAddProjectId === 'other' ? null : quickAddProjectId || null);
-    return { dueDate, workDay: dueDate || fallbackDay, fallbackDay, projectId, repeat: 'none', quadrant: DEFAULT_MATRIX_QUADRANT, ...(creationDrafts.owner === currentUserId ? creationDrafts.values[bucketKey] : {}) };
+    const dueDate = isMatrixCreation(bucketKey) ? '' : getTodoCreationDueDate(bucketKey, today, focusView);
+    const projectId = scope === 'project' ? currentProject?.id || null : isMatrixCreation(bucketKey) ? (projectFilter.length === 1 && projectOptions.some(p => p.id === projectFilter[0]) ? projectFilter[0] : null) : (quickAddProjectId === 'other' ? null : quickAddProjectId || null);
+    return { dueDate, workDay: dueDate || fallbackDay, fallbackDay, projectId, repeat: 'none', quadrant: bucketKey.startsWith('matrix:') ? bucketKey.slice(7) : DEFAULT_MATRIX_QUADRANT, ...(creationDrafts.owner === currentUserId ? creationDrafts.values[bucketKey] : {}) };
   };
   const changeCreationDraft = (bucketKey, patch) => {
     quickAddDraftVersions.current[bucketKey] = (quickAddDraftVersions.current[bucketKey] || 0) + 1;
@@ -818,7 +820,7 @@ const TodoView = ({
     const records = creationRecords.current;
     let record = records.records.get(bucketKey);
     if ((!title && !record) || !onAddTodo || isExternalView || currentOwner.current !== currentUserId || operation.pending.has(bucketKey)) return;
-    if (bucketKey === 'matrix' && typeof navigator !== 'undefined' && !navigator.onLine) {
+    if (isMatrixCreation(bucketKey) && typeof navigator !== 'undefined' && !navigator.onLine) {
       setQuickAddStatus(previous => ({ context: quickAddContext, values: { ...(previous.context === quickAddContext ? previous.values : {}), [bucketKey]: { error: 'Reconnect to save a Matrix task and its personal plan. Your draft is kept.' } } }));
       return;
     }
@@ -858,7 +860,7 @@ const TodoView = ({
     );
     if (!record) {
       record = { id: crypto.randomUUID(), draft, title, rawTitle, draftVersion, uiScope, operation, bucketKey,
-        confirmedMode: bucketKey === 'matrix' || typeof navigator === 'undefined' || navigator.onLine,
+        confirmedMode: isMatrixCreation(bucketKey) || typeof navigator === 'undefined' || navigator.onLine,
         payload: { title, projectId: destinationProjectId, dueDate: draft.dueDate || '', recurrence: draft.repeat === 'none' ? null : { type: draft.repeat, interval: 1 }, kanbanPosition: appendPosition } };
       records.records.set(bucketKey, record);
     }
@@ -915,7 +917,7 @@ const TodoView = ({
         const preference = personalPlan.preferences[matrixReference(task)?.task_key];
         record.expectedPreference = { id: preference?.id || null, version: preference?.version || null, day: preference?.planned_day || null };
       }
-      const quadrant = record.bucketKey === 'matrix' && !(task.dueDate && task.dueDate < today) ? record.draft.quadrant : undefined;
+      const quadrant = isMatrixCreation(record.bucketKey) && !(task.dueDate && task.dueDate < today) ? record.draft.quadrant : undefined;
       void personalPlan.planTask(task, { day: record.draft.workDay || null, quadrant }, record.expectedPreference).then(saved => {
         if (creationRecords.current !== records || currentOwner.current !== records.owner) return;
         record.processing = false;
@@ -946,6 +948,19 @@ const TodoView = ({
     {currentQuickAddStatus[bucketKey]?.retry ? <p className="text-xs">Current personal day: {personalPlan.preferences[matrixReference(currentQuickAddStatus[bucketKey].task)?.task_key]?.planned_day || 'not set'}. Requested: {creationRecords.current.records.get(bucketKey)?.draft.workDay || 'not set'}. <button type="button" className="min-h-11 px-3 underline" onClick={() => handleQuickAddSubmit(bucketKey, true)}>Replace with my requested plan</button></p> : null}
     {currentQuickAddStatus[bucketKey]?.task ? <button type="button" className="min-h-11 px-3 text-xs font-semibold underline" onClick={() => showCreatedTask(currentQuickAddStatus[bucketKey].task)}>Show task</button> : null}
   </>;
+  const openCreation = key => { setCreationKey(key); setCreationOpen(true); };
+  const quadrantCreation = quadrant => {
+    const key = `matrix:${quadrant.id}`;
+    const draft = creationDraft(key), status = currentQuickAddStatus[key];
+    const projectName = projectOptions.find(project => project.id === draft.projectId)?.name || 'Other / no project';
+    return <form aria-label={`Add task to ${quadrant.title}`} onSubmit={event => { event.preventDefault(); void handleQuickAddSubmit(key); }}>
+      <div className="task-quadrant-add-row"><input aria-label={`New task in ${quadrant.title}`} placeholder="Add a task…" value={quickAddValues[key] || ''} onChange={event => setQuickAddValue(key, event.target.value)} ref={element => setQuickAddInputRef(key, element)} /><button type="button" className="task-quadrant-details" onClick={() => openCreation(key)}>Details</button><button type="submit" disabled={status?.saving || (!quickAddValues[key]?.trim() && !status?.retry)} aria-label={`Save new task in ${quadrant.title}`}>+</button></div>
+      <div className="task-quadrant-add-options"><span className={status?.error ? 'task-overdue' : ''} title={status?.error || `${projectName} · ${dueHint(draft.dueDate)}${draft.workDay ? ` · Work: ${draft.workDay}` : ''}`}>{status?.retry ? 'Task saved; retry personal plan' : status?.error ? 'Not confirmed. Your draft is kept.' : status?.saving ? 'Saving task and personal plan…' : `${projectName} · ${dueHint(draft.dueDate)}`}</span></div>
+      {status ? <p role={status.error ? 'alert' : 'status'} className="task-matrix-feedback">{status.saving ? 'Saving task and personal plan…' : status.error || status.message}</p> : null}
+      {status?.retry ? <button type="button" className="min-h-11 px-3 underline" onClick={() => handleQuickAddSubmit(key)}>Retry unfinished save</button> : null}
+      {status?.task ? <button type="button" className="min-h-11 px-3 underline" onClick={() => showCreatedTask(status.task)}>Show task</button> : null}
+    </form>;
+  };
 
   const canDragReorderTodo = useCallback((todo) => (
     Boolean(onUpdateTodo)
@@ -1147,7 +1162,7 @@ const TodoView = ({
           ownerOptions={ownerOptions}
           onFocusViewChange={handleFocusViewChange}
           onQuickCapture={isExternalView ? undefined : onQuickCapture}
-          onAddMatrixTask={!isExternalView && onAddTodo ? () => setCreationOpen(true) : undefined}
+          onAddMatrixTask={!isExternalView && onAddTodo ? () => openCreation('matrix') : undefined}
           quickCaptureStatus={isExternalView ? undefined : quickCaptureStatus}
           onScopeChange={handleScopeChange}
           projectFilter={projectFilter}
@@ -1188,7 +1203,7 @@ const TodoView = ({
           </div>
         ) : null}
         {((scope === 'all' && !sourceLoadState.confirmed) || (!isExternalView && !personalPlan.ready)) && !visibleOpenTodos.length ? null : viewMode === 'matrix' ? (
-          <TodoEisenhowerMatrix matrix={matrix} currentUserId={currentUserId} today={today} isMobile={isMobile} isExternalView={isExternalView} onOpenTodo={setSelectedTodo} onOpenSourceTodo={onOpenSourceTodo} onUpdateTodo={handleUpdateTodo} onNotice={setPlanNotice} planningDrafts={currentDrafts} onPlanningDraftChange={updatePlanningDraft} deadlineSaves={currentDeadlineSaves} handleCompleteTodo={handleCompleteTodo} getChecklistSummary={getChecklistSummaryForTodo} transientTodos={filteredTransientTodos}/>
+          <TodoEisenhowerMatrix matrix={matrix} currentUserId={currentUserId} today={today} isMobile={isMobile} isExternalView={isExternalView} onOpenTodo={setSelectedTodo} onOpenSourceTodo={onOpenSourceTodo} onUpdateTodo={handleUpdateTodo} onNotice={setPlanNotice} planningDrafts={currentDrafts} onPlanningDraftChange={updatePlanningDraft} deadlineSaves={currentDeadlineSaves} handleCompleteTodo={handleCompleteTodo} getChecklistSummary={getChecklistSummaryForTodo} transientTodos={filteredTransientTodos} renderCreation={!isExternalView && onAddTodo ? quadrantCreation : undefined}/>
         ) : viewMode === 'timeline' ? (
           <TodoBoardView
             bucketSections={bucketSections}
@@ -1284,7 +1299,7 @@ const TodoView = ({
         )}
       </div>
 
-      {creationOpen && !isExternalView ? <TaskCreationDialog key={currentUserId} title={quickAddValues.matrix || ''} setTitle={value => setQuickAddValue('matrix', value)} draft={creationDraft('matrix')} onChange={patch => changeCreationDraft('matrix', patch)} today={today} projects={projectOptions} onSubmit={() => handleQuickAddSubmit('matrix')} onReviewRetry={() => handleQuickAddSubmit('matrix', true)} currentPersonalDay={personalPlan.preferences[matrixReference(currentQuickAddStatus.matrix?.task)?.task_key]?.planned_day} requestedPersonalDay={creationRecords.current.records.get('matrix')?.draft.workDay} onClose={() => setCreationOpen(false)} status={currentQuickAddStatus.matrix} onShowTask={showCreatedTask} /> : null}
+      {creationOpen && !isExternalView ? <TaskCreationDialog key={`${currentUserId}:${creationKey}`} title={quickAddValues[creationKey] || ''} setTitle={value => setQuickAddValue(creationKey, value)} draft={creationDraft(creationKey)} onChange={patch => changeCreationDraft(creationKey, patch)} today={today} projects={projectOptions} onSubmit={() => handleQuickAddSubmit(creationKey)} onReviewRetry={() => handleQuickAddSubmit(creationKey, true)} currentPersonalDay={personalPlan.preferences[matrixReference(currentQuickAddStatus[creationKey]?.task)?.task_key]?.planned_day} requestedPersonalDay={creationRecords.current.records.get(creationKey)?.draft.workDay} onClose={() => setCreationOpen(false)} status={currentQuickAddStatus[creationKey]} onShowTask={showCreatedTask} /> : null}
       {sourceCurrent && selectedTodo ? (
         <TodoDetailDialog
           key={`${currentUserId}:${taskViewIdentity(selectedTodo)}`}

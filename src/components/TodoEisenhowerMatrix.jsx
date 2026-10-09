@@ -22,6 +22,7 @@ export default function TodoEisenhowerMatrix({
   handleCompleteTodo,
   getChecklistSummary,
   transientTodos = [],
+  renderCreation,
 }) {
   const [openRows, setOpenRows] = useState(new Set());
   const dragged = useRef(null);
@@ -158,6 +159,7 @@ export default function TodoEisenhowerMatrix({
               limits={layout.limits}
               onHeightChange={(height) => layout.setHeight(q.id, height)}
               isMobile={isMobile}
+              composer={renderCreation?.(q)}
               panelRef={(element) => {
                 if (element) sections.current.set(q.id, element);
                 else sections.current.delete(q.id);
