@@ -1189,6 +1189,7 @@ const TodoView = ({
           onAddMatrixTask={!isExternalView && onAddTodo ? () => openCreation('matrix') : undefined}
           quickCaptureStatus={isExternalView ? undefined : quickCaptureStatus}
           onScopeChange={handleScopeChange}
+          onRefreshTasks={scope === 'all' ? () => { setSourceReloadNonce(value => value + 1); void personalPlan.reload(); } : undefined}
           projectFilter={projectFilter}
           projectSelectOptions={projectSelectOptions}
           recurrenceFilter={recurrenceFilter}
@@ -1212,7 +1213,6 @@ const TodoView = ({
           visibleOpenTodos={visibleOpenTodos}
         />
 
-        {scope === 'all' ? <div className="flex justify-end px-3 pt-2"><button type="button" disabled={loadingAllProjects} onClick={() => { setSourceReloadNonce((value) => value + 1); void personalPlan.reload(); }} className="min-h-11 rounded-lg border px-3 text-xs text-slate-600 disabled:opacity-50">Refresh tasks</button></div> : null}
         {scope === 'all' && (loadingAllProjects || sourceLoadState.error || !sourceCurrent) ? (
           <div role={sourceLoadState.error ? 'alert' : 'status'} className="m-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
             {sourceCurrent && sourceLoadState.error ? sourceLoadState.error : 'Checking tasks across all projects…'}

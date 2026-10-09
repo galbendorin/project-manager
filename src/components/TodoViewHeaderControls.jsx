@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import TodoMultiSelectFilter from './TodoMultiSelectFilter';
 import { TODO_FOCUS_VIEWS } from '../utils/todoCommandCentre';
 
@@ -10,11 +10,11 @@ const FOCUS_OPTIONS = [
   { value: TODO_FOCUS_VIEWS.all, label: 'All Work' },
 ];
 
-const MobileField = ({ label, children }) => (
-  <label className="block space-y-1.5">
+const MobileField = ({ label, children, as: Tag = 'label' }) => (
+  <Tag className="block space-y-1.5">
     <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
     {children}
-  </label>
+  </Tag>
 );
 
 export default function TodoViewHeaderControls({
@@ -34,6 +34,7 @@ export default function TodoViewHeaderControls({
   onQuickCapture,
   onAddMatrixTask,
   onScopeChange,
+  onRefreshTasks,
   projectFilter,
   projectSelectOptions,
   quickCaptureStatus,
@@ -57,6 +58,13 @@ export default function TodoViewHeaderControls({
   viewMode,
   visibleOpenTodos,
 }) {
+  const secondaryFilterCount = [sourceFilter, ownerFilter, recurrenceFilter, bucketFilter].filter(values => values.length > 0).length;
+  const [filtersOpen, setFiltersOpen] = useState(secondaryFilterCount > 0);
+  const filtersId = useId();
+  useEffect(() => { if (secondaryFilterCount > 0) setFiltersOpen(true); }, [secondaryFilterCount]);
+  const refreshControl = onRefreshTasks ? <button type="button" className="task-toolbar-refresh" aria-label="Refresh tasks" title="Refresh tasks" disabled={loadingAllProjects} onClick={onRefreshTasks}>
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M20 7v5h-5M4 17v-5h5M6.5 7a7 7 0 0 1 11.7-1L20 8M4 16l1.8 2A7 7 0 0 0 17.5 17" /></svg>
+  </button> : null;
   const futureToggleLabel = showFutureMonths
     ? 'Hide next 12 months'
     : futureMonthCount > 0
@@ -65,18 +73,16 @@ export default function TodoViewHeaderControls({
 
   return (
     <div className="task-header-controls px-4 sm:px-6 py-4 border-b border-slate-200 rounded-t-xl space-y-2 sm:space-y-3">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+      <div className="task-header-top">
         <div className="task-header-heading">
           <div className="task-header-title-row">
           <h2 className="text-base font-bold text-slate-800 tracking-tight">Tasks</h2>
+          {!isMobile ? <span className="task-result-count">{visibleOpenTodos.length} task{visibleOpenTodos.length !== 1 ? 's' : ''}</span> : null}
           {viewMode === 'matrix' && onAddMatrixTask ? <button type="button" onClick={onAddMatrixTask} className="task-inline-capture"><span aria-hidden="true">+</span> Add task</button> : isMobile && onQuickCapture ? <button type="button" onClick={onQuickCapture} className="task-inline-capture md:hidden"><span aria-hidden="true">+</span> Capture</button> : null}
           </div>
-          <p className="task-header-description text-[11px] text-slate-400 mt-1">
-            Your tasks, across projects.
-          </p>
           {isMobile && quickCaptureStatus ? <p role="status" className="task-inline-capture-status md:hidden">{quickCaptureStatus}</p> : null}
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="task-header-view-search">
           <div aria-label="Task view" className="task-view-options grid grid-cols-4 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
             <button
               type="button"
@@ -116,14 +122,14 @@ export default function TodoViewHeaderControls({
             </button>
             <button type="button" aria-label="Eisenhower matrix" aria-pressed={viewMode==='matrix'} onClick={()=>setViewMode('matrix')} className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold ${viewMode==='matrix'?'task-active-view bg-[var(--pm-accent)] text-white shadow-sm':'text-slate-500'}`}>Matrix</button>
           </div>
-          <input
+          <div className="task-header-search"><svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="10.5" cy="10.5" r="6.5" /><path strokeLinecap="round" d="m16 16 4 4" /></svg><input
             type="text"
             aria-label="Search tasks"
             placeholder="Search tasks..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-          />
+          /></div>
           {!isMobile && viewMode !== 'matrix' && futureMonthCount > 0 ? (
             <button
               type="button"
@@ -140,7 +146,7 @@ export default function TodoViewHeaderControls({
         </div>
       </div>
 
-      <div className="task-focus-options grid grid-cols-5 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" aria-label="Task focus">
+      <div className="task-command-row"><div className="task-focus-options grid grid-cols-5 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" aria-label="Task focus">
         {FOCUS_OPTIONS.map((option) => {
           const isActive = focusView === option.value;
           return (
@@ -163,6 +169,13 @@ export default function TodoViewHeaderControls({
           );
         })}
       </div>
+      {!isMobile ? <div className="task-primary-filters">
+        <label className="task-filter-field task-inline-filter"><span>Scope</span><select aria-label="Task scope" value={scope} onChange={e => onScopeChange(e.target.value)}><option value="project">This Project + Other</option><option value="all">All Projects + Other</option></select></label>
+        <div className="task-filter-field task-inline-filter"><span>Projects</span><TodoMultiSelectFilter ariaLabel="Projects" allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'} options={projectSelectOptions} selectedValues={projectFilter} onChange={setProjectFilter} /></div>
+        <button type="button" className="task-more-filters" aria-expanded={filtersOpen} aria-controls={filtersId} onClick={() => setFiltersOpen(value => !value)}>More filters{secondaryFilterCount > 0 ? <span className="task-filter-count">{secondaryFilterCount}</span> : null}<span aria-hidden="true">{filtersOpen ? '⌃' : '⌄'}</span></button>
+        {activeFilterCount > 0 ? <button type="button" className="task-clear-filters" onClick={clearAllFilters}>Clear filters</button> : null}
+        {refreshControl}
+      </div> : null}</div>
 
       {focusView === TODO_FOCUS_VIEWS.tomorrow ? <p className="text-xs text-slate-500">Tasks due tomorrow or personally planned for tomorrow.</p> : null}
 
@@ -175,7 +188,7 @@ export default function TodoViewHeaderControls({
               </div>
               <div className="task-scope-summary">{scope === 'project' ? 'This project + Other' : 'All projects + Other'}</div>
             </div>
-            <button
+            <div className="task-mobile-filter-actions"><button
               type="button"
               onClick={() => setShowMobileFilters(true)}
               className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
@@ -186,6 +199,7 @@ export default function TodoViewHeaderControls({
             >
               Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
             </button>
+            {refreshControl}</div>
           </div>
 
           {activeFilterCount > 0 || (viewMode !== 'matrix' && futureMonthCount > 0) ? <div className="flex flex-wrap items-center gap-2">
@@ -225,7 +239,7 @@ export default function TodoViewHeaderControls({
           ) : null}
 
           {showMobileFilters ? (
-            <div className="fixed inset-0 z-[70] flex flex-col sm:hidden">
+            <div className="fixed inset-0 z-[70] flex flex-col">
               <button
                 type="button"
                 className="absolute inset-0 bg-slate-950/45"
@@ -261,12 +275,13 @@ export default function TodoViewHeaderControls({
                     </select>
                   </MobileField>
 
-                  <TodoMultiSelectFilter
+                  <MobileField label="Projects" as="div"><TodoMultiSelectFilter
+                    ariaLabel="Projects"
                     allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
                     options={projectSelectOptions}
                     selectedValues={projectFilter}
                     onChange={setProjectFilter}
-                  />
+                  /></MobileField>
 
                   <TodoMultiSelectFilter
                     allLabel="All Sources"
@@ -312,30 +327,15 @@ export default function TodoViewHeaderControls({
         </div>
       ) : (
         <div className="space-y-2.5">
-          {!showFutureMonths && futureItemCount > 0 ? (
+          {viewMode !== 'matrix' && !showFutureMonths && futureItemCount > 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500">
               {futureItemCount} task{futureItemCount !== 1 ? 's' : ''} scheduled across the next {futureMonthCount} month{futureMonthCount !== 1 ? 's' : ''} are hidden.
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
-          <div className="task-filter-field"><span>Scope</span><select
-            value={scope}
-            onChange={(e) => onScopeChange(e.target.value)}
-            className="px-3 py-2 text-base sm:text-xs border border-slate-200 rounded-lg bg-white"
-          >
-            <option value="project">This Project + Other</option>
-            <option value="all">All Projects + Other</option>
-          </select></div>
-
-          <div className="task-filter-field"><span>Projects</span><TodoMultiSelectFilter
-            allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'}
-            options={projectSelectOptions}
-            selectedValues={projectFilter}
-            onChange={setProjectFilter}
-          /></div>
-
+          {filtersOpen ? <div id={filtersId} className="task-extra-filters" role="region" aria-label="More task filters">
           <div className="task-filter-field"><span>Sources</span><TodoMultiSelectFilter
+            ariaLabel="Sources"
             allLabel="All Sources"
             options={sourceOptions}
             selectedValues={sourceFilter}
@@ -343,6 +343,7 @@ export default function TodoViewHeaderControls({
           /></div>
 
           <div className="task-filter-field"><span>Owners</span><TodoMultiSelectFilter
+            ariaLabel="Owners"
             allLabel="All Owners"
             options={ownerOptions}
             selectedValues={ownerFilter}
@@ -350,6 +351,7 @@ export default function TodoViewHeaderControls({
           /></div>
 
           <div className="task-filter-field"><span>Repeat</span><TodoMultiSelectFilter
+            ariaLabel="Repeat"
             allLabel="All Recurrence"
             options={recurrenceOptions}
             selectedValues={recurrenceFilter}
@@ -357,12 +359,13 @@ export default function TodoViewHeaderControls({
           /></div>
 
           <div className="task-filter-field"><span>Buckets</span><TodoMultiSelectFilter
+            ariaLabel="Buckets"
             allLabel="All Buckets"
             options={bucketOptions}
             selectedValues={bucketFilter}
             onChange={setBucketFilter}
           /></div>
-          </div>
+          </div> : null}
         </div>
       )}
 

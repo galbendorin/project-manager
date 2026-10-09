@@ -87,12 +87,12 @@ export default function TodoEisenhowerMatrix({
     );
   return (
     <div className="space-y-4 p-3 sm:p-4">
-      <div className="task-matrix-intro text-sm text-slate-500">
+      <div className="task-matrix-intro text-sm text-slate-500"><details className="task-matrix-help"><summary>How the matrix works</summary><div>
         {isExternalView
           ? "Read-only task overview. Due tasks start in Do now; overdue tasks stay there."
           : "Due today starts in Do now; you may choose another quadrant for today. Incomplete overdue tasks return to Do now."}
         {!isExternalView ? <span className="ml-1">Drag a card or its ⠿ handle to another quadrant, or use Move to.</span> : null}
-        <button type="button" onClick={layout.reset} className="ml-2 min-h-11 px-2 text-xs underline">Reset sizes</button>
+        </div></details><button type="button" onClick={layout.reset} className="task-matrix-reset">Reset sizes</button>
       </div>
       {matrix.offline ? (
         <p role="status" className="text-sm text-amber-700">

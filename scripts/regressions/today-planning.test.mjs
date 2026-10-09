@@ -136,6 +136,47 @@ async function quickAddFixture({ mobile = false, add, update, remove, derived = 
   return { root, calls, optionsCalls, navigator, bucket, input, load, transport, header: () => root.root.findByType(Header), async type(value) { await act(async () => input().props.onChange({ target: { value } })); }, async close() { await act(async () => root.unmount()); } };
 }
 
+test('desktop More filters preserves selections while collapsed, and Clear resets the visible filter badge', async () => {
+  const f = await quickAddFixture();
+  try {
+    const MultiFilter = (await f.load('src/components/TodoMultiSelectFilter.jsx')).default;
+    const more = () => f.header().findAllByType('button').find(button => button.children.includes('More filters'));
+    const panels = () => f.header().findAllByProps({ 'aria-label': 'More task filters' });
+    assert.equal(panels().length, 0); assert.equal(more().props['aria-expanded'], false);
+    await act(async () => more().props.onClick());
+    assert.equal(panels().length, 1);
+    const sources = () => f.header().findAllByType(MultiFilter).find(filter => filter.props.allLabel === 'All Sources');
+    await act(async () => sources().props.onChange(['manual']));
+    await act(async () => more().props.onClick());
+    assert.equal(panels().length, 0);
+    assert.equal(f.header().props.sourceFilter[0], 'manual');
+    assert.equal(more().findByProps({ className: 'task-filter-count' }).children[0], '1');
+    await act(async () => more().props.onClick());
+    assert.equal(sources().props.selectedValues[0], 'manual');
+    await act(async () => f.header().findAllByType('button').find(button => button.children.includes('Clear filters')).props.onClick());
+    assert.equal(f.header().props.sourceFilter.length, 0);
+    assert.equal(more().findAllByProps({ className: 'task-filter-count' }).length, 0);
+  } finally { await f.close(); }
+});
+
+test('desktop filter disclosure reveals restored active filters and keeps Refresh callback and pending state', async () => {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const Header = (await load('src/components/TodoViewHeaderControls.jsx')).default;
+  const noop = () => {};
+  let refreshed = 0, root;
+  const headerProps = { isMobile: false, viewMode: 'matrix', scope: 'all', focusView: 'today', focusCounts: {}, visibleOpenTodos: [], activeFilterCount: 1, projectFilter: [], sourceFilter: ['manual'], ownerFilter: [], recurrenceFilter: [], bucketFilter: [], projectSelectOptions: [], sourceOptions: [{ value: 'manual', label: 'Manual tasks' }], ownerOptions: [], recurrenceOptions: [], bucketOptions: [], futureMonthCount: 1, futureItemCount: 1, showFutureMonths: false, searchQuery: '', onScopeChange: noop, setViewMode: noop, setSearchQuery: noop, onFocusViewChange: noop, setProjectFilter: noop, setSourceFilter: noop, setOwnerFilter: noop, setRecurrenceFilter: noop, setBucketFilter: noop, clearAllFilters: noop, onRefreshTasks: () => { refreshed++; } };
+  await act(async () => { root = create(React.createElement(Header, headerProps)); });
+  try {
+    assert.equal(root.root.findAllByProps({ 'aria-label': 'More task filters' }).length, 1);
+    // Matrix must not show the List/Timeline hidden future-month warning.
+    assert.ok(!JSON.stringify(root.toJSON()).includes('are hidden'));
+    const refresh = () => root.root.findByProps({ 'aria-label': 'Refresh tasks' });
+    await act(async () => refresh().props.onClick()); assert.equal(refreshed, 1);
+    await act(async () => root.update(React.createElement(Header, { ...headerProps, loadingAllProjects: true })));
+    assert.equal(refresh().props.disabled, true);
+  } finally { await act(async () => root.unmount()); }
+});
+
 test('desktop task description keeps immediate edits and failed drafts across close/reopen without checklist reloads', async () => {
   let failing = true, writes = 0;
   const f = await quickAddFixture({ update: async (_id, field, value, original) => {
@@ -746,7 +787,7 @@ test('a delayed all-project refresh cannot restore a cross-project deadline alre
   try {
     assert.equal(root.root.findAllByType('article').length, 1);
     hold = true;
-    await act(async () => root.root.findAllByType('button').find((node) => node.children.includes('Refresh tasks')).props.onClick());
+    await act(async () => root.root.findByProps({ 'aria-label': 'Refresh tasks' }).props.onClick());
     assert.ok(finish);
     await act(async () => root.root.findAllByType('input').find((node) => node.props['aria-label']?.startsWith('Deadline')).props.onChange({ target: { value: '2099-11-01' } }));
     await act(async () => root.root.findAllByType('button').find((node) => node.children.includes('Reschedule deadline')).props.onClick());
