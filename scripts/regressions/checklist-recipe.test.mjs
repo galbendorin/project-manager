@@ -41,7 +41,7 @@ test('description and status edits keep cached checklists without repeated loads
 
 async function descriptionFixture(onUpdateTodo) {
   const load = await sourceModules(mockTransport(() => ({ data: [] })));
-  const useDrafts = (await load('src/hooks/useTaskDescriptionDrafts.js')).useTaskDescriptionDrafts;
+  const useDrafts = (await load('src/hooks/useTaskTextDrafts.js')).useTaskTextDrafts;
   return mountHook(({ owner, update }) => useDrafts(owner, update), { owner: 'audit-user', update: onUpdateTodo });
 }
 const descriptionTodo = { _id: 'audit-todo', description: 'Beginning of line' };
@@ -142,6 +142,59 @@ test('deletion with no existing description draft blocks reopening edits until d
     await act(async () => hook.value.finishDelete(descriptionTodo, false));
     await act(async () => hook.value.change(descriptionTodo, 'Editable after rejected deletion'));
     assert.equal(hook.value.read(descriptionTodo).value, 'Editable after rejected deletion');
+  } finally { await hook.close(); }
+});
+
+test('task title typing stays immediate without writes, and blank titles stay editable without saving', async () => {
+  const writes = [];
+  const hook = await descriptionFixture(async (_id, field, value) => { writes.push({ field, value }); return { updatedTodo: { ...descriptionTodo, [field]: value } }; });
+  const task = { ...descriptionTodo, title: 'Original title' };
+  try {
+    await act(async () => { hook.value.change(task, 'Changed title', 'title'); hook.value.change(task, 'Changed titl', 'title'); });
+    assert.equal(hook.value.read(task, 'title').value, 'Changed titl');
+    assert.equal(writes.length, 0);
+    await act(async () => hook.value.save(task, 'title'));
+    assert.deepEqual(writes, [{ field: 'title', value: 'Changed titl' }]);
+    await act(async () => hook.value.change(task, '   ', 'title'));
+    await act(async () => hook.value.save(task, 'title'));
+    assert.equal(writes.length, 1);
+    assert.equal(hook.value.read(task, 'title').status, 'invalid');
+    assert.equal(hook.value.read(task, 'title').value, '   ');
+  } finally { await hook.close(); }
+});
+test('title and description saves are serialized per task, preserving both edits in returned rows', async () => {
+  const gate = deferred(); const writes = [];
+  let saved = { ...descriptionTodo, title: 'Original title' };
+  const hook = await descriptionFixture(async (_id, field, value) => {
+    writes.push(field);
+    if (field === 'title') await gate.promise;
+    saved = { ...saved, [field]: value };
+    return { updatedTodo: saved };
+  });
+  try {
+    await act(async () => { hook.value.change(saved, 'New title', 'title'); hook.value.change(saved, 'New description'); });
+    let first, second;
+    await act(async () => { first = hook.value.save(saved, 'title'); second = hook.value.save(saved); });
+    assert.deepEqual(writes, ['title']);
+    await act(async () => { gate.resolve(); await Promise.all([first, second]); });
+    assert.deepEqual(writes, ['title', 'description']);
+    assert.equal(saved.title, 'New title'); assert.equal(saved.description, 'New description');
+  } finally { await hook.close(); }
+});
+test('failed title saves retain the draft and a newer edit survives a delayed title reply', async () => {
+  const gate = deferred(); let failing = true;
+  const task = { ...descriptionTodo, title: 'Original title' };
+  const hook = await descriptionFixture(async (_id, _field, value) => failing ? null : gate.promise.then(() => ({ updatedTodo: { ...task, title: value } })));
+  try {
+    await act(async () => hook.value.change(task, 'First title', 'title'));
+    await act(async () => hook.value.save(task, 'title'));
+    assert.equal(hook.value.read(task, 'title').status, 'error');
+    failing = false; let saving;
+    await act(async () => { saving = hook.value.save(task, 'title'); });
+    await act(async () => hook.value.change(task, 'Newer title', 'title'));
+    await act(async () => { gate.resolve(); await saving; });
+    assert.equal(hook.value.read(task, 'title').value, 'Newer title');
+    assert.equal(hook.value.read(task, 'title').status, 'dirty');
   } finally { await hook.close(); }
 });
 
@@ -317,6 +370,69 @@ test('initial load invalidated by checklist creation reloads old and new server 
 });
 
 for(const kind of ['list','item']) {
+  test(`${kind} failed rename retains typed text through refresh and supports a successful retry`, async () => {
+    let failing = true;
+    const f = await fixture(r => r.operation === 'update' ? failing ? { data: [], error: null } : { data: [{ id: kind === 'list' ? checklist.id : item.id }], error: null } : loaded(r)); let screen;
+    try {
+      const Panel = (await f.load('src/components/TaskCardChecklistPanel.jsx')).default;
+      const panelProps = () => ({ canEdit: true, checklistsAvailable: true, checklists: f.hook.value.getChecklistsForTodo(props.todos[0]), onRenameChecklist: f.hook.value.renameChecklist, onRenameChecklistItem: f.hook.value.renameChecklistItem });
+      await act(async () => { screen = create(React.createElement(Panel, panelProps())); });
+      const title = () => screen.root.findAllByType('input')[kind === 'list' ? 0 : 1];
+      await act(async () => title().props.onChange({ target: { value: 'Retained failed rename' } }));
+      await act(async () => title().props.onBlur());
+      await act(async () => screen.update(React.createElement(Panel, panelProps())));
+      assert.equal(title().props.value, 'Retained failed rename');
+      failing = false;
+      await act(async () => title().props.onBlur());
+      await act(async () => screen.update(React.createElement(Panel, panelProps())));
+      assert.equal(title().props.value, 'Retained failed rename');
+      assert.equal(f.hook.value.checklistMessage, '');
+    } finally { if (screen) await act(async () => screen.unmount()); await f.close(); }
+  });
+
+  test(`${kind} newer revert to the original title is saved after an older pending rename`, async () => {
+    const gate = deferred(); let updates = 0;
+    const f = await fixture(r => r.operation === 'update' ? (++updates === 1 ? gate.promise : { data: [{ id: kind === 'list' ? checklist.id : item.id }], error: null }) : loaded(r)); let screen;
+    try {
+      const Panel = (await f.load('src/components/TaskCardChecklistPanel.jsx')).default;
+      const panelProps = () => ({ canEdit: true, checklistsAvailable: true, checklists: f.hook.value.getChecklistsForTodo(props.todos[0]), onRenameChecklist: f.hook.value.renameChecklist, onRenameChecklistItem: f.hook.value.renameChecklistItem });
+      await act(async () => { screen = create(React.createElement(Panel, panelProps())); });
+      const title = () => screen.root.findAllByType('input')[kind === 'list' ? 0 : 1];
+      const original = title().props.value;
+      await act(async () => title().props.onChange({ target: { value: 'Pending first rename' } }));
+      await act(async () => { title().props.onBlur(); });
+      await act(async () => title().props.onChange({ target: { value: original } }));
+      await act(async () => { title().props.onBlur(); });
+      assert.equal(updates, 1);
+      await act(async () => gate.resolve({ data: [{ id: kind === 'list' ? checklist.id : item.id }], error: null }));
+      await act(async () => screen.update(React.createElement(Panel, panelProps())));
+      assert.equal(updates, 2); assert.equal(title().props.value, original);
+      assert.deepEqual(f.transport.calls.filter(r => r.operation === 'update').map(r => r.payload.title), ['Pending first rename', original]);
+    } finally { if (screen) await act(async () => screen.unmount()); await f.close(); }
+  });
+
+  test(`${kind} title typing does not save; Enter plus blur saves only once; Escape discards an unsent edit`, async () => {
+    const gate = deferred(); const f = await fixture(r => r.operation === 'update' ? gate.promise : loaded(r)); let screen;
+    try {
+      const Panel = (await f.load('src/components/TaskCardChecklistPanel.jsx')).default;
+      const panelProps = () => ({ canEdit: true, checklistsAvailable: true, checklists: f.hook.value.getChecklistsForTodo(props.todos[0]), onRenameChecklist: f.hook.value.renameChecklist, onRenameChecklistItem: f.hook.value.renameChecklistItem });
+      await act(async () => { screen = create(React.createElement(Panel, panelProps())); });
+      const title = () => screen.root.findAllByType('input')[kind === 'list' ? 0 : 1];
+      const original = title().props.value;
+      await act(async () => { title().props.onChange({ target: { value: 'Canceled edit' } }); });
+      assert.equal(title().props.value, 'Canceled edit');
+      assert.equal(f.transport.calls.filter(r => r.operation === 'update').length, 0);
+      await act(async () => title().props.onKeyDown({ key: 'Escape', preventDefault() {}, stopPropagation() {}, currentTarget: { blur() { title().props.onBlur(); } } }));
+      assert.equal(title().props.value, original);
+      assert.equal(f.transport.calls.filter(r => r.operation === 'update').length, 0);
+      await act(async () => title().props.onChange({ target: { value: 'Saved with Enter' } }));
+      await act(async () => title().props.onKeyDown({ key: 'Enter', preventDefault() {}, currentTarget: { blur() { title().props.onBlur(); } } }));
+      assert.equal(f.transport.calls.filter(r => r.operation === 'update').length, 1);
+      await act(async () => gate.resolve({ data: [{ id: kind === 'list' ? checklist.id : item.id }], error: null }));
+      assert.equal(f.transport.calls.filter(r => r.operation === 'update').length, 1);
+    } finally { if (screen) await act(async () => screen.unmount()); await f.close(); }
+  });
+
   test(`delayed ${kind} rename acknowledgement preserves newer unsubmitted title`,async()=>{
     const gate=deferred();const f=await fixture(r=>r.operation==='update'?gate.promise:loaded(r));let screen;
     try {
