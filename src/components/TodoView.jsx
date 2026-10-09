@@ -31,7 +31,7 @@ import { useTodoEisenhowerMatrix } from '../hooks/useTodoEisenhowerMatrix';
 import { useLocalCalendarDay } from '../hooks/useLocalCalendarDay';
 import { groupMatrixTasks, taskViewIdentity, matrixReference, validCalendarDay, DEFAULT_MATRIX_QUADRANT } from '../utils/todoEisenhower';
 import TodoDetailDialog from './TodoDetailDialog';
-import { useTaskDescriptionDrafts } from '../hooks/useTaskDescriptionDrafts';
+import { useTaskTextDrafts } from '../hooks/useTaskTextDrafts';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
 import { buildTodoCardKey, useTodoKanbanBoard } from '../hooks/useTodoKanbanBoard';
 import { useTaskCardChecklists } from '../hooks/useTaskCardChecklists';
@@ -587,8 +587,9 @@ const TodoView = ({
     }
   }, [allTodoItems, applyManualMutationResult, onUpdateTodo, currentUserId, pendingCompletedTodos, projectOptions]);
 
-  const descriptionDrafts = useTaskDescriptionDrafts(currentUserId, handleUpdateTodo, (task, saved) => {
-    const message = `Description not saved for “${task.title || 'Untitled'}”. Reopen the task to retry; your text is kept.`;
+  const textDrafts = useTaskTextDrafts(currentUserId, handleUpdateTodo, (task, saved, field) => {
+    const label = field === 'title' ? 'Title' : 'Description';
+    const message = `${label} not saved for “${task.title || 'Untitled'}”. Reopen the task to retry; your text is kept.`;
     setPlanNotice(previous => saved ? (previous === message ? '' : previous) : message);
   });
 
@@ -600,13 +601,13 @@ const TodoView = ({
     setDeadlineSaves(previous => ({ owner: currentUserId, ids: { ...(previous.owner === currentUserId ? previous.ids : {}), [todoId]: true } }));
     try {
     const originalTodo = allTodoItems.find(todo => (todo._id || todo.id) === todoId);
-    if (originalTodo && !(await descriptionDrafts.prepareDelete(originalTodo))) return false;
+    if (originalTodo && !(await textDrafts.prepareDelete(originalTodo))) return false;
     if (deadlineOperations.current !== operationScope || currentOwner.current !== currentUserId) return false;
     let deleted;
     try { deleted = await onDeleteTodo(todoId); }
     catch { deleted = false; }
     if (currentOwner.current !== currentUserId || deadlineOperations.current !== operationScope) return false;
-    if (originalTodo) descriptionDrafts.finishDelete(originalTodo, deleted !== false);
+    if (originalTodo) textDrafts.finishDelete(originalTodo, deleted !== false);
     if (deleted === false) { setPlanNotice('Task not deleted. Reopen it to try again.'); return false; }
     sourceMutationRevision.current += 1;
 
@@ -623,7 +624,7 @@ const TodoView = ({
         setDeadlineSaves(previous => { const ids = { ...previous.ids }; delete ids[todoId]; return { owner: currentUserId, ids }; });
       }
     }
-  }, [onDeleteTodo, currentUserId, allTodoItems, descriptionDrafts]);
+  }, [onDeleteTodo, currentUserId, allTodoItems, textDrafts]);
 
   const clearPendingCompletion = useCallback((todoId) => {
     const existingTimeoutId = completionTimeoutsRef.current.get(todoId);
@@ -1336,9 +1337,12 @@ const TodoView = ({
           onClose={() => setSelectedTodo(null)}
           onDeleteTodo={handleDeleteTodo}
           onUpdateTodo={handleUpdateTodo}
-          descriptionDraft={descriptionDrafts.read(selectedTodo)}
-          onDescriptionChange={value => descriptionDrafts.change(selectedTodo, value)}
-          onSaveDescription={() => descriptionDrafts.save(selectedTodo)}
+          titleDraft={textDrafts.read(selectedTodo, 'title')}
+          onTitleChange={value => textDrafts.change(selectedTodo, value, 'title')}
+          onSaveTitle={() => textDrafts.save(selectedTodo, 'title')}
+          descriptionDraft={textDrafts.read(selectedTodo)}
+          onDescriptionChange={value => textDrafts.change(selectedTodo, value)}
+          onSaveDescription={() => textDrafts.save(selectedTodo)}
           recurrenceLabel={recurrenceLabel}
           recurrenceOptions={RECURRENCE_OPTIONS}
           statusClass={statusClass}

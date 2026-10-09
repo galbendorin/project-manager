@@ -34,33 +34,43 @@ const SmallIconButton = ({ children, disabled, label, onClick }) => (
 
 const useChecklistTitleDraft = (id, title, onSave) => {
   const [draftTitle, setDraftTitle] = useState(title);
-  const edits = useRef({ id, revision: 0, dirty: false });
+  const edits = useRef({ id, revision: 0, dirty: false, value: title, pending: null });
   useEffect(() => {
-    if (edits.current.id !== id) edits.current = { id, revision: 0, dirty: false };
-    if (!edits.current.dirty) setDraftTitle(title);
+    if (edits.current.id !== id) edits.current = { id, revision: 0, dirty: false, value: title, pending: null };
+    if (!edits.current.dirty) { edits.current.value = title; setDraftTitle(title); }
   }, [id, title]);
   const changeTitle = (value) => {
     edits.current.revision += 1;
     edits.current.dirty = true;
+    edits.current.value = value;
     setDraftTitle(value);
   };
   const resetTitle = () => {
     edits.current.revision += 1;
     edits.current.dirty = false;
+    edits.current.value = title;
     setDraftTitle(title);
   };
   const commitTitle = async () => {
-    const trimmed = draftTitle.trim();
+    const trimmed = edits.current.value.trim();
     if (!trimmed) { resetTitle(); return; }
-    if (trimmed === title) { edits.current.dirty = false; return; }
+    // A pending older rename may change the server away from the current prop.
+    // A newer edit back to that prop still needs its own serialized save.
+    if (trimmed === title && !edits.current.pending) { edits.current.dirty = false; return; }
     const revision = edits.current.revision;
+    const session = edits.current;
+    if (session.pending?.revision === revision) return session.pending.promise;
+    const promise = Promise.resolve().then(() => onSave(id, trimmed));
+    session.pending = { revision, promise };
     try {
-      const saved = await onSave(id, trimmed);
-      if (saved === true && edits.current.id === id && edits.current.revision === revision) {
+      const saved = await promise;
+      if (saved === true && edits.current === session && session.revision === revision) {
         edits.current.dirty = false;
+        edits.current.value = trimmed;
         setDraftTitle(trimmed);
       }
     } catch { /* The draft stays available for another save attempt. */ }
+    finally { if (session.pending?.promise === promise) session.pending = null; }
   };
   return { draftTitle, changeTitle, resetTitle, commitTitle };
 };
@@ -77,6 +87,7 @@ const ChecklistTitleInput = ({ canEdit, checklist, onRenameChecklist }) => {
   return (
     <input
       type="text"
+      aria-label="Checklist title"
       value={draftTitle}
       onChange={(event) => changeTitle(event.target.value)}
       onBlur={commitTitle}
@@ -133,6 +144,7 @@ const ChecklistItemRow = ({
         {canEdit ? (
           <input
             type="text"
+            aria-label="Checklist item text"
             value={draftTitle}
             onChange={(event) => changeTitle(event.target.value)}
             onBlur={commitTitle}

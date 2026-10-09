@@ -9,6 +9,7 @@ export default function TodoDetailDialog({
   onUpdateTodo, recurrenceOptions = [], recurrenceLabel, statusClass,
   planningControls, sourcePlanControls, projectAssignmentControls,
   descriptionDraft, onDescriptionChange, onSaveDescription,
+  titleDraft, onTitleChange, onSaveTitle,
   checklists = [], checklistCanEdit = false, checklistsAvailable = true,
   checklistsLoading = false, checklistMessage = '', checklistsSaving = false,
   onRetryChecklists, onAddChecklist, onAddChecklistItems, onDeleteChecklist,
@@ -17,7 +18,10 @@ export default function TodoDetailDialog({
 }) {
   const dialog = useRef(null), close = useRef(null), onCloseRef = useRef(onClose);
   const requestClose = () => {
-    if (canEdit) void onSaveDescription?.();
+    if (canEdit) {
+      if (!todo?.planLink && !todo?.meta?.projectPlanLink) void onSaveTitle?.();
+      void onSaveDescription?.();
+    }
     onClose();
   };
   onCloseRef.current = requestClose;
@@ -51,7 +55,10 @@ export default function TodoDetailDialog({
         <div className="task-dialog-header-actions">{removable ? <button type="button" className="task-danger-action" onClick={() => { onDeleteTodo(todo._id); onClose(); }}>Delete</button> : null}<button ref={close} type="button" onClick={requestClose}>{isMobile ? 'Back' : 'Close'}</button></div>
       </header>
       <div className="task-dialog-body">
-        <Field label="Title">{editSchedule ? <input type="text" value={todo.title || ''} onChange={e => update('title', e.target.value)} /> : <Value>{todo.title || 'Untitled'}</Value>}</Field>
+        <Field label="Title">{editSchedule ? <input type="text" value={titleDraft?.value ?? todo.title ?? ''} onChange={e => onTitleChange ? onTitleChange(e.target.value) : update('title', e.target.value)} onBlur={() => { void onSaveTitle?.(); }} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent?.isComposing) { e.preventDefault(); e.currentTarget.blur(); } }} /> : <Value>{todo.title || 'Untitled'}</Value>}</Field>
+        {editSchedule && titleDraft ? <div className="task-description-feedback" role={['error','invalid'].includes(titleDraft.status) ? 'alert' : 'status'}>
+          {titleDraft.status === 'invalid' ? 'Enter a task title. Your changes are kept.' : titleDraft.status === 'error' ? <>Title not saved. Your text is kept. <button type="button" onClick={() => { void onSaveTitle?.(); }}>Retry</button></> : titleDraft.status === 'saving' ? 'Saving title…' : titleDraft.status === 'dirty' ? 'Unsaved title — leave the field to save.' : 'Saves when you leave this field.'}
+        </div> : null}
         <Field label="Description">{canEdit ? <textarea value={descriptionDraft?.value ?? todo.description ?? ''} rows={3} onChange={e => onDescriptionChange ? onDescriptionChange(e.target.value) : update('description', e.target.value)} onBlur={() => { void onSaveDescription?.(); }} placeholder="Add more detail…" /> : <Value>{todo.description || 'No description'}</Value>}</Field>
         {canEdit && descriptionDraft ? <div className="task-description-feedback" role={descriptionDraft.status === 'error' ? 'alert' : 'status'}>
           {descriptionDraft.status === 'error' ? <>Description not saved. Your text is kept. <button type="button" onClick={() => { void onSaveDescription?.(); }}>Retry</button></> : descriptionDraft.status === 'saving' ? 'Saving description…' : descriptionDraft.status === 'dirty' ? 'Unsaved description — leave the field to save.' : 'Saves when you leave this field.'}

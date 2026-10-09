@@ -168,6 +168,29 @@ test('desktop task description keeps immediate edits and failed drafts across cl
   } finally { await f.close(); }
 });
 
+test('desktop title edits stay immediate and retain failed Close saves for reopening and Retry', async () => {
+  let failing = true, writes = 0;
+  const f = await quickAddFixture({ update: async (_id, field, value, original) => { writes++; return failing ? null : { updatedTodo: { ...original, [field]: value } }; } });
+  try {
+    const Dialog = (await f.load('src/components/TodoDetailDialog.jsx')).default;
+    const title = () => f.root.root.findByType(Dialog).findAllByType('input')[0];
+    const open = async () => act(async () => f.bucket().props.setSelectedMobileTodo(f.bucket().props.displayItems[0]));
+    await open();
+    await act(async () => title().props.onChange({ target: { value: 'Immediate task title' } }));
+    await act(async () => title().props.onChange({ target: { value: 'Immediate task titl' } }));
+    assert.equal(title().props.value, 'Immediate task titl'); assert.equal(writes, 0);
+    await act(async () => f.root.root.findByType(Dialog).findAllByType('button').find(button => button.children.includes('Close')).props.onClick());
+    assert.equal(writes, 1);
+    assert.ok(f.root.root.findAllByProps({ role: 'status' }).some(node => node.children.some(child => typeof child === 'string' && child.includes('Title not saved'))));
+    await open();
+    assert.equal(title().props.value, 'Immediate task titl');
+    failing = false;
+    await act(async () => f.root.root.findByType(Dialog).findAllByType('button').find(button => button.children.includes('Retry')).props.onClick());
+    assert.equal(title().props.value, 'Immediate task titl');
+    assert.ok(!f.root.root.findAllByProps({ role: 'status' }).some(node => node.children.some(child => typeof child === 'string' && child.includes('Title not saved'))));
+  } finally { await f.close(); }
+});
+
 test('deleting a desktop task waits for description blur acknowledgement and cannot resurrect its card', async () => {
   let finish, finishDelete, deletes = 0, writes = 0;
   const gate = new Promise(resolve => { finish = resolve; });
