@@ -177,13 +177,13 @@ test('each quadrant quick-add saves into that quadrant and stays outside the scr
   }
 });
 
-test('quadrant Details carries its draft, destination and repeat into the shared confirmed creator', async () => {
+test('quadrant options carry the draft, destination and repeat into the shared confirmed creator', async () => {
   const f = await quickAddFixture({ add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }) });
   try {
     await act(async () => f.header().props.setViewMode('matrix'));
     const form = () => f.root.root.findByProps({ 'aria-label': 'Add task to Handle soon' });
     await act(async () => form().findByType('input').props.onChange({ target: { value: 'Synthetic detailed quadrant task' } }));
-    await act(async () => form().findAllByType('button').find(button => button.children.includes('Details')).props.onClick());
+    await act(async () => form().findByProps({ 'aria-label': 'Task options in Handle soon' }).props.onClick());
     const Dialog = (await f.load('src/components/TaskCreationDialog.jsx')).default;
     const dialog = () => f.root.root.findByType(Dialog);
     assert.equal(dialog().props.title, 'Synthetic detailed quadrant task'); assert.equal(dialog().props.draft.quadrant, 'urgent_not_important');
@@ -210,6 +210,56 @@ test('quadrant save failure retains its draft across view changes and retry uses
     await act(async () => form().props.onSubmit({ preventDefault() {} }));
     assert.equal(f.optionsCalls[0].operationId, f.optionsCalls[1].operationId);
     assert.equal(f.transport.calls.filter(r => r.table === 'task_eisenhower_preferences' && r.operation === 'insert').length, 1);
+  } finally { await f.close(); }
+});
+
+test('confirmed quadrant entry offers task review without a second insert and resets for the next draft', async () => {
+  const f = await quickAddFixture({ add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }) });
+  try {
+    await act(async () => f.header().props.setViewMode('matrix'));
+    const form = () => f.root.root.findByProps({ 'aria-label': 'Add task to Make progress' });
+    await act(async () => form().findByType('input').props.onChange({ target: { value: 'Synthetic reviewed task' } }));
+    await act(async () => form().props.onSubmit({ preventDefault() {} }));
+    const review = form().findByProps({ 'aria-label': 'Show newly added task in Make progress' });
+    assert.equal(review.props.type, 'button'); assert.equal(review.props.disabled, false);
+    await act(async () => review.props.onClick());
+    const Detail = (await f.load('src/components/TodoDetailDialog.jsx')).default;
+    assert.equal(f.root.root.findByType(Detail).props.todo.title, 'Synthetic reviewed task');
+    assert.equal(f.calls.length, 1);
+    await act(async () => f.root.root.findByType(Detail).props.onClose());
+    await act(async () => form().findByType('input').props.onChange({ target: { value: 'Synthetic next draft' } }));
+    assert.equal(form().findByProps({ 'aria-label': 'Save new task in Make progress' }).props.type, 'submit');
+    assert.equal(form().findByType('input').props.value, 'Synthetic next draft');
+  } finally { await f.close(); }
+});
+
+test('compact quadrant feedback retains a personal-only retry action after partial saving', async () => {
+  let fail = true;
+  const f = await quickAddFixture({ failPlan: () => fail, add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }) });
+  try {
+    await act(async () => f.header().props.setViewMode('matrix'));
+    const form = () => f.root.root.findByProps({ 'aria-label': 'Add task to Handle soon' });
+    await act(async () => form().findByType('input').props.onChange({ target: { value: 'Synthetic compact partial retry' } }));
+    await act(async () => form().props.onSubmit({ preventDefault() {} }));
+    assert.equal(form().findByProps({ 'aria-label': 'Retry personal plan in Handle soon' }).props.type, 'submit');
+    assert.ok(form().findAllByType('span').some(span => span.children.includes('Task added. Personal plan needs retry.')));
+    fail = false;
+    await act(async () => form().props.onSubmit({ preventDefault() {} }));
+    assert.equal(f.calls.length, 1);
+    assert.equal(form().findByProps({ 'aria-label': 'Show newly added task in Handle soon' }).props.type, 'button');
+  } finally { await f.close(); }
+});
+
+test('compact offline feedback tells the user to reconnect and retains the draft', async () => {
+  const f = await quickAddFixture();
+  try {
+    await act(async () => f.header().props.setViewMode('matrix'));
+    const form = () => f.root.root.findByProps({ 'aria-label': 'Add task to Make progress' });
+    await act(async () => form().findByType('input').props.onChange({ target: { value: 'Synthetic offline draft' } }));
+    f.navigator.onLine = false;
+    await act(async () => form().props.onSubmit({ preventDefault() {} }));
+    assert.ok(form().findAllByType('span').some(span => span.children.includes('Offline — reconnect to save.')));
+    assert.equal(form().findByType('input').props.value, 'Synthetic offline draft'); assert.equal(f.calls.length, 0);
   } finally { await f.close(); }
 });
 
