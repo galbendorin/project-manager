@@ -47,6 +47,19 @@ export { PLAN_LIMITS, ALL_TABS, SIMULATOR_OPTIONS };
 
 export const PlanProvider = ({ children }) => {
   const { user } = useAuth();
+  // Token refreshes may replace the auth user object without changing accounts.
+  // Keep confirmed access while that account revalidates in the background.
+  const userId = user?.id || null;
+  const accessSession = useRef({ userId, active: true });
+  if (accessSession.current.userId !== userId) {
+    accessSession.current.active = false;
+    accessSession.current = { userId, active: true };
+  }
+  useEffect(() => {
+    const session = accessSession.current;
+    session.active = true;
+    return () => { session.active = false; };
+  }, [userId]);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [householdAccessLoading, setHouseholdAccessLoading] = useState(true);
@@ -59,13 +72,20 @@ export const PlanProvider = ({ children }) => {
   const profileAccessResolvedRef = useRef(false);
   const householdAccessResolvedRef = useRef(false);
   const financeAccessRequestRef = useRef(0);
+  const profileRequestRef = useRef(0);
+  const householdAccessRequestRef = useRef(0);
+  const projectCountRequestRef = useRef(0);
 
   // ── Plan simulator state (admin only) ───────────────────────
   const [simulatedPlan, setSimulatedPlan] = useState(null);
 
   // ── Load profile ────────────────────────────────────────────
   const loadProfile = useCallback(async () => {
-    if (!user) {
+    const session = accessSession.current;
+    if (session.userId !== userId || !session.active) return;
+    const requestId = ++profileRequestRef.current;
+    const current = () => session === accessSession.current && session.active && requestId === profileRequestRef.current;
+    if (!userId) {
       setProfile(null);
       setProfileLoading(false);
       return;
@@ -76,6 +96,8 @@ export const PlanProvider = ({ children }) => {
         .rpc('get_or_create_current_user_profile')
         .single();
 
+      if (!current()) return;
+
       if (error) {
         console.error('Failed to load profile:', error);
       } else {
@@ -85,12 +107,16 @@ export const PlanProvider = ({ children }) => {
     } catch (err) {
       console.error('Profile load error:', err);
     } finally {
-      setProfileLoading(false);
+      if (current()) setProfileLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
   const loadHouseholdProjectAccess = useCallback(async () => {
-    if (!user) {
+    const session = accessSession.current;
+    if (session.userId !== userId || !session.active) return;
+    const requestId = ++householdAccessRequestRef.current;
+    const current = () => session === accessSession.current && session.active && requestId === householdAccessRequestRef.current;
+    if (!userId) {
       setHasSharedHouseholdProjectAccess(false);
       setHouseholdAccessLoading(false);
       return;
@@ -102,6 +128,8 @@ export const PlanProvider = ({ children }) => {
         .select('id', { count: 'exact', head: true })
         .eq('name', HOUSEHOLD_PROJECT_NAME);
 
+      if (!current()) return;
+
       if (error) {
         console.error('Failed to load household project access:', error);
       } else {
@@ -112,15 +140,18 @@ export const PlanProvider = ({ children }) => {
     } catch (err) {
       console.error('Household project access load error:', err);
     } finally {
-      setHouseholdAccessLoading(false);
+      if (current()) setHouseholdAccessLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
   const loadFinanceHouseholdAccess = useCallback(async () => {
+    const session = accessSession.current;
+    if (session.userId !== userId || !session.active) return;
     const requestId = financeAccessRequestRef.current + 1;
     financeAccessRequestRef.current = requestId;
 
-    if (!user) {
+    const current = () => session === accessSession.current && session.active && financeAccessRequestRef.current === requestId;
+    if (!userId) {
       setFinanceHouseholdAccess(EMPTY_FINANCE_HOUSEHOLD_ACCESS);
       setFinanceAccessLoading(false);
       return;
@@ -133,40 +164,44 @@ export const PlanProvider = ({ children }) => {
 
       if (error) {
         console.error('Failed to load finance household access:', error);
-        if (financeAccessRequestRef.current === requestId) {
+        if (current()) {
           setFinanceHouseholdAccess(EMPTY_FINANCE_HOUSEHOLD_ACCESS);
         }
-      } else if (financeAccessRequestRef.current === requestId) {
+      } else if (current()) {
         setFinanceHouseholdAccess(normalizeFinanceHouseholdAccess(data));
       }
     } catch (err) {
       console.error('Finance household access load error:', err);
-      if (financeAccessRequestRef.current === requestId) {
+      if (current()) {
         setFinanceHouseholdAccess(EMPTY_FINANCE_HOUSEHOLD_ACCESS);
       }
     } finally {
-      if (financeAccessRequestRef.current === requestId) {
+      if (current()) {
         setFinanceAccessLoading(false);
       }
     }
-  }, [user]);
+  }, [userId]);
 
   // ── Count projects ──────────────────────────────────────────
   const loadProjectCount = useCallback(async () => {
-    if (!user) {
+    const session = accessSession.current;
+    if (session.userId !== userId || !session.active) return;
+    const requestId = ++projectCountRequestRef.current;
+    if (!userId) {
       setProjectCount(0);
       return;
     }
     const { count } = await supabase
       .from('projects')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id);
-    setProjectCount(count || 0);
-  }, [user]);
+      .eq('user_id', userId);
+    if (session === accessSession.current && session.active && requestId === projectCountRequestRef.current) setProjectCount(count || 0);
+  }, [userId]);
 
   useEffect(() => {
-    setAccessUserId(user?.id || null);
-    if (!user) {
+    setAccessUserId(userId);
+    lastExternalRefreshAtRef.current = 0;
+    if (!userId) {
       financeAccessRequestRef.current += 1;
       setProfile(null);
       setProjectCount(0);
@@ -181,7 +216,7 @@ export const PlanProvider = ({ children }) => {
     setProfile(null);
     profileAccessResolvedRef.current = false;
     householdAccessResolvedRef.current = false;
-    setHasSharedHouseholdProjectAccess(loadCachedHouseholdAccess(user.id));
+    setHasSharedHouseholdProjectAccess(loadCachedHouseholdAccess(userId));
     setProfileLoading(true);
     setHouseholdAccessLoading(true);
     setFinanceAccessLoading(true);
@@ -189,10 +224,10 @@ export const PlanProvider = ({ children }) => {
     void loadProjectCount();
     void loadHouseholdProjectAccess();
     void loadFinanceHouseholdAccess();
-  }, [loadFinanceHouseholdAccess, loadHouseholdProjectAccess, loadProfile, loadProjectCount, user]);
+  }, [loadFinanceHouseholdAccess, loadHouseholdProjectAccess, loadProfile, loadProjectCount, userId]);
 
   const refreshProfileFromExternalChange = useCallback(({ force = false } = {}) => {
-    if (!user) return;
+    if (!userId) return;
 
     const now = Date.now();
     if (!force && !shouldRefreshAfterFocus(lastExternalRefreshAtRef.current, now, PROFILE_REFRESH_FRESHNESS_MS)) return;
@@ -201,10 +236,10 @@ export const PlanProvider = ({ children }) => {
     void loadProfile();
     void loadHouseholdProjectAccess();
     void loadFinanceHouseholdAccess();
-  }, [user, loadFinanceHouseholdAccess, loadHouseholdProjectAccess, loadProfile]);
+  }, [userId, loadFinanceHouseholdAccess, loadHouseholdProjectAccess, loadProfile]);
 
   useEffect(() => {
-    if (!user || typeof window === 'undefined') return undefined;
+    if (!userId || typeof window === 'undefined') return undefined;
 
     const handleFocus = () => {
       refreshProfileFromExternalChange();
@@ -249,20 +284,20 @@ export const PlanProvider = ({ children }) => {
         window.clearTimeout(timeoutId);
       }
     };
-  }, [user, refreshProfileFromExternalChange]);
+  }, [userId, refreshProfileFromExternalChange]);
 
   useEffect(() => {
-    if (!user || typeof window === 'undefined') return undefined;
+    if (!userId || typeof window === 'undefined') return undefined;
     const intervalId = window.setInterval(() => {
       void loadFinanceHouseholdAccess();
     }, FINANCE_ACCESS_REFRESH_MS);
     return () => window.clearInterval(intervalId);
-  }, [loadFinanceHouseholdAccess, user]);
+  }, [loadFinanceHouseholdAccess, userId]);
 
   // ── Derived state ───────────────────────────────────────────
   // Auth can resolve one render before this provider starts the user's requests.
   // Do not let that render treat the signed-out access result as a denial.
-  const loading = Boolean(user && accessUserId !== user.id)
+  const loading = Boolean(userId && accessUserId !== userId)
     || profileLoading || householdAccessLoading || financeAccessLoading;
   const isAdmin = useMemo(() => Boolean(profile?.is_admin || profile?.is_platform_admin), [profile?.is_admin, profile?.is_platform_admin]);
   const householdToolsEnabled = useMemo(
@@ -275,7 +310,7 @@ export const PlanProvider = ({ children }) => {
 
   useEffect(() => {
     if (
-      !user
+      !userId
       || profileLoading
       || householdAccessLoading
       || !profileAccessResolvedRef.current
@@ -284,8 +319,8 @@ export const PlanProvider = ({ children }) => {
       return;
     }
 
-    saveCachedHouseholdAccess(user.id, householdToolsEnabled);
-  }, [householdAccessLoading, householdToolsEnabled, profileLoading, user]);
+    saveCachedHouseholdAccess(userId, householdToolsEnabled);
+  }, [householdAccessLoading, householdToolsEnabled, profileLoading, userId]);
 
   // ── Resolve REAL plan (before simulator override) ───────────
   const realPlan = useMemo(() => {
@@ -409,18 +444,20 @@ export const PlanProvider = ({ children }) => {
 
   // ── Actions ────────────────────────────────────────────────
   const incrementAiReports = useCallback(async () => {
-    if (!user || !profile) return false;
+    const session = accessSession.current;
+    if (!userId || !profile || session.userId !== userId || !session.active) return false;
+    const requestId = ++profileRequestRef.current;
 
     const { data, error } = await supabase
       .rpc('increment_current_user_ai_reports')
       .single();
 
-    if (!error && data) {
-      setProfile(data);
+    if (!error && data && session === accessSession.current && session.active) {
+      if (requestId === profileRequestRef.current) setProfile(data);
       return true;
     }
     return false;
-  }, [user, profile]);
+  }, [userId, profile]);
 
   const refreshProjectCount = useCallback(() => {
     loadProjectCount();
