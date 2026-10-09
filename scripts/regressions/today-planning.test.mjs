@@ -105,7 +105,13 @@ async function quickAddFixture({ mobile = false, add, update, derived = false, e
     return { data: [], count: 0 };
   });
   const navigator = { onLine: true };
-  const load = await sourceModules(transport, { window, document, navigator });
+  // Keep weekly append scenarios on a Thursday: on Friday the creation
+  // suggestion correctly belongs to Today rather than This week.
+  class FixtureDate extends Date {
+    constructor(...args) { super(...(args.length ? args : ['2026-10-08T12:00:00'])); }
+    static now() { return new Date('2026-10-08T12:00:00').getTime(); }
+  }
+  const load = await sourceModules(transport, { window, document, navigator, Date: FixtureDate });
   const TodoView = (await load('src/components/TodoView.jsx')).default;
   const Bucket = (await load('src/components/TodoBucketSection.jsx')).default;
   const Header = (await load('src/components/TodoViewHeaderControls.jsx')).default;

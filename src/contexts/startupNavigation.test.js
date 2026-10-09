@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import * as planAccess from '../utils/planAccess.js';
 import * as financeAccess from '../utils/financeAccess.js';
+import { shouldRefreshAfterFocus } from '../utils/refreshThrottle.js';
 
 const tick = () => new Promise(setImmediate);
 const deferred = () => {
@@ -50,10 +51,11 @@ function hookRuntime() {
     changed: () => changed, close() { slots.forEach(slot => slot?.cleanup?.()); } };
 }
 
-async function fixture(t, { path = '/shopping', savedPath = '/', cachedAccess = false } = {}) {
+async function fixture(t, { path = '/shopping', savedPath = '/', cachedAccess = false, focusRefresh = false } = {}) {
   const planHooks = hookRuntime(), appHooks = hookRuntime();
   let auth = { user: null, loading: true }, plan;
   const requests = [], navigations = [];
+  const document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
   const window = Object.assign(new EventTarget(), {
     location: { pathname: path, search: '' }, setInterval: () => 1, clearInterval() {},
     history: { replaceState(_state, _title, next) { window.location.pathname = next; navigations.push(next); },
@@ -67,11 +69,11 @@ async function fixture(t, { path = '/shopping', savedPath = '/', cachedAccess = 
     .replace(/export const /g, 'const ').replace(/^export \{[^}]*\};$/gm, '')
     .replace(/return \(\s*<PlanContext.Provider[\s\S]*?<\/PlanContext.Provider>\s*\);/, 'return value;');
   const renderPlan = vm.runInNewContext(`${planSource}\nPlanProvider`, {
-    ...planHooks.hooks, ...planAccess, ...financeAccess, window, document: new EventTarget(),
+    ...planHooks.hooks, ...planAccess, ...financeAccess, window, document,
     useAuth: () => auth, TRIAL_LENGTH_DAYS: 30, console: { error() {} },
     canAccessHouseholdToolsFromProfile: planAccess.canAccessHouseholdTools,
     canUsePlatformAiFromProfile: planAccess.canUsePlatformAi,
-    hasBillingSyncPending: () => false, shouldRefreshAfterFocus: () => false,
+    hasBillingSyncPending: () => false, shouldRefreshAfterFocus: focusRefresh ? shouldRefreshAfterFocus : () => false,
     loadCachedHouseholdAccess: () => cachedAccess, saveCachedHouseholdAccess() {},
     supabase: { rpc: kind => ({ single: () => enqueue(kind) }), from: () => ({ select: () => ({ eq: () => enqueue('projects') }) }) },
   });
@@ -100,11 +102,12 @@ async function fixture(t, { path = '/shopping', savedPath = '/', cachedAccess = 
     throw new Error('Rendering did not settle');
   };
   t.after(() => { appHooks.close(); planHooks.close(); });
-  return { render, settle, navigations, signIn() { auth = { user: { id: 'owner' }, loading: false }; },
+  return { render, settle, navigations, requests, window, document, get plan() { return plan; }, signIn(id = 'owner') { auth = { user: { id }, loading: false }; },
+    refreshIdentity() { auth = { ...auth, user: { ...auth.user } }; },
     signedOut() { auth = { user: null, loading: false }; },
-    async resolveAccess(granted) {
+    async resolveAccess(granted, profile = {}) {
       for (const request of requests.splice(0)) request.resolve(request.kind === 'projects'
-        ? { count: granted ? 1 : 0, error: null } : { data: {}, error: null });
+        ? { count: granted ? 1 : 0, error: null } : { data: request.kind === 'get_or_create_current_user_profile' ? profile : {}, error: null });
       await tick();
     } };
 }
@@ -135,4 +138,89 @@ test('resolved denial still returns an authenticated user to projects', async t 
   await f.resolveAccess(false);
   assert.equal(f.settle().currentPath, '/');
   assert.deepEqual(f.navigations, ['/']);
+});
+
+test('same-account session refresh keeps the confirmed plan and does not restart access loading', async t => {
+  const f = await fixture(t);
+  f.settle(); f.signIn(); f.settle();
+  await f.resolveAccess(true, { id: 'owner', plan: 'pro', subscription_status: 'active' });
+  f.settle();
+  assert.equal(f.plan.effectivePlan, 'pro'); assert.equal(f.plan.loading, false);
+  f.refreshIdentity();
+  assert.equal(f.render().planLoading, false);
+  f.settle();
+  assert.equal(f.plan.effectivePlan, 'pro'); assert.equal(f.plan.profile.id, 'owner');
+  assert.equal(f.requests.length, 0, 'a new object for the same account must not reinitialize access');
+});
+
+test('focus refresh stays invisible while pending and applies a confirmed license change', async t => {
+  const f = await fixture(t, { focusRefresh: true });
+  f.settle(); f.signIn(); f.settle();
+  await f.resolveAccess(true, { id: 'owner', plan: 'pro', subscription_status: 'active' });
+  f.settle();
+  f.window.dispatchEvent(new Event('focus')); f.document.dispatchEvent(new Event('visibilitychange'));
+  f.settle();
+  assert.equal(f.plan.effectivePlan, 'pro'); assert.equal(f.plan.loading, false);
+  assert.equal(f.requests.length, 3, 'focus and visibility share the existing refresh throttle');
+  await f.resolveAccess(true, { id: 'owner', plan: 'starter', subscription_status: 'canceled' });
+  f.settle(); assert.equal(f.plan.effectivePlan, 'starter'); assert.equal(f.plan.loading, false);
+});
+
+test('failed same-account profile refresh retains its last confirmed license', async t => {
+  const f = await fixture(t, { focusRefresh: true });
+  f.settle(); f.signIn(); f.settle();
+  await f.resolveAccess(true, { id: 'owner', plan: 'pro', subscription_status: 'active' });
+  f.settle(); f.window.dispatchEvent(new Event('focus')); f.settle();
+  const profile = f.requests.find(request => request.kind === 'get_or_create_current_user_profile');
+  profile.resolve({ data: null, error: { message: 'Synthetic connection failure' } });
+  await tick(); f.settle();
+  assert.equal(f.plan.effectivePlan, 'pro'); assert.equal(f.plan.loading, false);
+  await f.resolveAccess(true, { id: 'owner', plan: 'pro' }); f.settle();
+});
+
+test('account changes clear access and reject old-account requests even after switching back', async t => {
+  const f = await fixture(t);
+  f.settle(); f.signIn('owner'); f.settle();
+  const stale = f.requests.splice(0);
+  f.signIn('other'); assert.equal(f.render().planLoading, true); f.settle();
+  await f.resolveAccess(false, { id: 'other', plan: 'starter' }); f.settle();
+  assert.equal(f.plan.profile.id, 'other'); assert.equal(f.plan.effectivePlan, 'starter'); assert.equal(f.plan.projectCount, 0);
+  f.signIn('owner'); f.settle();
+  assert.equal(f.plan.profile, null); assert.equal(f.plan.loading, true);
+  await f.resolveAccess(true, { id: 'owner', plan: 'starter' }); f.settle();
+  assert.equal(f.plan.profile.id, 'owner'); assert.equal(f.plan.loading, false);
+  for (const request of stale) request.resolve(request.kind === 'projects' ? { count: 9 } : { data: { id: 'owner', plan: 'pro' } });
+  await tick(); f.settle();
+  assert.equal(f.plan.effectivePlan, 'starter'); assert.equal(f.plan.projectCount, 1);
+});
+
+test('an older profile refresh cannot restore access after a newer refresh denies it', async t => {
+  const f = await fixture(t);
+  f.settle(); f.signIn(); f.settle();
+  await f.resolveAccess(true, { id: 'owner', plan: 'pro' }); f.settle();
+  f.plan.refreshProfile();
+  const stale = f.requests.splice(0);
+  f.plan.refreshProfile();
+  await f.resolveAccess(false, { id: 'owner', plan: 'starter' }); f.settle();
+  for (const request of stale) request.resolve(request.kind === 'projects' ? { count: 9 } : { data: { id: 'owner', plan: 'pro' } });
+  await tick(); f.settle();
+  assert.equal(f.plan.effectivePlan, 'starter'); assert.equal(f.plan.hasSharedHouseholdProjectAccess, false);
+});
+
+test('AI usage acknowledgement and profile refresh share the latest-profile fence', async t => {
+  const f = await fixture(t);
+  f.settle(); f.signIn(); f.settle();
+  await f.resolveAccess(true, { id: 'owner', plan: 'pro', ai_reports_used: 0 }); f.settle();
+  f.plan.refreshProfile(); const staleRead = f.requests.splice(0);
+  const increment = f.plan.incrementAiReports();
+  f.requests.splice(0)[0].resolve({ data: { id: 'owner', plan: 'pro', ai_reports_used: 1 }, error: null });
+  assert.equal(await increment, true); f.settle();
+  for (const request of staleRead) request.resolve(request.kind === 'projects' ? { count: 0 } : { data: { id: 'owner', plan: 'pro', ai_reports_used: 0 } });
+  await tick(); f.settle(); assert.equal(f.plan.profile.ai_reports_used, 1);
+  const pendingIncrement = f.plan.incrementAiReports(); const staleWrite = f.requests.splice(0)[0];
+  f.plan.refreshProfile();
+  await f.resolveAccess(true, { id: 'owner', plan: 'starter', ai_reports_used: 2 }); f.settle();
+  staleWrite.resolve({ data: { id: 'owner', plan: 'pro', ai_reports_used: 2 }, error: null });
+  assert.equal(await pendingIncrement, true, 'confirmed RPC success is retained even when its stale full-row update is suppressed');
+  f.settle(); assert.equal(f.plan.effectivePlan, 'starter');
 });
