@@ -88,7 +88,7 @@ test('confirmed creation ignores a late acknowledgement after an account change'
   } finally { await hook.close(); }
 });
 
-async function quickAddFixture({ mobile = false, add, update, derived = false, extraProject = null, failPlan = () => false } = {}) {
+async function quickAddFixture({ mobile = false, add, update, derived = false, day = '2026-10-08', extraProject = null, failPlan = () => false } = {}) {
   const project = { id: other, name: 'Synthetic personal project', tasks: [], registers: {}, tracker: [] };
   const storage = { getItem: (key) => key === 'pmworkspace:todo-command-state:v1' ? '{"scope":"project","focusView":"all"}' : null, setItem() {}, removeItem() {} };
   const window = { localStorage: storage, sessionStorage: storage, addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame: (fn) => setTimeout(fn, 0), matchMedia: () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }) };
@@ -108,8 +108,8 @@ async function quickAddFixture({ mobile = false, add, update, derived = false, e
   // Keep weekly append scenarios on a Thursday: on Friday the creation
   // suggestion correctly belongs to Today rather than This week.
   class FixtureDate extends Date {
-    constructor(...args) { super(...(args.length ? args : ['2026-10-08T12:00:00'])); }
-    static now() { return new Date('2026-10-08T12:00:00').getTime(); }
+    constructor(...args) { super(...(args.length ? args : [`${day}T12:00:00`])); }
+    static now() { return new Date(`${day}T12:00:00`).getTime(); }
   }
   const load = await sourceModules(transport, { window, document, navigator, Date: FixtureDate });
   const TodoView = (await load('src/components/TodoView.jsx')).default;
@@ -144,6 +144,72 @@ test('weekly quick-add appends beside its composer instead of sorting above exis
     assert.equal(f.calls[0].kanbanPosition, 3072);
     assert.deepEqual(Array.from(f.bucket().props.displayItems, (item) => item.title), ['Existing first task', 'Existing last task', 'De returnat adidasii']);
     assert.equal(f.input().props.value, '');
+  } finally { await f.close(); }
+});
+
+test('Friday weekly creation appears in Today rather than being hidden beside Sunday tasks', async () => {
+  const f = await quickAddFixture({ day: '2026-10-09' });
+  try {
+    await f.type('Synthetic Friday creation');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls[0].dueDate, '2026-10-09');
+    const Bucket = (await f.load('src/components/TodoBucketSection.jsx')).default;
+    const today = f.root.root.findAllByType(Bucket).find(item => item.props.bucket.key === 'today');
+    assert.ok(today.props.displayItems.some(task => task.title === 'Synthetic Friday creation'));
+    assert.ok(!f.bucket().props.displayItems.some(task => task.title === 'Synthetic Friday creation'));
+  } finally { await f.close(); }
+});
+
+test('each quadrant quick-add saves into that quadrant and stays outside the scrolling task list', async () => {
+  for (const [quadrant, title] of [['urgent_important','Do now'],['not_urgent_important','Make progress'],['urgent_not_important','Handle soon'],['not_urgent_not_important','If time allows']]) {
+    const f = await quickAddFixture({ add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }) });
+    try {
+      await act(async () => f.header().props.setViewMode('matrix'));
+      const form = () => f.root.root.findByProps({ 'aria-label': `Add task to ${title}` });
+      assert.equal(form().parent.props.className, 'task-matrix-composer');
+      await act(async () => form().findByType('input').props.onChange({ target: { value: `Synthetic ${title} quick-add` } }));
+      await act(async () => form().props.onSubmit({ preventDefault() {} }));
+      assert.equal(f.calls.length, 1); assert.equal(f.calls[0].dueDate, '');
+      const write = f.transport.calls.find(r => r.table === 'task_eisenhower_preferences' && r.operation === 'insert');
+      assert.equal(write.payload.manual_quadrant, quadrant); assert.equal(write.payload.planned_day, '2026-10-08');
+      assert.equal(form().findByType('input').props.value, '');
+    } finally { await f.close(); }
+  }
+});
+
+test('quadrant Details carries its draft, destination and repeat into the shared confirmed creator', async () => {
+  const f = await quickAddFixture({ add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }) });
+  try {
+    await act(async () => f.header().props.setViewMode('matrix'));
+    const form = () => f.root.root.findByProps({ 'aria-label': 'Add task to Handle soon' });
+    await act(async () => form().findByType('input').props.onChange({ target: { value: 'Synthetic detailed quadrant task' } }));
+    await act(async () => form().findAllByType('button').find(button => button.children.includes('Details')).props.onClick());
+    const Dialog = (await f.load('src/components/TaskCreationDialog.jsx')).default;
+    const dialog = () => f.root.root.findByType(Dialog);
+    assert.equal(dialog().props.title, 'Synthetic detailed quadrant task'); assert.equal(dialog().props.draft.quadrant, 'urgent_not_important');
+    await act(async () => dialog().props.onChange({ projectId: other, dueDate: '2026-12-03', workDay: '2026-12-03', repeat: 'weekly' }));
+    await act(async () => dialog().props.onClose());
+    await act(async () => form().props.onSubmit({ preventDefault() {} }));
+    assert.equal(f.calls[0].projectId, other); assert.equal(f.calls[0].dueDate, '2026-12-03'); assert.equal(f.calls[0].recurrence.type, 'weekly');
+    assert.equal(f.transport.calls.find(r => r.table === 'task_eisenhower_preferences' && r.operation === 'insert').payload.manual_quadrant, 'urgent_not_important');
+  } finally { await f.close(); }
+});
+
+test('quadrant save failure retains its draft across view changes and retry uses the same operation', async () => {
+  let fail = true;
+  const f = await quickAddFixture({ add: async payload => { if (fail) throw new Error('Synthetic quadrant failure'); return { ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }; } });
+  try {
+    await act(async () => f.header().props.setViewMode('matrix'));
+    const form = () => f.root.root.findByProps({ 'aria-label': 'Add task to If time allows' });
+    await act(async () => form().findByType('input').props.onChange({ target: { value: 'Synthetic retained quadrant task' } }));
+    await act(async () => form().props.onSubmit({ preventDefault() {} }));
+    await act(async () => f.header().props.setViewMode('list'));
+    await act(async () => f.header().props.setViewMode('matrix'));
+    assert.equal(form().findByType('input').props.value, 'Synthetic retained quadrant task');
+    fail = false;
+    await act(async () => form().props.onSubmit({ preventDefault() {} }));
+    assert.equal(f.optionsCalls[0].operationId, f.optionsCalls[1].operationId);
+    assert.equal(f.transport.calls.filter(r => r.table === 'task_eisenhower_preferences' && r.operation === 'insert').length, 1);
   } finally { await f.close(); }
 });
 
