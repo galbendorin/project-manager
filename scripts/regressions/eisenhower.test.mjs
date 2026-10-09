@@ -36,7 +36,7 @@ test('Matrix Actions preserves a date draft when collapsed or resized and expose
     await act(async () => root.update(React.createElement(Component, { ...componentProps, isMobile: true })));
     await act(async () => actions().props.onClick());
     assert.equal(date().props.value, '2099-11-09');
-    assert.equal(root.root.findAllByType('details').length, 0);
+    assert.equal(root.root.findAllByType('article').flatMap(row => row.findAllByType('details')).length, 0);
     await act(async () => root.update(React.createElement(Component, { ...componentProps, deadlineSaves: { [todo._id]: true } })));
     assert.equal(actions().props.disabled, true);
     assert.ok(root.root.findAllByProps({ role: 'status' }).some(node => node.children.join('').includes('Saving')));

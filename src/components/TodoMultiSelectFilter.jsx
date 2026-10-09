@@ -7,6 +7,7 @@ export default function TodoMultiSelectFilter({
   selectedValues,
   onChange,
   className = '',
+  ariaLabel,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef(null);
@@ -39,6 +40,8 @@ export default function TodoMultiSelectFilter({
     <div ref={wrapperRef} className={`relative ${className}`}>
       <button
         type="button"
+        aria-label={ariaLabel ? `${ariaLabel}: ${getMultiFilterSummary(selectedValues, options, allLabel)}` : undefined}
+        aria-expanded={isOpen}
         onClick={() => setIsOpen((prev) => !prev)}
         className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-left text-slate-700 flex items-center justify-between gap-2 hover:border-slate-300 transition-colors"
       >
@@ -66,13 +69,13 @@ export default function TodoMultiSelectFilter({
                   key={option.value}
                   className="flex items-center gap-2 px-2.5 py-2 text-[11px] text-slate-700 rounded-lg hover:bg-slate-50"
                 >
-                  <input
+                  <label className="inline-flex min-h-11 min-w-11 items-center justify-center"><input
                     type="checkbox"
                     checked={checked}
                     onChange={() => onChange(toggleMultiFilterValue(selectedValues, option.value))}
                     className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                     aria-label={`Include ${option.label}`}
-                  />
+                  /></label>
                   <button
                     type="button"
                     onClick={() => {
