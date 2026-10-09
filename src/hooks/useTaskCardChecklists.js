@@ -152,11 +152,10 @@ export function useTaskCardChecklists({
     return () => { current.active = false; };
   }, [currentUserId]);
 
-  const checklistScopes = useMemo(() => buildChecklistScopes(todos), [todos]);
-  const checklistScopeSignature = useMemo(
-    () => checklistScopes.map((scope) => scope.scopeKey).join('|'),
-    [checklistScopes]
-  );
+  // Text/status edits replace todo objects, but do not change checklist scope.
+  // Keep the loader stable until a card or its project actually changes.
+  const checklistScopeSignature = JSON.stringify(buildChecklistScopes(todos));
+  const checklistScopes = useMemo(() => JSON.parse(checklistScopeSignature), [checklistScopeSignature]);
 
   const loadChecklists = useCallback(async () => {
     const session = lifecycle.current;
