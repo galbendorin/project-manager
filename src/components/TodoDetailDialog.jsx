@@ -8,6 +8,7 @@ export default function TodoDetailDialog({
   todo, isMobile = false, canEdit, projectOptions = [], onClose, onDeleteTodo,
   onUpdateTodo, recurrenceOptions = [], recurrenceLabel, statusClass,
   planningControls, sourcePlanControls, projectAssignmentControls,
+  descriptionDraft, onDescriptionChange, onSaveDescription,
   checklists = [], checklistCanEdit = false, checklistsAvailable = true,
   checklistsLoading = false, checklistMessage = '', checklistsSaving = false,
   onRetryChecklists, onAddChecklist, onAddChecklistItems, onDeleteChecklist,
@@ -15,7 +16,11 @@ export default function TodoDetailDialog({
   onRenameChecklistItem, onToggleChecklistItem,
 }) {
   const dialog = useRef(null), close = useRef(null), onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const requestClose = () => {
+    if (canEdit) void onSaveDescription?.();
+    onClose();
+  };
+  onCloseRef.current = requestClose;
   useEffect(() => {
     if (typeof document === 'undefined' || !dialog.current) return undefined;
     const origin = document.activeElement;
@@ -39,15 +44,18 @@ export default function TodoDetailDialog({
   const update = (field, value) => onUpdateTodo(todo._id, field, value);
   const removable = canEdit && !todo.isDerived && !completed && !todo.planLink && !todo.meta?.projectPlanLink;
   return <div className={`pm-task-dialog task-dialog-overlay ${isMobile ? 'task-dialog-phone' : ''}`}>
-    <button type="button" className="task-dialog-backdrop" onClick={onClose} aria-label="Close task details" />
+    <button type="button" className="task-dialog-backdrop" onClick={requestClose} aria-label="Close task details" />
     <div ref={dialog} role="dialog" aria-modal="true" aria-label="Task details" className="task-dialog-window">
       <header className="task-dialog-header">
         <div className="task-dialog-heading"><h2 className={completed ? 'line-through' : ''}>{todo.title || 'Untitled'}</h2><div className="task-context"><span>{todo.isDerived ? `Read-only source: ${todo.source || 'Derived item'}` : 'Editable manual task'}</span><span className={`task-status ${statusClass?.(todo.status) || ""}`}>{todo.status || 'Open'}</span><TaskRecurrenceIndicator recurrence={todo.recurrence} /></div></div>
-        <div className="task-dialog-header-actions">{removable ? <button type="button" className="task-danger-action" onClick={() => { onDeleteTodo(todo._id); onClose(); }}>Delete</button> : null}<button ref={close} type="button" onClick={onClose}>{isMobile ? 'Back' : 'Close'}</button></div>
+        <div className="task-dialog-header-actions">{removable ? <button type="button" className="task-danger-action" onClick={() => { onDeleteTodo(todo._id); onClose(); }}>Delete</button> : null}<button ref={close} type="button" onClick={requestClose}>{isMobile ? 'Back' : 'Close'}</button></div>
       </header>
       <div className="task-dialog-body">
         <Field label="Title">{editSchedule ? <input type="text" value={todo.title || ''} onChange={e => update('title', e.target.value)} /> : <Value>{todo.title || 'Untitled'}</Value>}</Field>
-        <Field label="Description">{canEdit ? <textarea value={todo.description || ''} rows={3} onChange={e => update('description', e.target.value)} placeholder="Add more detail…" /> : <Value>{todo.description || 'No description'}</Value>}</Field>
+        <Field label="Description">{canEdit ? <textarea value={descriptionDraft?.value ?? todo.description ?? ''} rows={3} onChange={e => onDescriptionChange ? onDescriptionChange(e.target.value) : update('description', e.target.value)} onBlur={() => { void onSaveDescription?.(); }} placeholder="Add more detail…" /> : <Value>{todo.description || 'No description'}</Value>}</Field>
+        {canEdit && descriptionDraft ? <div className="task-description-feedback" role={descriptionDraft.status === 'error' ? 'alert' : 'status'}>
+          {descriptionDraft.status === 'error' ? <>Description not saved. Your text is kept. <button type="button" onClick={() => { void onSaveDescription?.(); }}>Retry</button></> : descriptionDraft.status === 'saving' ? 'Saving description…' : descriptionDraft.status === 'dirty' ? 'Unsaved description — leave the field to save.' : 'Saves when you leave this field.'}
+        </div> : null}
         <section aria-label="Project and dates" className="task-project-dates"><div>{projectAssignmentControls || <Field label="Project">{editSchedule ? <select value={todo.projectId || 'other'} onChange={e => update('projectId', e.target.value === 'other' ? null : e.target.value)}><option value="other">Other</option>{projectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select> : <Value>{todo.projectName || 'Other'}</Value>}</Field>}</div><div>{planningControls || <Field label="Due date">{canEdit ? <input type="date" value={todo.dueDate || ''} onChange={e => update('dueDate', e.target.value)} /> : <Value>{todo.dueDate ? formatDate(todo.dueDate) : 'No deadline'}</Value>}</Field>}</div></section>
         <div className="task-property-fields">
           <Field label="Owner">{canEdit ? <input type="text" value={todo.owner || ''} onChange={e => update('owner', e.target.value)} /> : <Value>{todo.owner || 'Unassigned'}</Value>}</Field>

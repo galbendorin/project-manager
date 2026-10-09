@@ -88,7 +88,7 @@ test('confirmed creation ignores a late acknowledgement after an account change'
   } finally { await hook.close(); }
 });
 
-async function quickAddFixture({ mobile = false, add, update, derived = false, day = '2026-10-08', extraProject = null, failPlan = () => false } = {}) {
+async function quickAddFixture({ mobile = false, add, update, remove, derived = false, day = '2026-10-08', extraProject = null, failPlan = () => false } = {}) {
   const project = { id: other, name: 'Synthetic personal project', tasks: [], registers: {}, tracker: [] };
   const storage = { getItem: (key) => key === 'pmworkspace:todo-command-state:v1' ? '{"scope":"project","focusView":"all"}' : null, setItem() {}, removeItem() {} };
   const window = { localStorage: storage, sessionStorage: storage, addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame: (fn) => setTimeout(fn, 0), matchMedia: () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }) };
@@ -122,7 +122,7 @@ async function quickAddFixture({ mobile = false, add, update, derived = false, d
   let root; const calls = [], optionsCalls = [];
   function Fixture() {
     const [todos, setTodos] = React.useState(existing);
-    return React.createElement(TodoView, { todos, currentProject: project, projectData: project.tasks, registers: project.registers, tracker: project.tracker, currentUserId: owner, currentUserName: '', isExternalView: false, onUpdateTodo: async (...args) => { const result = update ? await update(...args) : null; if (result?.updatedTodo) setTodos(previous => previous.map(task => task._id === result.updatedTodo._id ? result.updatedTodo : task)); return result; }, onAddTodo: async (payload, options) => {
+    return React.createElement(TodoView, { todos, currentProject: project, projectData: project.tasks, registers: project.registers, tracker: project.tracker, currentUserId: owner, currentUserName: '', isExternalView: false, onDeleteTodo: remove ? async id => { const result = await remove(id); if (result !== false) setTodos(previous => previous.filter(task => task._id !== id)); return result; } : undefined, onUpdateTodo: async (...args) => { const result = update ? await update(...args) : null; if (result?.updatedTodo) setTodos(previous => previous.map(task => task._id === result.updatedTodo._id ? result.updatedTodo : task)); return result; }, onAddTodo: async (payload, options) => {
       calls.push(payload);
       optionsCalls.push(options);
       const saved = add ? await add(payload, options) : { ...payload, _id: `saved-${calls.length}`, status: 'Open', owner: 'PM' };
@@ -135,6 +135,64 @@ async function quickAddFixture({ mobile = false, add, update, derived = false, d
   const input = () => bucket().findAllByType('input').find(item => item.props.type === 'text');
   return { root, calls, optionsCalls, navigator, bucket, input, load, transport, header: () => root.root.findByType(Header), async type(value) { await act(async () => input().props.onChange({ target: { value } })); }, async close() { await act(async () => root.unmount()); } };
 }
+
+test('desktop task description keeps immediate edits and failed drafts across close/reopen without checklist reloads', async () => {
+  let failing = true, writes = 0;
+  const f = await quickAddFixture({ update: async (_id, field, value, original) => {
+    writes++;
+    return failing ? null : { updatedTodo: { ...original, [field]: value } };
+  } });
+  try {
+    const Dialog = (await f.load('src/components/TodoDetailDialog.jsx')).default;
+    const description = () => f.root.root.findByType(Dialog).findAllByType('textarea')[0];
+    const open = async () => act(async () => f.bucket().props.setSelectedMobileTodo(f.bucket().props.displayItems[0]));
+    await open();
+    const checklistReads = () => f.transport.calls.filter(call => call.table === 'task_card_checklists').length;
+    const reads = checklistReads();
+    await act(async () => description().props.onChange({ target: { value: 'Immediate description' } }));
+    await act(async () => description().props.onChange({ target: { value: 'Immediate descriptio' } }));
+    assert.equal(description().props.value, 'Immediate descriptio');
+    assert.equal(writes, 0); assert.equal(checklistReads(), reads);
+    await act(async () => description().props.onBlur());
+    assert.equal(writes, 1);
+    assert.equal(description().props.value, 'Immediate descriptio');
+    await act(async () => f.root.root.findByType(Dialog).findAllByType('button').find(button => button.children.includes('Close')).props.onClick());
+    assert.ok(f.root.root.findAllByProps({ role: 'status' }).some(node => node.children.some(child => typeof child === 'string' && child.includes('Description not saved'))));
+    await open();
+    assert.equal(description().props.value, 'Immediate descriptio');
+    failing = false;
+    await act(async () => f.root.root.findByType(Dialog).findAllByType('button').find(button => button.children.includes('Retry')).props.onClick());
+    assert.equal(description().props.value, 'Immediate descriptio');
+    assert.equal(checklistReads(), reads);
+    assert.ok(!f.root.root.findAllByProps({ role: 'status' }).some(node => node.children.some(child => typeof child === 'string' && child.includes('Description not saved'))));
+  } finally { await f.close(); }
+});
+
+test('deleting a desktop task waits for description blur acknowledgement and cannot resurrect its card', async () => {
+  let finish, finishDelete, deletes = 0, writes = 0;
+  const gate = new Promise(resolve => { finish = resolve; });
+  const deleteGate = new Promise(resolve => { finishDelete = resolve; });
+  const f = await quickAddFixture({ remove: async () => { deletes++; await deleteGate; return true; }, update: async (_id, field, value, original) => { writes++; await gate; return { updatedTodo: { ...original, [field]: value } }; } });
+  try {
+    const Dialog = (await f.load('src/components/TodoDetailDialog.jsx')).default;
+    const target = f.bucket().props.displayItems[0];
+    await act(async () => f.bucket().props.setSelectedMobileTodo(target));
+    const description = f.root.root.findByType(Dialog).findAllByType('textarea')[0];
+    await act(async () => description.props.onChange({ target: { value: 'Description before delete' } }));
+    await act(async () => description.props.onBlur());
+    await act(async () => f.root.root.findByType(Dialog).findAllByType('button').find(button => button.children.includes('Delete')).props.onClick());
+    assert.equal(deletes, 0);
+    await act(async () => { finish(); await gate; });
+    assert.equal(deletes, 1);
+    await act(async () => f.bucket().props.setSelectedMobileTodo(f.bucket().props.displayItems.find(task => task._id === target._id)));
+    assert.equal(f.root.root.findByType(Dialog).props.canEdit, false);
+    await act(async () => { assert.equal(await f.root.root.findByType(Dialog).props.onUpdateTodo(target._id, 'dueDate', '2099-01-01', { requireConfirmation: true }), null); });
+    assert.equal(writes, 1);
+    await act(async () => { finishDelete(); await deleteGate; });
+    assert.ok(!f.bucket().props.displayItems.some(task => task._id === target._id));
+    assert.equal(f.root.root.findAllByType(Dialog).length, 0);
+  } finally { await f.close(); }
+});
 
 test('weekly quick-add appends beside its composer instead of sorting above existing tasks', async () => {
   const f = await quickAddFixture();

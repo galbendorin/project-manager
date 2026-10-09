@@ -21,6 +21,130 @@ const input=form=>form.root.findByType('input');
 const type=(form,value)=>act(async()=>input(form).props.onChange({target:{value}}));
 const press=form=>form.root.findByType('button').props.onClick();
 
+test('description and status edits keep cached checklists without repeated loads; project changes reload', async () => {
+  const f = await fixture();
+  try {
+    const reads = f.transport.calls.length;
+    for (const description of ['New', 'Ne', 'N']) {
+      await f.hook.update({ ...props, todos: [{ ...props.todos[0], description, status: 'Open' }] });
+      assert.equal(f.hook.value.checklistsLoading, false);
+      assert.equal(f.hook.value.getChecklistsForTodo(props.todos[0])[0].items.length, 1);
+    }
+    assert.equal(f.transport.calls.length, reads);
+    await f.hook.update({ ...props, todos: [{ ...props.todos[0], projectId: null }] });
+    assert.ok(f.transport.calls.length > reads);
+    const afterProject = f.transport.calls.length;
+    await f.hook.update({ ...props, todos: [...props.todos, { _id: 'another-task', projectId: 'audit-project' }] });
+    assert.ok(f.transport.calls.length > afterProject);
+  } finally { await f.close(); }
+});
+
+async function descriptionFixture(onUpdateTodo) {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const useDrafts = (await load('src/hooks/useTaskDescriptionDrafts.js')).useTaskDescriptionDrafts;
+  return mountHook(({ owner, update }) => useDrafts(owner, update), { owner: 'audit-user', update: onUpdateTodo });
+}
+const descriptionTodo = { _id: 'audit-todo', description: 'Beginning of line' };
+test('description typing is immediate without writes, and blur plus close share one save', async () => {
+  const gate = deferred(); const writes = [];
+  const hook = await descriptionFixture((id, field, value) => { writes.push({ id, field, value }); return gate.promise; });
+  try {
+    await act(async () => { hook.value.change(descriptionTodo, 'Beginning of lin'); hook.value.change(descriptionTodo, 'Beginning of li'); });
+    assert.equal(hook.value.read(descriptionTodo).value, 'Beginning of li');
+    assert.equal(writes.length, 0);
+    let saving;
+    await act(async () => { saving = hook.value.save(descriptionTodo); void hook.value.save(descriptionTodo); });
+    assert.equal(writes.length, 1);
+    await act(async () => { gate.resolve({ updatedTodo: { ...descriptionTodo, description: 'Beginning of li' } }); await saving; });
+    assert.equal(writes.length, 1);
+    assert.equal(hook.value.read({ ...descriptionTodo, description: 'Beginning of li' }).status, '');
+  } finally { await hook.close(); }
+});
+test('a delayed description acknowledgement cannot replace newer typing; later blur saves the newer text in order', async () => {
+  const gate = deferred(); const writes = [];
+  const hook = await descriptionFixture((id, field, value) => {
+    writes.push(value);
+    return writes.length === 1 ? gate.promise : { updatedTodo: { ...descriptionTodo, description: value } };
+  });
+  try {
+    await act(async () => hook.value.change(descriptionTodo, 'First edit'));
+    let saving;
+    await act(async () => { saving = hook.value.save(descriptionTodo); });
+    await act(async () => hook.value.change(descriptionTodo, 'Newer edit'));
+    await act(async () => { void hook.value.save(descriptionTodo); });
+    assert.deepEqual(writes, ['First edit']);
+    await act(async () => { gate.resolve({ updatedTodo: { ...descriptionTodo, description: 'First edit' } }); await saving; });
+    assert.deepEqual(writes, ['First edit', 'Newer edit']);
+  } finally { await hook.close(); }
+});
+test('failed or zero-row description saves retain drafts through editor close/reopen and retry', async () => {
+  let fail = true;
+  const hook = await descriptionFixture(async (_id, _field, value) => fail ? null : { updatedTodo: { ...descriptionTodo, description: value } });
+  try {
+    await act(async () => hook.value.change(descriptionTodo, 'Retained failed edit'));
+    await act(async () => hook.value.save(descriptionTodo));
+    assert.equal(hook.value.read({ ...descriptionTodo }).value, 'Retained failed edit');
+    assert.equal(hook.value.read(descriptionTodo).status, 'error');
+    fail = false;
+    await act(async () => hook.value.save(descriptionTodo));
+    assert.equal(hook.value.read({ ...descriptionTodo, description: 'Retained failed edit' }).status, '');
+  } finally { await hook.close(); }
+});
+test('old account descriptions and delayed replies do not enter the next account, including A to B to A', async () => {
+  const gate = deferred(); const update = () => gate.promise;
+  const hook = await descriptionFixture(update);
+  try {
+    await act(async () => hook.value.change(descriptionTodo, 'Private old draft'));
+    let saving;
+    await act(async () => { saving = hook.value.save(descriptionTodo); });
+    await hook.update({ owner: 'another-user', update });
+    assert.equal(hook.value.read(descriptionTodo).value, descriptionTodo.description);
+    await hook.update({ owner: 'audit-user', update });
+    await act(async () => { gate.resolve({ updatedTodo: { ...descriptionTodo, description: 'Private old draft' } }); await saving; });
+    assert.equal(hook.value.read(descriptionTodo).value, descriptionTodo.description);
+  } finally { await hook.close(); }
+});
+
+test('deletion drains an in-flight description and cancels any newer queued description write', async () => {
+  const gate = deferred(); const writes = [];
+  const hook = await descriptionFixture((_id, _field, value) => { writes.push(value); return gate.promise; });
+  try {
+    await act(async () => hook.value.change(descriptionTodo, 'First edit'));
+    let saving, preparing, ready = false;
+    await act(async () => { saving = hook.value.save(descriptionTodo); });
+    await act(async () => { hook.value.change(descriptionTodo, 'Newer edit'); void hook.value.save(descriptionTodo); preparing = hook.value.prepareDelete(descriptionTodo).then(value => { ready = value; }); });
+    assert.equal(ready, false);
+    await act(async () => { gate.resolve({ updatedTodo: { ...descriptionTodo, description: 'First edit' } }); await saving; await preparing; });
+    assert.equal(ready, true); assert.deepEqual(writes, ['First edit']);
+    await act(async () => hook.value.finishDelete(descriptionTodo, true));
+    assert.equal(hook.value.read(descriptionTodo).value, descriptionTodo.description);
+  } finally { await hook.close(); }
+});
+test('rejected deletion unlocks and preserves the description draft for retry', async () => {
+  const hook = await descriptionFixture(async (_id, _field, value) => ({ updatedTodo: { ...descriptionTodo, description: value } }));
+  try {
+    await act(async () => hook.value.change(descriptionTodo, 'Retained after rejected delete'));
+    await act(async () => hook.value.prepareDelete(descriptionTodo));
+    await act(async () => hook.value.finishDelete(descriptionTodo, false));
+    assert.equal(hook.value.read(descriptionTodo).value, 'Retained after rejected delete');
+    await act(async () => hook.value.save(descriptionTodo));
+    assert.equal(hook.value.read({ ...descriptionTodo, description: 'Retained after rejected delete' }).status, '');
+  } finally { await hook.close(); }
+});
+test('deletion with no existing description draft blocks reopening edits until deletion finishes', async () => {
+  let writes = 0;
+  const hook = await descriptionFixture(async () => { writes++; return null; });
+  try {
+    await act(async () => hook.value.prepareDelete(descriptionTodo));
+    await act(async () => { hook.value.change(descriptionTodo, 'Must not save during deletion'); await hook.value.save(descriptionTodo); });
+    assert.equal(writes, 0);
+    assert.equal(hook.value.read(descriptionTodo).value, descriptionTodo.description);
+    await act(async () => hook.value.finishDelete(descriptionTodo, false));
+    await act(async () => hook.value.change(descriptionTodo, 'Editable after rejected deletion'));
+    assert.equal(hook.value.read(descriptionTodo).value, 'Editable after rejected deletion');
+  } finally { await hook.close(); }
+});
+
 for (const failure of ['error','empty','throw']) {
   test(`failed checklist addition (${failure}) keeps typed text`,async()=>{
     const f=await fixture(r=>{
