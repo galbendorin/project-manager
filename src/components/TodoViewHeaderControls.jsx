@@ -78,7 +78,7 @@ export default function TodoViewHeaderControls({
           <div className="task-header-title-row">
           <h2 className="text-base font-bold text-slate-800 tracking-tight">Tasks</h2>
           {!isMobile ? <span className="task-result-count">{visibleOpenTodos.length} task{visibleOpenTodos.length !== 1 ? 's' : ''}</span> : null}
-          {viewMode === 'matrix' && onAddMatrixTask ? <button type="button" onClick={onAddMatrixTask} className="task-inline-capture"><span aria-hidden="true">+</span> Add task</button> : isMobile && onQuickCapture ? <button type="button" onClick={onQuickCapture} className="task-inline-capture md:hidden"><span aria-hidden="true">+</span> Capture</button> : null}
+          {onAddMatrixTask ? <button type="button" onClick={onAddMatrixTask} className="task-inline-capture"><span aria-hidden="true">+</span> Add task</button> : isMobile && onQuickCapture ? <button type="button" onClick={onQuickCapture} className="task-inline-capture md:hidden"><span aria-hidden="true">+</span> Capture</button> : null}
           </div>
           {isMobile && quickCaptureStatus ? <p role="status" className="task-inline-capture-status md:hidden">{quickCaptureStatus}</p> : null}
         </div>
