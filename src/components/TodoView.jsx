@@ -238,7 +238,11 @@ const TodoView = ({
   const creationRecords = useRef({ owner: currentUserId, records: new Map() });
   if (creationRecords.current.owner !== currentUserId) creationRecords.current = { owner: currentUserId, records: new Map() };
   const [quickAddProjectId, setQuickAddProjectId] = useState(initialCommandState.quickAddProjectId);
-  const quickAddContext = `${currentUserId}:${scope}:${currentProject?.id || ''}:${quickAddProjectId}`;
+  const creationProjectContext = JSON.stringify([scope, currentProject?.id || null, [...projectFilter].sort()]);
+  const defaultCreationProjectId = projectFilter.length === 1
+    ? (projectFilter[0] === 'other' ? null : projectFilter[0])
+    : projectFilter.length > 1 ? null : scope === 'project' ? currentProject?.id || null : null;
+  const quickAddContext = `${currentUserId}:${creationProjectContext}:${quickAddProjectId}`;
   const quickAddUiScope = useRef({ context: quickAddContext });
   if (quickAddUiScope.current.context !== quickAddContext) quickAddUiScope.current = { context: quickAddContext };
   const quickAddOperations = useRef({ owner: currentUserId, pending: new Set() });
@@ -255,7 +259,12 @@ const TodoView = ({
   const completionTimeoutsRef = useRef(new Map());
   const previousProjectIdRef = useRef(currentProject?.id || null);
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const kanbanProjectMatches = projectFilter.length === 0 || (projectFilter.length === 1 && projectFilter[0] === currentProject?.id);
   const changeViewMode = (next) => {
+    if (next === 'kanban' && !kanbanProjectMatches) {
+      setPlanNotice('Kanban columns belong to the current project. Use List, Timeline or Matrix for your selected projects.');
+      return;
+    }
     if (next === 'matrix' && viewMode !== 'matrix') {
       previousFocus.current = focusView; setFocusView(matrixFocus.current);
     } else if (viewMode === 'matrix' && next !== 'matrix') {
@@ -263,6 +272,9 @@ const TodoView = ({
     }
     setViewMode(next);
   };
+  useEffect(() => {
+    if (viewMode === 'kanban' && !kanbanProjectMatches) setViewMode('list');
+  }, [viewMode, kanbanProjectMatches]);
 
   const setQuickAddInputRef = (bucketKey, element) => {
     if (!bucketKey) return;
@@ -287,15 +299,31 @@ const TodoView = ({
   const creationDraft = (bucketKey) => {
     const fallbackDay = focusView === 'today' || focusView === 'tomorrow' ? getTodoCreationDueDate('today', today, focusView) : '';
     const dueDate = isMatrixCreation(bucketKey) ? '' : getTodoCreationDueDate(bucketKey, today, focusView);
-    const projectId = scope === 'project' ? currentProject?.id || null : isMatrixCreation(bucketKey) ? (projectFilter.length === 1 && projectOptions.some(p => p.id === projectFilter[0]) ? projectFilter[0] : null) : (quickAddProjectId === 'other' ? null : quickAddProjectId || null);
-    return { dueDate, workDay: dueDate || fallbackDay, fallbackDay, projectId, repeat: 'none', quadrant: bucketKey.startsWith('matrix:') ? bucketKey.slice(7) : DEFAULT_MATRIX_QUADRANT, ...(creationDrafts.owner === currentUserId ? creationDrafts.values[bucketKey] : {}) };
+    const stored = creationDrafts.owner === currentUserId ? creationDrafts.values[bucketKey] : undefined;
+    const projectId = stored?.projectExplicit && stored.projectContext === creationProjectContext ? stored.projectId : defaultCreationProjectId;
+    return { dueDate, workDay: dueDate || fallbackDay, fallbackDay, repeat: 'none', quadrant: bucketKey.startsWith('matrix:') ? bucketKey.slice(7) : DEFAULT_MATRIX_QUADRANT, ...stored, projectId };
   };
   const changeCreationDraft = (bucketKey, patch) => {
     quickAddDraftVersions.current[bucketKey] = (quickAddDraftVersions.current[bucketKey] || 0) + 1;
     const base = creationDraft(bucketKey);
-    setCreationDrafts(previous => ({ owner: currentUserId, values: { ...(previous.owner === currentUserId ? previous.values : {}), [bucketKey]: { ...base, ...patch } } }));
+    setCreationDrafts(previous => ({ owner: currentUserId, values: { ...(previous.owner === currentUserId ? previous.values : {}), [bucketKey]: { ...base, ...patch, ...(Object.hasOwn(patch, 'projectId') ? { projectExplicit: true, projectContext: creationProjectContext } : {}) } } }));
   };
   const formatQuickAddDueHint = bucketKey => dueHint(creationDraft(bucketKey).dueDate);
+
+  useEffect(() => {
+    // Keep title/date drafts, but do not resurrect a destination override from
+    // a project workspace the user has left.
+    setCreationDrafts(previous => {
+      if (previous.owner !== currentUserId) return previous;
+      let changed = false;
+      const values = Object.fromEntries(Object.entries(previous.values).map(([key, draft]) => {
+        if (!draft.projectExplicit || draft.projectContext === creationProjectContext) return [key, draft];
+        changed = true;
+        return [key, { ...draft, projectExplicit: false }];
+      }));
+      return changed ? { ...previous, values } : previous;
+    });
+  }, [creationProjectContext, currentUserId]);
 
   useEffect(() => {
     writeLocalJson(TODO_VIEW_MODE_KEY, { mode: viewMode });
@@ -773,7 +801,7 @@ const TodoView = ({
     columns,
     columnsLoading,
     createCardInColumn,
-    kanbanAvailable,
+    kanbanAvailable: boardAvailable,
     kanbanMessage,
     moveCardToColumn,
     moveCardToPosition,
@@ -788,6 +816,7 @@ const TodoView = ({
     scope,
     visibleOpenTodos,
   });
+  const kanbanAvailable = boardAvailable && kanbanProjectMatches;
 
   const visibleOpenTodosWithCardOrder = useMemo(() => (
     visibleOpenTodos.map((todo) => {
@@ -904,12 +933,14 @@ const TodoView = ({
       }
       records.records.delete(bucketKey);
       if (quickAddUiScope.current !== uiScope) return;
-      setQuickAddValues((previous) => (quickAddDraftVersions.current[bucketKey] || 0) === draftVersion && previous[bucketKey] === rawTitle ? { ...previous, [bucketKey]: '' } : previous);
+      const originalDraftIsCurrent = quickAddUiScope.current === record.uiScope && (quickAddDraftVersions.current[bucketKey] || 0) === record.draftVersion;
+      setQuickAddValues((previous) => originalDraftIsCurrent && previous[bucketKey] === record.rawTitle ? { ...previous, [bucketKey]: '' } : previous);
+      if (originalDraftIsCurrent) setCreationDrafts(previous => { const values = { ...previous.values }; delete values[bucketKey]; return { ...previous, values }; });
       const filterHint = activeFilterCount || searchQuery || focusView !== TODO_FOCUS_VIEWS.all
         ? ' Current filters may hide it.' : '';
       publishStatus({ task: addedTodo, message: `Added “${record.title}”.${filterHint} Personal day is not confirmed${String(addedTodo._id).startsWith('offline-') ? '; task queued until reconnect' : ''}.` });
       window.requestAnimationFrame(() => {
-        if (quickAddOperations.current === operation && quickAddUiScope.current === uiScope) quickAddInputRefs.current.get(bucketKey)?.focus();
+        if (quickAddOperations.current === operation && quickAddUiScope.current === record.uiScope) quickAddInputRefs.current.get(bucketKey)?.focus();
       });
     } catch (failure) {
       const definitelyAbsent = failure?.definiteRejection && !record.uncertain;
@@ -962,7 +993,10 @@ const TodoView = ({
   });
 
   const showCreatedTask = task => {
-    clearAllFilters(); setSearchQuery(''); setScope('all'); setFocusView(TODO_FOCUS_VIEWS.all); setShowFutureMonths(true);
+    // Review a saved task without leaving the chosen project workspace.
+    setSourceFilter([]); setOwnerFilter([]); setRecurrenceFilter([]); setBucketFilter([]); setSearchQuery('');
+    if (scope === 'project' && task.projectId && task.projectId !== currentProject?.id) setScope('all');
+    setFocusView(TODO_FOCUS_VIEWS.all); setShowFutureMonths(true);
     setCreationOpen(false); setSelectedTodo(task);
   };
   const creationControls = bucketKey => <>
@@ -1109,8 +1143,6 @@ const TodoView = ({
 
   const handleFocusViewChange = useCallback((nextFocusView) => {
     setFocusView(normalizeTodoFocusView(nextFocusView));
-    setScope('all');
-    setProjectFilter([]);
     setSourceFilter([]);
     setOwnerFilter([]);
     setRecurrenceFilter([]);
@@ -1125,6 +1157,13 @@ const TodoView = ({
     setProjectFilter([]);
     if (nextScope === 'all' && viewMode === 'kanban') setViewMode('list');
   }, [viewMode]);
+
+  const handleProjectFilterChange = nextProjects => {
+    setProjectFilter(nextProjects);
+    // Kanban columns belong to the current project; use the cross-project
+    // list composer when the selected destination cannot use that board.
+    if (viewMode === 'kanban' && nextProjects.length > 0 && (nextProjects.length !== 1 || nextProjects[0] !== currentProject?.id)) setViewMode('list');
+  };
 
   const selectedTodoCanEdit = !isExternalView && !currentDeadlineSaves[selectedTodo?._id] && !selectedTodo?.isDerived && selectedTodo?.status !== 'Done';
   const checklistSourceTodos = useMemo(() => {
@@ -1198,7 +1237,7 @@ const TodoView = ({
           searchQuery={searchQuery}
           setBucketFilter={setBucketFilter}
           setOwnerFilter={setOwnerFilter}
-          setProjectFilter={setProjectFilter}
+          setProjectFilter={handleProjectFilterChange}
           setRecurrenceFilter={setRecurrenceFilter}
           setSearchQuery={setSearchQuery}
           setShowFutureMonths={setShowFutureMonths}

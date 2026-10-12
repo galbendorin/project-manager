@@ -136,6 +136,119 @@ async function quickAddFixture({ mobile = false, add, update, remove, derived = 
   return { root, calls, optionsCalls, navigator, bucket, input, load, transport, header: () => root.root.findByType(Header), async type(value) { await act(async () => input().props.onChange({ target: { value } })); }, async close() { await act(async () => root.unmount()); } };
 }
 
+const destinationProject = { id: '99999999-9999-4999-8999-999999999999', name: 'Synthetic selected project', tasks: [], registers: {}, tracker: [] };
+for (const view of ['list', 'timeline']) {
+  test(`${view} defaults successive tasks to the single selected project and keeps that project across day changes`, async () => {
+    const f = await quickAddFixture({ extraProject: destinationProject });
+    try {
+      const Fields = (await f.load('src/components/TaskCreationFields.jsx')).default;
+      const Board = (await f.load('src/components/TodoBoardView.jsx')).default;
+      await act(async () => { f.header().props.onScopeChange('all'); });
+      await act(async () => f.header().props.setProjectFilter([destinationProject.id]));
+      assert.equal(f.header().props.focusCounts.all, 0);
+      await act(async () => f.header().props.setViewMode(view));
+      const composer = () => view === 'list' ? f.bucket() : f.root.root.findByType(Board);
+      for (const title of ['First selected project task', 'Second selected project task']) {
+        await act(async () => composer().props.setQuickAddValue('this_week', title));
+        assert.equal(f.root.root.findByType(Fields).props.draft.projectId, destinationProject.id);
+        await act(async () => composer().props.handleQuickAddSubmit('this_week'));
+      }
+      assert.deepEqual(f.calls.map(payload => payload.projectId), [destinationProject.id, destinationProject.id]);
+      assert.equal(f.header().props.focusCounts.all, 2);
+      await act(async () => f.header().props.onFocusViewChange('tomorrow'));
+      assert.deepEqual(Array.from(f.header().props.projectFilter), [destinationProject.id]);
+      await act(async () => f.header().props.onFocusViewChange('all'));
+      assert.deepEqual(Array.from(f.header().props.projectFilter), [destinationProject.id]);
+    } finally { await f.close(); }
+  });
+}
+test('project context changes keep date/repeat drafts, reset old explicit destinations, and multi-select defaults to Other', async () => {
+  const f = await quickAddFixture({ extraProject: destinationProject });
+  try {
+    const Fields = (await f.load('src/components/TaskCreationFields.jsx')).default;
+    await act(async () => f.header().props.onScopeChange('all'));
+    await act(async () => f.header().props.setProjectFilter([other]));
+    await f.type('Retained project draft');
+    const fields = () => f.root.root.findByType(Fields);
+    await act(async () => fields().props.onChange({ repeat: 'weekly', dueDate: '2026-12-03' }));
+    await act(async () => f.header().props.setProjectFilter([destinationProject.id]));
+    assert.equal(fields().props.draft.projectId, destinationProject.id);
+    assert.equal(fields().props.draft.repeat, 'weekly'); assert.equal(fields().props.draft.dueDate, '2026-12-03');
+    await act(async () => fields().props.onChange({ projectId: null }));
+    assert.equal(fields().props.draft.projectId, null);
+    await act(async () => f.header().props.setProjectFilter([other]));
+    await act(async () => fields().props.onChange({ repeat: 'monthly' }));
+    await act(async () => f.header().props.setProjectFilter([destinationProject.id]));
+    assert.equal(fields().props.draft.projectId, destinationProject.id);
+    await act(async () => f.header().props.setProjectFilter([other, destinationProject.id]));
+    assert.equal(fields().props.draft.projectId, null);
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls[0].projectId, null);
+    assert.equal(f.header().props.projectFilter.length, 2);
+  } finally { await f.close(); }
+});
+test('Matrix and shared Add task follow the project selection, and reviewing the saved task preserves it', async () => {
+  const f = await quickAddFixture({ extraProject: destinationProject });
+  try {
+    const Matrix = (await f.load('src/components/TodoEisenhowerMatrix.jsx')).default;
+    const Dialog = (await f.load('src/components/TaskCreationDialog.jsx')).default;
+    const Detail = (await f.load('src/components/TodoDetailDialog.jsx')).default;
+    await act(async () => f.header().props.onScopeChange('all'));
+    await act(async () => f.header().props.setProjectFilter([destinationProject.id]));
+    await act(async () => f.header().props.setViewMode('matrix'));
+    const form = () => f.root.root.findByType(Matrix).findAllByType('form').find(node => node.props['aria-label'] === 'Add task to Make progress');
+    await act(async () => form().findByType('input').props.onChange({ target: { value: 'Selected project quadrant task' } }));
+    await act(async () => form().props.onSubmit({ preventDefault() {} }));
+    assert.equal(f.calls[0].projectId, destinationProject.id);
+    await act(async () => f.header().props.onAddMatrixTask());
+    const dialog = () => f.root.root.findByType(Dialog);
+    assert.equal(dialog().props.draft.projectId, destinationProject.id);
+    await act(async () => dialog().props.setTitle('Selected project shared task'));
+    await act(async () => dialog().props.onSubmit());
+    await act(async () => dialog().props.onShowTask(dialog().props.status.task));
+    assert.equal(f.root.root.findByType(Detail).props.todo.projectId, destinationProject.id);
+    assert.deepEqual(Array.from(f.header().props.projectFilter), [destinationProject.id]);
+    await act(async () => f.root.root.findByType(Detail).props.onClose());
+    await act(async () => f.header().props.setViewMode('list'));
+    await act(async () => f.header().findAllByType('button').find(button => button.children.includes(' Add task')).props.onClick());
+    assert.equal(dialog().props.draft.projectId, destinationProject.id);
+  } finally { await f.close(); }
+});
+test('uncertain creation retries retain the original project payload when the user selects a different project', async () => {
+  let attempts = 0;
+  const f = await quickAddFixture({ extraProject: destinationProject, add: async payload => { if (++attempts === 1) throw new Error('Synthetic lost acknowledgement'); return { ...payload, _id: `saved-${attempts}`, status: 'Open' }; } });
+  try {
+    await act(async () => f.header().props.onScopeChange('all'));
+    await act(async () => f.header().props.setProjectFilter([other]));
+    await f.type('Uncertain original task');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    await act(async () => f.header().props.setProjectFilter([destinationProject.id]));
+    await f.type('New selected project draft');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls[1].projectId, other);
+    assert.equal(f.optionsCalls[1].operationId, f.optionsCalls[0].operationId);
+    assert.equal(f.input().props.value, 'New selected project draft');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls[2].projectId, destinationProject.id);
+    assert.notEqual(f.optionsCalls[2].operationId, f.optionsCalls[0].operationId);
+  } finally { await f.close(); }
+});
+test('unavailable project selection is rejected instead of silently creating in Other, and incompatible Kanban selection cannot create in the current project', async () => {
+  const f = await quickAddFixture();
+  try {
+    await act(async () => f.header().props.onScopeChange('all'));
+    await act(async () => f.header().props.setProjectFilter(['missing-project']));
+    await f.type('Unavailable destination');
+    await act(async () => f.input().props.onKeyDown({ key: 'Enter', preventDefault() {} }));
+    assert.equal(f.calls.length, 0);
+    await act(async () => f.header().props.onScopeChange('project'));
+    await act(async () => f.header().props.setProjectFilter(['other']));
+    await act(async () => f.header().props.setViewMode('kanban'));
+    assert.equal(f.header().props.viewMode, 'list');
+    assert.equal(f.calls.length, 0);
+  } finally { await f.close(); }
+});
+
 test('desktop More filters preserves selections while collapsed, and Clear resets the visible filter badge', async () => {
   const f = await quickAddFixture();
   try {

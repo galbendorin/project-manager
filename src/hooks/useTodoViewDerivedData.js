@@ -146,12 +146,12 @@ export function useTodoViewDerivedData({
 }) {
   const { manualTodosByScope, derivedTodosByScope, mergedOpenTodos } = candidates;
 
-  const focusCounts = useMemo(() => getTodoFocusCounts(mergedOpenTodos, {
+  const focusCounts = useMemo(() => getTodoFocusCounts(mergedOpenTodos.filter(item => matchesProjectSelection(projectFilter, item)), {
     currentUserId,
     currentUserName,
     today,
     preferences,
-  }), [currentUserId, currentUserName, mergedOpenTodos, today, preferences]);
+  }), [currentUserId, currentUserName, mergedOpenTodos, projectFilter, today, preferences]);
 
   const allTodoItems = useMemo(
     () => [...manualTodosByScope, ...derivedTodosByScope],
