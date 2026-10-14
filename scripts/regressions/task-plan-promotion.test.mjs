@@ -93,7 +93,7 @@ test('pointer and native Matrix drops move only the intended unlocked task and c
   const load = await sourceModules(mockTransport(() => ({ data: [] })), { window, document });
   const Matrix = (await load('src/components/TodoEisenhowerMatrix.jsx')).default;
   const todo = { _id: sourceId, title: 'Synthetic future task', status: 'Open' };
-  const card = { todo, reference: { task_key: reference.key }, quadrant: 'not_urgent_important', deadlinePriority: false };
+  const card = { todo, reference: { task_key: reference.key }, quadrant: 'not_urgent_important' };
   const groups = ['urgent_important', 'not_urgent_important', 'urgent_not_important', 'not_urgent_not_important'].map((id) => ({ id, title: id, label: id, cards: id === card.quadrant ? [card] : [] }));
   const props = { matrix: { ready: true, pending: {}, groups, preferences: {}, move: async (item, quadrant) => { moves.push({ id: item._id, quadrant }); return true; } }, currentUserId: owner, isMobile: true, today: '2026-10-06', onOpenTodo: noop, handleCompleteTodo: noop };
   let root; await act(async () => { root = create(React.createElement(Matrix, props)); });
@@ -111,8 +111,10 @@ test('pointer and native Matrix drops move only the intended unlocked task and c
       root.root.findAllByType('section').find((node) => node.props['data-matrix-quadrant'] === target).props.onDrop({ preventDefault() {} });
     });
     assert.equal(moves.length, 2);
-    await act(async () => root.update(React.createElement(Matrix, { ...props, matrix: { ...props.matrix, groups: groups.map((group) => ({ ...group, cards: group.cards.map((item) => ({ ...item, deadlinePriority: true, overdue: true })) })) } })));
-    assert.equal(control(), undefined);
+    await act(async () => root.update(React.createElement(Matrix, { ...props, matrix: { ...props.matrix, groups: groups.map((group) => ({ ...group, cards: group.cards.map((item) => ({ ...item, overdue: true })) })) } })));
+    assert.ok(control(), 'Overdue tasks retain the drag control');
+    await act(async () => { control().props.onPointerDown(event); control().props.onPointerMove(event); control().props.onPointerUp(event); });
+    assert.equal(moves.length, 3);
   } finally { await act(async () => root.unmount()); }
 });
 

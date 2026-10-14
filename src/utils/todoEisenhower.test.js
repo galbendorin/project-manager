@@ -6,6 +6,7 @@ import {
   matrixReference,
   validCalendarDay,
   taskViewIdentity,
+  deadlineDescription,
 } from "./todoEisenhower.js";
 import { shouldClearUserOfflineKey } from "./offlineState.js";
 const id = "11111111-1111-4111-8111-111111111111";
@@ -17,39 +18,24 @@ test('each Matrix quadrant groups projects A–Z before deadline order', () => {
     { ...todo, _id: 'a', projectId: 'a', projectName: 'Alpha', dueDate: '2026-10-05' },
     { ...todo, _id: 'other', projectName: 'Other', dueDate: '2026-10-01' },
   ];
-  assert.deepEqual(groupMatrixTasks(tasks, {}, '2026-10-07')[0].cards.map((card) => card.todo._id), ['a', 'z', 'other']);
+  assert.deepEqual(groupMatrixTasks(tasks, {}, '2026-10-07')[1].cards.map((card) => card.todo._id), ['a', 'z', 'other']);
 });
-test("date boundary and overdue automation preserve the manual preference", () => {
-  const preference = { manual_quadrant: "not_urgent_not_important" };
-  assert.equal(
-    matrixPlacement(todo, preference, "2026-10-05").quadrant,
-    "urgent_important",
-  );
-  assert.equal(
-    matrixPlacement(todo, preference, "2026-10-06").quadrant,
-    "urgent_important",
-  );
-  assert.equal(matrixPlacement(todo, preference, "2026-10-06").automatic, true);
-  assert.equal(
-    matrixPlacement(
-      { ...todo, dueDate: "2026-10-07" },
-      preference,
-      "2026-10-06",
-    ).quadrant,
-    "not_urgent_not_important",
-  );
-  assert.equal(
-    matrixPlacement({ ...todo, dueDate: "" }, preference, "2026-10-06")
-      .quadrant,
-    "not_urgent_not_important",
-  );
-  assert.equal(
-    matrixPlacement(todo, { manual_quadrant: "urgent_important" }, "2026-10-06")
-      .automatic,
-    false,
-  );
+test("Q2 is the default and only personal choices place tasks in Q1, independent of deadlines", () => {
+  for (const dueDate of ['', '2026-10-04', '2026-10-05', '2026-10-07']) {
+    const task = { ...todo, dueDate };
+    for (const today of ['2026-10-05', '2026-10-06']) {
+      assert.equal(matrixPlacement(task, null, today).quadrant, 'not_urgent_important');
+      assert.equal(matrixPlacement(task, { manual_quadrant: 'invalid' }, today).quadrant, 'not_urgent_important');
+      for (const quadrant of ['urgent_important', 'not_urgent_important', 'urgent_not_important', 'not_urgent_not_important']) {
+        assert.equal(matrixPlacement(task, { manual_quadrant: quadrant, manual_quadrant_day: '2026-10-04' }, today).quadrant, quadrant);
+      }
+    }
+  }
+  assert.equal(matrixPlacement(todo, null, '2026-10-05').dueToday, true);
+  assert.equal(matrixPlacement(todo, null, '2026-10-06').overdue, true);
+  assert.match(deadlineDescription(todo, '2026-10-06'), /Overdue.*5 Oct 2026.*1 day late/);
 });
-test("invalid dates, no date and completed tasks never auto promote", () => {
+test("invalid dates, no date and completed tasks are not marked overdue", () => {
   assert.equal(validCalendarDay("2026-02-31"), false);
   assert.equal(validCalendarDay("2024-02-29"), true);
   for (const dueDate of ["", "not-a-date", "2026-02-31"])
@@ -116,6 +102,6 @@ test("four quadrants hold each open task once, excluding completed tasks and sep
   );
   assert.equal(groups.length, 4);
   assert.equal(groups.flatMap((q) => q.cards).length, 2);
-  assert.equal(groups[0].cards.length, 1);
-  assert.equal(groups[1].cards.length, 1);
+  assert.equal(groups[0].cards.length, 0);
+  assert.equal(groups[1].cards.length, 2);
 });

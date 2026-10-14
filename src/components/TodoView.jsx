@@ -971,7 +971,7 @@ const TodoView = ({
         const preference = personalPlan.preferences[matrixReference(task)?.task_key];
         record.expectedPreference = { id: preference?.id || null, version: preference?.version || null, day: preference?.planned_day || null };
       }
-      const quadrant = isMatrixCreation(record.bucketKey) && !(task.dueDate && task.dueDate < today) ? record.draft.quadrant : undefined;
+      const quadrant = isMatrixCreation(record.bucketKey) ? record.draft.quadrant : undefined;
       void personalPlan.planTask(task, { day: record.draft.workDay || null, quadrant }, record.expectedPreference).then(saved => {
         if (creationRecords.current !== records || currentOwner.current !== records.owner) return;
         record.processing = false;

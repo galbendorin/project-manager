@@ -74,11 +74,11 @@ async function fixture(handler, globals = {}) {
   );
   return { hook, transport, load };
 }
-test("acknowledged priority persists after reload, and deadline changes promote/restore it", async () => {
+test("acknowledged priority persists after reload and deadline changes never override it", async () => {
   let saved = { ...preference };
   const f = await fixture((r) => {
     if (r.operation === "update") {
-      saved = { ...saved, ...r.payload, version: 2 };
+      saved = { ...saved, ...r.payload, version: saved.version + 1 };
       return { data: [saved], error: null };
     }
     return { data: [saved], count: 1, error: null };
@@ -89,14 +89,14 @@ test("acknowledged priority persists after reload, and deadline changes promote/
     await act(async () => f.hook.value.reload());
     assert.equal(placement(f.hook), "urgent_not_important");
     await f.hook.update({ ...props, today: "2026-10-07" });
-    assert.equal(placement(f.hook), "urgent_important");
-    assert.equal(await f.hook.value.move(todo, "not_urgent_important"), false);
+    assert.equal(placement(f.hook), "urgent_not_important");
+    await act(async () => assert.equal(await f.hook.value.move(todo, "not_urgent_important"), true));
     await f.hook.update({
       ...props,
       today: "2026-10-07",
       todos: [{ ...todo, dueDate: "2026-10-08" }],
     });
-    assert.equal(placement(f.hook), "urgent_not_important");
+    assert.equal(placement(f.hook), "not_urgent_important");
   } finally {
     await f.hook.close();
   }
@@ -231,16 +231,14 @@ test("server row cap pagination never marks missing priorities unclassified", as
     await f.hook.close();
   }
 });
-test("strict overdue and read-only controls cannot issue preference writes", async () => {
+test("read-only controls cannot issue preference writes even for overdue tasks", async () => {
   const f = await fixture(() => ({
     data: [preference],
     count: 1,
     error: null,
   }));
   try {
-    await f.hook.update({ ...props, today: "2026-10-07" });
-    assert.equal(await f.hook.value.move(todo, "not_urgent_important"), false);
-    await f.hook.update({ ...props, isExternalView: true });
+    await f.hook.update({ ...props, today: "2026-10-07", isExternalView: true });
     assert.equal(await f.hook.value.move(todo, "urgent_important"), false);
     assert.equal(
       f.transport.calls.filter((r) => r.operation !== "select").length,
@@ -250,7 +248,7 @@ test("strict overdue and read-only controls cannot issue preference writes", asy
     await f.hook.close();
   }
 });
-test("actual Matrix phone/desktop controls expose placement and completion undo", async () => {
+test("actual Matrix phone/desktop controls move overdue tasks and expose completion undo", async () => {
   let saved = { ...preference };
   const f = await fixture((r) => {
     if (r.operation === "update")
@@ -259,6 +257,7 @@ test("actual Matrix phone/desktop controls expose placement and completion undo"
   });
   let root;
   try {
+    await f.hook.update({ ...props, today: "2026-10-07" });
     const Component = (await f.load("src/components/TodoEisenhowerMatrix.jsx"))
       .default;
     let completed = 0;
@@ -267,6 +266,7 @@ test("actual Matrix phone/desktop controls expose placement and completion undo"
         root = create(
           React.createElement(Component, {
             matrix: f.hook.value,
+            today: "2026-10-07",
             isMobile,
             isExternalView: false,
             onOpenTodo() {},
@@ -290,6 +290,8 @@ test("actual Matrix phone/desktop controls expose placement and completion undo"
       assert.equal(completed, isMobile ? 2 : 1);
       const select = root.root.findByType("select");
       assert.equal(select.props.value, saved.manual_quadrant);
+      assert.equal(select.props.disabled, false);
+      assert.ok(root.root.findAllByType('span').some(node => node.children.join('').includes('Overdue')));
       const destination = isMobile
         ? "not_urgent_important"
         : "urgent_not_important";

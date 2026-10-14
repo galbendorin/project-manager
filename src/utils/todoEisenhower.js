@@ -77,15 +77,10 @@ export const matrixPlacement = (todo, preference, today) => {
     validCalendarDay(todo.dueDate) &&
     todo.dueDate < today;
   const dueToday = todo.status !== "Done" && validCalendarDay(today) && todo.dueDate === today;
-  const todayOverride = dueToday && validMatrixQuadrant(preference?.manual_quadrant) && preference?.manual_quadrant_day === today;
-  const deadlinePriority = overdue || (dueToday && !todayOverride);
   return {
-    quadrant: deadlinePriority ? "urgent_important" : manual,
+    quadrant: manual,
     overdue,
     dueToday,
-    todayOverride,
-    deadlinePriority,
-    automatic: deadlinePriority && manual !== "urgent_important",
     unclassified: !preference,
   };
 };

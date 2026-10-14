@@ -4,16 +4,19 @@ Tasks has a fourth view, Matrix. Placements are private to the signed-in user.
 They apply to manual project/Other tasks and stable source items from the plan,
 registers and tracker. Assigning a quadrant changes personal priority only.
 
-Do is Urgent & Important; Plan is Important, Not Urgent; Delegate is Urgent,
-Not Important; Defer is neither. New unclassified tasks appear in Plan. Drag a
+Q1 · Do now is Important & Urgent; Q2 · Make progress is Important, Not Urgent;
+Q3 · Handle soon is Urgent, Less Important; Q4 · If time allows is optional,
+not urgent. Unclassified tasks appear in Q2, including due-today and overdue
+tasks. Q1 contains only tasks the user explicitly places there. Drag a
 desktop handle or use Move to… on desktop, keyboard or phone. The phone view
 stacks quadrants with count navigation; desktop uses a two-by-two grid.
 
-An open task with a valid deadline earlier than the local calendar day appears
-in Do automatically. Due today is not overdue until local midnight. Auto:
-deadline passed explains a promotion; already-manual Do shows Overdue. An
-overdue card cannot be moved out until completed or rescheduled. The saved manual
-quadrant remains intact and returns when its date is extended or removed.
+Deadlines never override the saved personal quadrant. Due-today and overdue
+labels remain visible, and overdue tasks can be moved to any quadrant. Choices
+persist across midnight, reloads and deadline changes. Existing explicit Q1
+choices remain; tasks previously shown in Q1 by deadline automation return to
+their saved choice, or Q2 if unclassified. The existing manual_quadrant_day
+column remains choice metadata and no longer expires a choice.
 The app refreshes its shared calendar day at midnight and on focus/pageshow/
 visibility resume, including daylight-saving transitions. No background writer
 or invented historical movement timestamp is involved.
@@ -48,7 +51,7 @@ reload. The app does not silently treat unknown saved priorities as unclassified
 Offline mode retains in-memory confirmed placements and disables moves until
 reconnect. No additional offline write queue is added. Remote revocation can only
 be learned on reconnect. Legacy source rows without a stable ID and unsynced
-manual tasks appear with deadline automation, but placement saving is unavailable
+manual tasks appear in Q2 with deadline warnings, but placement saving is unavailable
 until they have a persistent source identity. External views do not read private
 placements or allow priority writes.
 
