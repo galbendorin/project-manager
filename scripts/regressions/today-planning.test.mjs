@@ -567,7 +567,7 @@ test('Matrix creates in Other in all-project scope and retains personal-only ret
   } finally { await f.close(); }
 });
 
-test('Matrix overdue creation writes only the work day and cannot override Q1', async () => {
+test('Matrix overdue creation saves the chosen quadrant and work day', async () => {
   const f = await quickAddFixture({ add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }) });
   try {
     const Dialog = (await f.load('src/components/TaskCreationDialog.jsx')).default;
@@ -578,7 +578,8 @@ test('Matrix overdue creation writes only the work day and cannot override Q1', 
     await act(async () => dialog().props.onChange({ dueDate: '2020-01-01', workDay: '2020-01-01', quadrant: 'not_urgent_not_important' }));
     await act(async () => dialog().props.onSubmit());
     const write = f.transport.calls.find(r => r.table === 'task_eisenhower_preferences' && r.operation === 'insert');
-    assert.equal(write.payload.manual_quadrant_day, undefined); assert.equal(write.payload.planned_day, '2020-01-01');
+    assert.equal(write.payload.manual_quadrant, 'not_urgent_not_important');
+    assert.equal(write.payload.manual_quadrant_day, dialog().props.today); assert.equal(write.payload.planned_day, '2020-01-01');
     assert.match(dialog().props.status.message, /Personal plan saved/);
   } finally { await f.close(); }
 });
@@ -749,13 +750,13 @@ test('a distinct personal work day is preserved by default and deadline failure 
     assert.match(root.root.findAllByProps({ role: 'status' }).map(node => node.children.join('')).join(''), /not confirmed/);
   } finally { await act(async () => root.unmount()); }
 });
-test('due-today choices persist for today and overdue restores Q1 after day rollover', async () => {
+test('due-today choices persist after midnight and overdue tasks remain movable', async () => {
   const task = { ...todo, dueDate: props.today }; let saved = { ...preference };
   const transport = mockTransport(r => { if(r.operation === 'update')saved = {...saved,...r.payload,version:saved.version+1};return {data:[saved],count:1}; });
   const load = await sourceModules(transport);
   const hook = await mountHook((await load('src/hooks/useTodoEisenhowerMatrix.js')).useTodoEisenhowerMatrix, { ...props, todos: [task] });
   try {
-    assert.equal(hook.value.groups[0].cards.length,1);
+    assert.equal(hook.value.groups[2].cards.length,1);
     for(const quadrant of ['not_urgent_important','urgent_not_important','not_urgent_not_important']) {
       await act(async () => assert.equal(await hook.value.move(task,quadrant),true));
       assert.equal(hook.value.groups.find(q=>q.cards.length).id,quadrant);
@@ -766,11 +767,13 @@ test('due-today choices persist for today and overdue restores Q1 after day roll
     await act(async () => hook.value.reload());
     assert.equal(hook.value.groups.find(q=>q.cards.length).id,'not_urgent_not_important');
     await hook.update({...props,todos:[task],today:'2026-10-06'});
+    assert.equal(hook.value.groups[3].cards.length,1);
+    assert.equal(hook.value.groups[3].cards[0].overdue,true);
+    await act(async () => assert.equal(await hook.value.move(task,'urgent_important'),true));
+    await act(async () => hook.value.reload());
     assert.equal(hook.value.groups[0].cards.length,1);
-    assert.equal(hook.value.groups[0].cards[0].automatic,true);
-    const before=transport.calls.length;
-    assert.equal(await hook.value.move(task,'not_urgent_important'),false);
-    assert.equal(transport.calls.length,before);
+    await act(async () => assert.equal(await hook.value.move(task,'not_urgent_important'),true));
+    assert.equal(hook.value.groups[1].cards.length,1);
   } finally { await hook.close(); }
 });
 
@@ -931,7 +934,7 @@ test('opened task details retain both dirty dates across phone/desktop layout ch
   let root;
   await act(async () => { root = create(React.createElement(TodoView, componentProps)); });
   try {
-    await act(async () => { const matrix = root.root.findByType(Matrix); matrix.props.onOpenTodo(matrix.props.matrix.groups[0].cards[0].todo); });
+    await act(async () => { const matrix = root.root.findByType(Matrix); matrix.props.onOpenTodo(matrix.props.matrix.groups.flatMap(group => group.cards).find(card => card.todo._id === manual._id).todo); });
     await act(async () => input(Dialog, 'Deadline').props.onChange({ target: { value: '2099-12-03' } }));
     await act(async () => input(Dialog, 'Personal').props.onChange({ target: { value: '2099-12-07' } }));
     await act(async () => root.root.findByType(Dialog).findAllByType('button').find((node) => node.children.includes('Reschedule deadline')).props.onClick());

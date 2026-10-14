@@ -19,7 +19,8 @@ test('a future or undated task personally planned today appears without changing
 });
 test('removing personal selection cannot hide due work, and strict invalid dates do not become deadlines', () => {
   assert.equal(matchesTodoFocusView({ ...todo, dueDate: '2026-10-01' }, 'today', { today: '2026-10-05' }), true);
-  assert.equal(matrixPlacement({ ...todo, dueDate: '2026-10-05' }, null, '2026-10-05').deadlinePriority, true);
+  assert.equal(matrixPlacement({ ...todo, dueDate: '2026-10-05' }, null, '2026-10-05').quadrant, 'not_urgent_important');
+  assert.equal(matchesTodoFocusView({ ...todo, dueDate: '2026-10-05' }, 'today', { today: '2026-10-05' }), true);
   assert.equal(matchesTodoFocusView({ ...todo, dueDate: '2026-02-31' }, 'today', { today: '2026-10-05' }), false);
   assert.equal(matchesTodoFocusView(todo, 'today', { today: '2026-10-05', preferences: { [`manual:${id}`]: { planned_day: '2026-02-31' } } }), false);
 });

@@ -41,7 +41,7 @@ export default function TodoEisenhowerMatrix({
   }, []);
   const moveTask = async (todo, quadrant) => {
     const latest = matrix.groups.flatMap((group) => group.cards).find((card) => taskViewIdentity(card.todo) === taskViewIdentity(todo));
-    if (!latest?.reference || latest.quadrant === quadrant || latest.overdue || latest.completing || matrix.offline || isExternalView || matrix.pending[latest.reference.task_key]) return;
+    if (!latest?.reference || latest.quadrant === quadrant || latest.completing || matrix.offline || isExternalView || matrix.pending[latest.reference.task_key]) return;
     if (await matrix.move(todo, quadrant))
       requestAnimationFrame(() =>
         { const control = moveControls.current.get(`${todo.projectId || "personal"}:${todo._id}`); const row = control?.closest('article'); const visible = row?.querySelector('.task-matrix-action'); visible?.focus({ preventScroll: true }); visible?.scrollIntoView({ block: 'nearest' }); },
@@ -89,8 +89,8 @@ export default function TodoEisenhowerMatrix({
     <div className="space-y-4 p-3 sm:p-4">
       <div className="task-matrix-intro text-sm text-slate-500"><details className="task-matrix-help"><summary>How the matrix works</summary><div>
         {isExternalView
-          ? "Read-only task overview. Due tasks start in Do now; overdue tasks stay there."
-          : "Due today starts in Do now; you may choose another quadrant for today. Incomplete overdue tasks return to Do now."}
+          ? "Read-only task overview. Personal priorities are private."
+          : "Tasks start in Q2 · Make progress. Choose Q1 · Do now for your main priorities. Deadlines do not move tasks between quadrants."}
         {!isExternalView ? <span className="ml-1">Drag a card or its ⠿ handle to another quadrant, or use Move to.</span> : null}
         </div></details><button type="button" onClick={layout.reset} className="task-matrix-reset">Reset sizes</button>
       </div>
@@ -186,8 +186,6 @@ export default function TodoEisenhowerMatrix({
                     reference,
                     overdue,
                     dueToday,
-                    todayOverride,
-                    automatic,
                     unclassified,
                     completing,
                   } = card;
@@ -195,7 +193,6 @@ export default function TodoEisenhowerMatrix({
                   const canMove =
                     !isExternalView &&
                     !matrix.offline &&
-                    !overdue &&
                     !completing &&
                     Boolean(reference) &&
                     !saving;
@@ -220,17 +217,14 @@ export default function TodoEisenhowerMatrix({
                         <div className="task-matrix-meta">
                           <span className={overdue ? 'task-overdue' : ''} title={deadlineDescription(todo,today)}>{todo.dueDate ? `${new Date(`${todo.dueDate}T12:00:00`).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}${overdue ? ' · Overdue' : dueToday ? ' · Today' : ''}` : 'No deadline'}</span>
                           <TaskRecurrenceIndicator recurrence={todo.recurrence} compact />
-                          {todayOverride ? <span title="Priority chosen for today. Q1 tomorrow if incomplete." aria-label="Priority chosen for today. Q1 tomorrow if incomplete.">↪</span> : null}
-                          {automatic ? <span aria-label={dueToday ? 'Automatically prioritised: due today' : 'Automatically prioritised: deadline passed'} title={dueToday ? 'Auto: due today' : 'Auto: deadline passed'}>⚡</span> : null}
                           <TaskChecklistBadge compact summary={getChecklistSummary?.(todo)} />
                         </div>
                         </div>
                         {!isExternalView && !completing ? <button type="button" className="task-matrix-action" aria-label={`Actions for ${todo.title}`} aria-expanded={openRows.has(taskViewIdentity(todo))} aria-controls={`matrix-actions-${todo.projectId || 'personal'}-${todo._id}`} disabled={saving || Boolean(deadlineSaves?.[todo._id])} onClick={() => setOpenRows(previous => { const next=new Set(previous); const key=taskViewIdentity(todo); if(next.has(key))next.delete(key);else next.add(key);return next; })}>•••</button> : <span />}
                       </div>
-                      <span className="sr-only" id={`matrix-info-${todo.projectId || 'personal'}-${todo._id}`}>{deadlineDescription(todo,today)}{taskRepeatLabel(todo.recurrence) ? ` · Repeats ${taskRepeatLabel(todo.recurrence).toLowerCase()}` : ''}{automatic ? ' · Automatically prioritised' : ''}</span>
+                      <span className="sr-only" id={`matrix-info-${todo.projectId || 'personal'}-${todo._id}`}>{deadlineDescription(todo,today)}{taskRepeatLabel(todo.recurrence) ? ` · Repeats ${taskRepeatLabel(todo.recurrence).toLowerCase()}` : ''}</span>
                       {saving || deadlineSaves?.[todo._id] ? <p role="status" className="task-matrix-feedback">Saving… Keep your input until confirmation.</p> : null}
                       <div className="task-matrix-actions" id={`matrix-actions-${todo.projectId || 'personal'}-${todo._id}`} hidden={!openRows.has(taskViewIdentity(todo))}>
-                        {todayOverride ? <p className="task-matrix-feedback">Priority chosen for today · Q1 tomorrow if incomplete.</p> : null}
                         <p className="mt-2 text-xs text-slate-600">{todo.source || 'Manual'}{todo.owner ? ` · ${todo.owner}` : ''}{unclassified ? ' · Not prioritised yet' : ''}</p>
                       {!isExternalView && !completing ? (
                         <label className="mt-3 block text-xs text-slate-500">
@@ -258,11 +252,7 @@ export default function TodoEisenhowerMatrix({
                               </option>
                             ))}
                           </select>
-                          {overdue ? (
-                            <span className="mt-1 block">
-                              Overdue tasks stay here until completed or rescheduled.
-                            </span>
-                          ) : !reference ? (
+                          {!reference ? (
                             <span className="mt-1 block">
                               Save this task with a stable source ID before
                               setting its priority.

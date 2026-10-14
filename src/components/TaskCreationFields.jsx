@@ -21,7 +21,7 @@ export default function TaskCreationFields({ draft, onChange, today, projects = 
     {matrix ? <>
       <label>Quadrant<select aria-label="Quadrant for new task" value={draft.quadrant} onChange={event => onChange({ quadrant: event.target.value })}>{MATRIX_QUADRANTS.map((quadrant,index) => <option key={quadrant.id} value={quadrant.id}>{`Q${index + 1} · ${quadrant.title}`}</option>)}</select></label>
       <label>Personal work day<input aria-label="Personal work day for new task" type="date" value={draft.workDay || ''} onChange={event => onChange({ workDay: event.target.value, workDayExplicit: true })} /></label>
-      {draft.dueDate && draft.dueDate < today ? <p>An incomplete overdue task goes to Q1 · Do now.</p> : null}
+      {draft.dueDate && draft.dueDate < today ? <p>This deadline is overdue. Your chosen quadrant stays unchanged.</p> : null}
     </> : null}
   </div>;
 }

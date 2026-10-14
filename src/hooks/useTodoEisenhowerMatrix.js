@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import {
   groupMatrixTasks,
-  matrixPlacement,
   matrixReference,
   DEFAULT_MATRIX_QUADRANT,
   validCalendarDay,
@@ -218,8 +217,6 @@ export function useTodoEisenhowerMatrix({
       if (
         !current ||
         current.status === "Done" ||
-        (quadrant !== undefined && matrixPlacement(current, preferences[key], latest.current.today)
-          .overdue) ||
         scope.writes.has(key)
       )
         return false;
