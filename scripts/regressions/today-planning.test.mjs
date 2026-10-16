@@ -136,6 +136,34 @@ async function quickAddFixture({ mobile = false, add, update, remove, derived = 
   return { root, calls, optionsCalls, navigator, bucket, input, load, transport, header: () => root.root.findByType(Header), async type(value) { await act(async () => input().props.onChange({ target: { value } })); }, async close() { await act(async () => root.unmount()); } };
 }
 
+test('Calendar ignores Today focus, keeps selected project, and creates an untimed task on the selected personal day', async () => {
+  const f = await quickAddFixture({ add: async payload => ({ ...payload, _id: '99999999-9999-4999-8999-999999999999', creationConfirmed: true, status: 'Open' }) });
+  try {
+    const Calendar = (await f.load('src/components/TodoCalendarView.jsx')).default;
+    const Dialog = (await f.load('src/components/TaskCreationDialog.jsx')).default;
+    await act(async () => f.header().props.setProjectFilter([other]));
+    await act(async () => f.header().props.onFocusViewChange('today'));
+    assert.equal(f.header().props.visibleOpenTodos.length, 0);
+    await act(async () => f.header().props.setViewMode('calendar'));
+    const calendar = () => f.root.root.findByType(Calendar);
+    assert.equal(calendar().props.entries.length, 2, 'Weekly candidates are independent of the previous Today focus');
+    await act(async () => calendar().props.onSelectDay('2026-10-14'));
+    await act(async () => f.header().props.onAddMatrixTask());
+    const dialog = () => f.root.root.findByType(Dialog);
+    assert.equal(dialog().props.draft.workDay, '2026-10-14'); assert.equal(dialog().props.draft.dueDate, ''); assert.equal(dialog().props.draft.projectId, other);
+    await act(async () => dialog().props.setTitle('Synthetic selected-day creation'));
+    await act(async () => dialog().props.onSubmit());
+    const write = f.transport.calls.find(r => r.operation === 'insert' && r.table === 'task_eisenhower_preferences');
+    assert.equal(write.payload.planned_day, '2026-10-14'); assert.equal(write.payload.planned_start_minute, undefined);
+    assert.equal(f.calls[0].dueDate, ''); assert.deepEqual(Array.from(f.header().props.projectFilter), [other]);
+    await act(async () => dialog().props.onClose());
+    await act(async () => f.header().props.setViewMode('list'));
+    assert.equal(f.header().props.focusView, 'today');
+    await act(async () => f.header().props.setViewMode('calendar'));
+    assert.equal(calendar().props.selectedDay, '2026-10-14');
+  } finally { await f.close(); }
+});
+
 const destinationProject = { id: '99999999-9999-4999-8999-999999999999', name: 'Synthetic selected project', tasks: [], registers: {}, tracker: [] };
 for (const view of ['list', 'timeline']) {
   test(`${view} defaults successive tasks to the single selected project and keeps that project across day changes`, async () => {

@@ -22,6 +22,8 @@ import TodoBoardView from './TodoBoardView';
 import TodoBucketSection from './TodoBucketSection';
 import TodoKanbanBoard from './TodoKanbanBoard';
 import TodoEisenhowerMatrix from './TodoEisenhowerMatrix';
+import TodoCalendarView from './TodoCalendarView';
+import { matchesPreferenceSnapshot, preferenceSnapshot, calendarEntries } from '../utils/todoCalendar';
 import TaskPlanningControls from './TaskPlanningControls';
 import TaskCreationFields from './TaskCreationFields';
 import TaskCreationDialog from './TaskCreationDialog';
@@ -101,7 +103,7 @@ const MOBILE_COMPLETE_DELAY_MS = 3200;
 const TODO_VIEW_MODE_KEY = 'pmworkspace:todo-view-mode:v1';
 const TODO_FUTURE_MONTHS_KEY = 'pmworkspace:todo-future-months:v1';
 const TODO_COMMAND_STATE_KEY = 'pmworkspace:todo-command-state:v1';
-const isMatrixCreation = key => key === 'matrix' || key.startsWith('matrix:');
+const isMatrixCreation = key => key === 'matrix' || key.startsWith('calendar:') || key.startsWith('matrix:');
 
 const readTodoCommandState = () => {
   const cached = readLocalJson(TODO_COMMAND_STATE_KEY, {});
@@ -181,6 +183,8 @@ const TodoView = ({
   const [focusView, setFocusView] = useState(() => readLocalJson(TODO_VIEW_MODE_KEY,{})?.mode==='matrix'
     ? normalizeTodoFocusView(initialMatrixMemory.current.matrixFocus || TODO_FOCUS_VIEWS.today) : initialCommandState.focusView);
   const today = useLocalCalendarDay();
+  const [calendarSelection, setCalendarSelection] = useState({ owner: currentUserId, day: today });
+  const calendarDay = calendarSelection.owner === currentUserId ? calendarSelection.day : today;
   const matrixFocus = useRef(normalizeTodoFocusView(initialMatrixMemory.current.matrixFocus || TODO_FOCUS_VIEWS.today));
   const previousFocus = useRef(normalizeTodoFocusView(initialMatrixMemory.current.previousFocus || initialCommandState.focusView));
   const [scope, setScope] = useState(initialCommandState.scope);
@@ -222,6 +226,7 @@ const TodoView = ({
   const [viewMode, setViewMode] = useState(() => {
     const cached = readLocalJson(TODO_VIEW_MODE_KEY, {});
     if (cached?.mode === 'matrix') return 'matrix';
+    if (cached?.mode === 'calendar' && !isExternalView) return 'calendar';
     if (cached?.mode === 'kanban') return 'kanban';
     if (cached?.mode === 'board' || cached?.mode === 'timeline') return 'timeline';
     return 'list';
@@ -297,7 +302,7 @@ const TodoView = ({
   };
 
   const creationDraft = (bucketKey) => {
-    const fallbackDay = focusView === 'today' || focusView === 'tomorrow' ? getTodoCreationDueDate('today', today, focusView) : '';
+    const fallbackDay = bucketKey.startsWith('calendar:') ? bucketKey.slice(9) : focusView === 'today' || focusView === 'tomorrow' ? getTodoCreationDueDate('today', today, focusView) : '';
     const dueDate = isMatrixCreation(bucketKey) ? '' : getTodoCreationDueDate(bucketKey, today, focusView);
     const stored = creationDrafts.owner === currentUserId ? creationDrafts.values[bucketKey] : undefined;
     const projectId = stored?.projectExplicit && stored.projectContext === creationProjectContext ? stored.projectId : defaultCreationProjectId;
@@ -501,12 +506,13 @@ const TodoView = ({
   const personalPlanTodos = [...new Map([...candidates.mergedOpenTodos, ...[...creationRecords.current.records.values()].map(record => record.task ? allProjectManualTodos.find(task => task._id === record.task._id) || record.task : null).filter(Boolean)].map(task => [taskViewIdentity(task), task])).values()];
   const personalPlan = useTodoEisenhowerMatrix({
     currentUserId, isExternalView, enabled: !isExternalView || viewMode === 'matrix',
-    todos: personalPlanTodos, today,
+    todos: personalPlanTodos, today, calendarEnabled: viewMode === 'calendar',
   });
   const latestPersonalPlan = useRef(personalPlan);
   latestPersonalPlan.current = personalPlan;
   const {
     activeFilterCount,
+    calendarOpenTodos,
     allTodoItems,
     filteredTransientTodos,
     focusCounts,
@@ -522,7 +528,7 @@ const TodoView = ({
     currentProject,
     currentUserId,
     currentUserName,
-    focusView,
+    focusView: viewMode === 'calendar' ? 'all' : focusView,
     isExternalView,
     ownerFilter,
     pendingCompletedTodos,
@@ -581,7 +587,8 @@ const TodoView = ({
     if (options?.moveWorkDay && options.expectedPreference) {
       const preference = latestPersonalPlan.current.preferences[matrixReference(originalTodo)?.task_key];
       const expected = options.expectedPreference;
-      if (!(options.retryPersonalOnly && preference?.planned_day === value) && ((preference?.id || null) !== expected.id || (preference?.version || null) !== expected.version || (preference?.planned_day || null) !== expected.day)) {
+      const matchingRetry = options.retryPersonalOnly && preference?.planned_day === value && (preference?.planned_start_minute ?? null) === (expected.start ?? null) && (preference?.planned_duration_minutes ?? null) === (expected.duration ?? null);
+      if (!matchingRetry && !matchesPreferenceSnapshot(preference, expected)) {
         setPlanNotice('Your personal day changed. Check it before rescheduling.'); return null;
       }
     }
@@ -885,7 +892,7 @@ const TodoView = ({
     if (record?.task) {
       if (reviewLatest) {
         const preference = latestPersonalPlan.current.preferences[matrixReference(record.task)?.task_key];
-        record.expectedPreference = { id: preference?.id || null, version: preference?.version || null, day: preference?.planned_day || null };
+        record.expectedPreference = preferenceSnapshot(preference);
       }
       record.stage = 'planning'; record.failed = false;
       setCreationRevision(value => value + 1);
@@ -969,7 +976,7 @@ const TodoView = ({
       record.processing = true;
       if (!record.expectedPreference) {
         const preference = personalPlan.preferences[matrixReference(task)?.task_key];
-        record.expectedPreference = { id: preference?.id || null, version: preference?.version || null, day: preference?.planned_day || null };
+        record.expectedPreference = preferenceSnapshot(preference);
       }
       const quadrant = isMatrixCreation(record.bucketKey) ? record.draft.quadrant : undefined;
       void personalPlan.planTask(task, { day: record.draft.workDay || null, quadrant }, record.expectedPreference).then(saved => {
@@ -1213,7 +1220,7 @@ const TodoView = ({
         <TodoViewHeaderControls
           activeFilterCount={activeFilterCount}
           bucketFilter={bucketFilter}
-          bucketOptions={(viewMode==='matrix'?matrixSections:filterableBucketSections).map((bucket) => ({ value: bucket.key, label: bucket.label }))}
+          bucketOptions={(viewMode === 'calendar' ? [] : viewMode==='matrix'?matrixSections:filterableBucketSections).map((bucket) => ({ value: bucket.key, label: bucket.label }))}
           clearAllFilters={clearAllFilters}
           focusCounts={focusCounts}
           focusView={focusView}
@@ -1225,7 +1232,7 @@ const TodoView = ({
           ownerOptions={ownerOptions}
           onFocusViewChange={handleFocusViewChange}
           onQuickCapture={isExternalView ? undefined : onQuickCapture}
-          onAddMatrixTask={!isExternalView && onAddTodo ? () => openCreation('matrix') : undefined}
+          onAddMatrixTask={!isExternalView && onAddTodo ? () => openCreation(viewMode === 'calendar' ? `calendar:${calendarDay}` : 'matrix') : undefined}
           quickCaptureStatus={isExternalView ? undefined : quickCaptureStatus}
           onScopeChange={handleScopeChange}
           onRefreshTasks={scope === 'all' ? () => { setSourceReloadNonce(value => value + 1); void personalPlan.reload(); } : undefined}
@@ -1249,7 +1256,8 @@ const TodoView = ({
           sourceOptions={SOURCE_FILTER_OPTIONS.filter((option) => option.value !== 'all')}
           setSourceFilter={setSourceFilter}
           viewMode={viewMode}
-          visibleOpenTodos={visibleOpenTodos}
+          calendarAvailable={!isExternalView}
+          visibleOpenTodos={viewMode === 'calendar' ? calendarOpenTodos : visibleOpenTodos}
         />
 
         {scope === 'all' && (loadingAllProjects || sourceLoadState.error || !sourceCurrent) ? (
@@ -1265,9 +1273,17 @@ const TodoView = ({
             <button type="button" disabled={personalPlan.loading || personalPlan.offline || Object.keys(personalPlan.pending).length > 0} onClick={personalPlan.reload} className="ml-2 min-h-11 px-3 font-semibold underline">Retry personal plan</button>
           </div>
         ) : null}
+        {!isExternalView ? <div hidden={viewMode !== 'calendar'}><TodoCalendarView key={currentUserId} owner={currentUserId} enabled={viewMode === 'calendar'} today={today} selectedDay={calendarDay} onSelectDay={day => setCalendarSelection({ owner: currentUserId, day })}
+          entries={calendarEntries(calendarOpenTodos, personalPlan.preferences)} allEntries={calendarEntries(mergedOpenTodos, personalPlan.preferences)}
+          plan={personalPlan} isMobile={isMobile} onOpenTodo={setSelectedTodo}
+          isLocked={todo => !sourceCurrent || scope === 'all' && !sourceLoadState.confirmed || Boolean(currentDeadlineSaves[todo._id] || deadlineOperations.current.ids.has(todo._id) || pendingCompletedTodos[taskViewIdentity(todo)])}
+          onPlanSlot={(todo, slot, expected) => {
+            if (currentOwner.current !== currentUserId || !sourceCurrent || scope === 'all' && !sourceLoadState.confirmed || deadlineOperations.current.ids.has(todo._id) || pendingCompletedTodos[taskViewIdentity(todo)] || !mergedOpenTodos.some(item => taskViewIdentity(item) === taskViewIdentity(todo))) return Promise.resolve(false);
+            return personalPlan.planSlot(todo, slot, expected);
+          }} handleCompleteTodo={handleCompleteTodo} transientTodos={Object.values(pendingCompletedTodos)} /></div> : null}
         {((scope === 'all' && !sourceLoadState.confirmed) || (!isExternalView && !personalPlan.ready)) && !visibleOpenTodos.length ? null : viewMode === 'matrix' ? (
           <TodoEisenhowerMatrix matrix={matrix} currentUserId={currentUserId} today={today} isMobile={isMobile} isExternalView={isExternalView} onOpenTodo={setSelectedTodo} onOpenSourceTodo={onOpenSourceTodo} onUpdateTodo={handleUpdateTodo} onNotice={setPlanNotice} planningDrafts={currentDrafts} onPlanningDraftChange={updatePlanningDraft} deadlineSaves={currentDeadlineSaves} handleCompleteTodo={handleCompleteTodo} getChecklistSummary={getChecklistSummaryForTodo} transientTodos={filteredTransientTodos} renderCreation={!isExternalView && onAddTodo ? quadrantCreation : undefined}/>
-        ) : viewMode === 'timeline' ? (
+        ) : viewMode === 'calendar' && !isExternalView ? null : viewMode === 'timeline' ? (
           <TodoBoardView
             bucketSections={bucketSections}
             canReorderTodo={canDragReorderTodo}
