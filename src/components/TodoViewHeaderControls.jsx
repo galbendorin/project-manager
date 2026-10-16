@@ -57,6 +57,7 @@ export default function TodoViewHeaderControls({
   sourceOptions,
   viewMode,
   visibleOpenTodos,
+  calendarAvailable = true,
 }) {
   const secondaryFilterCount = [sourceFilter, ownerFilter, recurrenceFilter, bucketFilter].filter(values => values.length > 0).length;
   const [filtersOpen, setFiltersOpen] = useState(secondaryFilterCount > 0);
@@ -83,7 +84,7 @@ export default function TodoViewHeaderControls({
           {isMobile && quickCaptureStatus ? <p role="status" className="task-inline-capture-status md:hidden">{quickCaptureStatus}</p> : null}
         </div>
         <div className="task-header-view-search">
-          <div aria-label="Task view" className="task-view-options grid grid-cols-4 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
+          <div aria-label="Task view" className="task-view-options grid grid-cols-5 items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
             <button
               type="button"
               aria-pressed={viewMode === 'list'}
@@ -121,6 +122,7 @@ export default function TodoViewHeaderControls({
               Kanban
             </button>
             <button type="button" aria-label="Eisenhower matrix" aria-pressed={viewMode==='matrix'} onClick={()=>setViewMode('matrix')} className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold ${viewMode==='matrix'?'task-active-view bg-[var(--pm-accent)] text-white shadow-sm':'text-slate-500'}`}>Matrix</button>
+            {calendarAvailable ? <button type="button" aria-pressed={viewMode === 'calendar'} onClick={() => setViewMode('calendar')} className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold ${viewMode === 'calendar' ? 'task-active-view' : 'text-slate-500'}`}>Calendar</button> : null}
           </div>
           <div className="task-header-search"><svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="10.5" cy="10.5" r="6.5" /><path strokeLinecap="round" d="m16 16 4 4" /></svg><input
             type="text"
@@ -130,7 +132,7 @@ export default function TodoViewHeaderControls({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3 py-1.5 text-base sm:text-[12px] border border-slate-200 rounded-lg w-full sm:w-64 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
           /></div>
-          {!isMobile && viewMode !== 'matrix' && futureMonthCount > 0 ? (
+          {!isMobile && !['matrix', 'calendar'].includes(viewMode) && futureMonthCount > 0 ? (
             <button
               type="button"
               onClick={() => setShowFutureMonths((value) => !value)}
@@ -146,7 +148,7 @@ export default function TodoViewHeaderControls({
         </div>
       </div>
 
-      <div className="task-command-row"><div className="task-focus-options grid grid-cols-5 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" aria-label="Task focus">
+      <div className="task-command-row">{viewMode !== 'calendar' ? <div className="task-focus-options grid grid-cols-5 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" aria-label="Task focus">
         {FOCUS_OPTIONS.map((option) => {
           const isActive = focusView === option.value;
           return (
@@ -168,7 +170,7 @@ export default function TodoViewHeaderControls({
             </button>
           );
         })}
-      </div>
+      </div> : null}
       {!isMobile ? <div className="task-primary-filters">
         <label className="task-filter-field task-inline-filter"><span>Scope</span><select aria-label="Task scope" value={scope} onChange={e => onScopeChange(e.target.value)}><option value="project">This Project + Other</option><option value="all">All Projects + Other</option></select></label>
         <div className="task-filter-field task-inline-filter"><span>Projects</span><TodoMultiSelectFilter ariaLabel="Projects" allLabel={scope === 'project' ? 'In Scope (This Project + Other)' : 'All Projects + Other'} options={projectSelectOptions} selectedValues={projectFilter} onChange={setProjectFilter} /></div>
@@ -177,7 +179,7 @@ export default function TodoViewHeaderControls({
         {refreshControl}
       </div> : null}</div>
 
-      {focusView === TODO_FOCUS_VIEWS.tomorrow ? <p className="text-xs text-slate-500">Tasks due tomorrow or personally planned for tomorrow.</p> : null}
+      {viewMode !== 'calendar' && focusView === TODO_FOCUS_VIEWS.tomorrow ? <p className="text-xs text-slate-500">Tasks due tomorrow or personally planned for tomorrow.</p> : null}
 
       {isMobile ? (
         <div className="space-y-3">
@@ -202,7 +204,7 @@ export default function TodoViewHeaderControls({
             {refreshControl}</div>
           </div>
 
-          {activeFilterCount > 0 || (viewMode !== 'matrix' && futureMonthCount > 0) ? <div className="flex flex-wrap items-center gap-2">
+          {activeFilterCount > 0 || (!['matrix', 'calendar'].includes(viewMode) && futureMonthCount > 0) ? <div className="flex flex-wrap items-center gap-2">
             {activeFilterCount > 0 ? (
               <span className="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700">
                 {activeFilterCount} active filter{activeFilterCount !== 1 ? 's' : ''}
@@ -217,7 +219,7 @@ export default function TodoViewHeaderControls({
                 Clear
               </button>
             ) : null}
-            {viewMode !== 'matrix' && futureMonthCount > 0 ? (
+            {!['matrix', 'calendar'].includes(viewMode) && futureMonthCount > 0 ? (
               <button
                 type="button"
                 onClick={() => setShowFutureMonths((value) => !value)}
@@ -232,7 +234,7 @@ export default function TodoViewHeaderControls({
             ) : null}
           </div> : null}
 
-          {viewMode !== 'matrix' && !showFutureMonths && futureItemCount > 0 ? (
+          {!['matrix', 'calendar'].includes(viewMode) && !showFutureMonths && futureItemCount > 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500">
               {futureItemCount} task{futureItemCount !== 1 ? 's' : ''} scheduled across the next {futureMonthCount} month{futureMonthCount !== 1 ? 's' : ''} are hidden.
             </div>
@@ -304,12 +306,12 @@ export default function TodoViewHeaderControls({
                     onChange={setRecurrenceFilter}
                   />
 
-                  <TodoMultiSelectFilter
+                  {viewMode !== 'calendar' ? <TodoMultiSelectFilter
                     allLabel="All Buckets"
                     options={bucketOptions}
                     selectedValues={bucketFilter}
                     onChange={setBucketFilter}
-                  />
+                  /> : null}
 
                   {activeFilterCount > 0 ? (
                     <button
@@ -327,7 +329,7 @@ export default function TodoViewHeaderControls({
         </div>
       ) : (
         <div className="space-y-2.5">
-          {viewMode !== 'matrix' && !showFutureMonths && futureItemCount > 0 ? (
+          {!['matrix', 'calendar'].includes(viewMode) && !showFutureMonths && futureItemCount > 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500">
               {futureItemCount} task{futureItemCount !== 1 ? 's' : ''} scheduled across the next {futureMonthCount} month{futureMonthCount !== 1 ? 's' : ''} are hidden.
             </div>
@@ -358,13 +360,13 @@ export default function TodoViewHeaderControls({
             onChange={setRecurrenceFilter}
           /></div>
 
-          <div className="task-filter-field"><span>Buckets</span><TodoMultiSelectFilter
+          {viewMode !== 'calendar' ? <div className="task-filter-field"><span>Buckets</span><TodoMultiSelectFilter
             ariaLabel="Buckets"
             allLabel="All Buckets"
             options={bucketOptions}
             selectedValues={bucketFilter}
             onChange={setBucketFilter}
-          /></div>
+          /></div> : null}
           </div> : null}
         </div>
       )}

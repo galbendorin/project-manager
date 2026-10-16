@@ -168,14 +168,14 @@ export function useTodoViewDerivedData({
       .map((owner) => ({ value: owner, label: owner }));
   }, [mergedOpenTodos]);
 
-  const applyTodoFilters = useCallback((items) => {
+  const applyTodoFilters = useCallback((items, ignoreFocus = false) => {
     let nextItems = [...(items || [])];
 
     nextItems = nextItems.filter((item) => matchesProjectSelection(projectFilter, item));
     nextItems = nextItems.filter((item) => matchesSourceSelection(sourceFilter, item, sourceFilterKeyForItem));
     nextItems = nextItems.filter((item) => matchesOwnerSelection(ownerFilter, item));
     nextItems = nextItems.filter((item) => matchesRecurrenceSelection(recurrenceFilter, item));
-    nextItems = nextItems.filter((item) => matchesTodoFocusView(item, focusView, {
+    if (!ignoreFocus) nextItems = nextItems.filter((item) => matchesTodoFocusView(item, focusView, {
       currentUserId,
       currentUserName,
       today,
@@ -216,6 +216,10 @@ export function useTodoViewDerivedData({
     const hiddenIds = new Set(Object.values(pendingCompletedTodos).map(entry=>taskViewIdentity(entry.todo)));
     return filteredOpenTodos.filter((item) => !hiddenIds.has(taskViewIdentity(item)));
   }, [filteredOpenTodos, pendingCompletedTodos]);
+  const calendarOpenTodos = useMemo(() => {
+    const hiddenIds = new Set(Object.values(pendingCompletedTodos).map(entry => taskViewIdentity(entry.todo)));
+    return applyTodoFilters(mergedOpenTodos, true).filter(item => !hiddenIds.has(taskViewIdentity(item)));
+  }, [applyTodoFilters, mergedOpenTodos, pendingCompletedTodos]);
 
   const projectSelectOptions = useMemo(() => {
     if (scope === 'project') {
@@ -240,6 +244,7 @@ export function useTodoViewDerivedData({
   ), [bucketFilter, ownerFilter, projectFilter, recurrenceFilter, sourceFilter]);
 
   return {
+    calendarOpenTodos,
     activeFilterCount,
     allTodoItems,
     filteredTransientTodos,

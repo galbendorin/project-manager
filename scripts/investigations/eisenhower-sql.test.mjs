@@ -34,6 +34,8 @@ before(async () => {
   );
   await db.exec(await readFile(new URL('../sql/2026-10-05_add_personal_task_planned_day.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../sql/2026-10-07_task_quadrant_choice_day.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../sql/2026-10-16_personal_task_calendar.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../sql/2026-10-16_personal_task_calendar.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../sql/2026-10-07_task_quadrant_choice_day.sql', import.meta.url), 'utf8'));
 });
 after(() => db.close());
@@ -54,6 +56,22 @@ const insert = (user = a) =>
     "insert into public.task_eisenhower_preferences(user_id,manual_todo_id,manual_quadrant) values($1,$2,'not_urgent_important') returning *",
     [user, todo],
   );
+test('Calendar slots save atomically, move days without changing time, and old clients can clear the day', async () => probe(a, async () => {
+  const row = (await insert()).rows[0];
+  const slot = (await db.query("update public.task_eisenhower_preferences set planned_day='2026-10-14',planned_start_minute=600,planned_duration_minutes=60 where id=$1 and version=1 returning *", [row.id])).rows[0];
+  assert.equal(slot.version, 2); assert.equal(slot.planned_start_minute, 600); assert.equal(slot.planned_duration_minutes, 60);
+  assert.equal((await db.query("update public.task_eisenhower_preferences set planned_start_minute=660 where id=$1 and version=1 returning id", [row.id])).rows.length, 0);
+  const moved = (await db.query("update public.task_eisenhower_preferences set planned_day='2026-10-15' where id=$1 returning *", [row.id])).rows[0];
+  assert.equal(moved.planned_start_minute, 600); assert.equal(moved.planned_duration_minutes, 60);
+  const cleared = (await db.query('update public.task_eisenhower_preferences set planned_day=null where id=$1 returning *', [row.id])).rows[0];
+  assert.equal(cleared.planned_start_minute, null); assert.equal(cleared.planned_duration_minutes, null);
+}));
+test('Calendar rejects incomplete, out-of-range, fractional-step and dayless timing', async () => {
+  for (const [start, duration] of [[600, null], [null, 30], [330, 30], [1350, 60], [615, 30], [600, 45], [600, -30]]) {
+    await assert.rejects(probe(a, () => db.query("insert into public.task_eisenhower_preferences(user_id,manual_todo_id,manual_quadrant,planned_day,planned_start_minute,planned_duration_minutes) values($1,$2,'not_urgent_important','2026-10-14',$3,$4)", [a, todo, start, duration])), e => e.code === '23514');
+  }
+  await assert.rejects(probe(a, () => db.query("insert into public.task_eisenhower_preferences(user_id,manual_todo_id,manual_quadrant,planned_start_minute,planned_duration_minutes) values($1,$2,'not_urgent_important',600,30)", [a, todo])), e => e.code === '23514');
+});
 test('personal work-day writes preserve priority and priority writes preserve the date through CAS', async () => probe(a, async () => {
   const row = (await insert()).rows[0];
   const planned = (await db.query("update public.task_eisenhower_preferences set planned_day='2026-10-05' where id=$1 and version=1 returning planned_day::text,manual_quadrant,version", [row.id])).rows[0];

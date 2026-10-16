@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { deadlineDescription, matrixReference, plannedDayForTask, taskViewIdentity, validCalendarDay } from '../utils/todoEisenhower';
+import { preferenceSnapshot } from '../utils/todoCalendar';
 
 export default function TaskPlanningControls({ todo, matrix, today, onUpdateTodo, onOpenSourceTodo, onNotice, draft, onDraftChange, deadlinePending = false, compact = false, presentation = 'default' }) {
   const identity = taskViewIdentity(todo);
@@ -43,7 +44,7 @@ export default function TaskPlanningControls({ todo, matrix, today, onUpdateTodo
   const reschedule = async (reviewLatest = false) => {
     const submitted = pendingReschedule?.deadline || deadline;
     if (busy.current || !available || !validCalendarDay(submitted) || todo.isDerived || todo.planLink || todo.meta?.projectPlanLink) return;
-    const expectedPreference = (!reviewLatest && pendingReschedule?.expectedPreference) || { id: preference?.id || null, version: preference?.version || null, day: preference?.planned_day || null };
+    const expectedPreference = (!reviewLatest && pendingReschedule?.expectedPreference) || preferenceSnapshot(preference);
     const paired = Boolean(pendingReschedule || moveWorkDay);
     busy.current = true; setSaving(true); setMessage('');
     try {

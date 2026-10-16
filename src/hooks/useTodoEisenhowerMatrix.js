@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { matchesPreferenceSnapshot, preferenceSnapshot, validCalendarSlot, validPreferenceTiming } from '../utils/todoCalendar';
 import {
   groupMatrixTasks,
   matrixReference,
@@ -16,6 +17,7 @@ export function useTodoEisenhowerMatrix({
   todos,
   visibleTodos = todos,
   today,
+  calendarEnabled = false,
 }) {
   const [preferences, setPreferences] = useState({});
   const [ready, setReady] = useState(false);
@@ -46,6 +48,7 @@ export function useTodoEisenhowerMatrix({
   const [loadedContext, setLoadedContext] = useState(null);
   const [coveredKeys, setCoveredKeys] = useState(new Set());
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [calendarSchema, setCalendarSchema] = useState({ context: null, available: false, error: '' });
   const session = useRef(null);
   const latest = useRef({ todos, today });
   useEffect(() => {
@@ -71,6 +74,16 @@ export function useTodoEisenhowerMatrix({
       scope.active = false;
     };
   }, [currentUserId, context]);
+  useEffect(() => {
+    const scope = session.current; let cancelled = false;
+    if (!calendarEnabled || !enabled || !currentUserId || isExternalView || !online) return undefined;
+    setCalendarSchema({ context, available: false, error: '' });
+    Promise.resolve(supabase.from('task_eisenhower_preferences').select('planned_start_minute,planned_duration_minutes').limit(0)).then(result => {
+      if (cancelled || !scope?.active || scope !== session.current) return;
+      setCalendarSchema({ context, available: !result.error, error: result.error ? ['42703', 'PGRST204'].includes(result.error.code) ? 'Calendar needs the database update before time blocks can be saved.' : 'Unable to check Calendar storage. Retry loading.' : '' });
+    }).catch(() => { if (!cancelled && scope?.active && scope === session.current) setCalendarSchema({ context, available: false, error: 'Unable to check Calendar storage. Retry loading.' }); });
+    return () => { cancelled = true; };
+  }, [calendarEnabled, enabled, currentUserId, isExternalView, online, context, reloadNonce]);
   const reload = useCallback(async () => {
     const scope = session.current;
     if (
@@ -132,6 +145,7 @@ export function useTodoEisenhowerMatrix({
               seen.has(row.task_key) ||
               !batch.includes(row.task_key) ||
               row.user_id !== currentUserId
+              || !validPreferenceTiming(row)
             )
               throw new Error(
                 "Priority loading was incomplete. Retry loading.",
@@ -188,7 +202,8 @@ export function useTodoEisenhowerMatrix({
     void reload();
   }, [reload, reloadNonce]);
   const patchPreference = useCallback(
-    async (todo, patch, expected) => {
+    async (todo, requestedPatch, expected) => {
+      const patch = requestedPatch;
       const quadrant = patch.manual_quadrant;
       const scope = session.current;
       const reference = matrixReference(todo);
@@ -221,17 +236,21 @@ export function useTodoEisenhowerMatrix({
       )
         return false;
       const old = preferences[key];
+      const intended = { ...old, ...patch, ...(patch.planned_day === null ? { planned_start_minute: null, planned_duration_minutes: null } : {}) };
+      if (!validPreferenceTiming(intended)) return false;
       // A fresh read can confirm a previously lost write acknowledgement.
       if (expected && old && patch.planned_day !== undefined && (old.planned_day || null) === patch.planned_day &&
+        (old.planned_start_minute ?? null) === (patch.planned_day === null ? null : patch.planned_start_minute !== undefined ? patch.planned_start_minute : expected.start ?? null) &&
+        (old.planned_duration_minutes ?? null) === (patch.planned_day === null ? null : patch.planned_duration_minutes !== undefined ? patch.planned_duration_minutes : expected.duration ?? null) &&
         (quadrant === undefined || (old.manual_quadrant === quadrant && old.manual_quadrant_day === patch.manual_quadrant_day))) return true;
       scope.writes.add(key);
       scope.revision += 1;
       if (scope.loading) scope.reloadNeeded = true;
       setPending((prev) => ({ ...prev, [key]: true }));
-      if (expected && ((old?.id || null) !== expected.id || (old?.version || null) !== expected.version || (old?.planned_day || null) !== expected.day)) {
+      if (expected && !matchesPreferenceSnapshot(old, expected)) {
         scope.writes.delete(key);
         setPending(prev => { const next = { ...prev }; delete next[key]; return next; });
-        setError('Your personal day changed elsewhere. Check it before trying again.');
+        setError('Your personal day or time changed elsewhere. Check it before trying again.');
         return false;
       }
       try {
@@ -266,6 +285,9 @@ export function useTodoEisenhowerMatrix({
           (patch.manual_quadrant_day !== undefined && data[0].manual_quadrant_day !== patch.manual_quadrant_day) ||
           (old && patch.manual_quadrant_day === undefined && (data[0].manual_quadrant_day ?? null) !== (old.manual_quadrant_day ?? null)) ||
           (patch.planned_day !== undefined && (data[0].planned_day ?? null) !== patch.planned_day) ||
+          !validPreferenceTiming(data[0]) ||
+          (data[0].planned_start_minute ?? null) !== (intended.planned_start_minute ?? null) ||
+          (data[0].planned_duration_minutes ?? null) !== (intended.planned_duration_minutes ?? null) ||
           (old && quadrant === undefined && data[0].manual_quadrant !== old.manual_quadrant) ||
           (old && patch.planned_day === undefined && (data[0].planned_day ?? null) !== (old.planned_day ?? null)) ||
           data[0].version !== (old ? old.version + 1 : 1)
@@ -312,6 +334,10 @@ export function useTodoEisenhowerMatrix({
   );
   const move = useCallback((todo, quadrant) => patchPreference(todo, { manual_quadrant: quadrant, manual_quadrant_day: latest.current.today }), [patchPreference]);
   const planDay = useCallback((todo, day, expected) => patchPreference(todo, { planned_day: day || null }, expected), [patchPreference]);
+  const planSlot = useCallback((todo, { day, start, duration }, expected) => {
+    if (calendarSchema.context !== context || !calendarSchema.available || !(start === null && duration === null && validCalendarDay(day) || validCalendarSlot(day, start, duration))) return Promise.resolve(false);
+    return patchPreference(todo, { planned_day: day, planned_start_minute: start, planned_duration_minutes: duration }, expected ?? preferenceSnapshot(preferences[matrixReference(todo)?.task_key]));
+  }, [calendarSchema, context, patchPreference, preferences]);
   const planTask = useCallback((todo, { day, quadrant }, expected) => patchPreference(todo, {
     planned_day: day || null,
     ...(quadrant ? { manual_quadrant: quadrant, manual_quadrant_day: latest.current.today } : {}),
@@ -353,6 +379,10 @@ export function useTodoEisenhowerMatrix({
     move,
     planDay,
     planTask,
+    planSlot,
+    calendarReady: calendarSchema.context === context && calendarSchema.available,
+    calendarError: calendarSchema.context === context ? calendarSchema.error : '',
+    reloadCalendar: () => { void reload(); setReloadNonce(value => value + 1); },
     reload,
   };
 }
