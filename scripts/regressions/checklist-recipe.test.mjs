@@ -468,7 +468,7 @@ for (const path of ['src/components/DesktopTodoDetailModal.jsx','src/components/
       const retry=screen.root.findAllByType('button').find(b=>b.children.includes('Retry loading'));
       await act(async()=>retry.props.onClick());assert.equal(retries,1);
       assert.equal(screen.root.findAllByProps({placeholder:'Add item or paste rows'}).length,0);
-      const close=screen.root.findAllByType('button').find(b=>b.children.includes(path.includes('Desktop')?'Close':'Back'));
+      const close=screen.root.findAllByType('button').find(b=>b.children.includes('Close'));
       await act(async()=>close.props.onClick());assert.equal(closed,1);
     } finally {if(screen)await act(async()=>screen.unmount());await f.close();}
   });
