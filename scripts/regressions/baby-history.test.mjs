@@ -162,39 +162,40 @@ test('failed history loads offer retry and never expose an empty editable day', 
   let root;
   await act(async () => { root = create(React.createElement(PatternPanel, { dateKeys: [past], feeds: [], nappies: [], sleepBlocks: [], rangeError: 'Synthetic load failure', rangeLoading: false, setPatternRange() {}, onRetryRange() { retried = true; } })); });
   try {
-    assert.equal(root.root.findAllByType('button').filter(node => node.props['aria-label']?.startsWith('Edit sleep')).length, 0);
+    assert.equal(root.root.findAllByType('button').find(node => node.children.includes('Edit history')).props.disabled, true);
     await act(async () => root.root.findAllByType('button').find(node => node.children.includes('Retry history')).props.onClick());
     assert.equal(retried, true);
   } finally { await act(async () => root.unmount()); }
 });
 
 const text = node => node.children.filter(child => typeof child === 'string').join('');
-test('history edits include empty days, retain a failed draft through refresh and save only that date', async () => {
+test('history edits several dates directly, retains the batch through refresh/failure and saves once', async () => {
   const load = await sourceModules(mockTransport(() => ({ data: [] })));
-  const { PatternPanel, SleepGrid } = await load('src/components/BabyView.jsx');
+  const { PatternPanel } = await load('src/components/BabyView.jsx');
   const calls = [];
   let fail = true;
   const props = { birthDate: '2026-04-22', dateKeys: [past, other], feeds: [], nappies: [], sleepBlocks: [], patternRange: 'week', rangeLabel: 'Synthetic week', rangeLoading: false, selectedDate: other, setPatternRange() {}, saving: false,
-    onSaveSleep: async (blocks, date) => { calls.push({ blocks: [...blocks], date }); if (fail) throw new Error('Synthetic save failure'); } };
+    onSaveHistory: async (changes) => { calls.push(changes); if (fail) throw new Error('Synthetic save failure'); } };
   let root;
   await act(async () => { root = create(React.createElement(PatternPanel, props)); });
   try {
-    const edits = () => root.root.findAllByType('button').filter(node => text(node) === 'Edit sleep');
-    assert.equal(edits().length, 4); // Both responsive presentations offer each date.
-    await act(async () => edits()[0].props.onClick({}));
-    const grid = () => root.root.findByType(SleepGrid);
-    const slot = () => grid().findAllByType('button').filter(node => node.props['data-sleep-block-index'] === 4).at(-1);
-    await act(async () => slot().props.onClick({ detail: 0 }));
-    const save = () => grid().findAllByType('button').find(node => text(node) === 'Save sleep');
+    const button = label => root.root.findAllByType('button').find(node => text(node) === label);
+    await act(async () => button('Edit history').props.onClick());
+    const slot = (date, index) => root.root.findAll(node => node.type === 'div' && node.props['data-history-date'] === date).at(-1)
+      .findAllByType('button').find(node => node.props['data-sleep-block-index'] === index);
+    await act(async () => slot(past, 4).props.onClick({ detail: 0 }));
+    await act(async () => slot(other, 8).props.onClick({ detail: 0 }));
+    assert.equal(calls.length, 0);
+    const save = () => button('Save changes');
     await act(async () => save().props.onClick());
-    assert.equal(calls[0].date, past);
-    assert.deepEqual(calls[0].blocks, [4]);
+    assert.deepEqual(Array.from(calls[0], row => `${row.dateKey}:${row.blockIndex}:${row.status}`), [`${past}:4:asleep`, `${other}:8:asleep`]);
     assert.ok(root.root.findByProps({ role: 'alert' }));
-    await act(async () => root.update(React.createElement(PatternPanel, { ...props, sleepBlocks: [{ sleepDate: past, blockIndex: 20, status: 'asleep' }] })));
-    assert.equal(slot().props['aria-pressed'], true);
+    await act(async () => root.update(React.createElement(PatternPanel, { ...props, dateKeys: ['2026-10-18'], rangeLoading: true, sleepBlocks: [{ sleepDate: past, blockIndex: 20, status: 'asleep' }] })));
+    assert.equal(slot(past, 4).props['aria-pressed'], true);
+    assert.equal(slot(other, 8).props['aria-pressed'], true);
     fail = false;
     await act(async () => save().props.onClick());
-    assert.equal(root.root.findAllByType(SleepGrid).length, 0);
+    assert.equal(root.root.findAllByType('button').filter(node => text(node) === 'Save changes').length, 0);
     assert.deepEqual(calls[1], calls[0]);
     assert.ok(root.root.findByProps({ role: 'status' }));
   } finally { await act(async () => root.unmount()); }

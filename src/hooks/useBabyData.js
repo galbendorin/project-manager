@@ -227,15 +227,18 @@ export function useBabyData({ currentUserId } = {}) {
           .gte('local_date', startDate)
           .lte('local_date', endDate)
           .order('occurred_at', { ascending: true }),
-        supabase
-          .from('baby_sleep_blocks')
-          .select(SLEEP_SELECT)
-          .eq('baby_id', babyProfile.id)
-          .gte('sleep_date', startDate)
-          .lte('sleep_date', endDate)
-          .eq('status', 'asleep')
-          .order('sleep_date', { ascending: true })
-          .order('block_index', { ascending: true }),
+        (async () => {
+          const rows = [];
+          for (let offset = 0; ; offset += 500) {
+            const result = await supabase.from('baby_sleep_blocks').select(SLEEP_SELECT)
+              .eq('baby_id', babyProfile.id).gte('sleep_date', startDate).lte('sleep_date', endDate)
+              .eq('status', 'asleep').order('sleep_date', { ascending: true })
+              .order('block_index', { ascending: true }).range(offset, offset + 499);
+            if (result.error) return result;
+            rows.push(...(result.data || []));
+            if ((result.data || []).length < 500 || request !== rangeRequestRef.current) return { data: rows };
+          }
+        })(),
       ]);
 
       if (feedResult.error) throw feedResult.error;
@@ -489,6 +492,74 @@ export function useBabyData({ currentUserId } = {}) {
     }
   }, [currentUserId, requireProfile, selectedDate]);
 
+  const saveSleepHistory = useCallback(async (changes) => {
+    const profile = requireProfile();
+    if (sleepScopeRef.current?.currentUserId !== currentUserId || sleepScopeRef.current?.profileId !== profile.id) {
+      throw new Error('The tracker changed. Reopen sleep history before saving.');
+    }
+    if (sleepSaveRef.current) throw new Error('Wait for the current sleep save to finish.');
+    if (!Array.isArray(changes) || changes.length > 3840) throw new Error('Invalid sleep history changes.');
+    if (!changes.length) return [];
+    const identities = new Set();
+    const rows = changes.map(({ dateKey, blockIndex, status }) => {
+      const date = new Date(`${dateKey}T12:00:00Z`);
+      const key = `${dateKey}:${blockIndex}`;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== dateKey
+        || !Number.isInteger(blockIndex) || blockIndex < 0 || blockIndex > 95
+        || !['asleep', 'awake'].includes(status) || identities.has(key)) throw new Error('Invalid sleep history changes.');
+      identities.add(key);
+      return { baby_id: profile.id, user_id: currentUserId, household_project_id: profile.householdProjectId || null,
+        sleep_date: dateKey, block_index: blockIndex, status };
+    });
+    const operation = {};
+    const isCurrentScope = () => sleepScopeRef.current?.currentUserId === currentUserId
+      && sleepScopeRef.current?.profileId === profile.id && sleepSaveRef.current === operation;
+    sleepSaveRef.current = operation;
+    setSaving(true);
+    setError('');
+    try {
+      // One atomic write for all edited dates; unchanged blocks are not replaced.
+      const { error: saveError } = await supabase.from('baby_sleep_blocks')
+        .upsert(rows, { onConflict: 'baby_id,sleep_date,block_index' });
+      if (saveError) throw saveError;
+      if (!isCurrentScope()) throw new Error('The tracker changed. Reopen sleep history.');
+      // Read each date separately: even a full month stays below the server's
+      // response row limit (at most 96 blocks per read).
+      const dates = [...new Set(rows.map((row) => row.sleep_date))];
+      const results = await Promise.all(dates.map((dateKey) => supabase.from('baby_sleep_blocks')
+        .select(SLEEP_SELECT).eq('baby_id', profile.id).eq('sleep_date', dateKey)
+        .in('block_index', rows.filter((row) => row.sleep_date === dateKey).map((row) => row.block_index))));
+      const failed = results.find((result) => result.error);
+      if (failed) throw failed.error;
+      const confirmed = new Map(results.flatMap((result) => result.data || [])
+        .filter((row) => row.baby_id === profile.id)
+        .map((row) => [`${row.sleep_date}:${row.block_index}`, row]));
+      if (rows.some((row) => confirmed.get(`${row.sleep_date}:${row.block_index}`)?.status !== row.status)) {
+        throw new Error('Changes were not confirmed. Your edits are kept; retry Save changes.');
+      }
+      const saved = rows.map((row) => mapSleepBlock(confirmed.get(`${row.sleep_date}:${row.block_index}`)));
+      if (isCurrentScope()) {
+        rangeRequestRef.current += 1;
+        setRangeLoading(false);
+        const merge = (previous, dateKey = null) => [...previous.filter((block) => !identities.has(`${block.sleepDate}:${block.blockIndex}`)),
+          ...saved.filter((block) => block.status === 'asleep' && (!dateKey || block.sleepDate === dateKey))];
+        const currentDate = sleepScopeRef.current.selectedDate;
+        if (dates.includes(currentDate)) setSleepBlocks((previous) => merge(previous, currentDate));
+        setRangeSleepBlocks((previous) => merge(previous));
+        setDayVersion((version) => version + 1);
+      }
+      return saved;
+    } catch (nextError) {
+      if (isCurrentScope()) setError(nextError?.message || 'Unable to save sleep history.');
+      throw nextError;
+    } finally {
+      if (sleepSaveRef.current === operation) {
+        if (isCurrentScope()) setSaving(false);
+        sleepSaveRef.current = null;
+      }
+    }
+  }, [currentUserId, requireProfile]);
+
   const addWeight = useCallback(async ({ measuredAt = selectedDate, weightValue, weightUnit = 'kg', notes = '' } = {}) => {
     const profile = requireProfile();
     setSaving(true);
@@ -535,6 +606,7 @@ export function useBabyData({ currentUserId } = {}) {
     rangeNappies,
     rangeSleepBlocks,
     saveSleepBlocks,
+    saveSleepHistory,
     saving,
     selectedDate,
     setSelectedDate,

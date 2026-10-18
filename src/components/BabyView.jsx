@@ -69,9 +69,9 @@ const formatGuidanceDateRange = (guidance = null) => {
   return `${formatBabyDisplayDate(guidance.startDate)} to ${formatBabyDisplayDate(guidance.endDate)}`;
 };
 
-const getSleepBlockClassName = ({ asleep = false, guideStatus = 'awake', compact = false } = {}) => {
+const getSleepBlockClassName = ({ asleep = false, guideStatus = 'awake', compact = false, history = false } = {}) => {
   const sizeClass = compact
-    ? 'flex h-4 items-center justify-center overflow-hidden text-[7px] font-black leading-none'
+    ? `flex ${history ? 'h-[28px]' : 'h-4'} items-center justify-center overflow-hidden text-[7px] font-black leading-none`
     : 'h-4 sm:h-5';
 
   if (asleep && guideStatus === 'awake') {
@@ -618,6 +618,7 @@ const SleepHourColumn = ({
   onBlockKeyboard = null,
   compact = false,
   disabled = false,
+  history = false,
 }) => {
   const pointerTypeRef = useRef(null);
   const isBedtime = hour < 7 || hour >= 22;
@@ -632,7 +633,7 @@ const SleepHourColumn = ({
           const asleep = asleepSet.has(index);
           const guideStatus = getSleepGuidanceBlockStatus(index, sleepGuidance);
           const markers = careMarkers.get(index) || [];
-          const className = getSleepBlockClassName({ asleep, guideStatus, compact });
+          const className = getSleepBlockClassName({ asleep, guideStatus, compact, history });
           const markerContent = compact && markers.length ? (
             <span className={asleep ? 'flex items-center gap-px rounded bg-white/95 px-0.5' : 'flex items-center gap-px'}>
               {markers.map((marker) => (
@@ -695,7 +696,7 @@ const SleepHourColumn = ({
   );
 };
 
-const SleepMatrix = ({ days, selectedDate, onEditSleep, editing }) => (
+const SleepMatrix = ({ days, selectedDate, editor = null, disabled = false }) => (
   <div className="overflow-x-auto rounded-[24px] border border-slate-200 bg-white shadow-sm">
     <div className="min-w-[720px] sm:min-w-0">
       <div className="grid grid-cols-[76px_minmax(0,1fr)] border-b border-slate-200 bg-slate-50 sm:grid-cols-[92px_minmax(0,1fr)]">
@@ -717,7 +718,7 @@ const SleepMatrix = ({ days, selectedDate, onEditSleep, editing }) => (
           const hasAnySleep = asleepSet.size > 0;
           const comparison = summarizeSleepGuidanceComparison({ sleepBlocks: day.sleepBlocks, guidance: day.sleepGuidance });
           return (
-            <div key={day.dateKey} className={`grid grid-cols-[76px_minmax(0,1fr)] border-b border-slate-100 last:border-b-0 sm:grid-cols-[92px_minmax(0,1fr)] ${day.dateKey === selectedDate ? 'bg-sky-50/50' : 'bg-white'}`}>
+            <div key={day.dateKey} data-history-date={day.dateKey} className={`grid grid-cols-[76px_minmax(0,1fr)] border-b border-slate-100 last:border-b-0 sm:grid-cols-[92px_minmax(0,1fr)] ${day.dateKey === selectedDate ? 'bg-sky-50/50' : 'bg-white'}`}>
               <div className="border-r border-slate-200 px-2 py-2">
                 <div className="text-[10px] font-black leading-tight text-slate-900 sm:text-xs">{formatBabyDisplayDate(day.dateKey)}</div>
                 <div className="mt-1 flex flex-wrap gap-1 text-[9px] font-bold text-slate-500">
@@ -727,9 +728,7 @@ const SleepMatrix = ({ days, selectedDate, onEditSleep, editing }) => (
                   {day.sleepGuidance ? <span>{day.sleepGuidance.monthLabel}</span> : null}
                   {comparison.actualOutsideGuideMinutes > 0 ? <span className="text-violet-700">+{formatDuration(comparison.actualOutsideGuideMinutes)}</span> : null}
                 </div>
-                <button type="button" onClick={(event) => onEditSleep(day, event)} disabled={editing} aria-label={`Edit sleep for ${formatBabyDisplayDate(day.dateKey)}`} className="mt-1 min-h-11 text-xs font-bold text-indigo-700 underline-offset-2 hover:underline disabled:opacity-40">
-                  Edit sleep
-                </button>
+                {day.changed ? <p className="mt-1 text-[10px] font-bold text-indigo-700">Edited</p> : null}
               </div>
               <div className="grid gap-px bg-slate-200 p-px" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
                 {Array.from({ length: 96 }, (_, index) => (
@@ -748,11 +747,24 @@ const SleepMatrix = ({ days, selectedDate, onEditSleep, editing }) => (
                             : index % 4 === 0
                               ? 'bg-slate-50 text-slate-800'
                               : 'bg-white text-slate-800';
+                    const Block = editor ? 'button' : 'div';
                     return (
-                      <div
+                      <Block
                         key={index}
+                        {...(editor ? {
+                          type: 'button', disabled,
+                          'data-sleep-block-index': index,
+                          'aria-label': `${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)} ${asleep ? 'asleep' : 'awake'}`,
+                          'aria-pressed': asleep,
+                          onPointerDown: (event) => {
+                            event.preventDefault();
+                            event.currentTarget.setPointerCapture?.(event.pointerId);
+                            editor.start(day.dateKey, index);
+                          },
+                          onClick: (event) => { if (event.detail === 0) editor.toggle(day.dateKey, index); },
+                        } : {})}
                         title={`${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)} · ${getSleepGuidanceStatusLabel(guideStatus)}${markers.length ? ` · ${markers.join('')}` : ''}`}
-                        className={`flex h-5 min-w-0 items-center justify-center overflow-hidden text-[8px] font-black leading-none ${guideClass} ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
+                        className={`flex ${editor ? 'min-h-[44px] touch-none focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700' : 'h-5'} min-w-0 items-center justify-center overflow-hidden text-[8px] font-black leading-none ${guideClass} ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
                       >
                         {markers.map((marker) => (
                           <span
@@ -766,7 +778,7 @@ const SleepMatrix = ({ days, selectedDate, onEditSleep, editing }) => (
                             {marker}
                           </span>
                         ))}
-                      </div>
+                      </Block>
                     );
                   })()
                 ))}
@@ -867,7 +879,37 @@ const buildSleepGuidanceSegments = (guidance = null) => {
   return segments;
 };
 
-const MobilePatternTimeline = ({ days, selectedDate, onEditSleep, editing }) => (
+const HistoryDayGrid = ({ day, editor, disabled }) => {
+  const [rangeStart, setRangeStart] = useState(null);
+  const asleepSet = normalizeSleepBlocks(day.sleepBlocks);
+  const careMarkers = buildCareMarkersByBlock({ feeds: day.feeds, nappies: day.nappies });
+  return (
+    <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 p-1.5">
+      <div className="grid grid-cols-4 gap-1.5">
+        {Array.from({ length: 24 }, (_, hour) => (
+          <SleepHourColumn key={hour} hour={hour} asleepSet={asleepSet} careMarkers={careMarkers}
+            sleepGuidance={day.sleepGuidance} compact history disabled={disabled}
+            onBlockPointerDown={(index) => { setRangeStart(null); editor.start(day.dateKey, index); }}
+            onBlockTap={(index) => {
+              if (rangeStart) {
+                editor.paint(day.dateKey, rangeStart.index, index, rangeStart.asleep);
+                setRangeStart(null);
+              } else {
+                const asleep = !asleepSet.has(index);
+                editor.paint(day.dateKey, index, index, asleep);
+                setRangeStart({ index, asleep });
+              }
+            }}
+            onBlockKeyboard={(index) => { setRangeStart(null); editor.toggle(day.dateKey, index); }}
+          />
+        ))}
+      </div>
+      {rangeStart ? <p className="mt-2 text-xs font-semibold text-sky-700">From {getSleepBlockTimeLabel(rangeStart.index)} · tap the last block to fill the range.</p> : null}
+    </div>
+  );
+};
+
+const MobilePatternTimeline = ({ days, selectedDate, editor = null, disabled = false }) => (
   <div className="space-y-3">
     {days.map((day) => {
       const sleepSummary = summarizeSleepBlocks(day.sleepBlocks);
@@ -877,7 +919,7 @@ const MobilePatternTimeline = ({ days, selectedDate, onEditSleep, editing }) => 
       const comparison = summarizeSleepGuidanceComparison({ sleepBlocks: day.sleepBlocks, guidance: day.sleepGuidance });
 
       return (
-        <article key={day.dateKey} className={`rounded-[24px] border p-3 shadow-sm ${isSelected ? 'border-sky-200 bg-sky-50/50' : 'border-slate-200 bg-white'}`}>
+        <article key={day.dateKey} data-history-date={day.dateKey} aria-label={`Sleep for ${formatBabyDisplayDate(day.dateKey)}`} className={`rounded-[24px] border p-3 shadow-sm ${isSelected ? 'border-sky-200 bg-sky-50/50' : 'border-slate-200 bg-white'}`}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-base font-black leading-tight text-slate-950">{formatBabyDisplayDate(day.dateKey)}</p>
@@ -893,13 +935,11 @@ const MobilePatternTimeline = ({ days, selectedDate, onEditSleep, editing }) => 
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
               {isSelected ? <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-black text-sky-700">Selected</span> : null}
-              <button type="button" onClick={(event) => onEditSleep(day, event)} disabled={editing} aria-label={`Edit sleep for ${formatBabyDisplayDate(day.dateKey)}`} className="min-h-11 rounded-xl border border-indigo-200 bg-white px-3 text-xs font-bold text-indigo-700 disabled:opacity-40">
-                Edit sleep
-              </button>
+              {day.changed ? <span className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700">Edited</span> : null}
             </div>
           </div>
 
-          <div className="mt-3 space-y-2 rounded-[20px] border border-slate-100 bg-slate-50 p-2.5">
+          {editor ? <HistoryDayGrid day={day} editor={editor} disabled={disabled} /> : <div className="mt-3 space-y-2 rounded-[20px] border border-slate-100 bg-slate-50 p-2.5">
             <TimelineAxis />
             <TimelineLane label="Sleep" tone="sleep">
               <span className="absolute inset-x-1 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-100" />
@@ -938,7 +978,7 @@ const MobilePatternTimeline = ({ days, selectedDate, onEditSleep, editing }) => 
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">No feeds</span>
               )}
             </TimelineLane>
-          </div>
+          </div>}
         </article>
       );
     })}
@@ -1297,28 +1337,33 @@ const PatternPanel = ({
   selectedDate,
   setPatternRange,
   sleepBlocks,
-  onSaveSleep,
+  onSaveHistory,
   saving,
 }) => {
-  const [editingDay, setEditingDay] = useState(null);
+  const [editSession, setEditSession] = useState(null);
   const [savedMessage, setSavedMessage] = useState('');
-  const editorRef = useRef(null);
-  const openerRef = useRef(null);
-  const closeEditor = () => {
-    setEditingDay(null);
-    requestAnimationFrame(() => openerRef.current?.focus?.());
+  const [saveError, setSaveError] = useState('');
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [attemptedCells, setAttemptedCells] = useState(new Set());
+  const savePendingRef = useRef(false);
+  const editButtonRef = useRef(null);
+  const dragRef = useRef(null);
+  const busy = saving || savingDraft;
+  const closeEditor = (reload = false) => {
+    dragRef.current = null;
+    setEditSession(null);
+    setAttemptedCells(new Set());
+    setSaveError('');
+    if (reload && attemptedCells.size) void onRetryRange?.();
+    requestAnimationFrame(() => editButtonRef.current?.focus?.());
   };
-  const editSleep = (day, event) => {
-    openerRef.current = event?.currentTarget;
+  const startEditing = () => {
     setSavedMessage('');
-    setEditingDay(day);
+    setSaveError('');
+    setAttemptedCells(new Set());
+    setEditSession({ rangeLabel, days: patternDays.map((day) => ({ ...day,
+      original: normalizeSleepBlocks(day.sleepBlocks), draft: normalizeSleepBlocks(day.sleepBlocks) })) });
   };
-  useEffect(() => {
-    if (editingDay) {
-      editorRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
-      editorRef.current?.focus?.({ preventScroll: true });
-    }
-  }, [editingDay]);
   const feedsByDate = useMemo(() => groupByDate(feeds, 'localDate'), [feeds]);
   const nappiesByDate = useMemo(() => groupByDate(nappies, 'localDate'), [nappies]);
   const sleepByDate = useMemo(() => groupByDate(sleepBlocks, 'sleepDate'), [sleepBlocks]);
@@ -1338,28 +1383,99 @@ const PatternPanel = ({
     };
   }), [birthDate, dateKeys, feedsByDate, nappiesByDate, sleepByDate]);
 
-  const rangeTotals = useMemo(() => patternDays.reduce((totals, day) => ({
+  const changes = useMemo(() => (editSession?.days || []).flatMap((day) => Array.from({ length: 96 }, (_, blockIndex) => (
+    day.original.has(blockIndex) === day.draft.has(blockIndex) && !attemptedCells.has(`${day.dateKey}:${blockIndex}`) ? null
+      : { dateKey: day.dateKey, blockIndex, status: day.draft.has(blockIndex) ? 'asleep' : 'awake' }
+  )).filter(Boolean)), [attemptedCells, editSession]);
+  const changedDates = useMemo(() => new Set(changes.map((change) => change.dateKey)), [changes]);
+  const displayedDays = useMemo(() => editSession ? editSession.days.map((day) => {
+    const blocks = [...day.draft].map((blockIndex) => ({ blockIndex, status: 'asleep' }));
+    return { ...day, sleepBlocks: blocks, changed: changedDates.has(day.dateKey),
+      summary: summarizeBabyDay({ feeds: day.feeds, nappies: day.nappies, sleepBlocks: blocks }) };
+  }) : patternDays, [changedDates, editSession, patternDays]);
+  const paint = (dateKey, from, to, asleep) => {
+    if (busy || savePendingRef.current) return;
+    setEditSession((session) => session ? { ...session, days: session.days.map((day) => {
+      if (day.dateKey !== dateKey) return day;
+      const draft = new Set(day.draft);
+      for (let index = Math.min(from, to); index <= Math.max(from, to); index += 1) {
+        if (asleep) draft.add(index); else draft.delete(index);
+      }
+      return { ...day, draft };
+    }) } : session);
+  };
+  const editor = editSession ? {
+    paint,
+    toggle: (dateKey, index) => paint(dateKey, index, index, !editSession.days.find((day) => day.dateKey === dateKey)?.draft.has(index)),
+    start: (dateKey, index) => {
+      if (busy || savePendingRef.current) return;
+      const asleep = !editSession.days.find((day) => day.dateKey === dateKey)?.draft.has(index);
+      dragRef.current = { dateKey, index, asleep };
+      paint(dateKey, index, index, asleep);
+    },
+  } : null;
+  const continueDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || busy) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+    if (target?.closest?.('[data-history-date]')?.dataset.historyDate !== drag.dateKey) return;
+    const index = getPointerSleepBlockIndex(event);
+    if (index === null) return;
+    paint(drag.dateKey, drag.index, index, drag.asleep);
+    drag.index = index;
+  };
+  const saveChanges = async () => {
+    if (!changes.length || busy || savePendingRef.current) return;
+    savePendingRef.current = true;
+    dragRef.current = null;
+    setSavingDraft(true);
+    setSaveError('');
+    // An unsuccessful acknowledgement can follow a committed write. Keep every
+    // attempted cell pending even if the user changes it back to its baseline.
+    setAttemptedCells((previous) => new Set([...previous, ...changes.map((change) => `${change.dateKey}:${change.blockIndex}`)]));
+    try {
+      await onSaveHistory(changes);
+      setSavedMessage(`Sleep saved for ${changedDates.size} ${changedDates.size === 1 ? 'day' : 'days'}.`);
+      closeEditor();
+    } catch (error) {
+      setSaveError(`${error?.message || 'Unable to save sleep history.'} Your edits are kept.`);
+    } finally {
+      savePendingRef.current = false;
+      setSavingDraft(false);
+    }
+  };
+  useEffect(() => {
+    if (!changes.length || typeof window === 'undefined') return undefined;
+    const warnBeforeLeaving = (event) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [changes.length]);
+  const rangeTotals = useMemo(() => displayedDays.reduce((totals, day) => ({
     feeds: totals.feeds + day.summary.feedCount,
     feedMinutes: totals.feedMinutes + day.summary.totalFeedMinutes,
     sleepMinutes: totals.sleepMinutes + day.summary.sleep.totalMinutes,
-  }), { feeds: 0, feedMinutes: 0, sleepMinutes: 0 }), [patternDays]);
+  }), { feeds: 0, feedMinutes: 0, sleepMinutes: 0 }), [displayedDays]);
 
   return (
-    <section className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+    <section className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5" onPointerMove={continueDrag}
+      onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }} onPointerLeave={() => { dragRef.current = null; }}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="pm-kicker">Pattern</p>
           <h2 className="mt-1 text-xl font-black tracking-[-0.04em] text-slate-950">Sleep history</h2>
-          <p className="mt-1 text-xs text-slate-500">{rangeLabel}</p>
-          <p className="mt-1 text-xs text-slate-500">Choose Edit sleep on a date to add or correct its sleep.</p>
+          <p className="mt-1 text-xs text-slate-500">{editSession?.rangeLabel || rangeLabel}</p>
+          <p className="mt-1 text-xs text-slate-500">{editSession ? 'Change blocks across dates, then save once. On a phone, tap the first and last block of a sleep period.' : 'Edit sleep across several days and save your changes together.'}</p>
         </div>
-        <div className="grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1 sm:flex sm:flex-wrap">
+        <button ref={editButtonRef} type="button" onClick={startEditing} disabled={Boolean(editSession) || rangeLoading || Boolean(rangeError) || busy}
+          className="min-h-[44px] shrink-0 rounded-xl border border-indigo-200 bg-indigo-50 px-4 text-[14px] font-bold text-indigo-700 disabled:opacity-40">Edit history</button>
+      </div>
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1 sm:flex sm:flex-wrap">
           {PATTERN_RANGES.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => setPatternRange(option.value)}
-              disabled={Boolean(editingDay) || saving}
+              disabled={Boolean(editSession) || busy}
               className={`rounded-xl px-3 py-2 text-[11px] font-black transition ${
                 patternRange === option.value
                   ? 'bg-slate-950 text-white shadow-sm'
@@ -1370,32 +1486,18 @@ const PatternPanel = ({
             </button>
           ))}
         </div>
-      </div>
 
       {savedMessage ? <p role="status" className="mt-3 text-sm font-semibold text-emerald-700">{savedMessage}</p> : null}
-      {editingDay ? (
-        <div ref={editorRef} tabIndex={-1} aria-label={`Edit sleep for ${formatBabyDisplayDate(editingDay.dateKey)}`} className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 p-2 sm:p-3">
-          <div className="mb-3 flex items-start justify-between gap-3 px-1">
-            <div>
-              <h3 className="text-base font-bold text-slate-950">{formatBabyDisplayDate(editingDay.dateKey)}</h3>
-              <p className="mt-1 text-xs text-slate-600">Only this day’s sleep will change. Save before editing another day.</p>
+      {editSession ? (
+        <div className="sticky top-0 z-20 mt-4 rounded-2xl border border-indigo-200 bg-white/95 p-3 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p role="status" className="text-sm font-semibold text-slate-700">{changedDates.size ? `${changedDates.size} ${changedDates.size === 1 ? 'day' : 'days'} edited` : 'No changes yet'}</p>
+            <div className="flex items-center gap-2">
+              <button type="button" disabled={busy} onClick={() => closeEditor(true)} className="min-h-[44px] rounded-xl border border-slate-200 bg-white px-3 text-[14px] font-bold text-slate-600 disabled:opacity-40">Cancel</button>
+              <button type="button" disabled={busy || !changes.length} onClick={saveChanges} className="pm-toolbar-primary min-h-[44px] rounded-xl px-4 text-[14px] font-bold text-white disabled:opacity-50">{busy ? 'Saving...' : 'Save changes'}</button>
             </div>
-            <button type="button" disabled={saving} onClick={closeEditor} className="min-h-11 shrink-0 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 disabled:opacity-40">Cancel</button>
           </div>
-          <SleepGrid
-            key={editingDay.dateKey}
-            history
-            feeds={editingDay.feeds}
-            nappies={editingDay.nappies}
-            sleepBlocks={editingDay.sleepBlocks}
-            sleepGuidance={editingDay.sleepGuidance}
-            saving={saving}
-            onSave={async (blocks) => {
-              await onSaveSleep(blocks, editingDay.dateKey);
-              setSavedMessage(`Sleep saved for ${formatBabyDisplayDate(editingDay.dateKey)}.`);
-              closeEditor();
-            }}
-          />
+          {saveError ? <p role="alert" className="mt-2 text-sm text-rose-700">{saveError}</p> : null}
         </div>
       ) : null}
 
@@ -1405,22 +1507,22 @@ const PatternPanel = ({
         <div className="rounded-2xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800">{formatDuration(rangeTotals.feedMinutes)} feeding</div>
       </div>
 
-      {rangeError ? (
+      {!editSession && rangeError ? (
         <div role="alert" className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           <p>{rangeError} Reload history before editing a day.</p>
           <button type="button" onClick={onRetryRange} className="mt-2 min-h-11 rounded-xl border border-rose-200 bg-white px-3 font-bold">Retry history</button>
         </div>
-      ) : rangeLoading ? (
+      ) : !editSession && rangeLoading ? (
         <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm font-semibold text-slate-500">
           Loading pattern...
         </div>
       ) : (
         <div className="mt-4">
           <div className="sm:hidden">
-            <MobilePatternTimeline days={patternDays} selectedDate={selectedDate} onEditSleep={editSleep} editing={Boolean(editingDay) || saving} />
+            <MobilePatternTimeline days={displayedDays} selectedDate={selectedDate} editor={editor} disabled={busy} />
           </div>
           <div className="hidden sm:block">
-            <SleepMatrix days={patternDays} selectedDate={selectedDate} onEditSleep={editSleep} editing={Boolean(editingDay) || saving} />
+            <SleepMatrix days={displayedDays} selectedDate={selectedDate} editor={editor} disabled={busy} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
             <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-800">Pale blue = expected sleep</span>
@@ -1462,6 +1564,7 @@ export default function BabyView({ currentUserId }) {
     rangeSleepBlocks,
     refresh,
     saveSleepBlocks,
+    saveSleepHistory,
     saving,
     selectedDate,
     setSelectedDate,
@@ -1662,7 +1765,7 @@ export default function BabyView({ currentUserId }) {
                 selectedDate={selectedDate}
                 setPatternRange={setPatternRange}
                 sleepBlocks={rangeSleepBlocks}
-                onSaveSleep={saveSleepBlocks}
+                onSaveHistory={saveSleepHistory}
                 saving={saving}
               />
 
