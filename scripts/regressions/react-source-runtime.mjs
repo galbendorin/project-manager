@@ -32,6 +32,7 @@ export async function sourceModules(transport, globals = {}) {
     if(cache.has(file)) return cache.get(file);
     let code = await readFile(file,'utf8');
     if(file.endsWith('/TaskCardChecklistPanel.jsx')) code += '\nexport { ChecklistItemComposer };';
+    if(file.endsWith('/BabyView.jsx')) code += '\nexport { PatternPanel, SleepGrid };';
     if(file.endsWith('.jsx')) code = (await transformWithOxc(code,file,{jsx:{runtime:'classic'}})).code;
     const mod = new vm.SourceTextModule(code,{context,identifier:file,
       initializeImportMeta(meta){meta.url=pathToFileURL(file).href;meta.env={MODE:'test',DEV:false};}});
@@ -62,12 +63,12 @@ export function mockTransport(handler) {
     from(table){
       const request={table,operation:'select',filters:[],single:false,select:null};
       const builder={};
-      for(const method of ['select','update','insert','delete','upsert','eq','neq','in','is','order','limit','range','maybeSingle','single']) {
+      for(const method of ['select','update','insert','delete','upsert','eq','neq','in','is','gte','lte','order','limit','range','maybeSingle','single']) {
         builder[method]=(...args)=>{
           if(['update','insert','delete','upsert'].includes(method)){request.operation=method;request.payload=args[0];}
           if(method==='select')request.select=args[0];
           if(method==='range')request.range=args;
-          if(['eq','neq','in','is'].includes(method))request.filters.push({method,args});
+          if(['eq','neq','in','is','gte','lte'].includes(method))request.filters.push({method,args});
           if(['single','maybeSingle'].includes(method))request.single=true;
           return builder;
         };

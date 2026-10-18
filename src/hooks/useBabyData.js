@@ -92,6 +92,7 @@ export function useBabyData({ currentUserId } = {}) {
   const [rangeNappies, setRangeNappies] = useState([]);
   const [rangeSleepBlocks, setRangeSleepBlocks] = useState([]);
   const [rangeLoading, setRangeLoading] = useState(false);
+  const [rangeError, setRangeError] = useState('');
   const [dayVersion, setDayVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -99,6 +100,20 @@ export function useBabyData({ currentUserId } = {}) {
   const hasLoadedRef = useRef(false);
   const lastLoadedAtRef = useRef(0);
   const supportsMembersRef = useRef(true);
+  const sleepSaveRef = useRef(false);
+  const rangeRequestRef = useRef(0);
+  const sleepScopeRef = useRef(null);
+  sleepScopeRef.current = { currentUserId, profileId: babyProfile?.id, selectedDate };
+  useEffect(() => {
+    sleepSaveRef.current = null;
+    rangeRequestRef.current += 1;
+    setSaving(false);
+    setRangeLoading(false);
+    setRangeError('');
+    setRangeFeeds([]);
+    setRangeNappies([]);
+    setRangeSleepBlocks([]);
+  }, [currentUserId, babyProfile?.id]);
 
   const latestWeight = useMemo(() => (
     [...weights].sort((left, right) => String(right.measuredAt).localeCompare(String(left.measuredAt)))[0] || null
@@ -186,6 +201,7 @@ export function useBabyData({ currentUserId } = {}) {
   }, []);
 
   const loadRangeData = useCallback(async ({ startDate, endDate } = {}) => {
+    const request = ++rangeRequestRef.current;
     if (!babyProfile?.id || !startDate || !endDate) {
       setRangeFeeds([]);
       setRangeNappies([]);
@@ -194,6 +210,7 @@ export function useBabyData({ currentUserId } = {}) {
     }
 
     setRangeLoading(true);
+    setRangeError('');
     try {
       const [feedResult, nappyResult, sleepResult] = await Promise.all([
         supabase
@@ -225,15 +242,17 @@ export function useBabyData({ currentUserId } = {}) {
       if (nappyResult.error) throw nappyResult.error;
       if (sleepResult.error) throw sleepResult.error;
 
+      if (request !== rangeRequestRef.current || sleepScopeRef.current?.currentUserId !== currentUserId
+        || sleepScopeRef.current?.profileId !== babyProfile.id) return;
       setRangeFeeds((feedResult.data || []).map(mapFeed));
       setRangeNappies((nappyResult.data || []).map(mapNappy));
       setRangeSleepBlocks((sleepResult.data || []).map(mapSleepBlock));
     } catch (nextError) {
-      setError(nextError?.message || 'Unable to load Baby pattern.');
+      if (request === rangeRequestRef.current) setRangeError(nextError?.message || 'Unable to load sleep history.');
     } finally {
-      setRangeLoading(false);
+      if (request === rangeRequestRef.current) setRangeLoading(false);
     }
-  }, [babyProfile?.id]);
+  }, [babyProfile?.id, currentUserId]);
 
   const loadAll = useCallback(async () => {
     if (!currentUserId) return;
@@ -405,39 +424,70 @@ export function useBabyData({ currentUserId } = {}) {
     await loadDay(profile, selectedDate);
   }, [loadDay, requireProfile, selectedDate]);
 
-  const saveSleepBlocks = useCallback(async (asleepBlockSet) => {
+  const saveSleepBlocks = useCallback(async (asleepBlockSet, dateKey = selectedDate) => {
     const profile = requireProfile();
-    const previousBlocks = sleepBlocks;
-    const nextRows = buildSleepBlockRecords({
+    if (sleepScopeRef.current?.currentUserId !== currentUserId || sleepScopeRef.current?.profileId !== profile.id) {
+      throw new Error('The tracker changed. Reopen the sleep date before saving.');
+    }
+    if (sleepSaveRef.current) throw new Error('Wait for the current sleep save to finish.');
+    const date = new Date(`${dateKey}T12:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== dateKey) {
+      throw new Error('Choose a valid sleep date.');
+    }
+    const asleepRows = buildSleepBlockRecords({
       babyId: profile.id,
       userId: currentUserId,
       householdProjectId: profile.householdProjectId || null,
-      dateKey: selectedDate,
+      dateKey,
       asleepBlocks: asleepBlockSet,
     });
-    setSleepBlocks(nextRows.map((row, index) => mapSleepBlock({ id: `local-${index}`, ...row })));
+    const asleepIndexes = new Set(asleepRows.map((row) => row.block_index));
+    // One atomic request replaces the day's statuses, including removed sleep.
+    // The existing unique key and awake status avoid deleting saved sleep first.
+    const nextRows = Array.from({ length: 96 }, (_, blockIndex) => ({
+      baby_id: profile.id,
+      user_id: currentUserId,
+      household_project_id: profile.householdProjectId || null,
+      sleep_date: dateKey,
+      block_index: blockIndex,
+      status: asleepIndexes.has(blockIndex) ? 'asleep' : 'awake',
+    }));
+    const isCurrentScope = () => sleepScopeRef.current?.currentUserId === currentUserId
+      && sleepScopeRef.current?.profileId === profile.id && sleepSaveRef.current === operation;
+    const operation = {};
+    sleepSaveRef.current = operation;
     setSaving(true);
     setError('');
     try {
-      const { error: deleteError } = await supabase
+      const { data, error: saveError } = await supabase
         .from('baby_sleep_blocks')
-        .delete()
-        .eq('baby_id', profile.id)
-        .eq('sleep_date', selectedDate);
-      if (deleteError) throw deleteError;
-      if (nextRows.length > 0) {
-        const { error: insertError } = await supabase.from('baby_sleep_blocks').insert(nextRows);
-        if (insertError) throw insertError;
+        .upsert(nextRows, { onConflict: 'baby_id,sleep_date,block_index' })
+        .select(SLEEP_SELECT);
+      if (saveError) throw saveError;
+      const confirmed = new Map((data || []).map((row) => [row.block_index, row]));
+      if (confirmed.size !== 96 || nextRows.some((row) => {
+        const saved = confirmed.get(row.block_index);
+        return saved?.baby_id !== profile.id || saved?.sleep_date !== dateKey || saved?.status !== row.status;
+      })) throw new Error('Sleep save was not confirmed. Your changes are kept; try Save sleep again.');
+      const savedBlocks = data.filter((row) => row.status === 'asleep').map(mapSleepBlock);
+      if (isCurrentScope()) {
+        rangeRequestRef.current += 1;
+        setRangeLoading(false);
+        if (sleepScopeRef.current.selectedDate === dateKey) setSleepBlocks(savedBlocks);
+        setRangeSleepBlocks((previous) => [...previous.filter((block) => block.sleepDate !== dateKey), ...savedBlocks]);
+        setDayVersion((version) => version + 1);
       }
-      await loadDay(profile, selectedDate);
+      return savedBlocks;
     } catch (nextError) {
-      setSleepBlocks(previousBlocks);
-      setError(nextError?.message || 'Unable to save sleep.');
+      if (isCurrentScope()) setError(nextError?.message || 'Unable to save sleep.');
       throw nextError;
     } finally {
-      setSaving(false);
+      if (sleepSaveRef.current === operation) {
+        if (isCurrentScope()) setSaving(false);
+        sleepSaveRef.current = null;
+      }
     }
-  }, [currentUserId, loadDay, requireProfile, selectedDate, sleepBlocks]);
+  }, [currentUserId, requireProfile, selectedDate]);
 
   const addWeight = useCallback(async ({ measuredAt = selectedDate, weightValue, weightUnit = 'kg', notes = '' } = {}) => {
     const profile = requireProfile();
@@ -480,6 +530,7 @@ export function useBabyData({ currentUserId } = {}) {
     refresh: loadAll,
     loadRangeData,
     rangeFeeds,
+    rangeError,
     rangeLoading,
     rangeNappies,
     rangeSleepBlocks,
