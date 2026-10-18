@@ -854,6 +854,45 @@ test('date controls sync pristine changes but retain dirty dates across delayed 
     assert(root.root.findAllByProps({ role: 'status' }).some((n) => n.children.join('').includes('not confirmed')));
   } finally { await act(async () => root.unmount()); }
 });
+test('compact editor dates distinguish unplanned work and retain changed dates after a failed save', async () => {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const Controls = (await load('src/components/TaskPlanningControls.jsx')).default;
+  const matrix = { ready: true, offline: false, preferences: {}, planDay: async () => false };
+  let root;
+  await act(async () => { root = create(React.createElement(Controls, { todo, matrix, today: props.today, presentation: 'editor' })); });
+  const personal = () => root.root.findByProps({ 'aria-label': `Personal work day for ${todo.title}` });
+  const save = () => root.root.findAllByType('button').find(node => node.children.includes('Save personal day'));
+  try {
+    assert.equal(personal().props.value, '');
+    assert.equal(save(), undefined);
+    assert.ok(root.root.findAllByType('span').some(node => node.children.includes('Not planned')));
+    await act(async () => personal().props.onChange({ target: { value: '2026-10-21' } }));
+    assert.ok(save());
+    await act(async () => save().props.onClick());
+    assert.equal(personal().props.value, '2026-10-21');
+    assert.equal(save().props.disabled, false);
+    assert.match(root.root.findByProps({ role: 'status' }).children.join(''), /not saved/);
+  } finally { await act(async () => root.unmount()); }
+});
+test('compact deadline actions appear for a paired move even without a deadline change and keep partial recovery visible', async () => {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const Controls = (await load('src/components/TaskPlanningControls.jsx')).default;
+  const task = { ...todo, dueDate: '2026-10-16' };
+  const matrix = { ready: true, offline: false, preferences: { [key]: { ...preference, planned_day: '2026-10-21' } }, planDay: async () => false };
+  let root;
+  await act(async () => { root = create(React.createElement(Controls, { todo: task, matrix, today: props.today, presentation: 'editor', onUpdateTodo: async () => ({ confirmed: true, updatedTodo: task, personalPlanPending: true }) })); });
+  const button = label => root.root.findAllByType('button').find(node => node.children.includes(label));
+  try {
+    assert.equal(button('Save personal day'), undefined);
+    assert.equal(button('Reschedule deadline'), undefined);
+    await act(async () => root.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }));
+    assert.ok(button('Reschedule deadline'));
+    await act(async () => button('Reschedule deadline').props.onClick());
+    assert.ok(button('Retry personal day'));
+    assert.ok(button('Keep my current personal day'));
+    assert.ok(button('Replace with the saved deadline date'));
+  } finally { await act(async () => root.unmount()); }
+});
 test('source navigation refuses late/stale owner responses and preserves the request on success', async () => {
   let finish; const gate = new Promise((resolve) => { finish = resolve; });
   const transport = mockTransport(() => gate); const load = await sourceModules(transport);
