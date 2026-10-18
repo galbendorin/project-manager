@@ -235,11 +235,17 @@
 .task-description-feedback button {min-height:44px;padding:0 10px;text-decoration:underline;font-weight:600;flex-shrink:0}
 .task-project-dates {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
 .task-project-dates>div {min-width:0}
-.task-project-assignment {border-radius:10px;background:var(--task-surface)}
+.task-project-assignment {background:var(--task-surface);padding-bottom:12px;border-bottom:1px solid var(--task-border)}
 .task-project-assignment :is(p,label),.task-date-controls {font-size:12px;color:var(--task-muted)}
 .task-project-assignment>label {font-size:14px;color:var(--task-ink)}
 .task-project-assignment button {color:var(--task-blue);border-color:var(--task-control)}
-.task-planning-editor {padding:14px;border:1px solid var(--task-border);border-radius:10px}
+.task-project-assignment>label {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:12px;align-items:center;min-height:52px}
+.task-project-assignment>label :is(select,span:not(.task-project-label)) {margin-top:0}
+.task-project-assignment select {border-color:var(--task-border);background:var(--task-neutral-bg)}
+.task-project-edit-actions {display:flex;justify-content:flex-end;margin-top:8px}
+.task-project-assignment .task-editor-save {min-height:44px;border-radius:8px;border:1px solid var(--task-blue);background:var(--task-blue);color:#fff;padding:6px 12px;font-size:13px;font-weight:600}
+.task-editor-save:disabled {opacity:.5}
+.task-planning-editor {padding:0;border:0}
 .task-date-controls {display:flex;flex-direction:column;gap:12px;line-height:1.5}
 .task-date-controls :is(input,button) {min-height:44px}
 .task-planning-status {padding:10px 12px;border-radius:8px;background:var(--task-neutral-bg)}
@@ -256,6 +262,18 @@
 .task-move-workday {display:flex;align-items:center;gap:8px;min-height:44px;font-size:13px}
 .task-move-workday input {accent-color:var(--task-accent)}
 .task-planning-editor .task-date-save-button {border-color:var(--task-blue);color:var(--task-blue);font-weight:600}
+.task-planning-editor .task-planning-status {padding:4px 0;background:transparent}
+.task-planning-editor .task-planning-status[data-overdue="true"] {padding:6px 10px;border-left:3px solid var(--task-red);border-radius:0;background:var(--task-red-bg)}
+.task-planning-editor .task-date-controls {gap:10px}
+.task-editor-date-field {display:grid;grid-template-columns:minmax(0,1fr) 154px;align-items:center;gap:12px;min-height:52px;font-size:13px;font-weight:600;color:var(--task-ink)}
+.task-editor-date-control {position:relative;display:block;min-width:0;height:44px;border-radius:8px;background:var(--task-neutral-bg)}
+.task-editor-date-face {display:flex;align-items:center;justify-content:space-between;gap:8px;height:100%;padding:8px 10px;border:1px solid var(--task-border);border-radius:inherit;font-size:14px;font-weight:400;pointer-events:none}
+.task-editor-date-face svg {flex-shrink:0;color:var(--task-muted)}
+.pm-task-dialog .task-editor-date-control input[type="date"] {position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;cursor:pointer}
+.task-editor-date-control input::-webkit-calendar-picker-indicator {position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;opacity:0;cursor:pointer}
+.task-editor-date-control:focus-within {outline:2px solid var(--task-blue);outline-offset:2px}
+.task-planning-editor .task-planning-hint {margin-top:0}
+.task-planning-editor .task-reschedule-controls {padding-top:10px;border-color:var(--task-border)}
 /* Safari dates have an intrinsic inline size; constrain the control and its native value. */
 .pm-task-dialog input[type="date"] {display:block;box-sizing:border-box;inline-size:100%;min-inline-size:0;max-inline-size:100%;min-height:44px;appearance:none;-webkit-appearance:none;text-align:left}
 .pm-task-dialog input[type="date"]::-webkit-date-and-time-value {text-align:left;min-height:1.4em}
@@ -314,11 +332,9 @@
 .task-date-save-row>label {flex:1;min-width:0;font-size:12px}
 .task-date-save-row>button {flex-shrink:0;white-space:nowrap}
 .task-planning-editor .task-date-save-row>button {padding-inline:10px;font-size:13px}
-@media(max-width:767px) {
-  .task-planning-editor .task-date-save-row {display:grid;grid-template-columns:minmax(0,1fr);align-items:stretch;gap:8px}
-  .task-planning-editor .task-date-save-row>label {font-size:13px}
-  .task-planning-editor .task-date-save-button {width:100%;font-size:14px}
-}
+.task-planning-editor .task-date-save-row {display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px}
+.task-planning-editor .task-date-save-row>label {flex-basis:100%;font-size:13px}
+.task-planning-editor .task-date-save-button {width:auto;align-self:flex-end;background:var(--task-blue);color:var(--task-surface);font-size:13px;padding:6px 12px}
 .task-project-dates>div:first-child {align-self:start}
 .task-filter-field {min-width:0}
 .task-filter-field>span {display:block;font-size:12px;font-weight:600;color:var(--task-muted);margin-bottom:6px}

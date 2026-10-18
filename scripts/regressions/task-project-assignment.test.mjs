@@ -71,7 +71,7 @@ test('Save project persists an Other task without creating a Project Plan row', 
     await act(async () => f.button().props.onClick());
     assert.equal(f.calls.length, 1); assert.equal(f.calls[0][1], 'projectId'); assert.equal(f.calls[0][3].requireConfirmation, true);
     assert.equal(f.saved.projectId, projectId); assert.equal(f.saved.description, todo.description); assert.equal(f.saved.dueDate, todo.dueDate);
-    assert.equal(f.button().props.disabled, true); assert.match(f.root.root.findByProps({ role: 'status' }).children.join(''), /Project saved: Synthetic IKO project/);
+    assert.equal(f.root.root.findAllByType('button').length, 0); assert.match(f.root.root.findByProps({ role: 'status' }).children.join(''), /Project saved: Synthetic IKO project/);
     await act(async () => f.root.update(React.createElement(f.Assignment, { todo: f.saved, projects, canEdit: true, onUpdateTodo: async () => null })));
     assert.equal(f.select().props.value, projectId);
   } finally { await f.close(); }
