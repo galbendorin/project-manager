@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { deadlineDescription, matrixReference, plannedDayForTask, taskViewIdentity, validCalendarDay } from '../utils/todoEisenhower';
 import { preferenceSnapshot } from '../utils/todoCalendar';
+import { formatDate } from '../utils/helpers';
 
 export default function TaskPlanningControls({ todo, matrix, today, onUpdateTodo, onOpenSourceTodo, onNotice, draft, onDraftChange, deadlinePending = false, compact = false, presentation = 'default' }) {
   const identity = taskViewIdentity(todo);
@@ -71,30 +72,34 @@ export default function TaskPlanningControls({ todo, matrix, today, onUpdateTodo
     } finally { busy.current = false; if (current.current.identity === identity) setSaving(false); }
   };
   const body = (
-    <div className="task-date-controls space-y-3 text-xs text-slate-600">
-      <p className="text-sm font-medium">{deadlineDescription(todo, today)}</p>
-      {planned ? <p>Personally planned for {planned}</p> : null}
-      <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={!available || waiting} onClick={() => void saveWorkDay(today)} className="min-h-11 rounded-lg border px-3 disabled:opacity-50">Work on today</button>
-        {planned ? <button type="button" disabled={!available || waiting} onClick={() => void saveWorkDay(null)} className="min-h-11 rounded-lg border px-3 disabled:opacity-50">Remove personal day</button> : null}
+    <div className="task-date-controls text-xs text-slate-600">
+      <div className="task-planning-status" data-overdue={validCalendarDay(todo.dueDate) && todo.dueDate < today ? 'true' : undefined}>
+        <p className="task-deadline-summary">{deadlineDescription(todo, today)}</p>
+        {planned ? <p>Personally planned for {formatDate(planned)}</p> : null}
       </div>
-      <div className="task-date-save-row"><label className="block">Personal work day
+      <div className="task-workday-controls">
+      <div className="task-date-save-row"><label className="task-planning-label">Personal work day
         <input aria-label={`Personal work day for ${todo.title}`} type="date" value={workDay} onChange={(event) => { dirty.current.work = true; setWorkDay(event.target.value); onDraftChange?.('workDay', event.target.value); }} className="mt-1 block min-h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm" />
       </label>
-      <button type="button" disabled={!available || waiting || !validCalendarDay(workDay)} onClick={() => void saveWorkDay(workDay)} className="min-h-11 rounded-lg border px-3 disabled:opacity-50">Save personal day</button></div>
-      <p>Choosing a work day does not change the deadline.</p>
+      <button type="button" disabled={!available || waiting || !validCalendarDay(workDay)} onClick={() => void saveWorkDay(workDay)} className="task-date-save-button min-h-11 rounded-lg border px-3 disabled:opacity-50">Save personal day</button></div>
+      <p className="task-planning-hint">Choosing a work day does not change the deadline.</p>
+      <div className="task-day-shortcuts">
+        <button type="button" disabled={!available || waiting} onClick={() => void saveWorkDay(today)} className="min-h-11 disabled:opacity-50">Work on today</button>
+        {planned ? <button type="button" disabled={!available || waiting} onClick={() => void saveWorkDay(null)} className="min-h-11 disabled:opacity-50">Remove personal day</button> : null}
+      </div>
+      </div>
       {todo.isDerived || todo.planLink || todo.meta?.projectPlanLink ? (
         <button type="button" disabled={!onOpenSourceTodo} onClick={() => onOpenSourceTodo?.(todo)} className="min-h-11 rounded-lg border px-3 disabled:opacity-50">Reschedule in source</button>
       ) : (
         <div className="task-reschedule-controls space-y-2 border-t pt-3">
-          <label className="block">Deadline
+          <label className="task-planning-label">Deadline
             <input aria-label={`Deadline for ${todo.title}`} type="date" value={deadline} onChange={(event) => { dirty.current.deadline = true; setDeadline(event.target.value); onDraftChange?.('deadline', event.target.value); }} className="mt-1 block min-h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm" />
           </label>
-          <label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={moveWorkDay} disabled={Boolean(pendingReschedule)} onChange={event => { setLocalMoveWorkDay(event.target.checked); onDraftChange?.('moveWorkDay', event.target.checked); }} />Also move my work day to this date</label>
-          <p>{pendingReschedule ? `Deadline is saved. Retry your personal day for ${pendingReschedule.deadline}.` : moveWorkDay ? `Both dates will move to ${deadline || 'the chosen date'}.` : `Only the deadline will move. Personal day: ${planned || 'not set'}.`}</p>
-          {pendingReschedule ? <p>Current personal day: {planned || 'not set'}. <button type="button" disabled={!available || waiting} className="min-h-11 px-3 underline" onClick={() => void reschedule(true)}>Replace with the saved deadline date</button></p> : null}
+          <label className="task-move-workday"><input type="checkbox" checked={moveWorkDay} disabled={Boolean(pendingReschedule)} onChange={event => { setLocalMoveWorkDay(event.target.checked); onDraftChange?.('moveWorkDay', event.target.checked); }} /><span>Also move my work day to this date</span></label>
+          <p>{pendingReschedule ? `Deadline is saved. Retry your personal day for ${formatDate(pendingReschedule.deadline)}.` : moveWorkDay ? `Both dates will move to ${formatDate(deadline) || 'the chosen date'}.` : `Only the deadline will move. Personal day: ${formatDate(planned) || 'not set'}.`}</p>
+          {pendingReschedule ? <p>Current personal day: {formatDate(planned) || 'not set'}. <button type="button" disabled={!available || waiting} className="min-h-11 px-3 underline" onClick={() => void reschedule(true)}>Replace with the saved deadline date</button></p> : null}
           {pendingReschedule ? <button type="button" disabled={waiting} className="min-h-11 px-3 underline" onClick={() => { setLocalPendingReschedule(null); onDraftChange?.('reschedulePending', undefined); setMessage('Unfinished personal-day move removed. Saved dates and your newer draft are unchanged.'); }}>Keep my current personal day</button> : null}
-          <button type="button" disabled={!available || waiting || !validCalendarDay(pendingReschedule?.deadline || deadline) || !onUpdateTodo} onClick={() => void reschedule()} className="min-h-11 rounded-lg border px-3 disabled:opacity-50">{pendingReschedule ? 'Retry personal day' : 'Reschedule deadline'}</button>
+          <button type="button" disabled={!available || waiting || !validCalendarDay(pendingReschedule?.deadline || deadline) || !onUpdateTodo} onClick={() => void reschedule()} className="task-date-save-button min-h-11 rounded-lg border px-3 disabled:opacity-50">{pendingReschedule ? 'Retry personal day' : 'Reschedule deadline'}</button>
         </div>
       )}
       {!reference ? <p>Save this task with a stable ID to plan your work day.</p> : matrix.offline ? <p>Reconnect to save dates. Confirmed choices are retained.</p> : null}

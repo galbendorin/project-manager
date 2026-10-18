@@ -16,7 +16,7 @@ export default function TodoDetailDialog({
   onDeleteChecklistItem, onMoveChecklistItem, onRenameChecklist,
   onRenameChecklistItem, onToggleChecklistItem,
 }) {
-  const dialog = useRef(null), close = useRef(null), onCloseRef = useRef(onClose);
+  const dialog = useRef(null), onCloseRef = useRef(onClose);
   const requestClose = () => {
     if (canEdit) {
       if (!todo?.planLink && !todo?.meta?.projectPlanLink) void onSaveTitle?.();
@@ -28,7 +28,7 @@ export default function TodoDetailDialog({
   useEffect(() => {
     if (typeof document === 'undefined' || !dialog.current) return undefined;
     const origin = document.activeElement;
-    close.current?.focus();
+    dialog.current.focus({ preventScroll: true });
     const keydown = (event) => {
       if (event.defaultPrevented) return;
       if (event.key === 'Escape' && !event.target?.matches?.('select,input[type="date"]')) { event.preventDefault(); onCloseRef.current?.(); }
@@ -36,7 +36,7 @@ export default function TodoDetailDialog({
       const controls = [...dialog.current.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,a[href]')].filter(node => node.getClientRects().length && !node.closest('[hidden]'));
       const first = controls[0], last = controls[controls.length - 1];
       if (!first) return;
-      if (event.shiftKey && (document.activeElement === first || !dialog.current.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+      if (event.shiftKey && (document.activeElement === dialog.current || document.activeElement === first || !dialog.current.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && (document.activeElement === last || !dialog.current.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', keydown);
@@ -49,17 +49,17 @@ export default function TodoDetailDialog({
   const removable = canEdit && !todo.isDerived && !completed && !todo.planLink && !todo.meta?.projectPlanLink;
   return <div className={`pm-task-dialog task-dialog-overlay ${isMobile ? 'task-dialog-phone' : ''}`}>
     <button type="button" className="task-dialog-backdrop" onClick={requestClose} aria-label="Close task details" />
-    <div ref={dialog} role="dialog" aria-modal="true" aria-label="Task details" className="task-dialog-window">
+    <div ref={dialog} role="dialog" aria-modal="true" aria-label="Task details" tabIndex={-1} className="task-dialog-window">
       <header className="task-dialog-header">
-        <div className="task-dialog-heading"><h2 className={completed ? 'line-through' : ''}>{todo.title || 'Untitled'}</h2><div className="task-context"><span>{todo.isDerived ? `Read-only source: ${todo.source || 'Derived item'}` : 'Editable manual task'}</span><span className={`task-status ${statusClass?.(todo.status) || ""}`}>{todo.status || 'Open'}</span><TaskRecurrenceIndicator recurrence={todo.recurrence} /></div></div>
-        <div className="task-dialog-header-actions">{removable ? <button type="button" className="task-danger-action" onClick={() => { onDeleteTodo(todo._id); onClose(); }}>Delete</button> : null}<button ref={close} type="button" onClick={requestClose}>{isMobile ? 'Back' : 'Close'}</button></div>
+        <div className="task-dialog-heading"><h2 className={completed ? 'line-through' : ''}>{todo.title || 'Untitled'}</h2><div className="task-context"><span className={todo.isDerived ? '' : 'task-manual-context'}>{todo.isDerived ? `Read-only source: ${todo.source || 'Derived item'}` : 'Editable manual task'}</span><span className={`task-status ${statusClass?.(todo.status) || ""}`}>{todo.status || 'Open'}</span><TaskRecurrenceIndicator recurrence={todo.recurrence} /></div></div>
+        <div className="task-dialog-header-actions"><button type="button" onClick={requestClose}>Close</button></div>
       </header>
       <div className="task-dialog-body">
         <Field label="Title">{editSchedule ? <input type="text" value={titleDraft?.value ?? todo.title ?? ''} onChange={e => onTitleChange ? onTitleChange(e.target.value) : update('title', e.target.value)} onBlur={() => { void onSaveTitle?.(); }} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent?.isComposing) { e.preventDefault(); e.currentTarget.blur(); } }} /> : <Value>{todo.title || 'Untitled'}</Value>}</Field>
         {editSchedule && titleDraft ? <div className="task-description-feedback" role={['error','invalid'].includes(titleDraft.status) ? 'alert' : 'status'}>
           {titleDraft.status === 'invalid' ? 'Enter a task title. Your changes are kept.' : titleDraft.status === 'error' ? <>Title not saved. Your text is kept. <button type="button" onClick={() => { void onSaveTitle?.(); }}>Retry</button></> : titleDraft.status === 'saving' ? 'Saving title…' : titleDraft.status === 'dirty' ? 'Unsaved title — leave the field to save.' : 'Saves when you leave this field.'}
         </div> : null}
-        <Field label="Description">{canEdit ? <textarea value={descriptionDraft?.value ?? todo.description ?? ''} rows={3} onChange={e => onDescriptionChange ? onDescriptionChange(e.target.value) : update('description', e.target.value)} onBlur={() => { void onSaveDescription?.(); }} placeholder="Add more detail…" /> : <Value>{todo.description || 'No description'}</Value>}</Field>
+        <Field label="Description">{canEdit ? <textarea value={descriptionDraft?.value ?? todo.description ?? ''} rows={isMobile ? 2 : 3} onChange={e => onDescriptionChange ? onDescriptionChange(e.target.value) : update('description', e.target.value)} onBlur={() => { void onSaveDescription?.(); }} placeholder="Add more detail…" /> : <Value>{todo.description || 'No description'}</Value>}</Field>
         {canEdit && descriptionDraft ? <div className="task-description-feedback" role={descriptionDraft.status === 'error' ? 'alert' : 'status'}>
           {descriptionDraft.status === 'error' ? <>Description not saved. Your text is kept. <button type="button" onClick={() => { void onSaveDescription?.(); }}>Retry</button></> : descriptionDraft.status === 'saving' ? 'Saving description…' : descriptionDraft.status === 'dirty' ? 'Unsaved description — leave the field to save.' : 'Saves when you leave this field.'}
         </div> : null}
@@ -72,6 +72,7 @@ export default function TodoDetailDialog({
         <TaskCardChecklistPanel canEdit={checklistCanEdit} checklists={checklists} checklistsAvailable={checklistsAvailable} checklistsLoading={checklistsLoading} checklistMessage={checklistMessage} checklistsSaving={checklistsSaving} onRetryChecklists={onRetryChecklists} onAddChecklist={onAddChecklist} onAddChecklistItems={onAddChecklistItems} onDeleteChecklist={onDeleteChecklist} onDeleteChecklistItem={onDeleteChecklistItem} onMoveChecklistItem={onMoveChecklistItem} onRenameChecklist={onRenameChecklist} onRenameChecklistItem={onRenameChecklistItem} onToggleChecklistItem={onToggleChecklistItem} />
         {sourcePlanControls ? <details className="task-detail-disclosure" open={Boolean(todo.planLink || todo.meta?.projectPlanLink)}><summary>Project Plan</summary>{sourcePlanControls}</details> : null}
         <details className="task-detail-disclosure"><summary>Activity</summary><dl className="task-activity">{[['Created',todo.createdAt],['Last updated',todo.updatedAt],...(todo.completedAt ? [['Completed',todo.completedAt]] : [])].map(([label,date]) => <div key={label}><dt>{label}</dt><dd>{date ? new Date(date).toLocaleString('en-GB') : 'Unknown'}</dd></div>)}</dl></details>
+        {removable ? <div className="task-dialog-delete"><button type="button" className="task-danger-action" onClick={() => { onDeleteTodo(todo._id); onClose(); }}>Delete</button></div> : null}
       </div>
     </div>
   </div>;
