@@ -225,6 +225,16 @@
 .task-dialog-body>* {flex-shrink:0}
 .task-dialog-delete {border-top:1px solid var(--task-border);padding-top:8px}
 .task-dialog-delete .task-danger-action {min-height:44px;padding:8px 12px;border-radius:8px;color:var(--task-red);font-weight:600}
+.task-dialog-secondary {border-top:1px solid var(--task-border)}
+.task-dialog-secondary .task-detail-disclosure {padding:0;border-top:0;border-bottom:1px solid var(--task-border)}
+.task-dialog-secondary .task-detail-disclosure[open] {padding-bottom:12px}
+.task-dialog-secondary .task-detail-disclosure>:not(summary) {margin-top:0;padding-top:0;border-top:0}
+.task-dialog-secondary summary {display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:10px 0;list-style:none}
+.task-dialog-secondary summary::-webkit-details-marker {display:none}
+.task-dialog-secondary summary::after {content:'';width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);margin-right:5px;flex-shrink:0}
+.task-dialog-secondary details[open]>summary::after {transform:rotate(45deg)}
+.task-dialog-secondary .task-dialog-delete {padding:0;border:0}
+.task-dialog-secondary .task-danger-action {display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;padding:10px 0;text-align:left;font-size:14px}
 .task-field {display:block;min-width:0}
 .task-field>span {display:block;font-size:12px;font-weight:600;color:var(--task-muted);margin-bottom:6px}
 .task-field :is(input,textarea,select),.task-read-value {display:block;width:100%;border:1px solid var(--task-control);border-radius:8px;padding:10px 12px;min-height:44px;font-size:14px;background:var(--task-surface);color:var(--task-ink)}
@@ -289,6 +299,27 @@
 .pm-task-dialog .task-checklists .task-checklist-item-actions {opacity:1}
 .pm-task-dialog .task-checklists :is(.text-sm,.text-xs) {font-size:14px}
 .pm-task-dialog .task-checklists .task-checklist-item {padding:7px 0}
+.pm-task-dialog .task-checklists-editor {padding:10px 0 0;border:0;border-top:1px solid var(--task-border);border-radius:0;background:transparent}
+.task-checklists-editor .task-checklist-panel-header {flex-wrap:nowrap;gap:10px;min-height:44px}
+.task-checklists-editor .task-checklist-panel-icon {display:none}
+.task-checklists-editor .task-checklist-panel-heading {display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.task-checklists-editor .task-checklist-panel-label {font-size:14px;letter-spacing:0;text-transform:none;color:var(--task-ink)}
+.task-checklists-editor .task-checklist-panel-summary {font-size:12px!important;font-weight:400;color:var(--task-muted)}
+.task-checklists-editor .task-checklist-create {flex-shrink:0;min-height:44px;padding:6px 10px;border-radius:8px;color:var(--task-blue);border-color:var(--task-border);font-size:13px}
+.task-checklists-editor .task-checklist-overall-progress {display:none}
+.task-checklists-editor .task-checklist-groups {margin-top:8px}
+.task-checklists-editor .task-checklist-groups:empty {display:none}
+.task-checklists-editor .task-checklist-group {padding:10px 0;border:0;border-top:1px solid var(--task-border);border-radius:0;background:transparent}
+.task-checklists-editor .task-checklist-title-group {display:flex;align-items:center;gap:8px}
+.task-checklists-editor .task-checklist-title-group>input {flex:1;min-width:0;min-height:44px}
+.task-checklists-editor .task-checklist-list-progress {flex-shrink:0;margin:0}
+.task-checklists-editor .task-checklist-meter {display:none}
+.task-checklists-editor .task-checklist-count {width:auto;font-size:12px}
+.task-checklists-editor .task-checklist-composer {flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:8px}
+.task-checklists-editor .task-checklist-composer>input {width:auto;min-width:0;flex:1;min-height:44px}
+.task-checklists-editor .task-checklist-composer>button {flex-shrink:0;min-height:44px;padding:6px 10px;background:var(--task-blue);color:var(--task-surface)}
+.task-checklists-editor .task-checklist-composer>button:disabled {background:var(--task-neutral-bg);color:var(--task-muted);opacity:.6}
+.task-checklists-editor .task-checklist-composer>[role="alert"] {flex-basis:100%}
 .nav-tabs .nav-tab {color:var(--pm-text-soft);box-shadow:none;border-radius:10px;background:var(--pm-surface)}
 .nav-shell .nav-tabs--measure {position:fixed}
 .nav-tabs .nav-tab.active,.nav-more-menu .nav-more-menu__item.active {background:var(--pm-accent-strong);color:#fff;border-color:var(--pm-accent-strong);box-shadow:none}
@@ -312,8 +343,11 @@
   .task-dialog-header-actions button {padding:4px 9px}
   .task-dialog-body {padding:16px 16px calc(24px + env(safe-area-inset-bottom,0px));gap:16px}
   .task-project-dates {grid-template-columns:minmax(0,1fr);gap:12px}
-  .task-property-fields {grid-template-columns:repeat(2,minmax(0,1fr))}
-  .task-property-fields>.task-field:first-child {grid-column:1/-1}
+  .task-property-fields {grid-template-columns:minmax(0,1fr);gap:0}
+  .task-property-fields>.task-field {display:grid;grid-template-columns:minmax(0,1fr) 154px;align-items:center;gap:12px;min-height:52px}
+  .task-property-fields>.task-field>span {margin:0;font-size:13px;color:var(--task-ink)}
+  .task-property-fields .task-field :is(input,select) {height:44px;padding:8px 10px;background:var(--task-neutral-bg);border-color:var(--task-border)}
+  .task-property-fields .task-read-value {min-height:44px;padding:8px 10px;overflow-wrap:anywhere;border-color:var(--task-border)}
   .pm-task-ui :is(input,select,textarea),.pm-task-dialog :is(input,select,textarea) {font-size:16px!important}
   .pm-task-dialog button,.pm-task-dialog .task-checklists button {min-height:44px}
   .pm-task-dialog .task-checklists button[aria-label] {min-width:44px}
