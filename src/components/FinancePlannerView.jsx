@@ -10,6 +10,7 @@ import { useFinanceReconciliation } from '../hooks/useFinanceReconciliation';
 import { supabase } from '../lib/supabase';
 import FinanceHouseholdShareModal from './FinanceHouseholdShareModal';
 import MonthReconciliation from './finance/MonthReconciliation';
+import FinancePeriodPlan, { FinancePlanViewSwitch } from './finance/FinancePeriodPlan';
 import {
   addMonths,
   buildFinanceForecast,
@@ -932,6 +933,7 @@ export default function FinancePlannerView({ onGoToProjects }) {
   } = usePlan();
   const finance = useFinanceData({ currentUserId: householdAccess.ownerUserId });
   const [activeView, setActiveView] = useState('plan');
+  const [planView, setPlanView] = useState('monthly');
   const [selectedMonthKey, setSelectedMonthKey] = useState('');
   const reconciliation = useFinanceReconciliation({ currentUserId: householdAccess.ownerUserId, monthKey: selectedMonthKey });
   const [editingItem, setEditingItem] = useState(null);
@@ -1082,12 +1084,14 @@ export default function FinancePlannerView({ onGoToProjects }) {
 
   const requestAddExpense = () => {
     setActiveView('plan');
+    setPlanView('monthly');
     setAddRequest((value) => value + 1);
     requestAnimationFrame(() => document.getElementById('add-expense')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   };
 
   const requestAddIncome = () => {
     setActiveView('plan');
+    setPlanView('monthly');
     setEditingItem({
       name: '',
       amountPence: 0,
@@ -1158,7 +1162,7 @@ export default function FinancePlannerView({ onGoToProjects }) {
           </div>
         </div>
         <div className="hidden flex-wrap items-end justify-between gap-3 sm:flex">
-          <div><div className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--pm-accent)]">Household finance{householdAccess.isOwner ? '' : ' · Shared editor'}</div><h1 className="mt-1 text-3xl font-black tracking-[-0.04em] text-slate-950">Household plan</h1><p className="mt-1 text-[14px] text-slate-500">Review one month, change a regular amount, or add what is coming next.</p></div>
+          <div><div className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--pm-accent)]">Household finance{householdAccess.isOwner ? '' : ' · Shared editor'}</div><h1 className="mt-1 text-3xl font-black tracking-[-0.04em] text-slate-950">Household plan</h1><p className="mt-1 text-[14px] text-slate-500">Review a month, quarter, half-year or year, and plan what is coming next.</p></div>
           <div className="flex flex-wrap justify-end gap-2">{householdAccess.isOwner ? <button type="button" onClick={() => setShareOpen(true)} className={secondaryButton}>Family access</button> : <button type="button" disabled={accessActionPending} onClick={() => void leaveHousehold()} className="min-h-[44px] rounded-xl border border-rose-200 bg-white px-4 py-2 text-[14px] font-bold text-rose-700 disabled:opacity-50">Leave shared plan</button>}<button type="button" onClick={() => { setExportMessage(''); setExportOpen(true); }} className={secondaryButton}>↓ Export for ChatGPT</button><button type="button" onClick={requestAddIncome} className={secondaryButton}>+ Add income</button><button type="button" onClick={requestAddExpense} className={primaryButton}>+ Planned expense</button></div>
         </div>
       </header>
@@ -1169,6 +1173,12 @@ export default function FinancePlannerView({ onGoToProjects }) {
 
       {activeView === 'plan' ? (
         <main id="finance-panel-plan" role="tabpanel" aria-labelledby="finance-tab-plan" className="space-y-4">
+          <FinancePlanViewSwitch value={planView} onChange={setPlanView} />
+          {planView !== 'monthly' ? <FinancePeriodPlan key={householdAccess.ownerUserId} view={planView}
+            referenceMonth={selectedMonth.monthKey} forecast={forecast} budgetItems={finance.budgetItems}
+            categories={finance.categories} snapshots={finance.balanceSnapshots} currencyCode={currencyCode}
+            onOpenMonth={monthKey => { setSelectedMonthKey(monthKey); setPlanView('monthly'); }} /> : null}
+          <div hidden={planView !== 'monthly'} className="space-y-4">
           <MonthNavigator forecast={forecast} selectedIndex={selectedIndex} onChange={(index) => setSelectedMonthKey(forecast[index].monthKey)} />
           <MonthlyKpis month={selectedMonth} snapshot={selectedSnapshot} actualEntries={finance.actualEntries} profile={finance.profile} currencyCode={currencyCode} currentMonthKey={currentMonthKey} reconciliationSummary={selectedReconciliationSummary} />
           <MonthReconciliation
@@ -1201,8 +1211,9 @@ export default function FinancePlannerView({ onGoToProjects }) {
           <UpcomingExpenses forecast={forecast} selectedIndex={selectedIndex} budgetItems={planBudgetItems} categories={finance.categories} profile={finance.profile} currencyCode={currencyCode} onEdit={setEditingItem} />
           <ExpenseEntryPanel defaultMonth={selectedMonth.monthKey} currencyCode={currencyCode} saving={finance.saving} requestId={addRequest} onSave={saveExpense} />
           <div className={`grid gap-4 ${householdAccess.isOwner ? 'lg:grid-cols-2' : ''}`}><RecordBalanceForm profile={finance.profile} saving={finance.saving} onSave={finance.saveBalanceSnapshot} />{householdAccess.isOwner ? <PlanSettings profile={finance.profile} saving={finance.saving} onSave={finance.saveProfile} onReset={finance.resetFinanceData} /> : null}</div>
+          </div>
         </main>
-      ) : <HistoryView finance={finance} reconciliationHistory={reconciliation.history} currencyCode={currencyCode} onRepeat={(item) => { setSelectedMonthKey(currentMonthKey); setActiveView('plan'); setEditingItem({ ...item, id: undefined, startMonth: currentMonthKey, endMonth: '' }); }} />}
+      ) : <HistoryView finance={finance} reconciliationHistory={reconciliation.history} currencyCode={currencyCode} onRepeat={(item) => { setSelectedMonthKey(currentMonthKey); setActiveView('plan'); setPlanView('monthly'); setEditingItem({ ...item, id: undefined, startMonth: currentMonthKey, endMonth: '' }); }} />}
 
       {editingItem ? <PlanItemEditor key={`${editingItem.id || 'repeat'}-${editingItem.startMonth}`} item={editingItem} categories={finance.categories} destructiveDeleteAllowed={householdAccess.isOwner} effectiveMonth={selectedMonth.monthKey} saving={finance.saving} onSave={saveEditedItem} onRemove={removeEditedItem} onClose={() => { setEditingItem(null); setPromotingLineId(''); }} /> : null}
       {exportOpen ? <FinanceExportDialog finance={finance} forecast={forecast} loadReconciliations={reconciliation.loadAllForExport} onClose={() => setExportOpen(false)} onDownloaded={(fileName) => setExportMessage(`Finance workbook downloaded: ${fileName}. Attach it in ChatGPT and ask it to review your spending.`)} /> : null}
