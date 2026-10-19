@@ -50,3 +50,12 @@ export const buildFinancePeriods = ({ forecast = [], view, year, snapshots = [] 
   }
   return periods;
 };
+
+// Keep whole calendar periods, starting with the one containing the chosen month.
+// Only the forecast's own boundaries can make a period partial.
+export const buildFinanceTimelinePeriods = ({ forecast = [], view, referenceMonth, snapshots = [] } = {}) => {
+  if (!monthPattern.test(referenceMonth)) return [];
+  return getFinancePlanYears(forecast)
+    .flatMap(year => buildFinancePeriods({ forecast, view, year, snapshots }))
+    .filter(period => period.endMonth >= referenceMonth);
+};

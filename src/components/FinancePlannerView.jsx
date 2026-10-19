@@ -1177,6 +1177,7 @@ export default function FinancePlannerView({ onGoToProjects }) {
           {planView !== 'monthly' ? <FinancePeriodPlan key={householdAccess.ownerUserId} view={planView}
             referenceMonth={selectedMonth.monthKey} forecast={forecast} budgetItems={finance.budgetItems}
             categories={finance.categories} snapshots={finance.balanceSnapshots} currencyCode={currencyCode}
+            onChangeMonth={setSelectedMonthKey} onEdit={(item, monthKey) => { setSelectedMonthKey(monthKey); setEditingItem(item); }}
             onOpenMonth={monthKey => { setSelectedMonthKey(monthKey); setPlanView('monthly'); }} /> : null}
           <div hidden={planView !== 'monthly'} className="space-y-4">
           <MonthNavigator forecast={forecast} selectedIndex={selectedIndex} onChange={(index) => setSelectedMonthKey(forecast[index].monthKey)} />

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildFinanceForecast } from './financePlanner.js';
-import { buildFinancePeriods, getFinancePlanYears } from './financePeriods.js';
+import { buildFinancePeriods, buildFinanceTimelinePeriods, getFinancePlanYears } from './financePeriods.js';
 
 const item = (id, amountPence, extra = {}) => ({ id, name: id, amountPence, startMonth: '2026-01', frequency: 'monthly', flowType: 'expense', classification: 'essential', ...extra });
 const items = [
@@ -87,4 +87,39 @@ test('periods are deterministic for shuffled input, reject invalid ranges and do
   assert.deepEqual(buildFinancePeriods({ forecast, view: 'monthly', year: 2026 }), []);
   assert.deepEqual(buildFinancePeriods({ forecast, view: 'yearly', year: 'bad' }), []);
   assert.deepEqual(getFinancePlanYears([...forecast, { monthKey: 'bad' }, { monthKey: '2027-01' }]), ['2026','2027']);
+});
+
+test('timeline scales compress the entire future forecast across years instead of limiting it to one year', () => {
+  const future = buildFinanceForecast({ startMonth: '2026-08', months: 60, budgetItems: items });
+  const options = { forecast: future, referenceMonth: '2026-10' };
+  const quarters = buildFinanceTimelinePeriods({ ...options, view: 'quarterly' });
+  assert.equal(quarters.length, 20);
+  assert.deepEqual(quarters.slice(0, 3).map(period => period.label), ['Q4 2026', 'Q1 2027', 'Q2 2027']);
+  assert.equal(quarters.at(-1).label, 'Q3 2031');
+  assert.equal(quarters.at(-1).endMonth, '2031-07');
+  assert.equal(quarters.at(-1).isPartial, true);
+  const halves = buildFinanceTimelinePeriods({ ...options, view: 'halfyear' });
+  assert.equal(halves.length, 11);
+  assert.deepEqual(halves.slice(0, 3).map(period => period.label), ['H2 2026', 'H1 2027', 'H2 2027']);
+  const years = buildFinanceTimelinePeriods({ ...options, view: 'yearly' });
+  assert.deepEqual(years.map(period => period.label), ['2026', '2027', '2028', '2029', '2030', '2031']);
+  assert.equal(years[0].startMonth, '2026-08');
+  assert.equal(years[0].monthCount, 5);
+  assert.equal(years[0].isPartial, true);
+  for (const field of ['incomePence', 'expensePence', 'surplusPence', 'internalTransfersPence']) {
+    assert.equal(years.reduce((sum, period) => sum + period[field], 0), future.reduce((sum, month) => sum + month[field], 0));
+  }
+});
+
+test('changing the start month keeps its whole calendar period and omits earlier periods, without changing amounts', () => {
+  const years = buildFinanceTimelinePeriods({ forecast, view: 'yearly', referenceMonth: '2026-10' });
+  assert.equal(years[0].monthCount, 12);
+  assert.equal(years[0].startMonth, '2026-01');
+  assert.equal(years[0].expensePence, 3020000);
+  const quarters = buildFinanceTimelinePeriods({ forecast, view: 'quarterly', referenceMonth: '2026-05' });
+  assert.deepEqual(quarters.map(period => period.label), ['Q2 2026','Q3 2026','Q4 2026']);
+  assert.equal(quarters[0].expensePence, 840000);
+  assert.deepEqual(buildFinanceTimelinePeriods({ forecast, view: 'quarterly', referenceMonth: 'bad' }), []);
+  assert.deepEqual(buildFinanceTimelinePeriods({ forecast, view: 'yearly', referenceMonth: '2027-01' }), []);
+  assert.deepEqual(buildFinanceTimelinePeriods({ forecast: [], view: 'yearly', referenceMonth: '2026-01' }), []);
 });
