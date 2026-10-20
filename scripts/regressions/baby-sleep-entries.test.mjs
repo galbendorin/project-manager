@@ -3,6 +3,79 @@ import assert from 'node:assert/strict';
 import { React, act, create, mountHook, mockTransport, sourceModules } from './react-source-runtime.mjs';
 const user = '11111111-1111-4111-8111-111111111111', baby = '22222222-2222-4222-8222-222222222222', id = '33333333-3333-4333-8333-333333333333';
 const date = '2026-10-20';
+
+test('care dialog traps focus when it opens busy and controls later become available', async () => {
+  const listeners = new Map(), original = { focus() { doc.activeElement = original; } };
+  const doc = { activeElement: original, body: { style: { overflow: 'auto' } }, addEventListener: (name, handler) => listeners.set(name, handler), removeEventListener: name => listeners.delete(name) };
+  let targets = [], closed = 0, tree;
+  const panel = { querySelector: () => targets[0], querySelectorAll: () => targets, focus() { doc.activeElement = panel; } };
+  const first = { focus() { doc.activeElement = first; } }, last = { focus() { doc.activeElement = last; } };
+  const load = await sourceModules(mockTransport(async () => ({ data: [] })), { document: doc });
+  const { default: CareDialog } = await load('src/components/baby/CareDialog.jsx');
+  const props = { title: 'Busy form', busy: true, onClose: () => { closed += 1; } };
+  await act(async () => { tree = create(React.createElement(CareDialog, props), { createNodeMock: element => element.props.role === 'dialog' ? panel : null }); });
+  try {
+    assert.equal(doc.activeElement, panel);
+    listeners.get('keydown')({ key: 'Escape', preventDefault() {} });
+    assert.equal(closed, 0);
+    targets = [first, last];
+    await act(async () => tree.update(React.createElement(CareDialog, { ...props, busy: false })));
+    doc.activeElement = original;
+    let prevented = false;
+    listeners.get('keydown')({ key: 'Tab', preventDefault() { prevented = true; } });
+    assert.equal(prevented, true); assert.equal(doc.activeElement, first);
+    listeners.get('keydown')({ key: 'Tab', shiftKey: true, preventDefault() {} });
+    assert.equal(doc.activeElement, last);
+    listeners.get('keydown')({ key: 'Escape', preventDefault() {} });
+    assert.equal(closed, 1);
+  } finally { await act(async () => tree.unmount()); }
+  assert.equal(doc.activeElement, original); assert.equal(doc.body.style.overflow, 'auto');
+});
+
+test('care pop-ups keep entered values after failure, block duplicate saves and retry the same payload', async () => {
+  const load = await sourceModules(mockTransport(async () => ({ data: [] })));
+  const forms = await load('src/components/BabyView.jsx');
+  for (const [name, field, value] of [['FeedModal','textarea','Feed note'], ['WeightModal','input','7.25'], ['NappyModal','textarea','Nappy note']]) {
+    let tree, finish, fail = true;
+    const calls = [];
+    const onSave = payload => { calls.push(payload); return new Promise((resolve, reject) => { finish = () => fail ? reject(new Error('Synthetic save failure.')) : resolve(); }); };
+    await act(async () => { tree = create(React.createElement(forms[name], { dateKey: date, saving: false, onSave, onClose() {} })); });
+    try {
+      const target = () => name === 'WeightModal' ? tree.root.findAllByType('input').find(input => input.props.type === 'number') : tree.root.findByType(field);
+      await act(async () => target().props.onChange({ target: { value } }));
+      const submit = () => tree.root.findByType('form').props.onSubmit({ preventDefault() {} });
+      await act(async () => { submit(); submit(); });
+      assert.equal(calls.length, 1, name);
+      assert.equal(tree.root.findByType('fieldset').props.disabled, true);
+      assert.equal(tree.root.findAllByType('button').find(button => button.children.includes('Close')).props.disabled, true);
+      await act(async () => { finish(); });
+      assert.match(tree.root.findByProps({ role: 'alert' }).children.join(''), /Your entries are kept/);
+      assert.equal(target().props.value, value);
+      fail = false;
+      await act(async () => submit());
+      await act(async () => finish());
+      assert.deepEqual(calls[1], calls[0]);
+      assert.equal(tree.root.findAllByProps({ role: 'alert' }).length, 0);
+    } finally { await act(async () => tree.unmount()); }
+  }
+});
+
+test('feed presets and native time input survive note changes without changing the captured date', async () => {
+  const load = await sourceModules(mockTransport(async () => ({ data: [] })));
+  const { FeedModal } = await load('src/components/BabyView.jsx');
+  let tree, payload;
+  await act(async () => { tree = create(React.createElement(FeedModal, { dateKey: date, feed: { breastSide: 'left', durationMinutes: 20 }, saving: false, onClose() {}, onSave: async value => { payload = value; } })); });
+  try {
+    await act(async () => tree.root.findAllByType('input').find(input => input.props.type === 'time').props.onInput({ target: { value: '16:07' } }));
+    await act(async () => tree.root.findByType('textarea').props.onChange({ target: { value: 'Settled well.' } }));
+    await act(async () => tree.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    assert.equal(payload.time, '16:07');
+    assert.equal(payload.feedType, 'breastfeeding');
+    assert.equal(payload.breastSide, 'left');
+    assert.equal(payload.durationMinutes, 20);
+    assert.equal(tree.root.findAllByType('input').find(input => input.props.disabled).props.value, date);
+  } finally { await act(async () => tree.unmount()); }
+});
 const draft = { id, sleepDate: date, startMinute: 967, endMinute: 1003, notes: 'Woke during a journey.' };
 async function fixture(initialRows = []) {
   const rows = new Map(initialRows.map(row => [row.id,row]));

@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
+import CareDialog from './CareDialog';
 import { sleepMinuteToTime, sleepTimeToMinute, validateSleepEntry } from '../../utils/babySleepEntries';
 
 const fieldClass = 'pm-input mt-1 min-h-[48px] w-full min-w-0 rounded-xl px-3 text-[16px]';
@@ -14,26 +15,8 @@ export default function SleepEntryEditor({ entry, dateKey, onSave, onClose, disa
   const [error, setError] = useState('');
   const [latest, setLatest] = useState(null);
   const [saving, setSaving] = useState(false);
-  const pending = useRef(false), panel = useRef(null);
+  const pending = useRef(false);
   const busy = disabled || saving;
-  const busyRef = useRef(busy); busyRef.current = busy;
-  const closeRef = useRef(onClose); closeRef.current = onClose;
-  useEffect(() => {
-    if (typeof document === 'undefined') return undefined;
-    const previous = document.activeElement, overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    panel.current?.querySelector('input')?.focus();
-    const key = event => {
-      if (event.key === 'Escape') { event.preventDefault(); if (!busyRef.current) closeRef.current(); }
-      if (event.key !== 'Tab') return;
-      const targets = [...(panel.current?.querySelectorAll('input:not(:disabled),textarea:not(:disabled),button:not(:disabled)') || [])];
-      const first = targets[0], last = targets.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    };
-    document.addEventListener('keydown', key);
-    return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', key); previous?.focus?.(); };
-  }, []);
   const submit = async archive => {
     if (busy || pending.current) return;
     setError(''); setLatest(null);
@@ -51,10 +34,8 @@ export default function SleepEntryEditor({ entry, dateKey, onSave, onClose, disa
     setDraft(latest); setStart(sleepMinuteToTime(latest.startMinute)); setEnd(sleepMinuteToTime(latest.endMinute));
     setNextDay(latest.endMinute >= 1440); setLatest(null); setError('Latest saved entry loaded. Review it before saving.');
   };
-  return <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/50 p-2 sm:items-center sm:p-6">
-    <section ref={panel} role="dialog" aria-modal="true" aria-labelledby="sleep-entry-title" className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
-      <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3"><h2 id="sleep-entry-title" className="text-lg font-bold text-slate-950">{entry ? 'Edit sleep' : 'Add sleep'}</h2><button type="button" disabled={busy} onClick={onClose} className="min-h-[44px] rounded-xl border px-3 font-semibold">Cancel</button></header>
-      <form className="space-y-4 overflow-y-auto p-4" onSubmit={event => { event.preventDefault(); void submit(false); }}>
+  return <CareDialog title={entry ? 'Edit sleep' : 'Add sleep'} onClose={onClose} busy={busy}>
+      <form className="space-y-4" onSubmit={event => { event.preventDefault(); void submit(false); }}>
         <p className="text-sm text-slate-600">Record exact times and keep a note for later.</p>
         <label className="block text-sm font-semibold text-slate-700">Sleep date<input type="date" required disabled={busy} value={draft.sleepDate} onInput={event => setDraft({ ...draft, sleepDate: event.target.value })} onChange={event => setDraft({ ...draft, sleepDate: event.target.value })} className={fieldClass} /></label>
         <div className="grid grid-cols-2 gap-3"><label className="min-w-0 text-sm font-semibold text-slate-700">Start<input type="time" step="60" required disabled={busy} value={start} onInput={event => setStart(event.target.value)} onChange={event => setStart(event.target.value)} className={fieldClass} /></label><label className="min-w-0 text-sm font-semibold text-slate-700">End<input type="time" step="60" required disabled={busy} value={end} onInput={event => setEnd(event.target.value)} onChange={event => setEnd(event.target.value)} className={fieldClass} /></label></div>
@@ -66,6 +47,5 @@ export default function SleepEntryEditor({ entry, dateKey, onSave, onClose, disa
         <button type="submit" disabled={busy || Boolean(latest) || Boolean(draft.archivedAt)} className="pm-toolbar-primary min-h-[48px] w-full rounded-xl px-4 font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save sleep entry'}</button>
         {entry && !draft.archivedAt ? <button type="button" disabled={busy || Boolean(latest)} onClick={() => void submit(true)} className="min-h-[44px] rounded-xl px-3 font-semibold text-rose-700">Remove sleep entry</button> : null}
       </form>
-    </section>
-  </div>;
+  </CareDialog>;
 }
