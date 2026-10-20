@@ -1,3 +1,5 @@
+import { buildSleepMinuteSet, sleepMinuteToTime } from './babySleepEntries.js';
+
 const MINUTES_PER_BLOCK = 15;
 const BLOCKS_PER_DAY = 96;
 const DAY_START_BLOCK = 28; // 07:00
@@ -288,8 +290,8 @@ export const getSleepGuidanceStatusLabel = (status = 'awake') => (
   SLEEP_GUIDANCE_LABELS[status] || SLEEP_GUIDANCE_LABELS.awake
 );
 
-export const summarizeSleepGuidanceComparison = ({ sleepBlocks = [], guidance = null } = {}) => {
-  const asleep = normalizeSleepBlocks(sleepBlocks);
+export const summarizeSleepGuidanceComparison = ({ sleepBlocks = [], sleepEntries = [], dateKey = '', guidance = null } = {}) => {
+  const minutes = buildSleepMinuteSet(sleepBlocks, sleepEntries, dateKey);
   const expectedBlocks = new Set();
   const flexibleBlocks = new Set();
 
@@ -304,24 +306,25 @@ export const summarizeSleepGuidanceComparison = ({ sleepBlocks = [], guidance = 
   let actualOutsideGuide = 0;
   let missedExpected = 0;
 
-  asleep.forEach((index) => {
+  minutes.forEach((minute) => {
+    const index = Math.floor(minute / 15);
     if (expectedBlocks.has(index)) actualInExpected += 1;
     else if (flexibleBlocks.has(index)) actualInFlexible += 1;
     else actualOutsideGuide += 1;
   });
 
   expectedBlocks.forEach((index) => {
-    if (!asleep.has(index)) missedExpected += 1;
+    for (let minute = index * 15; minute < (index + 1) * 15; minute += 1) if (!minutes.has(minute)) missedExpected += 1;
   });
 
   return {
-    actualMinutes: asleep.size * MINUTES_PER_BLOCK,
+    actualMinutes: minutes.size,
     expectedMinutes: expectedBlocks.size * MINUTES_PER_BLOCK,
     flexibleMinutes: flexibleBlocks.size * MINUTES_PER_BLOCK,
-    actualInExpectedMinutes: actualInExpected * MINUTES_PER_BLOCK,
-    actualInFlexibleMinutes: actualInFlexible * MINUTES_PER_BLOCK,
-    actualOutsideGuideMinutes: actualOutsideGuide * MINUTES_PER_BLOCK,
-    missedExpectedMinutes: missedExpected * MINUTES_PER_BLOCK,
+    actualInExpectedMinutes: actualInExpected,
+    actualInFlexibleMinutes: actualInFlexible,
+    actualOutsideGuideMinutes: actualOutsideGuide,
+    missedExpectedMinutes: missedExpected,
   };
 };
 
@@ -352,28 +355,29 @@ export const buildSleepBlockRecords = ({ babyId, userId, householdProjectId = nu
     }))
 );
 
-export const summarizeSleepBlocks = (blocks = []) => {
-  const asleep = normalizeSleepBlocks(blocks);
-  const sorted = Array.from(asleep).sort((left, right) => left - right);
+export const summarizeSleepBlocks = (blocks = [], sleepEntries = [], dateKey = '') => {
+  const minutes = buildSleepMinuteSet(blocks, sleepEntries, dateKey);
+  const asleep = new Set([...minutes].map(minute => Math.floor(minute / 15)));
+  const sorted = [...asleep].sort((a, b) => a - b);
   const sessions = [];
   let current = null;
 
-  for (const blockIndex of sorted) {
-    if (!current || blockIndex !== current.endBlock + 1) {
+  for (const minute of [...minutes].sort((a, b) => a - b)) {
+    if (!current || minute !== current.endMinute) {
       current = {
-        startBlock: blockIndex,
-        endBlock: blockIndex,
+        startMinute: minute,
+        endMinute: minute + 1,
       };
       sessions.push(current);
     } else {
-      current.endBlock = blockIndex;
+      current.endMinute = minute + 1;
     }
   }
 
   let daytimeBlocks = 0;
   let nightBlocks = 0;
-  for (const blockIndex of asleep) {
-    if (blockIndex >= DAY_START_BLOCK && blockIndex < NIGHT_START_BLOCK) {
+  for (const minute of minutes) {
+    if (minute >= DAY_START_BLOCK * 15 && minute < NIGHT_START_BLOCK * 15) {
       daytimeBlocks += 1;
     } else {
       nightBlocks += 1;
@@ -383,18 +387,20 @@ export const summarizeSleepBlocks = (blocks = []) => {
   return {
     asleepBlocks: sorted,
     totalBlocks: asleep.size,
-    totalMinutes: asleep.size * MINUTES_PER_BLOCK,
-    totalHours: Math.round((asleep.size * MINUTES_PER_BLOCK / 60) * 10) / 10,
-    daytimeMinutes: daytimeBlocks * MINUTES_PER_BLOCK,
-    nightMinutes: nightBlocks * MINUTES_PER_BLOCK,
-    daytimeHours: Math.round((daytimeBlocks * MINUTES_PER_BLOCK / 60) * 10) / 10,
-    nightHours: Math.round((nightBlocks * MINUTES_PER_BLOCK / 60) * 10) / 10,
+    totalMinutes: minutes.size,
+    totalHours: Math.round((minutes.size / 60) * 10) / 10,
+    daytimeMinutes: daytimeBlocks,
+    nightMinutes: nightBlocks,
+    daytimeHours: Math.round((daytimeBlocks / 60) * 10) / 10,
+    nightHours: Math.round((nightBlocks / 60) * 10) / 10,
     sessionCount: sessions.length,
     sessions: sessions.map((session) => ({
       ...session,
-      startTime: getSleepBlockTimeLabel(session.startBlock),
-      endTime: session.endBlock >= BLOCKS_PER_DAY - 1 ? '24:00' : getSleepBlockTimeLabel(session.endBlock + 1),
-      durationMinutes: (session.endBlock - session.startBlock + 1) * MINUTES_PER_BLOCK,
+      startBlock: session.startMinute / 15,
+      endBlock: session.endMinute / 15 - 1,
+      startTime: sleepMinuteToTime(session.startMinute),
+      endTime: session.endMinute === 1440 ? '24:00' : sleepMinuteToTime(session.endMinute),
+      durationMinutes: session.endMinute - session.startMinute,
     })),
   };
 };
@@ -403,13 +409,15 @@ export const summarizeBabyDay = ({
   feeds = [],
   nappies = [],
   sleepBlocks = [],
+  sleepEntries = [],
+  dateKey = '',
   latestWeight = null,
 } = {}) => {
   const feedCount = feeds.length;
   const totalFeedMinutes = feeds.reduce((sum, feed) => sum + (Number(feed.durationMinutes ?? feed.duration_minutes) || 0), 0);
   const wetNappies = nappies.filter((nappy) => ['wet', 'mixed'].includes(String(nappy.nappyType ?? nappy.nappy_type ?? '').toLowerCase())).length;
   const pooNappies = nappies.filter((nappy) => ['poo', 'mixed'].includes(String(nappy.nappyType ?? nappy.nappy_type ?? '').toLowerCase())).length;
-  const sleep = summarizeSleepBlocks(sleepBlocks);
+  const sleep = summarizeSleepBlocks(sleepBlocks, sleepEntries, dateKey);
 
   return {
     feedCount,
@@ -430,7 +438,7 @@ const getEventMinuteOfDay = (entry = {}) => {
   return (date.getHours() * 60) + date.getMinutes();
 };
 
-export const buildBabyActivityLog = ({ feeds = [], nappies = [], sleepBlocks = [] } = {}) => {
+export const buildBabyActivityLog = ({ feeds = [], nappies = [], sleepBlocks = [], sleepEntries = [], dateKey = '' } = {}) => {
   const feedEvents = feeds.map((feed) => {
     const feedType = String(feed.feedType ?? feed.feed_type ?? '').toLowerCase();
     const breastSide = String(feed.breastSide ?? feed.breast_side ?? '').toLowerCase();
@@ -459,7 +467,7 @@ export const buildBabyActivityLog = ({ feeds = [], nappies = [], sleepBlocks = [
     };
   });
 
-  const sleepEvents = summarizeSleepBlocks(sleepBlocks).sessions.map((session) => ({
+  const sleepEvents = summarizeSleepBlocks(sleepBlocks, sleepEntries, dateKey).sessions.map((session) => ({
     id: `sleep:${session.startBlock}`,
     sourceId: String(session.startBlock),
     type: 'sleep',

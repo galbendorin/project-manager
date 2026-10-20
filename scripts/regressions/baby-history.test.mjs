@@ -111,7 +111,7 @@ test('changing the selected day during a save never applies its sleep to the new
   } finally { await f.hook.close(); }
 });
 
-test('phone grid supports mouse, two-tap touch ranges and keyboard without double toggles', async () => {
+test('phone hour picker toggles individual quarters without filling intervening slots; desktop mouse still paints', async () => {
   const load = await sourceModules(mockTransport(() => ({ data: [] })));
   const { SleepGrid } = await load('src/components/BabyView.jsx');
   let root;
@@ -123,13 +123,13 @@ test('phone grid supports mouse, two-tap touch ranges and keyboard without doubl
     await act(async () => slot(1).props.onPointerDown(down('mouse')));
     await act(async () => slot(1).props.onClick(click(1)));
     assert.equal(slot(1).props['aria-pressed'], true);
-    await act(async () => slot(4).props.onPointerDown(down('touch')));
-    await act(async () => slot(4).props.onClick(click(1)));
-    await act(async () => slot(7).props.onPointerDown(down('touch')));
-    await act(async () => slot(7).props.onClick(click(1)));
-    for (const index of [4,5,6,7]) assert.equal(slot(index).props['aria-pressed'], true);
-    await act(async () => slot(10).props.onClick(click(0)));
-    assert.equal(slot(10).props['aria-pressed'], true);
+    await act(async () => root.root.findByType('select').props.onChange({ target: { value: '1' } }));
+    await act(async () => slot(4).props.onClick());
+    await act(async () => slot(7).props.onClick());
+    for (const index of [4,7]) assert.equal(slot(index).props['aria-pressed'], true);
+    for (const index of [5,6]) assert.equal(slot(index).props['aria-pressed'], false);
+    await act(async () => slot(4).props.onClick());
+    assert.equal(slot(4).props['aria-pressed'], false);
   } finally { await act(async () => root.unmount()); }
 });
 
