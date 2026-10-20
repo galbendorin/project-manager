@@ -28,6 +28,7 @@ test('read-only export independently restores exact bigint, decimal, JSON and re
         shopping_contributions: ', operation_id uuid UNIQUE, project_id uuid',
         shopping_contribution_intents: ', operation_id uuid, intent_id uuid',
         weekly_timesheet_entries: ', project_id uuid, timesheet_id uuid', finance_household_members: ', owner_user_id uuid',
+        baby_sleep_entries: ', baby_id uuid REFERENCES public.baby_profiles(id), sleep_date date, start_minute integer, end_minute integer, notes text, version integer',
       }[name] || '';
       // projects must exist before dependent tables in the fixture's creation order.
       if (name === 'projects') continue;
@@ -46,6 +47,8 @@ test('read-only export independently restores exact bigint, decimal, JSON and re
     await source.query("UPDATE public.projects SET tasks=jsonb_set(tasks,'{0,originRef}',$1::jsonb),registers=$2::jsonb,tracker=$3::jsonb", [JSON.stringify(link), JSON.stringify({ actions: [{ _id: 'retained-action', projectPlanOperationIds: [parent], projectPlanLastLink: link }] }), JSON.stringify([{ _id: 'retained-tracker', projectPlanLastReturn: { operationId: parent, link }, dueDate: '2026-10-14' }])]);
     await source.query('UPDATE public.manual_todos SET meta=$1::jsonb', [JSON.stringify({ projectPlanLink: link, projectPlanOperationIds: [parent], retainedNote: 'Original notes' })]);
     await source.query('INSERT INTO public.profiles(id,user_id) VALUES ($1,$1)',[owner]);
+    await source.query('INSERT INTO public.baby_profiles(id,user_id) VALUES ($1,$2)',[parent,owner]);
+    await source.query("INSERT INTO public.baby_sleep_entries(id,user_id,baby_id,sleep_date,start_minute,end_minute,notes,version) VALUES($1,$2,$3,'2026-10-20',967,1003,'Woke during journey',2)",[item,owner,parent]);
     await source.query('INSERT INTO public.task_card_checklists VALUES ($1,$2,$3)',[parent,owner,project]);
     await source.query('INSERT INTO public.task_card_checklist_items VALUES ($1,$2,$3,$4,true)',[item,owner,project,parent]);
     await source.exec('ALTER TABLE public.task_eisenhower_preferences ADD COLUMN planned_day date, ADD COLUMN planned_start_minute integer, ADD COLUMN planned_duration_minutes integer');
@@ -66,12 +69,18 @@ test('read-only export independently restores exact bigint, decimal, JSON and re
     assert.match(bundle.tables.find(t=>t.name==='manual_todos').rows_json,/123456789\.123456789/);
     const report = await verifyBackup(bundle,()=>new PGlite());
     assert.equal(report.status,'passed');
-    assert.equal(report.totalRows,7);
+    assert.equal(report.totalRows,9);
+    const exact = JSON.parse(bundle.tables.find(t=>t.name==='baby_sleep_entries').rows_json)[0];
+    assert.equal(exact.start_minute,967); assert.equal(exact.end_minute,1003); assert.equal(exact.notes,'Woke during journey'); assert.equal(exact.version,2);
     assert.ok(report.relationships>4);
     const legacy=structuredClone(bundle);legacy.format='pmw-household-v1';
-    legacy.tables=legacy.tables.filter(t=>t.name!=='task_eisenhower_preferences');
-    legacy.schema=legacy.schema.filter(t=>t.name!=='task_eisenhower_preferences');
-    assert.equal((await verifyBackup(legacy,()=>new PGlite())).totalRows,6);
+    legacy.tables=legacy.tables.filter(t=>!['task_eisenhower_preferences','baby_sleep_entries'].includes(t.name));
+    legacy.schema=legacy.schema.filter(t=>!['task_eisenhower_preferences','baby_sleep_entries'].includes(t.name));
+    assert.equal((await verifyBackup(legacy,()=>new PGlite())).totalRows,7);
+    const v2=structuredClone(bundle);v2.format='pmw-household-v2';
+    v2.tables=v2.tables.filter(t=>t.name!=='baby_sleep_entries');
+    v2.schema=v2.schema.filter(t=>t.name!=='baby_sleep_entries');
+    assert.equal((await verifyBackup(v2,()=>new PGlite())).totalRows,8);
     // A shared-project entry cannot silently disappear from an owned timesheet.
     const otherOwner = '55555555-5555-4555-8555-555555555555';
     const externalProject = '66666666-6666-4666-8666-666666666666';

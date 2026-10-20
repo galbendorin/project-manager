@@ -159,7 +159,7 @@ test('after a lost acknowledgement, reverting an attempted block still writes th
   } finally { await act(async () => root.unmount()); }
 });
 
-test('phone touch ranges on separate days share one Save changes action', async () => {
+test('phone single-slot edits on separate days share one Save changes without filling gaps', async () => {
   const load = await sourceModules(mockTransport(() => ({ data: [] })));
   const { PatternPanel } = await load('src/components/BabyView.jsx');
   let root, saved;
@@ -168,13 +168,14 @@ test('phone touch ranges on separate days share one Save changes action', async 
     await act(async () => root.root.findAllByType('button').find(node => node.children.includes('Edit history')).props.onClick());
     const slot = (date, index) => root.root.findAllByType('article').find(node => node.props['data-history-date'] === date).findAllByType('button').find(node => node.props['data-sleep-block-index'] === index);
     const tap = async (date, index) => {
-      await act(async () => slot(date, index).props.onPointerDown({ pointerType: 'touch' }));
-      await act(async () => slot(date, index).props.onClick({ detail: 1, preventDefault() {} }));
+      const day = root.root.findAllByType('article').find(node => node.props['data-history-date'] === date);
+      await act(async () => day.findByType('select').props.onChange({ target: { value: String(Math.floor(index / 4)) } }));
+      await act(async () => slot(date, index).props.onClick());
     };
     await tap(past, 0); await tap(past, 3);
     await tap(other, 8); await tap(other, 9);
     assert.equal(root.root.findAllByType('button').filter(node => node.children.includes('Save changes')).length, 1);
     await act(async () => root.root.findAllByType('button').find(node => node.children.includes('Save changes')).props.onClick());
-    assert.deepEqual(Array.from(saved, row => `${row.dateKey}:${row.blockIndex}`), [`${past}:0`,`${past}:1`,`${past}:2`,`${past}:3`,`${other}:8`,`${other}:9`]);
+    assert.deepEqual(Array.from(saved, row => `${row.dateKey}:${row.blockIndex}`), [`${past}:0`,`${past}:3`,`${other}:8`,`${other}:9`]);
   } finally { await act(async () => root.unmount()); }
 });

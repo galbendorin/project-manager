@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 
 export const excludedTables = ['ai_generation_reservations', 'api_rate_limits', 'billing_checkout_sessions',
   'meal_ingredient_calorie_cache', 'push_subscriptions', 'user_profiles'];
-export const coveredTables = `baby_feed_entries baby_nappy_entries baby_profiles baby_sleep_blocks baby_weight_entries
+export const coveredTables = `baby_feed_entries baby_nappy_entries baby_profiles baby_sleep_blocks baby_sleep_entries baby_weight_entries
 finance_actual_entries finance_balance_snapshots finance_budget_items finance_categories finance_goals
 finance_household_members finance_month_reconciliation_lines finance_month_reconciliations finance_mortgages
 finance_profiles finance_scenario_changes finance_scenarios habit_entries habit_items habit_reminders
@@ -38,6 +38,7 @@ export function scopeFor(table) {
   const projects = '(SELECT id FROM selected_projects)';
   if (table.name === 'projects') return 'user_id = (SELECT owner_id FROM scope)';
   if (table.name === 'profiles') return 'id = (SELECT owner_id FROM scope)';
+  if (table.name === 'baby_sleep_entries') return 'baby_id IN (SELECT id FROM selected_baby_profiles)';
   if (table.name === 'task_eisenhower_preferences') return `user_id = (SELECT owner_id FROM scope) AND ((manual_todo_id IS NOT NULL AND manual_todo_id IN (SELECT id FROM selected_manual_todos)) OR (project_id IN ${projects}))`;
   if (table.name === 'meal_library_ingredients') return 'meal_id IN (SELECT id FROM selected_meal_library_meals)';
   if (table.name === 'shopping_contribution_intents') return 'operation_id IN (SELECT operation_id FROM selected_shopping_contributions)';
@@ -75,7 +76,7 @@ payload AS (SELECT n.name, count(r.j) AS count,
  coalesce(jsonb_agg(r.j ORDER BY r.j::text COLLATE "C") FILTER (WHERE r.j IS NOT NULL), '[]'::jsonb)::text AS rows_json,
  encode(sha256(convert_to(coalesce(string_agg(r.j::text,E'\\n' ORDER BY r.j::text COLLATE "C"),''),'UTF8')),'hex') AS sha256
  FROM table_names n LEFT JOIN export_rows r ON r.name=n.name GROUP BY n.name)
-SELECT jsonb_build_object('format','pmw-household-v2','exported_at',now(),'owner_id',(SELECT owner_id FROM scope),
+SELECT jsonb_build_object('format','pmw-household-v3','exported_at',now(),'owner_id',(SELECT owner_id FROM scope),
  'scope_gaps',jsonb_build_object('timesheet_entries_outside_owned_projects',
  (SELECT count(*) FROM public.weekly_timesheet_entries e JOIN public.weekly_timesheets w ON w.id=e.timesheet_id
  WHERE w.user_id=(SELECT owner_id FROM scope) AND e.project_id NOT IN (SELECT id FROM selected_projects)),
