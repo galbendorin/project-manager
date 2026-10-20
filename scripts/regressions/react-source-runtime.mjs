@@ -32,7 +32,7 @@ export async function sourceModules(transport, globals = {}) {
     if(cache.has(file)) return cache.get(file);
     let code = await readFile(file,'utf8');
     if(file.endsWith('/TaskCardChecklistPanel.jsx')) code += '\nexport { ChecklistItemComposer };';
-    if(file.endsWith('/BabyView.jsx')) code += '\nexport { PatternPanel, SleepGrid };';
+    if(file.endsWith('/BabyView.jsx')) code += '\nexport { PatternPanel, SleepGrid, FeedModal, WeightModal, NappyModal };';
     if(file.endsWith('.jsx')) code = (await transformWithOxc(code,file,{jsx:{runtime:'classic'}})).code;
     const mod = new vm.SourceTextModule(code,{context,identifier:file,
       initializeImportMeta(meta){meta.url=pathToFileURL(file).href;meta.env={MODE:'test',DEV:false};}});

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { normalizeInviteEmail } from '../utils/projectSharing';
+import CareDialog from './baby/CareDialog';
 
 const MAX_PROJECT_EDITORS = 5;
 
@@ -22,6 +23,7 @@ const isMissingInviteTableError = (error) => {
 const ProjectShareModal = ({
   isOpen,
   readOnly = false,
+  care = false,
   project,
   onClose,
   onMembershipChanged,
@@ -91,7 +93,7 @@ const ProjectShareModal = ({
   }, [fetchPendingInvites, isOpen, project?.id]);
 
   useEffect(() => {
-    if (!isOpen) return undefined;
+    if (!isOpen || care) return undefined;
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
@@ -108,7 +110,7 @@ const ProjectShareModal = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.cancelAnimationFrame(focusFrame);
     };
-  }, [isOpen, onClose]);
+  }, [care, isOpen, onClose]);
 
   if (!isOpen || !project) return null;
 
@@ -230,21 +232,8 @@ const ProjectShareModal = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 px-0 sm:items-center sm:px-4">
-      <button
-        type="button"
-        className="absolute inset-0 w-full cursor-default"
-        onClick={onClose}
-        aria-label="Close project access dialog"
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="project-share-title"
-        className="relative z-10 flex max-h-[calc(100dvh-16px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-slate-200 bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-[28px]"
-      >
-        <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-4 py-5 sm:px-6">
+  const content = (<>
+        {!care ? <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-4 py-5 sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Project access</p>
@@ -262,9 +251,9 @@ const ProjectShareModal = ({
               Close
             </button>
           </div>
-        </div>
+        </div> : null}
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom,0px)+20px)] sm:px-6 sm:pb-5">
+        <div className={care ? 'space-y-4' : 'min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom,0px)+20px)] sm:px-6 sm:pb-5'}>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
             {readOnly
               ? 'You can view and edit shared household records, but only the owner can add or remove access.'
@@ -290,7 +279,7 @@ const ProjectShareModal = ({
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">You</p>
+                        <p className="text-sm font-semibold text-slate-900">{readOnly ? 'Project owner' : 'You'}</p>
                         <p className="text-xs text-slate-500">Project owner</p>
                       </div>
                       <span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
@@ -430,6 +419,24 @@ const ProjectShareModal = ({
             </div>
           ) : null}
         </div>
+  </>);
+  if (care) return <CareDialog title="Household sharing" onClose={onClose} busy={submitting}><p className="mb-4 break-words text-[16px] font-semibold text-slate-900">{project.name}</p>{content}</CareDialog>;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 px-0 sm:items-center sm:px-4">
+      <button
+        type="button"
+        className="absolute inset-0 w-full cursor-default"
+        onClick={onClose}
+        aria-label="Close project access dialog"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="project-share-title"
+        className="relative z-10 flex max-h-[calc(100dvh-16px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-slate-200 bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-[28px]"
+      >
+        {content}
       </div>
     </div>
   );
