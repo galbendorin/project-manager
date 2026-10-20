@@ -57,7 +57,12 @@ test('database rejects invalid intervals and long notes, but accepts explicit ov
 test('installation verification reports the protected table, constraints, policy and version trigger', async () => {
   const results = await db.exec(await readFile(new URL('../sql/2026-10-20_verify_exact_baby_sleep.sql', import.meta.url), 'utf8'));
   const rows = results.flatMap(result => result.rows);
-  assert.equal(rows.length, 7);
+  // Newer PostgreSQL catalogs also expose NOT NULL constraints here.
+  for (const name of ['baby_sleep_entries_pkey','baby_sleep_entries_baby_id_fkey','baby_sleep_entry_interval_check','baby_sleep_entry_version_check']) {
+    assert.ok(rows.some(row => row.kind === 'constraint' && row.object_name === name && row.detail.validated));
+  }
+  assert.equal(rows.filter(row => row.kind === 'policy').length,1);
+  assert.equal(rows.filter(row => row.kind === 'trigger').length,1);
   const table = rows.find(row => row.kind === 'table').detail;
   assert.equal(table.rls, true); assert.equal(table.anon_select, false);
   assert.equal(table.authenticated_insert, true); assert.equal(table.authenticated_update, true); assert.equal(table.authenticated_delete, false);
