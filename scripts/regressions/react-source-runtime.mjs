@@ -8,6 +8,15 @@ import { create, act } from 'react-test-renderer';
 import { transformWithOxc } from 'vite';
 
 export { React, create, act };
+export async function historySlot(root, date, index) {
+  const cell = root.root.findAllByType('button').find(node => node.props['data-history-date'] === date && node.props['data-history-hour'] === Math.floor(index / 4));
+  await act(async () => cell.props.onClick());
+  return root.root.findAllByType('button').find(node => node.props['data-sleep-block-index'] === index);
+}
+export async function toggleHistorySlot(root, date, index) {
+  const slot = await historySlot(root, date, index);
+  await act(async () => slot.props.onClick());
+}
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 
 // Load actual hook/component source; only Supabase is synthetic. No hosted

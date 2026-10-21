@@ -6,7 +6,7 @@ import SleepEntryEditor from './baby/SleepEntryEditor';
 import SleepEntryList from './baby/SleepEntryList';
 import CareDialog from './baby/CareDialog';
 import { useBabySleepEntries } from '../hooks/useBabySleepEntries';
-import { sleepEntryIntervalForDay } from '../utils/babySleepEntries';
+import { buildSleepMinuteSet, sleepEntryIntervalForDay } from '../utils/babySleepEntries';
 import {
   addBabyDays,
   buildBabyActivityLog,
@@ -142,81 +142,6 @@ const buildCareMarkersByBlock = ({ feeds = [], nappies = [] } = {}) => {
   feeds.forEach((feed) => addMarker(getCareBlockIndex(feed.occurredAt), 'F'));
   nappies.forEach((nappy) => addMarker(getCareBlockIndex(nappy.occurredAt), getNappyMarker(nappy.nappyType)));
   return markers;
-};
-
-const getMarkerColor = (marker) => CARE_MARKER_STYLES[marker]?.color || '#334155';
-
-const getTimelinePercent = (blockIndex) => Math.min(100, Math.max(0, ((Number(blockIndex) || 0) / 96) * 100));
-
-const formatTimelineMarkerTime = (entry = {}) => formatDateTime(entry.occurredAt || entry.occurred_at);
-
-const buildTimelineMarkerClusters = (points = []) => {
-  const sorted = points
-    .filter((point) => Number.isInteger(point.blockIndex))
-    .sort((left, right) => left.blockIndex - right.blockIndex);
-  const clusters = [];
-
-  sorted.forEach((point) => {
-    const previous = clusters[clusters.length - 1];
-    if (previous && point.blockIndex - previous.endBlock <= 2) {
-      previous.points.push(point);
-      previous.endBlock = Math.max(previous.endBlock, point.blockIndex);
-      return;
-    }
-
-    clusters.push({
-      startBlock: point.blockIndex,
-      endBlock: point.blockIndex,
-      points: [point],
-    });
-  });
-
-  return clusters.map((cluster) => {
-    const counts = cluster.points.reduce((acc, point) => {
-      acc[point.marker] = (acc[point.marker] || 0) + 1;
-      return acc;
-    }, {});
-    const pieces = ['F', 'W', 'S', 'WS']
-      .filter((marker) => counts[marker])
-      .map((marker) => ({
-        marker,
-        label: counts[marker] > 1 ? `${marker}${counts[marker]}` : marker,
-      }));
-    const averageBlock = cluster.points.reduce((sum, point) => sum + point.blockIndex, 0) / cluster.points.length;
-    const title = cluster.points.map((point) => `${point.timeLabel} ${point.title}`).join(', ');
-
-    return {
-      id: `${cluster.startBlock}-${cluster.endBlock}-${pieces.map((piece) => piece.label).join('-')}`,
-      blockIndex: Math.round(averageBlock),
-      pieces,
-      title,
-    };
-  });
-};
-
-const buildMobilePatternMarkers = ({ feeds = [], nappies = [] } = {}) => {
-  const feedPoints = feeds.map((feed) => ({
-    blockIndex: getCareBlockIndex(feed.occurredAt),
-    marker: 'F',
-    timeLabel: formatTimelineMarkerTime(feed),
-    title: 'feed',
-  }));
-
-  const nappyPoints = nappies.map((nappy) => {
-    const marker = getNappyMarker(nappy.nappyType);
-    const label = marker === 'W' ? 'wet nappy' : marker === 'S' ? 'solid nappy' : marker === 'WS' ? 'mixed nappy' : 'nappy';
-    return {
-      blockIndex: getCareBlockIndex(nappy.occurredAt),
-      marker,
-      timeLabel: formatTimelineMarkerTime(nappy),
-      title: label,
-    };
-  });
-
-  return {
-    feeds: buildTimelineMarkerClusters(feedPoints),
-    nappies: buildTimelineMarkerClusters(nappyPoints),
-  };
 };
 
 const getSleepBlockIndexFromPoint = (clientX, clientY) => {
@@ -568,276 +493,72 @@ const NappyModal = ({ dateKey, nappy, onClose, onSave, saving }) => {
   );
 };
 
-const SleepMatrix = ({ days, selectedDate, editor = null, disabled = false }) => (
-  <div className="overflow-x-auto rounded-[24px] border border-slate-200 bg-white shadow-sm">
-    <div className="min-w-[720px] sm:min-w-0">
-      <div className="grid grid-cols-[76px_minmax(0,1fr)] border-b border-slate-200 bg-slate-50 sm:grid-cols-[92px_minmax(0,1fr)]">
-        <div className="border-r border-slate-200 px-2 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-          Date
-        </div>
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
-          {Array.from({ length: 24 }, (_, hour) => (
-            <div key={hour} className={`border-r border-slate-200 px-0.5 py-2 text-center text-[8px] font-black tabular-nums text-slate-500 last:border-r-0 sm:text-[10px] ${hour % 3 === 0 ? '' : 'text-transparent sm:text-slate-400'}`}>
-              {String(hour).padStart(2, '0')}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div>
-        {days.map((day) => {
-          const asleepSet = normalizeSleepBlocks(day.sleepBlocks);
-          const careMarkers = buildCareMarkersByBlock({ feeds: day.feeds, nappies: day.nappies });
-          const hasAnySleep = day.summary.sleep.totalMinutes > 0;
-          const comparison = summarizeSleepGuidanceComparison({ sleepBlocks: day.sleepBlocks, sleepEntries: day.sleepEntries, dateKey: day.dateKey, guidance: day.sleepGuidance });
-          return (
-            <div key={day.dateKey} data-history-date={day.dateKey} className={`grid grid-cols-[76px_minmax(0,1fr)] border-b border-slate-100 last:border-b-0 sm:grid-cols-[92px_minmax(0,1fr)] ${day.dateKey === selectedDate ? 'bg-sky-50/50' : 'bg-white'}`}>
-              <div className="border-r border-slate-200 px-2 py-2">
-                <div className="text-[10px] font-black leading-tight text-slate-900 sm:text-xs">{formatBabyDisplayDate(day.dateKey)}</div>
-                <div className="mt-1 flex flex-wrap gap-1 text-[9px] font-bold text-slate-500">
-                  {day.summary.feedCount ? <span>F{day.summary.feedCount}</span> : null}
-                  {day.summary.totalNappies ? <span>N{day.summary.totalNappies}</span> : null}
-                  {hasAnySleep ? <span>{formatDuration(day.summary.sleep.totalMinutes)}</span> : <span>No sleep</span>}
-                  {day.sleepGuidance ? <span>{day.sleepGuidance.monthLabel}</span> : null}
-                  {comparison.actualOutsideGuideMinutes > 0 ? <span className="text-violet-700">+{formatDuration(comparison.actualOutsideGuideMinutes)}</span> : null}
-                </div>
-                {day.changed ? <p className="mt-1 text-[10px] font-bold text-indigo-700">Edited</p> : null}
-              </div>
-              <div className="grid gap-px bg-slate-200 p-px" style={{ gridTemplateColumns: 'repeat(96, minmax(0, 1fr))' }}>
-                {Array.from({ length: 96 }, (_, index) => (
-                  (() => {
-                    const markers = careMarkers.get(index) || [];
-                    const asleep = asleepSet.has(index);
-                    const guideStatus = getSleepGuidanceBlockStatus(index, day.sleepGuidance);
-                    const guideClass = asleep && guideStatus === 'awake'
-                      ? 'bg-violet-500 text-white'
-                      : asleep
-                        ? 'bg-sky-600 text-white'
-                        : guideStatus === 'expected'
-                          ? 'bg-sky-100 text-sky-900'
-                          : guideStatus === 'flexible'
-                            ? 'bg-orange-100 text-orange-900'
-                            : index % 4 === 0
-                              ? 'bg-slate-50 text-slate-800'
-                              : 'bg-white text-slate-800';
-                    const Block = editor ? 'button' : 'div';
-                    return (
-                      <Block
-                        key={index}
-                        {...(editor ? {
-                          type: 'button', disabled,
-                          'data-sleep-block-index': index,
-                          'aria-label': `${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)} ${asleep ? 'asleep' : 'awake'}`,
-                          'aria-pressed': asleep,
-                          onPointerDown: (event) => {
-                            event.preventDefault();
-                            event.currentTarget.setPointerCapture?.(event.pointerId);
-                            editor.start(day.dateKey, index);
-                          },
-                          onClick: (event) => { if (event.detail === 0) editor.toggle(day.dateKey, index); },
-                        } : {})}
-                        title={`${formatBabyDisplayDate(day.dateKey)} ${getSleepBlockTimeLabel(index)} · ${getSleepGuidanceStatusLabel(guideStatus)}${markers.length ? ` · ${markers.join('')}` : ''}`}
-                        className={`relative flex ${editor ? 'min-h-[44px] touch-none focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700' : 'h-5'} min-w-0 items-center justify-center overflow-hidden text-[8px] font-black leading-none ${guideClass} ${index % 24 === 0 ? 'shadow-[inset_1px_0_0_rgba(15,23,42,0.2)]' : ''}`}
-                      >
-                        {!editor && !asleep ? (day.sleepEntries || []).map(entry => {
-                          const interval = sleepEntryIntervalForDay(entry, day.dateKey);
-                          if (!interval) return null;
-                          const start = Math.max(interval.start, index * 15), end = Math.min(interval.end, (index + 1) * 15);
-                          return end > start ? <span key={entry.id} title="Exact sleep · see times and notes below" className="absolute inset-y-0 bg-violet-600" style={{ left: `${(start - index * 15) / 15 * 100}%`, width: `${(end - start) / 15 * 100}%` }} /> : null;
-                        }) : null}
-                        {markers.map((marker) => (
-                          <span
-                            key={marker}
-                            className={asleep ? 'relative inline-block rounded-sm bg-white/95 px-px' : 'relative inline-block'}
-                            style={{
-                              color: CARE_MARKER_STYLES[marker]?.color || '#334155',
-                              WebkitTextFillColor: CARE_MARKER_STYLES[marker]?.color || '#334155',
-                            }}
-                          >
-                            {marker}
-                          </span>
-                        ))}
-                      </Block>
-                    );
-                  })()
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+const SleepHistoryGrid = ({ days, selectedDate, editor = null, disabled = false }) => {
+  const [selection, setSelection] = useState(null);
+  const [windowRevision, setWindowRevision] = useState(0);
+  const editPanel = useRef(null);
+  const columns = useMemo(() => days.map(day => {
+    const hourMinutes = Array(24).fill(0);
+    for (const minute of buildSleepMinuteSet(day.sleepBlocks, day.sleepEntries, day.dateKey)) hourMinutes[Math.floor(minute / 60)] += 1;
+    const intervals = (day.sleepEntries || []).flatMap(entry => {
+      const interval = sleepEntryIntervalForDay(entry, day.dateKey);
+      return interval ? [{ ...interval, id: entry.id }] : [];
+    });
+    return { ...day, intervals, hourMinutes, asleep: normalizeSleepBlocks(day.sleepBlocks), markers: buildCareMarkersByBlock(day) };
+  }), [days]);
+  const activeDay = columns.find(day => day.dateKey === selection?.dateKey) || columns.find(day => day.dateKey === selectedDate) || columns[0];
+  const hourLabel = hour => String(hour).padStart(2, '0') + ':00';
+  const selectCell = (dateKey, hour) => {
+    setSelection({ dateKey, hour });
+    setWindowRevision(value => value + 1);
+    requestAnimationFrame(() => { editPanel.current?.focus?.({ preventScroll: true }); editPanel.current?.scrollIntoView?.({ block: 'nearest' }); });
+  };
+  return <div className="space-y-3">
+    <p className="text-[13px] leading-5 text-slate-600">Times run down the left; days run across. Scroll sideways for more days.{editor ? ' Choose a day and hour to edit below.' : ''}</p>
+    <div role="region" aria-label="Sleep history by time and day" tabIndex={0} className="max-h-[440px] overflow-auto overscroll-contain rounded-xl border border-slate-200">
+      <table className="table-fixed border-separate border-spacing-0 text-left" style={{ width: 56 + days.length * 120, minWidth: '100%' }}>
+        <caption className="sr-only">Sleep history. Each row is one hour; each day has four 15-minute marks per hour.</caption>
+        <colgroup><col style={{ width: 56 }} />{columns.map(day => <col key={day.dateKey} />)}</colgroup>
+        <thead className="sticky top-0 z-20"><tr>
+          <th scope="col" className="sticky left-0 z-30 border-b border-r border-slate-200 bg-slate-100 px-2 py-3 text-[12px] font-semibold text-slate-600">Time</th>
+          {columns.map(day => <th key={day.dateKey} scope="col" className={'border-b border-r border-slate-200 px-2 py-3 text-[13px] font-semibold text-slate-900 ' + (day.dateKey === selectedDate ? 'bg-sky-100' : 'bg-slate-50')}>
+            {formatBabyDisplayDate(day.dateKey)}<span className="mt-1 block text-[12px] font-normal text-slate-600">{formatDuration(day.summary.sleep.totalMinutes)} sleep</span>
+            <span className="mt-0.5 block text-[12px] font-normal text-rose-700">{day.summary.feedCount} {day.summary.feedCount === 1 ? 'feed' : 'feeds'}</span>
+            {day.changed ? <span className="mt-1 block text-[12px] text-indigo-700">Edited</span> : null}
+          </th>)}
+        </tr></thead>
+        <tbody>{Array.from({ length: 24 }, (_, hour) => <tr key={hour}>
+          <th scope="row" className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-2 align-top text-[12px] font-medium tabular-nums text-slate-600">{hourLabel(hour)}</th>
+          {columns.map(day => {
+            const Cell = editor ? 'button' : 'div';
+            return <td key={day.dateKey} aria-label={formatBabyDisplayDate(day.dateKey) + ' ' + hourLabel(hour) + ': ' + day.hourMinutes[hour] + ' min recorded sleep'} className="border-b border-r border-slate-200 p-0">
+              <Cell {...(editor ? { type: 'button', disabled, 'data-history-date': day.dateKey, 'data-history-hour': hour, 'aria-label': 'Edit ' + formatBabyDisplayDate(day.dateKey) + ' ' + hourLabel(hour), onClick: () => selectCell(day.dateKey, hour) } : {})}
+                className={'relative grid h-[48px] w-full grid-rows-4 overflow-hidden focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-700 ' + (editor ? 'cursor-pointer disabled:opacity-50' : '')}>
+                {[0,1,2,3].map(quarter => {
+                  const index = hour * 4 + quarter, asleep = day.asleep.has(index), guide = getSleepGuidanceBlockStatus(index, day.sleepGuidance);
+                  const markers = day.markers.get(index) || [];
+                  return <span key={quarter} title={formatBabyDisplayDate(day.dateKey) + ' ' + getSleepBlockTimeLabel(index) + ' · ' + (asleep ? 'Recorded asleep' : getSleepGuidanceStatusLabel(guide))}
+                    className={'relative block border-b border-white/30 ' + (asleep ? guide === 'awake' ? 'bg-violet-500' : 'bg-sky-600' : guide === 'expected' ? 'bg-sky-100' : guide === 'flexible' ? 'bg-orange-100' : 'bg-white')}>
+                    {day.intervals.map(interval => {
+                      const start = Math.max(interval.start, index * 15), end = Math.min(interval.end, (index + 1) * 15);
+                      return end > start ? <span key={interval.id} title="Exact sleep · times and notes below" className={'absolute inset-x-0 ' + (guide === 'awake' ? 'bg-violet-600' : 'bg-sky-700')} style={{ top: (start - index * 15) / 15 * 100 + '%', height: (end - start) / 15 * 100 + '%' }} /> : null;
+                    })}
+                    {markers.length ? <span className="absolute inset-y-0 left-1 bg-white px-1 text-[10px] font-bold leading-3 text-fuchsia-800">{markers.join(' · ')}</span> : null}
+                  </span>;
+                })}
+                {day.hourMinutes[hour] ? <span className="pointer-events-none absolute bottom-1 right-1 rounded bg-white/95 px-1 text-[12px] font-semibold text-slate-800">{day.hourMinutes[hour]} min</span> : null}
+              </Cell>
+            </td>;
+          })}
+        </tr>)}</tbody>
+      </table>
     </div>
-  </div>
-);
-
-const TimelineBackdrop = () => (
-  <>
-    <span className="absolute inset-y-0 left-0 bg-indigo-50/80" style={{ width: `${(7 / 24) * 100}%` }} />
-    <span className="absolute inset-y-0 bg-indigo-50/80" style={{ left: `${(22 / 24) * 100}%`, right: 0 }} />
-    {[0, 6, 12, 18, 24].map((hour) => (
-      <span
-        key={hour}
-        className="absolute inset-y-0 w-px bg-slate-200"
-        style={{ left: `${(hour / 24) * 100}%` }}
-      />
-    ))}
-  </>
-);
-
-const TimelineAxis = () => (
-  <div className="grid grid-cols-[42px_minmax(0,1fr)] items-center gap-2">
-    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Time</span>
-    <div className="flex justify-between text-[10px] font-black tabular-nums text-slate-400">
-      {['00', '06', '12', '18', '24'].map((label) => <span key={label}>{label}</span>)}
-    </div>
-  </div>
-);
-
-const TimelineLane = ({ label, tone = 'slate', children }) => {
-  const toneClass = {
-    sleep: 'text-sky-700',
-    feed: 'text-fuchsia-700',
-    nappy: 'text-amber-700',
-    slate: 'text-slate-500',
-  }[tone] || 'text-slate-500';
-
-  return (
-    <div className="grid grid-cols-[42px_minmax(0,1fr)] items-center gap-2">
-      <span className={`text-[9px] font-black uppercase tracking-[0.14em] ${toneClass}`}>{label}</span>
-      <div className="relative h-9 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner">
-        <TimelineBackdrop />
-        {children}
-      </div>
-    </div>
-  );
+    {editor && activeDay ? <div ref={editPanel} tabIndex={-1} data-history-editor-date={activeDay.dateKey} className="scroll-mt-24 rounded-xl border border-sky-200 bg-white p-3">
+      <label className="flex flex-wrap items-center justify-between gap-2 text-[14px] font-semibold text-slate-800">Editing day<select aria-label="Sleep history day" disabled={disabled} value={activeDay.dateKey} onChange={event => setSelection({ dateKey: event.target.value, hour: selection?.hour ?? 8 })} className="pm-input min-h-[44px] min-w-0 rounded-xl px-2 text-[16px]">{columns.map(day => <option key={day.dateKey} value={day.dateKey}>{formatBabyDisplayDate(day.dateKey)}</option>)}</select></label>
+      <PhoneSleepPicker key={activeDay.dateKey + ':' + windowRevision} initialHour={selection?.hour ?? 8} asleepSet={activeDay.asleep} sleepGuidance={activeDay.sleepGuidance} disabled={disabled} onToggle={index => editor.toggle(activeDay.dateKey, index)} />
+    </div> : null}
+  </div>;
 };
-
-const TimelineMarker = ({ cluster }) => (
-  <span
-    className="absolute left-0 top-1/2 z-10 flex min-h-6 min-w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-0.5 rounded-full border border-white bg-white/95 px-1.5 text-[10px] font-black shadow-sm ring-1 ring-slate-200"
-    style={{ left: `${Math.min(98, Math.max(2, getTimelinePercent(cluster.blockIndex + 0.5)))}%` }}
-    title={cluster.title}
-  >
-    {cluster.pieces.map((piece) => (
-      <span
-        key={piece.label}
-        style={{
-          color: getMarkerColor(piece.marker),
-          WebkitTextFillColor: getMarkerColor(piece.marker),
-        }}
-      >
-        {piece.label}
-      </span>
-    ))}
-  </span>
-);
-
-const buildSleepGuidanceSegments = (guidance = null) => {
-  const segments = [];
-  let current = null;
-
-  for (let index = 0; index < 96; index += 1) {
-    const status = getSleepGuidanceBlockStatus(index, guidance);
-    if (status === 'awake') {
-      if (current) {
-        segments.push(current);
-        current = null;
-      }
-      continue;
-    }
-
-    if (!current || current.status !== status || index !== current.endBlock + 1) {
-      if (current) segments.push(current);
-      current = { status, startBlock: index, endBlock: index };
-    } else {
-      current.endBlock = index;
-    }
-  }
-
-  if (current) segments.push(current);
-  return segments;
-};
-
-const HistoryDayGrid = ({ day, editor, disabled }) => {
-  const asleepSet = normalizeSleepBlocks(day.sleepBlocks);
-  return <PhoneSleepPicker asleepSet={asleepSet} disabled={disabled} sleepGuidance={day.sleepGuidance}
-    onToggle={index => editor.toggle(day.dateKey, index)} />;
-};
-
-const MobilePatternTimeline = ({ days, selectedDate, editor = null, disabled = false }) => (
-  <div className="space-y-3">
-    {days.map((day) => {
-      const sleepSummary = day.summary.sleep;
-      const markers = buildMobilePatternMarkers({ feeds: day.feeds, nappies: [] });
-      const isSelected = day.dateKey === selectedDate;
-      const guideSegments = buildSleepGuidanceSegments(day.sleepGuidance);
-      const comparison = summarizeSleepGuidanceComparison({ sleepBlocks: day.sleepBlocks, sleepEntries: day.sleepEntries, dateKey: day.dateKey, guidance: day.sleepGuidance });
-
-      return (
-        <article key={day.dateKey} data-history-date={day.dateKey} aria-label={`Sleep for ${formatBabyDisplayDate(day.dateKey)}`} className={`rounded-2xl border p-3 ${isSelected ? 'border-sky-200 bg-sky-50/50' : 'border-slate-200 bg-white'}`}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[15px] font-semibold leading-5 text-slate-950">{formatBabyDisplayDate(day.dateKey)}</p>
-              <p className="mt-1 text-[13px] text-slate-600">
-                {formatDuration(day.summary.sleep.totalMinutes)} sleep · {day.summary.feedCount} feeds
-              </p>
-              {day.sleepGuidance ? (
-                <p className="mt-1 text-[12px] text-slate-500">
-                  {day.sleepGuidance.monthLabel} guide
-                  {comparison.actualOutsideGuideMinutes > 0 ? ` · ${formatDuration(comparison.actualOutsideGuideMinutes)} outside` : ''}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              {isSelected ? <span className="rounded-full bg-sky-100 px-2 py-1 text-[12px] font-semibold text-sky-700">Selected</span> : null}
-              {day.changed ? <span className="rounded-full bg-indigo-50 px-2 py-1 text-[12px] font-semibold text-indigo-700">Edited</span> : null}
-            </div>
-          </div>
-
-          {editor ? <HistoryDayGrid day={day} editor={editor} disabled={disabled} /> : <div className="mt-3 space-y-2 rounded-[20px] border border-slate-100 bg-slate-50 p-2.5">
-            <TimelineAxis />
-            <TimelineLane label="Sleep" tone="sleep">
-              <span className="absolute inset-x-1 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-100" />
-              {guideSegments.map((segment) => {
-                const left = getTimelinePercent(segment.startBlock);
-                const width = ((segment.endBlock - segment.startBlock + 1) / 96) * 100;
-                return (
-                  <span
-                    key={`${segment.status}-${segment.startBlock}-${segment.endBlock}`}
-                    className={`absolute top-1/2 h-5 -translate-y-1/2 rounded-full ${
-                      segment.status === 'expected' ? 'bg-sky-100' : 'bg-orange-100'
-                    }`}
-                    style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
-                    title={getSleepGuidanceStatusLabel(segment.status)}
-                  />
-                );
-              })}
-              {sleepSummary.sessions.map((session) => {
-                const left = getTimelinePercent(session.startBlock);
-                const width = ((session.endBlock - session.startBlock + 1) / 96) * 100;
-                const outsideGuide = getSleepGuidanceBlockStatus(session.startBlock, day.sleepGuidance) === 'awake';
-                return (
-                  <span
-                    key={`${session.startBlock}-${session.endBlock}`}
-                    className={`absolute top-1/2 z-10 h-4 -translate-y-1/2 rounded-full shadow-sm ${outsideGuide ? 'bg-violet-500' : 'bg-sky-600'}`}
-                    style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
-                    title={`${session.startTime}-${session.endTime}`}
-                  />
-                );
-              })}
-            </TimelineLane>
-            <TimelineLane label="Feed" tone="feed">
-              {markers.feeds.length ? (
-                markers.feeds.map((cluster) => <TimelineMarker key={cluster.id} cluster={cluster} />)
-              ) : (
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">No feeds</span>
-              )}
-            </TimelineLane>
-          </div>}
-        </article>
-      );
-    })}
-  </div>
-);
 
 const SleepGrid = ({
   sleepBlocks,
@@ -1295,12 +1016,7 @@ const PatternPanel = ({
         </div>
       ) : (
         <div className="mt-4">
-          <div className="sm:hidden">
-            <MobilePatternTimeline days={displayedDays} selectedDate={selectedDate} editor={editor} disabled={busy} />
-          </div>
-          <div className="hidden sm:block">
-            <SleepMatrix days={displayedDays} selectedDate={selectedDate} editor={editor} disabled={busy} />
-          </div>
+          <SleepHistoryGrid days={displayedDays} selectedDate={selectedDate} editor={editor} disabled={busy} />
           <div className="mt-3 flex flex-wrap gap-2 text-[12px] font-medium text-slate-600">
             <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-800">Pale blue = expected sleep</span>
             <span className="rounded-full bg-orange-100 px-2 py-1 text-orange-800">Orange = flexible sleep</span>
@@ -1355,7 +1071,7 @@ export default function BabyView({ currentUserId }) {
   const [feedModal, setFeedModal] = useState(null);
   const [nappyModal, setNappyModal] = useState(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
-  const [patternRange, setPatternRange] = useState('day');
+  const [patternRange, setPatternRange] = useState('week');
   const [shareOpen, setShareOpen] = useState(false);
   const [weightModalOpen, setWeightModalOpen] = useState(false);
   const [sleepModal, setSleepModal] = useState(null);
@@ -1479,7 +1195,6 @@ export default function BabyView({ currentUserId }) {
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => setFeedModal({ dateKey: selectedDate })} className="min-h-[48px] rounded-xl border border-rose-200 bg-rose-50 px-3 text-[14px] font-semibold text-rose-800">+ Add feed</button><button type="button" disabled={exactDisabled || exactSleep.saving} onClick={() => openSleep()} className="min-h-[48px] rounded-xl border border-sky-200 bg-sky-50 px-3 text-[14px] font-semibold text-sky-800 disabled:opacity-40">+ Add sleep</button></div>
-              <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-full text-[13px] text-slate-500 sm:w-auto">Breastfeed shortcuts</span><button type="button" onClick={() => setFeedModal({ dateKey: selectedDate, feedType: 'breastfeeding', breastSide: 'left', durationMinutes: 20 })} className="min-h-[44px] flex-1 rounded-xl border border-slate-200 bg-white px-3 text-[14px] font-medium text-rose-800 sm:flex-none">Left breast</button><button type="button" onClick={() => setFeedModal({ dateKey: selectedDate, feedType: 'breastfeeding', breastSide: 'right', durationMinutes: 20 })} className="min-h-[44px] flex-1 rounded-xl border border-slate-200 bg-white px-3 text-[14px] font-medium text-rose-800 sm:flex-none">Right breast</button></div>
               <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
                 <SummaryCard label="Feeds" value={daySummary.feedCount} detail={`${formatDuration(daySummary.totalFeedMinutes)} total · ${daySummary.averageFeedMinutes} min average`} tone="rose" />
                 <SummaryCard label="Sleep" value={formatDuration(daySummary.sleep.totalMinutes)} detail={`${daySummary.sleep.sessionCount} ${daySummary.sleep.sessionCount === 1 ? 'session' : 'sessions'}`} tone="sky" />

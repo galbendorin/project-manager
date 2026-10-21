@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { React, act, create, mountHook, mockTransport, sourceModules } from './react-source-runtime.mjs';
+import { React, act, create, mountHook, mockTransport, sourceModules, toggleHistorySlot } from './react-source-runtime.mjs';
 const owner = '11111111-1111-4111-8111-111111111111';
 const baby = '22222222-2222-4222-8222-222222222222';
 const past = '2026-10-15', other = '2026-10-16';
@@ -116,12 +116,11 @@ test('Cancel discards a multi-day draft and returning a block to its original va
   await act(async () => { root = create(React.createElement(PatternPanel, props)); });
   try {
     const button = label => root.root.findAllByType('button').find(node => node.children.includes(label));
-    const slot = date => root.root.findAll(node => node.type === 'div' && node.props['data-history-date'] === date).at(-1).findAllByType('button')[0];
     await act(async () => button('Edit history').props.onClick());
-    await act(async () => slot(past).props.onClick({ detail: 0 }));
-    await act(async () => slot(past).props.onClick({ detail: 0 }));
+    await toggleHistorySlot(root, past, 0);
+    await toggleHistorySlot(root, past, 0);
     assert.equal(button('Save changes').props.disabled, true);
-    await act(async () => slot(other).props.onClick({ detail: 0 }));
+    await toggleHistorySlot(root, other, 0);
     await act(async () => button('Cancel').props.onClick());
     assert.equal(calls, 0);
     assert.equal(root.root.findAllByType('button').filter(node => node.props['data-sleep-block-index'] !== undefined).length, 0);
@@ -138,21 +137,20 @@ test('after a lost acknowledgement, reverting an attempted block still writes th
   await act(async () => { root = create(React.createElement(PatternPanel, props)); });
   try {
     const button = label => root.root.findAllByType('button').find(node => node.children.includes(label));
-    const slot = date => root.root.findAll(node => node.type === 'div' && node.props['data-history-date'] === date).at(-1).findAllByType('button')[0];
     await act(async () => button('Edit history').props.onClick());
-    await act(async () => slot(past).props.onClick({ detail: 0 }));
+    await toggleHistorySlot(root, past, 0);
     await act(async () => button('Save changes').props.onClick());
     assert.equal(saved.get(`${past}:0`), 'asleep');
-    await act(async () => slot(past).props.onClick({ detail: 0 }));
+    await toggleHistorySlot(root, past, 0);
     assert.equal(button('Save changes').props.disabled, false);
-    await act(async () => slot(other).props.onClick({ detail: 0 }));
+    await toggleHistorySlot(root, other, 0);
     await act(async () => button('Save changes').props.onClick());
     assert.equal(saved.get(`${past}:0`), 'awake');
     assert.equal(saved.get(`${other}:0`), 'asleep');
     assert.equal(reloaded, false);
     attempts = 0;
     await act(async () => button('Edit history').props.onClick());
-    await act(async () => slot(other).props.onClick({ detail: 0 }));
+    await toggleHistorySlot(root, other, 0);
     await act(async () => button('Save changes').props.onClick());
     await act(async () => button('Cancel').props.onClick());
     assert.equal(reloaded, true);
@@ -166,12 +164,7 @@ test('phone single-slot edits on separate days share one Save changes without fi
   await act(async () => { root = create(React.createElement(PatternPanel, { dateKeys: [past, other], feeds: [], nappies: [], sleepBlocks: [], setPatternRange() {}, onSaveHistory: async patch => { saved = patch; } })); });
   try {
     await act(async () => root.root.findAllByType('button').find(node => node.children.includes('Edit history')).props.onClick());
-    const slot = (date, index) => root.root.findAllByType('article').find(node => node.props['data-history-date'] === date).findAllByType('button').find(node => node.props['data-sleep-block-index'] === index);
-    const tap = async (date, index) => {
-      const day = root.root.findAllByType('article').find(node => node.props['data-history-date'] === date);
-      await act(async () => day.findByType('select').props.onChange({ target: { value: String(Math.floor(index / 4)) } }));
-      await act(async () => slot(date, index).props.onClick());
-    };
+    const tap = (date, index) => toggleHistorySlot(root, date, index);
     await tap(past, 0); await tap(past, 3);
     await tap(other, 8); await tap(other, 9);
     assert.equal(root.root.findAllByType('button').filter(node => node.children.includes('Save changes')).length, 1);
