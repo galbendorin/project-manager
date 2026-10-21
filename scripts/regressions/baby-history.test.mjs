@@ -1,11 +1,61 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { React, act, create, mountHook, mockTransport, sourceModules } from './react-source-runtime.mjs';
+import { React, act, create, mountHook, mockTransport, sourceModules, historySlot, toggleHistorySlot } from './react-source-runtime.mjs';
 
 const owner = '11111111-1111-4111-8111-111111111111';
 const profile = { id: '22222222-2222-4222-8222-222222222222', user_id: owner, name: 'Synthetic baby' };
 const past = '2026-10-15';
 const other = '2026-10-16';
+
+test('history hour labels count exact sleep and grid overlap once, with readable time/day axes', async () => {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const { PatternPanel } = await load('src/components/BabyView.jsx');
+  let root;
+  const sleepBlocks = [64, 65].map(blockIndex => ({ sleepDate: past, blockIndex, status: 'asleep' }));
+  const sleepEntries = [{ id: 'nap', sleepDate: past, startMinute: 967, endMinute: 1003, notes: 'Synthetic note' }];
+  await act(async () => { root = create(React.createElement(PatternPanel, { dateKeys: [past, other], feeds: [], nappies: [], sleepBlocks, sleepEntries, setPatternRange() {}, onSaveHistory() {} })); });
+  try {
+    assert.equal(root.root.findByProps({ 'aria-label': 'Thu 15 Oct 16:00: 43 min recorded sleep' }).type, 'td');
+    assert.equal(root.root.findByProps({ 'aria-label': 'Fri 16 Oct 16:00: 0 min recorded sleep' }).type, 'td');
+    assert.equal(root.root.findAllByType('th').filter(node => node.props.scope === 'row').length, 24);
+    assert.equal(root.root.findAllByType('th').filter(node => node.props.scope === 'col').length, 3);
+  } finally { await act(async () => root.unmount()); }
+});
+
+test('selecting the same history hour again resets a browsed window without losing other edits', async () => {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const { PatternPanel } = await load('src/components/BabyView.jsx');
+  let root;
+  await act(async () => { root = create(React.createElement(PatternPanel, { dateKeys: [past], feeds: [], nappies: [], sleepBlocks: [], setPatternRange() {}, onSaveHistory() {} })); });
+  try {
+    await act(async () => root.root.findAllByType('button').find(node => node.children.includes('Edit history')).props.onClick());
+    await toggleHistorySlot(root, past, 56);
+    const window = () => root.root.findAllByType('select').find(node => node.props['aria-label'] === 'Sleep window');
+    await act(async () => window().props.onChange({ target: { value: '18' } }));
+    assert.equal(window().props.value, 18);
+    assert.equal((await historySlot(root, past, 56)).props['aria-pressed'], true);
+    assert.equal(window().props.value, 14);
+  } finally { await act(async () => root.unmount()); }
+});
+
+test('three-hour picker exposes twelve individual slots and clamps the last window to midnight', async () => {
+  const load = await sourceModules(mockTransport(() => ({ data: [] })));
+  const { default: Picker } = await load('src/components/baby/PhoneSleepPicker.jsx');
+  let root;
+  const touched = [];
+  await act(async () => { root = create(React.createElement(Picker, { asleepSet: new Set([95]), onToggle: index => touched.push(index) })); });
+  try {
+    const slots = () => root.root.findAllByType('button').filter(node => node.props['data-sleep-block-index'] !== undefined);
+    assert.equal(slots().length, 12);
+    assert.deepEqual(slots().map(node => node.props['data-sleep-block-index']), Array.from({ length: 12 }, (_, i) => i + 84));
+    await act(async () => slots().at(-1).props.onClick());
+    assert.deepEqual(touched, [95]);
+    await act(async () => root.root.findByType('select').props.onChange({ target: { value: '6' } }));
+    assert.equal(slots()[0].props['data-sleep-block-index'], 24);
+    assert.equal(slots().at(-1).props['data-sleep-block-index'], 35);
+    assert.deepEqual(touched, [95], 'changing the visible window must never mark sleep');
+  } finally { await act(async () => root.unmount()); }
+});
 const block = (date, index) => ({ id: `${date}-${index}`, baby_id: profile.id, sleep_date: date, block_index: index, status: 'asleep' });
 async function fixture(write = request => ({ data: request.payload })) {
   const transport = mockTransport(request => {
@@ -181,18 +231,16 @@ test('history edits several dates directly, retains the batch through refresh/fa
   try {
     const button = label => root.root.findAllByType('button').find(node => text(node) === label);
     await act(async () => button('Edit history').props.onClick());
-    const slot = (date, index) => root.root.findAll(node => node.type === 'div' && node.props['data-history-date'] === date).at(-1)
-      .findAllByType('button').find(node => node.props['data-sleep-block-index'] === index);
-    await act(async () => slot(past, 4).props.onClick({ detail: 0 }));
-    await act(async () => slot(other, 8).props.onClick({ detail: 0 }));
+    await toggleHistorySlot(root, past, 4);
+    await toggleHistorySlot(root, other, 8);
     assert.equal(calls.length, 0);
     const save = () => button('Save changes');
     await act(async () => save().props.onClick());
     assert.deepEqual(Array.from(calls[0], row => `${row.dateKey}:${row.blockIndex}:${row.status}`), [`${past}:4:asleep`, `${other}:8:asleep`]);
     assert.ok(root.root.findByProps({ role: 'alert' }));
     await act(async () => root.update(React.createElement(PatternPanel, { ...props, dateKeys: ['2026-10-18'], rangeLoading: true, sleepBlocks: [{ sleepDate: past, blockIndex: 20, status: 'asleep' }] })));
-    assert.equal(slot(past, 4).props['aria-pressed'], true);
-    assert.equal(slot(other, 8).props['aria-pressed'], true);
+    assert.equal((await historySlot(root, past, 4)).props['aria-pressed'], true);
+    assert.equal((await historySlot(root, other, 8)).props['aria-pressed'], true);
     fail = false;
     await act(async () => save().props.onClick());
     assert.equal(root.root.findAllByType('button').filter(node => text(node) === 'Save changes').length, 0);
