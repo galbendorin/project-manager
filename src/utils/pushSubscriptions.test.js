@@ -1,3 +1,4 @@
+import { createECDH } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -12,7 +13,9 @@ import {
   validatePushEndpointUrl,
 } from '../../api/_webPush.js';
 
-const VALID_P256DH = Buffer.alloc(65, 4).toString('base64url');
+const ecdh = createECDH('prime256v1');
+ecdh.generateKeys();
+const VALID_P256DH = ecdh.getPublicKey().toString('base64url');
 const VALID_AUTH = Buffer.alloc(16, 7).toString('base64url');
 
 const buildValidSubscription = (overrides = {}) => ({
@@ -144,6 +147,14 @@ test('validateAndNormalizePushSubscription checks decoded key lengths and expira
     keys: {
       p256dh: VALID_P256DH,
       auth: Buffer.alloc(12, 1).toString('base64url'),
+    },
+  }));
+
+  assert.throws(() => validateAndNormalizePushSubscription({
+    ...buildValidSubscription(),
+    keys: {
+      p256dh: Buffer.alloc(65, 4).toString('base64url'),
+      auth: VALID_AUTH,
     },
   }));
 

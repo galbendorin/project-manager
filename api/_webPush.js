@@ -1,3 +1,4 @@
+import { createPublicKey } from 'node:crypto';
 import { isIP } from 'node:net';
 import webpush from 'web-push';
 import { getAdminSupabase } from './_auth.js';
@@ -119,6 +120,30 @@ const validatePushKey = (rawKey, expectedBytes, keyLabel) => {
     );
   }
 
+  return {
+    trimmed,
+    decoded,
+  };
+};
+
+const validateP256PublicKey = (rawKey) => {
+  const { trimmed, decoded } = validatePushKey(rawKey, 65, 'p256dh');
+  if (decoded[0] !== 0x04) {
+    throw createPushValidationError('Push subscription key "p256dh" must be an uncompressed P-256 public key.');
+  }
+  try {
+    createPublicKey({
+      key: {
+        kty: 'EC',
+        crv: 'P-256',
+        x: decoded.subarray(1, 33).toString('base64url'),
+        y: decoded.subarray(33, 65).toString('base64url'),
+      },
+      format: 'jwk',
+    });
+  } catch {
+    throw createPushValidationError('Push subscription key "p256dh" is not a valid P-256 public key.');
+  }
   return trimmed;
 };
 
@@ -133,8 +158,8 @@ export const validateAndNormalizePushSubscription = (input) => {
     throw createPushValidationError('Push subscription keys are required.');
   }
 
-  const p256dh = validatePushKey(keys.p256dh, 65, 'p256dh');
-  const auth = validatePushKey(keys.auth, 16, 'auth');
+  const p256dh = validateP256PublicKey(keys.p256dh);
+  const auth = validatePushKey(keys.auth, 16, 'auth').trimmed;
 
   let expirationTime = null;
   if (input.expirationTime !== null && input.expirationTime !== undefined) {

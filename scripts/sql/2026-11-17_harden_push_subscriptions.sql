@@ -16,6 +16,11 @@ drop policy if exists "push_subscriptions_delete_own" on public.push_subscriptio
 revoke all on table public.push_subscriptions from public, anon, authenticated;
 grant all on table public.push_subscriptions to service_role;
 
+delete from public.push_subscriptions
+where endpoint !~ '^https://'
+  or length(endpoint) > 2048
+  or coalesce(subscription->>'endpoint', '') <> endpoint;
+
 alter table public.push_subscriptions
   drop constraint if exists push_subscriptions_valid_endpoint_chk;
 

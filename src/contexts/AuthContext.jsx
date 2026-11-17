@@ -223,7 +223,10 @@ export const AuthProvider = ({ children }) => {
           setIsPasswordRecovery(false);
           clearRecoveryUrl();
           void clearSignedOutDeviceState(previousUserId);
-        } else if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user?.email) {
+        } else if (
+          (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED')
+          && session?.user?.email
+        ) {
           void acceptPendingProjectInvites(session);
         }
         finishBootstrap();

@@ -23,9 +23,12 @@ const runAsRole = async (role, userId, fn) => {
     if (userId) {
       await db.query(`select set_config('request.jwt.claim.sub', $1, true)`, [userId]);
     }
-    return await fn();
-  } finally {
+    const result = await fn();
+    await db.exec('commit');
+    return result;
+  } catch (error) {
     await db.exec('rollback');
+    throw error;
   }
 };
 
@@ -62,7 +65,7 @@ after(async () => {
   await db.close();
 });
 
-test('1. Pre-hardening baseline allowed direct authenticated inserts/selects', async () => {
+test('1. Pre-hardening baseline allowed direct authenticated inserts/selects (and legacy corrupt rows)', async () => {
   const endpoint = 'https://fcm.googleapis.com/fcm/send/baseline-1';
   const payload = JSON.stringify({
     endpoint,
@@ -75,16 +78,26 @@ test('1. Pre-hardening baseline allowed direct authenticated inserts/selects', a
        values ($1, $2, $3::jsonb)`,
       [ids.user1, endpoint, payload],
     );
+    await db.query(
+      `insert into public.push_subscriptions (user_id, endpoint, subscription)
+       values ($1, 'http://legacy-insecure.invalid/push', '{"endpoint":"http://legacy-insecure.invalid/push"}'::jsonb),
+              ($1, 'https://fcm.googleapis.com/mismatch', '{"endpoint":"https://127.0.0.1/mismatch"}'::jsonb)`,
+      [ids.user1],
+    );
     const { rows } = await db.query(
       `select endpoint from public.push_subscriptions where user_id = $1`,
       [ids.user1],
     );
-    assert.equal(rows.length, 1);
+    assert.equal(rows.length, 3);
   });
 });
 
-test('2. Applying 2026-11-17_harden_push_subscriptions.sql removes client policies and table grants', async () => {
+test('2. Applying 2026-11-17_harden_push_subscriptions.sql cleans corrupt rows, removes client policies and table grants', async () => {
   await migrate('2026-11-17_harden_push_subscriptions.sql');
+  const { rows: surviving } = await runAsRole('service_role', null, () => db.query(
+    `select endpoint from public.push_subscriptions`,
+  ));
+  assert.deepEqual(surviving.map((r) => r.endpoint), ['https://fcm.googleapis.com/fcm/send/baseline-1']);
 
   for (const role of ['anon', 'authenticated']) {
     for (const priv of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
