@@ -88,8 +88,8 @@ export const resolveRealPlan = ({ profile, now = new Date() }) => {
   if (!profile) return 'starter';
 
   const subscriptionStatus = String(profile.subscription_status || '').toLowerCase();
-  if (ACTIVE_SUBSCRIPTION_STATUSES.includes(subscriptionStatus) && profile.plan === 'pro') {
-    return 'pro';
+  if (profile.plan === 'pro') {
+    return ACTIVE_SUBSCRIPTION_STATUSES.includes(subscriptionStatus) ? 'pro' : 'starter';
   }
 
   if (profile.plan === 'trial') {
@@ -101,7 +101,6 @@ export const resolveRealPlan = ({ profile, now = new Date() }) => {
   }
 
   if (profile.plan === 'team') return 'team';
-  if (profile.plan === 'pro') return 'pro';
 
   return 'starter';
 };
