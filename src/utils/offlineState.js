@@ -271,12 +271,26 @@ export const saveCachedHouseholdAccess = (userId, enabled = true) => (
   writeLocalJson(buildHouseholdAccessKey(userId), enabled === true)
 );
 
+const SHOPPING_INPUT_BATCH_PREFIX = 'pmworkspace:shopping-input-batch:v1:';
+const SHOPPING_TYPED_DRAFT_PREFIX = 'pmworkspace:shopping-typed-draft:v2:';
+const SHOPPING_LEGACY_DRAFT_PREFIX = 'pmworkspace:shopping-draft:v1:';
+const NEW_RECIPE_DRAFT_STORAGE_KEY = 'pmworkspace.mealPlanner.newRecipeDraft.v1';
+
+export const buildNewRecipeDraftStorageKey = (userId = '') => {
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) return null;
+  return `${NEW_RECIPE_DRAFT_STORAGE_KEY}:${encodeURIComponent(normalizedUserId)}`;
+};
+
 export const shouldClearUserOfflineKey = (key, userId) => {
   const normalizedKey = String(key || '');
   const normalizedUserId = String(userId || '').trim();
   if (!normalizedUserId) return false;
-  if (NAVIGATION_CACHE_KEYS.has(normalizedKey)) return true;
+  if (NAVIGATION_CACHE_KEYS.has(normalizedKey) || normalizedKey === NEW_RECIPE_DRAFT_STORAGE_KEY) {
+    return true;
+  }
 
+  const encodedUserId = encodeURIComponent(normalizedUserId);
   return normalizedKey.startsWith(`${PROJECT_SNAPSHOT_PREFIX}:${normalizedUserId}:`)
     || normalizedKey === `${SHOPPING_OFFLINE_PREFIX}:${normalizedUserId}`
     || normalizedKey === `${TIMESHEET_OFFLINE_PREFIX}:${normalizedUserId}`
@@ -285,11 +299,19 @@ export const shouldClearUserOfflineKey = (key, userId) => {
     || normalizedKey === buildHouseholdAccessKey(normalizedUserId)
     || normalizedKey === buildRecurringRecoveryKey(normalizedUserId)
     || normalizedKey === `pmworkspace:todo-matrix-focus:v1:${normalizedUserId}`
-    || normalizedKey === `pmworkspace:todo-matrix-layout:v1:${normalizedUserId}`;
+    || normalizedKey === `pmworkspace:todo-matrix-layout:v1:${normalizedUserId}`
+    || normalizedKey.startsWith(`${SHOPPING_INPUT_BATCH_PREFIX}${encodedUserId}:`)
+    || normalizedKey.startsWith(`${SHOPPING_INPUT_BATCH_PREFIX}${normalizedUserId}:`)
+    || normalizedKey.startsWith(`${SHOPPING_TYPED_DRAFT_PREFIX}${encodedUserId}:`)
+    || normalizedKey.startsWith(`${SHOPPING_TYPED_DRAFT_PREFIX}${normalizedUserId}:`)
+    || normalizedKey === `${SHOPPING_LEGACY_DRAFT_PREFIX}${normalizedUserId}`
+    || normalizedKey === `${SHOPPING_LEGACY_DRAFT_PREFIX}${encodedUserId}`
+    || normalizedKey === `${NEW_RECIPE_DRAFT_STORAGE_KEY}:${normalizedUserId}`
+    || normalizedKey === `${NEW_RECIPE_DRAFT_STORAGE_KEY}:${encodedUserId}`;
 };
 
-const listLocalStorageKeys = () => {
-  const storage = getBrowserStorage('localStorage');
+const listStorageKeys = (storageName) => {
+  const storage = getBrowserStorage(storageName);
   if (!storage) return [];
 
   try {
@@ -307,11 +329,20 @@ export const clearOfflineDataForUser = async (userId) => {
   const activeUserId = readLocalJson(ACTIVE_OFFLINE_USER_KEY, '');
   const clearNavigation = !activeUserId || activeUserId === normalizedUserId;
   const belongsToLeavingUser = key => shouldClearUserOfflineKey(key, normalizedUserId)
-    && (!NAVIGATION_CACHE_KEYS.has(String(key)) || clearNavigation);
-  // Remove the leaving session's local state before yielding. A replacement
+    && ((!NAVIGATION_CACHE_KEYS.has(String(key)) && String(key) !== NEW_RECIPE_DRAFT_STORAGE_KEY) || clearNavigation);
+  // Remove the leaving session's local and session state before yielding. A replacement
   // sign-in can then write its own identity, navigation and queue safely.
-  const localKeys = listLocalStorageKeys().filter(belongsToLeavingUser);
+  const localKeys = listStorageKeys('localStorage').filter(belongsToLeavingUser);
   localKeys.forEach(removeLocalStorageOnly);
+  const sessionStorage = getBrowserStorage('sessionStorage');
+  const sessionKeys = listStorageKeys('sessionStorage').filter(belongsToLeavingUser);
+  sessionKeys.forEach((key) => {
+    try {
+      sessionStorage?.removeItem(key);
+    } catch {
+      // Ignore restricted sessionStorage failures.
+    }
+  });
   // Scan and delete in one transaction, queued before subsequent writes. A
   // separate async scan followed by deletes could erase the new session's data.
   const indexedKeys = await runOfflineTransaction('readwrite', store => {
@@ -321,5 +352,5 @@ export const clearOfflineDataForUser = async (userId) => {
     };
     return request;
   }, [], request => request.result.filter(belongsToLeavingUser).map(String));
-  return [...new Set([...localKeys, ...indexedKeys])];
+  return [...new Set([...localKeys, ...sessionKeys, ...indexedKeys])];
 };

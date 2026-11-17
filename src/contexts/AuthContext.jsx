@@ -145,7 +145,8 @@ export const AuthProvider = ({ children }) => {
     const acceptPendingProjectInvites = async (session) => {
       const accessToken = session?.access_token;
       const email = session?.user?.email;
-      if (!accessToken || !email) return;
+      const isEmailVerified = Boolean(session?.user?.email_confirmed_at);
+      if (!accessToken || !email || !isEmailVerified) return;
 
       try {
         await fetch('/api/project-members-accept-pending', {

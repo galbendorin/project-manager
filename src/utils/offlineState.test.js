@@ -340,3 +340,66 @@ test('sign-out clears local data immediately even when IndexedDB cannot open', a
     await cleaning;
   });
 });
+
+test('sign-out clears shopping input batches, typed drafts, legacy drafts, and session recipe drafts for leaving user only', async () => {
+  const createMemoryStorage = () => {
+    const store = new Map();
+    return {
+      get length() { return store.size; },
+      key: (index) => Array.from(store.keys())[index] ?? null,
+      getItem: (key) => (store.has(key) ? store.get(key) : null),
+      setItem: (key, value) => store.set(String(key), String(value)),
+      removeItem: (key) => store.delete(String(key)),
+    };
+  };
+
+  await withLocalStorage(async (localStorage) => {
+    const previousSessionStorage = globalThis.window.sessionStorage;
+    const sessionStorage = createMemoryStorage();
+    globalThis.window.sessionStorage = sessionStorage;
+    try {
+      const state = await freshOfflineState();
+
+      const leavingKeysLocal = [
+        'pmworkspace:shopping-input-batch:v1:user%2Ba:proj-1',
+        'pmworkspace:shopping-typed-draft:v2:user%2Ba:proj-1',
+        'pmworkspace:shopping-draft:v1:user+a',
+        'pmworkspace:shopping-draft:v1:user%2Ba',
+      ];
+      const keepingKeysLocal = [
+        'pmworkspace:shopping-input-batch:v1:user%2Bb:proj-1',
+        'pmworkspace:shopping-typed-draft:v2:user%2Bb:proj-1',
+        'pmworkspace:shopping-draft:v1:user+b',
+      ];
+      leavingKeysLocal.forEach((key) => localStorage.setItem(key, 'secret-a'));
+      keepingKeysLocal.forEach((key) => localStorage.setItem(key, 'secret-b'));
+
+      const leavingRecipeKey = state.buildNewRecipeDraftStorageKey('user+a');
+      const keepingRecipeKey = state.buildNewRecipeDraftStorageKey('user+b');
+      assert.equal(leavingRecipeKey, 'pmworkspace.mealPlanner.newRecipeDraft.v1:user%2Ba');
+      assert.equal(state.buildNewRecipeDraftStorageKey(''), null);
+
+      sessionStorage.setItem(leavingRecipeKey, JSON.stringify({ formState: { name: 'Secret A Recipe' } }));
+      sessionStorage.setItem(keepingRecipeKey, JSON.stringify({ formState: { name: 'Secret B Recipe' } }));
+      sessionStorage.setItem('pmworkspace.mealPlanner.newRecipeDraft.v1', JSON.stringify({ formState: { name: 'Legacy' } }));
+
+      await state.clearOfflineDataForUser('user+a');
+
+      for (const key of leavingKeysLocal) {
+        assert.equal(localStorage.getItem(key), null, `Expected ${key} to be cleared`);
+      }
+      for (const key of keepingKeysLocal) {
+        assert.equal(localStorage.getItem(key), 'secret-b', `Expected ${key} to stay intact`);
+      }
+      assert.equal(sessionStorage.getItem(leavingRecipeKey), null);
+      assert.equal(sessionStorage.getItem('pmworkspace.mealPlanner.newRecipeDraft.v1'), null);
+      assert.ok(sessionStorage.getItem(keepingRecipeKey));
+    } finally {
+      if (previousSessionStorage === undefined) {
+        delete globalThis.window.sessionStorage;
+      } else {
+        globalThis.window.sessionStorage = previousSessionStorage;
+      }
+    }
+  });
+});

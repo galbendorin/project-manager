@@ -5,7 +5,7 @@ import {
 } from './_auth.js';
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
 
-const supabase = getAdminSupabase();
+const defaultSupabase = getAdminSupabase();
 const MAX_PROJECT_EDITORS = 5;
 export const PENDING_INVITE_ACCEPT_RATE_LIMIT = Object.freeze({
   max: 30,
@@ -25,8 +25,21 @@ const isMissingInviteTableError = (error) => {
 
 const normalizeInviteEmail = (value = '') => String(value || '').trim().toLowerCase();
 
-export default async function handler(req, res) {
-  applyApiCors(req, res);
+export const hasVerifiedInviteEmail = (user) => Boolean(
+  normalizeInviteEmail(user?.email)
+  && user?.email_confirmed_at
+  && String(user.email_confirmed_at).trim()
+);
+
+export const createPendingInviteAcceptHandler = ({
+  supabase = defaultSupabase,
+  applyCors = applyApiCors,
+  requireUser = requireAuthenticatedUser,
+  rateLimit = checkRateLimit,
+  getIp = getClientIp,
+  sendRateLimit = sendRateLimitResponse,
+} = {}) => async function handler(req, res) {
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -41,20 +54,28 @@ export default async function handler(req, res) {
   }
 
   try {
-    const user = await requireAuthenticatedUser(req, res);
+    const user = await requireUser(req, res);
     if (!user) return;
 
-    const limitResult = await checkRateLimit({
-      key: buildPendingInviteAcceptRateLimitKey(user.id, getClientIp(req)),
+    const limitResult = await rateLimit({
+      key: buildPendingInviteAcceptRateLimitKey(user.id, getIp(req)),
       ...PENDING_INVITE_ACCEPT_RATE_LIMIT,
     });
     if (!limitResult.ok) {
-      return sendRateLimitResponse(res, limitResult, 'Too many invite checks. Please wait a moment and try again.');
+      return sendRateLimit(res, limitResult, 'Too many invite checks. Please wait a moment and try again.');
     }
 
     const email = normalizeInviteEmail(user.email);
     if (!email) {
       return res.status(400).json({ error: 'Authenticated user email is missing.' });
+    }
+
+    if (!hasVerifiedInviteEmail(user)) {
+      return res.status(403).json({
+        ok: false,
+        code: 'email_not_verified',
+        error: 'Verify your account email before accepting pending project invitations.',
+      });
     }
 
     const { data: invites, error: inviteError } = await supabase
@@ -162,4 +183,6 @@ export default async function handler(req, res) {
     console.error('Pending invite acceptance error:', error);
     return res.status(500).json({ error: 'Unable to accept pending project invites right now.' });
   }
-}
+};
+
+export default createPendingInviteAcceptHandler();
