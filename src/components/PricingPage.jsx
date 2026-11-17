@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AuthenticatedFooter from './AuthenticatedFooter';
 import { usePlan } from '../contexts/PlanContext';
 import { markBillingSyncPending } from '../utils/billingSync';
+import { getCheckoutErrorMessage } from '../utils/checkoutErrors';
 import { supabase } from '../lib/supabase';
 
 export default function PricingPage({ onClose }) {
@@ -39,7 +40,9 @@ export default function PricingPage({ onClose }) {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.url) {
-        throw new Error(data.error || 'Unable to start checkout right now.');
+        const checkoutError = new Error(data.error || 'Unable to start checkout right now.');
+        checkoutError.status = res.status;
+        throw checkoutError;
       }
 
       if (data.url) {
@@ -236,30 +239,4 @@ export default function PricingPage({ onClose }) {
       </div>
     </div>
   );
-}
-
-function getCheckoutErrorMessage(error) {
-  const message = error instanceof Error ? error.message : String(error || '');
-
-  if (!message) {
-    return 'Unable to start checkout right now. Please try again in a moment.';
-  }
-
-  if (message.includes('Missing required fields') || message.includes('Invalid plan')) {
-    return 'Checkout could not be prepared. Refresh the page and try again.';
-  }
-
-  if (
-    message.includes('Authentication required') ||
-    message.includes('expired') ||
-    message.includes('Invalid or expired session')
-  ) {
-    return 'Your session has expired. Please sign in again and retry checkout.';
-  }
-
-  if (message.toLowerCase().includes('network')) {
-    return 'Network error while connecting to Stripe. Check your connection and try again.';
-  }
-
-  return 'Unable to start checkout right now. Please try again in a moment.';
 }
