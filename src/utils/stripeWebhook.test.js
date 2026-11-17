@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createStripeWebhookHandler,
   reconcileStripeWebhookEvent,
+  resolveSupabaseConfig,
 } from '../../api/stripe-webhook.js';
 import { resolveRealPlan } from './planAccess.js';
 
@@ -580,4 +581,79 @@ test('createStripeWebhookHandler verifies signature and routes supported events'
   assert.equal(state.profile.plan, 'starter');
   assert.equal(state.profile.subscription_status, 'canceled');
   assert.equal(resolveRealPlan({ profile: state.profile }), 'starter');
+});
+
+test('resolveSupabaseConfig falls back to VITE_SUPABASE_URL when SUPABASE_URL is unset', () => {
+  assert.deepEqual(
+    resolveSupabaseConfig({
+      VITE_SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'srv-key',
+    }),
+    {
+      supabaseUrl: 'https://example.supabase.co',
+      supabaseServiceRoleKey: 'srv-key',
+      configured: true,
+    }
+  );
+
+  assert.deepEqual(
+    resolveSupabaseConfig({
+      SUPABASE_URL: 'https://server.supabase.co',
+      VITE_SUPABASE_URL: 'https://client.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'srv-key',
+    }),
+    {
+      supabaseUrl: 'https://server.supabase.co',
+      supabaseServiceRoleKey: 'srv-key',
+      configured: true,
+    }
+  );
+});
+
+test('empty-string subscription_id and subscription_status match equality predicates rather than IS NULL', async () => {
+  const { state, stripeClient, supabaseClient } = createFakeBillingFixture({
+    initialProfile: {
+      id: 'user-empty-strings',
+      plan: 'trial',
+      subscription_id: '',
+      subscription_status: '',
+      stripe_customer_id: 'cus_empty',
+      trial_ends: '2099-01-01T00:00:00.000Z',
+      current_period_end: null,
+      cancel_at_period_end: false,
+      billing_revision: 0,
+    },
+    subscriptions: {
+      sub_new_empty: {
+        id: 'sub_new_empty',
+        customer: 'cus_empty',
+        status: 'active',
+        cancel_at_period_end: false,
+        items: { data: [{ id: 'si_1', current_period_end: 1800000000 }] },
+        created: 1700000000,
+      },
+    },
+  });
+
+  const result = await reconcileStripeWebhookEvent({
+    event: {
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_empty',
+          customer: 'cus_empty',
+          subscription: 'sub_new_empty',
+          client_reference_id: 'user-empty-strings',
+        },
+      },
+    },
+    stripeClient,
+    supabaseClient,
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.skipped, false);
+  assert.equal(state.profile.plan, 'pro');
+  assert.equal(state.profile.subscription_id, 'sub_new_empty');
+  assert.equal(state.profile.subscription_status, 'active');
 });

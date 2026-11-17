@@ -2,11 +2,20 @@ import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import { buffer } from 'micro';
 
+export function resolveSupabaseConfig(env = process.env) {
+  const supabaseUrl = env?.SUPABASE_URL || env?.VITE_SUPABASE_URL || '';
+  const supabaseServiceRoleKey = env?.SUPABASE_SERVICE_ROLE_KEY || '';
+  return {
+    supabaseUrl,
+    supabaseServiceRoleKey,
+    configured: Boolean(supabaseUrl && supabaseServiceRoleKey),
+  };
+}
+
 const defaultStripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)
   : null;
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const { supabaseUrl, supabaseServiceRoleKey } = resolveSupabaseConfig();
 const defaultSupabase = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey)
   : null;
@@ -332,13 +341,13 @@ export async function reconcileStripeWebhookEvent({
       query = query.eq('billing_revision', profile.billing_revision);
     }
 
-    if (profile.subscription_id) {
+    if (profile.subscription_id !== null && profile.subscription_id !== undefined) {
       query = query.eq('subscription_id', profile.subscription_id);
     } else {
       query = query.is('subscription_id', null);
     }
 
-    if (profile.subscription_status) {
+    if (profile.subscription_status !== null && profile.subscription_status !== undefined) {
       query = query.eq('subscription_status', profile.subscription_status);
     } else {
       query = query.is('subscription_status', null);
