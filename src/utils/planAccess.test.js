@@ -49,15 +49,46 @@ test('resolveRealPlan downgrades expired trials to starter', () => {
   assert.equal(plan, 'starter');
 });
 
-test('resolveRealPlan treats active pro subscriptions as pro', () => {
-  const plan = resolveRealPlan({
-    profile: {
-      plan: 'pro',
-      subscription_status: 'active',
-    },
-  });
+test('resolveRealPlan treats active, trialing, and past_due pro subscriptions as pro', () => {
+  for (const status of ['active', 'trialing', 'past_due', 'ACTIVE', 'Past_Due']) {
+    assert.equal(
+      resolveRealPlan({
+        profile: {
+          plan: 'pro',
+          subscription_status: status,
+        },
+      }),
+      'pro',
+      `Expected pro for status=${status}`
+    );
+  }
+});
 
-  assert.equal(plan, 'pro');
+test('resolveRealPlan downgrades non-eligible pro subscription statuses to starter', () => {
+  for (const status of ['unpaid', 'paused', 'canceled', 'incomplete', 'incomplete_expired', null, undefined, '', 'unknown_status']) {
+    assert.equal(
+      resolveRealPlan({
+        profile: {
+          plan: 'pro',
+          subscription_status: status,
+        },
+      }),
+      'starter',
+      `Expected starter for status=${String(status)}`
+    );
+  }
+});
+
+test('resolveRealPlan preserves team plan regardless of subscription_status', () => {
+  assert.equal(
+    resolveRealPlan({
+      profile: {
+        plan: 'team',
+        subscription_status: 'trialing',
+      },
+    }),
+    'team'
+  );
 });
 
 test('getPlanLimits returns starter defaults for unknown plans', () => {

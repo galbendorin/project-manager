@@ -88,12 +88,24 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
         return <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Trial</span>;
       case 'past_due':
         return <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">Past Due</span>;
+      case 'unpaid':
+        return <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">Unpaid</span>;
+      case 'paused':
+        return <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Paused</span>;
+      case 'incomplete':
+        return <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Payment Pending</span>;
       case 'canceled':
         return <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Cancelled</span>;
       default:
         return <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Free</span>;
     }
   };
+
+  const hasRecoverableSubscription = Boolean(
+    stripeCustomerId
+    && userProfile?.subscription_id
+    && ['active', 'trialing', 'past_due', 'unpaid', 'paused', 'incomplete'].includes(String(subscriptionStatus || '').toLowerCase())
+  );
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -148,10 +160,26 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
             </div>
           )}
 
-          {subscriptionStatus === 'past_due' && (
+          {(subscriptionStatus === 'past_due' || subscriptionStatus === 'unpaid') && (
             <div className="pt-3 border-t border-gray-200">
               <p className="text-sm text-red-600">
-                Your payment failed. Please update your payment method to keep Pro access.
+                Your payment failed. Please update your payment method in the billing portal to keep or restore Pro access.
+              </p>
+            </div>
+          )}
+
+          {subscriptionStatus === 'paused' && (
+            <div className="pt-3 border-t border-gray-200">
+              <p className="text-sm text-amber-600">
+                Your Pro subscription is paused. Manage billing below to resume Pro access.
+              </p>
+            </div>
+          )}
+
+          {subscriptionStatus === 'incomplete' && (
+            <div className="pt-3 border-t border-gray-200">
+              <p className="text-sm text-amber-600">
+                Your initial Pro payment is still pending confirmation. Manage billing below to complete or update your payment method.
               </p>
             </div>
           )}
@@ -171,7 +199,7 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
               onClick={handleManageBilling}
               disabled={portalLoading}
               className={`w-full py-3 rounded-lg font-medium text-sm transition-colors ${
-                subscriptionStatus === 'past_due'
+                subscriptionStatus === 'past_due' || subscriptionStatus === 'unpaid'
                   ? 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
                   : 'border border-gray-200 text-gray-700 hover:bg-gray-50'
               }`}
@@ -180,8 +208,8 @@ export default function BillingScreen({ onClose, onOpenPricing }) {
             </button>
           )}
 
-          {/* Show upgrade button for non-pro users */}
-          {!isCurrentlyProOrAdmin(effectivePlan, isAdmin) && (
+          {/* Show upgrade button for non-pro users without an existing recoverable subscription */}
+          {!isCurrentlyProOrAdmin(effectivePlan, isAdmin) && !hasRecoverableSubscription && (
             <button
               onClick={onOpenPricing}
               className="w-full py-3 rounded-lg bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/25"
