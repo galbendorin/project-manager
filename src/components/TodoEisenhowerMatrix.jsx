@@ -140,15 +140,7 @@ export default function TodoEisenhowerMatrix({
         </nav>
       ) : null}
       <div className={`grid items-start gap-4 ${isMobile ? "grid-cols-1" : "grid-cols-2"}`}>
-        {matrix.groups.map((q, index) => {
-          const transient = transientTodos
-            .filter((entry) => entry.bucketKey === `matrix:${q.id}`)
-            .map((entry) => ({
-              todo: entry.todo,
-              quadrant: q.id,
-              completing: true,
-            }));
-          return (
+        {matrix.groups.map((q, index) => (
             <TodoQuadrantPanel
               data-matrix-quadrant={q.id}
               key={q.id}
@@ -180,7 +172,7 @@ export default function TodoEisenhowerMatrix({
               className={dropTarget === q.id ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-slate-50"}
             >
               <div className="task-matrix-list">
-                {[...q.cards, ...transient].map((card) => {
+                {q.cards.map((card) => {
                   const {
                     todo,
                     reference,
@@ -189,11 +181,13 @@ export default function TodoEisenhowerMatrix({
                     unclassified,
                     completing,
                   } = card;
+                  const covered = !reference || (matrix.isKeyCovered ? matrix.isKeyCovered(reference.task_key) : true);
                   const saving = Boolean(matrix.pending[reference?.task_key]);
                   const canMove =
                     !isExternalView &&
                     !matrix.offline &&
                     !completing &&
+                    covered &&
                     Boolean(reference) &&
                     !saving;
                   return (
@@ -265,16 +259,37 @@ export default function TodoEisenhowerMatrix({
                     </article>
                   );
                 })}
-                {!q.cards.length && !transient.length ? (
+                {!q.cards.length ? (
                   <p className="rounded-xl border border-dashed p-4 text-sm text-slate-500">
                     No tasks in this quadrant.
                   </p>
                 ) : null}
               </div>
             </TodoQuadrantPanel>
-          );
-        })}
+        ))}
       </div>
+      {!isExternalView && transientTodos.length > 0 ? (
+        <div role="status" aria-live="polite" className="task-matrix-undo-toast">
+          {transientTodos.map((entry) => (
+            <div key={taskViewIdentity(entry.todo)} className="task-matrix-undo-toast-row">
+              <span className="truncate">
+                {entry.committing
+                  ? `Saving “${entry.todo.title || 'Untitled'}”…`
+                  : `Completed “${entry.todo.title || 'Untitled'}”`}
+              </span>
+              {!entry.committing ? (
+                <button
+                  type="button"
+                  aria-label={`Undo completion for ${entry.todo.title}`}
+                  onClick={() => handleCompleteTodo(entry.todo, entry.bucketKey, entry.displayIndex ?? 0)}
+                >
+                  Undo
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
       {draggingTitle ? <div className="fixed inset-x-3 bottom-3 z-[90] rounded-2xl border border-indigo-200 bg-white p-3 pb-[calc(.75rem+env(safe-area-inset-bottom))] shadow-2xl">
         <p role="status" className="mb-2 truncate text-sm font-medium">Drag “{draggingTitle}” to a quadrant, then release.</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{MATRIX_QUADRANTS.map((quadrant) => <div key={quadrant.id} data-matrix-quadrant={quadrant.id} className={`flex min-h-14 items-center justify-center rounded-xl border p-2 text-center text-sm font-semibold ${dropTarget === quadrant.id ? 'border-indigo-600 bg-indigo-100 text-indigo-900' : 'border-slate-200 bg-slate-50'}`}>{quadrant.title}</div>)}</div>

@@ -6,6 +6,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { startAuthBootstrap } from '../utils/authBootstrap.js';
 import { createShoppingDraftOwner } from '../utils/shoppingDraftOwner.js';
 import { createShoppingCreateJournal } from '../utils/shoppingCreateJournal.js';
+import { createTaskCompletionSession } from '../utils/taskCompletionSession.js';
 
 const deferred = () => {
   let resolve;
@@ -54,6 +55,8 @@ async function fixture(t, { offline = false, enabled = true, flag = { value: ena
     .replace(/return \(\s*<AuthContext.Provider[\s\S]*?<\/AuthContext.Provider>\s*\);/, 'return value;');
   const renderProvider = vm.runInNewContext(`${source}\nAuthProvider`, { ...hooks, navigator: { onLine: !offline },
     URLSearchParams, console: { warn() {} }, startAuthBootstrap, supabase: { auth },
+    createTaskCompletionSession,
+    TaskCompletionSessionContext: { Provider: ({ children }) => children },
     createShoppingDraftOwner: args => createShoppingDraftOwner({ ...args, createJournal: options => {
       const journal = createShoppingCreateJournal({ ...options, indexedDB }); journals.push(journal); return journal;
     } }),

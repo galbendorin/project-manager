@@ -20,6 +20,7 @@ import { activatePendingServiceWorker, hasPendingServiceWorker } from './utils/r
 import { AppStartupReady } from './components/AppErrorBoundary';
 import { canAccessItilQuiz } from './utils/itilQuizAccess';
 import { hasPendingFinanceInvitation } from './utils/financeAccess';
+import TaskCompletionSessionOverlay from './components/TaskCompletionSessionOverlay';
 
 const AuthPage = lazy(() => import('./components/AuthPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -126,7 +127,7 @@ const getUserDisplayName = (user) => {
 };
 
 function App() {
-  const { user, loading: authLoading, signOut, isPasswordRecovery } = useAuth();
+  const { user, loading: authLoading, signOut, isPasswordRecovery, taskCompletionSession } = useAuth();
   const {
     financeHouseholdAccess,
     financeToolsEnabled,
@@ -430,6 +431,7 @@ function App() {
                 'Loading projects...'
               )}
         <CheckoutToast status={checkoutStatus} />
+        <TaskCompletionSessionOverlay session={taskCompletionSession} userId={user.id} />
       </>
     );
   }
@@ -460,6 +462,7 @@ function App() {
         'Loading project...'
       )}
       <CheckoutToast status={checkoutStatus} />
+      <TaskCompletionSessionOverlay session={taskCompletionSession} userId={user.id} />
       {sourceNavigation.error ? <p role="alert" className="fixed bottom-4 left-4 right-4 z-[90] rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">{sourceNavigation.error}</p> : null}
     </>
   );

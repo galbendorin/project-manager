@@ -37,6 +37,7 @@ function fixture({ path = '/shopping', pending = true, activation = Promise.reso
     useCheckoutStatus: () => null, useOnlineStatus: () => true,
     useTodoSourceNavigation: () => ({ request: null, error: '', openSource() {}, clear() {} }),
     OfflineBanner: () => null, CheckoutToast: () => null, AppStartupReady: () => null,
+    TaskCompletionSessionOverlay: () => null,
     loadAccentTheme: () => 'orchid', applyAccentTheme() {}, saveAccentTheme() {},
     loadLastAppPath: () => '/', readAppShortcutIntent: () => null,
     hasPendingServiceWorker: () => pending, activatePendingServiceWorker: () => activation,

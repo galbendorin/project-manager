@@ -74,6 +74,7 @@ export const useProjectData = (projectId, userId = null) => {
     todoQueue,
     todoQueueRef,
     updateTodo,
+    retryRecurringFollowUp,
     todos,
   } = useProjectTodos({
     isOnline,
@@ -221,11 +222,18 @@ export const useProjectData = (projectId, userId = null) => {
 
   const completeTodoFromView = useCallback(async (todo) => {
     const completion = getTodoCompletionDescriptor(todo, getCurrentDate(), now());
-    if (!completion) return;
+    if (!completion) {
+      return {
+        ok: false,
+        error: `Could not complete “${todo?.title || 'Untitled'}”. Reload its source project and try again.`,
+      };
+    }
 
     if (completion.kind === 'manual') {
-      await updateTodo(completion.todoId, completion.key, completion.value);
-      return;
+      const result = await updateTodo(completion.todoId, completion.key, completion.value, todo);
+      return result
+        ? { ok: true, ...result }
+        : { ok: false, error: `Could not complete “${todo.title || 'Untitled'}”. Try again.` };
     }
 
     if (completion.kind === 'register') {
@@ -248,7 +256,7 @@ export const useProjectData = (projectId, userId = null) => {
           patch: completion.patch,
         },
       }));
-      return;
+      return { ok: true };
     }
 
     if (completion.kind === 'tracker') {
@@ -257,12 +265,15 @@ export const useProjectData = (projectId, userId = null) => {
           ? { ...item, ...completion.patch }
           : item
       )));
-      return;
+      return { ok: true };
     }
 
     if (completion.kind === 'schedule') {
       updateTask(completion.taskId, completion.patch);
+      return { ok: true };
     }
+
+    return { ok: true };
   }, [queueProjectSyncOp, updateTask, updateTodo]);
 
   // ==================== TEMPLATE ====================
@@ -340,6 +351,7 @@ export const useProjectData = (projectId, userId = null) => {
     updateStatusReport,
     addTodo,
     updateTodo,
+    retryRecurringFollowUp,
     deleteTodo,
     completeTodoFromView,
     retryProjectSync,

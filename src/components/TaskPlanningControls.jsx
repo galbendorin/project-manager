@@ -26,7 +26,8 @@ export default function TaskPlanningControls({ todo, matrix, today, onUpdateTodo
   const current = useRef({ identity, workDay, deadline });
   current.current = { identity, workDay, deadline };
   const reference = matrixReference(todo);
-  const available = matrix.ready && !matrix.offline && reference && todo.status !== 'Done';
+  const covered = !reference || (matrix.isKeyCovered ? matrix.isKeyCovered(reference.task_key) : true);
+  const available = matrix.ready && covered && !matrix.offline && reference && todo.status !== 'Done';
   const waiting = saving || deadlinePending || Boolean(matrix.pending?.[reference?.task_key]);
   const planned = plannedDayForTask(todo, matrix.preferences);
   const preference = matrix.preferences[reference?.task_key];

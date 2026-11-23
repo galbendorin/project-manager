@@ -5,8 +5,12 @@ import {
   buildLocalTodoUpdate,
   applyTodoUpdateToState,
   buildTodoUpdatePatch,
-  buildRecurringFollowUpInsert,
 } from './todos';
+import {
+  createRecurringUuid,
+  ensureRecurringManualTodoFollowUp,
+  isValidRecurringUuid,
+} from './recurringFollowUp';
 import {
   MANUAL_TODO_SELECT,
   LEGACY_MANUAL_TODO_SELECT,
@@ -528,8 +532,8 @@ export function useProjectTodos({
     return localTodo;
   }, [isOnline, now, projectId, setOfflinePendingSync, userId]);
 
-  const updateTodo = useCallback(async (todoId, key, value, todoOverride = null, { requireConfirmation = false } = {}) => {
-    const todo = todos.find((item) => item._id === todoId) || todoOverride;
+  const updateTodo = useCallback(async (todoId, key, value, todoOverride = null, { requireConfirmation = false, followUpOperationId = null } = {}) => {
+    const todo = todoOverride || todos.find((item) => item._id === todoId);
     if (!todo) return null;
     if (requireConfirmation && (!userId || !supportsManualTodosTableRef.current || !isOnline || isOfflineTempId(todoId))) return null;
 
@@ -644,49 +648,115 @@ export function useProjectTodos({
       return null;
     }
 
-    let followUpDbRow = null;
+    const updatedTodo = mapManualTodoRow(updatedRow);
+    let followUpTodo = null;
+    let followUpError = false;
+    let followUpPending = null;
+    let missingManualTodosOnInsert = false;
+
     if (transitionedToDone && normalizedRecurrence) {
-      const { data: insertedRow, error: insertError } = await supabase
-        .from('manual_todos')
-        .insert(buildRecurringFollowUpInsert({
+      const followUpId = isValidRecurringUuid(followUpOperationId)
+        ? followUpOperationId
+        : createRecurringUuid();
+
+      const followUpResult = await ensureRecurringManualTodoFollowUp({
+        client: supabase,
+        userId,
+        followUpId,
+        sourceTodo: updatedTodo,
+        normalizedRecurrence,
+        nextRecurringDueDate,
+        supportsExtendedFields: supportsExtendedManualTodoFieldsRef.current,
+        onSchemaFallback: () => {
+          supportsExtendedManualTodoFieldsRef.current = false;
+        },
+      });
+
+      if (followUpResult.ok) {
+        followUpTodo = followUpResult.followUpTodo;
+      } else if (followUpResult.missingTable) {
+        supportsManualTodosTableRef.current = false;
+        missingManualTodosOnInsert = true;
+        followUpTodo = followUpLocal;
+      } else {
+        followUpError = true;
+        followUpPending = {
+          id: followUpId,
+          parentTodoId: todoId,
           userId,
-          localUpdated,
+          sourceTodo: updatedTodo,
           normalizedRecurrence,
           nextRecurringDueDate,
-          supportsExtendedFields: supportsExtendedManualTodoFieldsRef.current,
-        }))
-        .select(selectClause)
-        .single();
-
-      if (!insertError && insertedRow) {
-        followUpDbRow = insertedRow;
-      } else if (insertError) {
-        if (supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(insertError, EXTENDED_MANUAL_TODO_FIELDS)) {
-          supportsExtendedManualTodoFieldsRef.current = false;
-        }
-        if (isMissingRelationError(insertError, 'manual_todos')) {
-          supportsManualTodosTableRef.current = false;
-        }
-        console.error('Failed to create recurring follow-up todo:', insertError);
+          title: updatedTodo.title || 'Untitled',
+          dueDate: nextRecurringDueDate || '',
+        };
+        console.error('Failed to create recurring follow-up todo:', followUpResult.error);
       }
     }
 
-    const updatedTodo = mapManualTodoRow(updatedRow);
-    const followUpTodo = followUpDbRow
-      ? mapManualTodoRow(followUpDbRow)
-      : followUpLocal;
-
     setTodos((prev) => {
-      const next = prev.map((item) => item._id === todoId ? updatedTodo : item);
-      if (followUpDbRow) {
+      const next = prev.map((item) => (item._id === todoId ? updatedTodo : item));
+      if (
+        followUpTodo
+        && (followUpTodo.projectId || null) === (projectId || null)
+        && !next.some((item) => item._id === followUpTodo._id)
+      ) {
         next.push(followUpTodo);
-      } else if (followUpLocal) {
-        next.push(followUpLocal);
       }
       return next;
     });
-    return { updatedTodo, followUpTodo, confirmed: true };
-  }, [isOnline, now, setOfflinePendingSync, todos, userId]);
+
+    if (missingManualTodosOnInsert) {
+      return { updatedTodo, followUpTodo };
+    }
+
+    return {
+      updatedTodo,
+      followUpTodo,
+      confirmed: true,
+      ...(followUpError ? { followUpError: true, followUpPending } : {}),
+    };
+  }, [isOnline, now, projectId, setOfflinePendingSync, todos, userId]);
+
+  const retryRecurringFollowUp = useCallback(async (pendingRecord) => {
+    const session = creationSession.current;
+    if (!session.active || !userId || pendingRecord?.userId !== userId) {
+      return { ok: false, cancelled: true };
+    }
+    if (!isOnline) {
+      return { ok: false, error: new Error('Reconnect to save the next recurring task.') };
+    }
+
+    const result = await ensureRecurringManualTodoFollowUp({
+      client: supabase,
+      userId,
+      followUpId: pendingRecord.id,
+      sourceTodo: pendingRecord.sourceTodo,
+      normalizedRecurrence: pendingRecord.normalizedRecurrence,
+      nextRecurringDueDate: pendingRecord.nextRecurringDueDate,
+      supportsExtendedFields: supportsExtendedManualTodoFieldsRef.current,
+      onSchemaFallback: () => {
+        supportsExtendedManualTodoFieldsRef.current = false;
+      },
+    });
+
+    if (!session.active || creationSession.current !== session) {
+      return { ok: false, cancelled: true };
+    }
+
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+
+    if ((result.followUpTodo.projectId || null) === (projectId || null)) {
+      setTodos((prev) => (
+        prev.some((item) => item._id === result.followUpTodo._id)
+          ? prev
+          : [...prev, result.followUpTodo]
+      ));
+    }
+    return { ok: true, followUpTodo: result.followUpTodo };
+  }, [isOnline, projectId, userId]);
 
   const deleteTodo = useCallback(async (todoId) => {
     const previousTodos = todos;
@@ -726,6 +796,7 @@ export function useProjectTodos({
     todoQueue,
     todoQueueRef,
     updateTodo,
+    retryRecurringFollowUp,
     todos,
   };
 }

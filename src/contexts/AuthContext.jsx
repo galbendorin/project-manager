@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase';
 import { clearAiSettings } from '../utils/aiSettings';
 import { startAuthBootstrap } from '../utils/authBootstrap';
 import { createShoppingDraftOwner } from '../utils/shoppingDraftOwner';
+import { createTaskCompletionSession } from '../utils/taskCompletionSession';
+import { TaskCompletionSessionContext } from './TaskCompletionSessionContext';
 import {
   clearCachedOfflineUser,
   clearOfflineDataForUser,
@@ -95,8 +97,15 @@ export const AuthProvider = ({ children }) => {
       enabled: (import.meta.env.VITE_SHOPPING_DURABLE_CREATES ?? 'true') === 'true', initialUserId: initialOfflineUser?.id || null,
     });
   }
+  const taskCompletionSessionRef = useRef(null);
+  if (!taskCompletionSessionRef.current) {
+    taskCompletionSessionRef.current = createTaskCompletionSession({
+      initialUserId: initialOfflineUser?.id || null,
+    });
+  }
   const [shoppingDraftScope, setShoppingDraftScope] = useState(() => shoppingDraftOwnerRef.current.getScope());
   const setDraftOwner = useCallback(userId => {
+    taskCompletionSessionRef.current.setOwner(userId);
     setShoppingDraftScope(shoppingDraftOwnerRef.current.setOwner(userId));
   }, []);
 
@@ -221,6 +230,7 @@ export const AuthProvider = ({ children }) => {
       isActive = false;
       stopBootstrap();
       shoppingDraftOwnerRef.current.close();
+      taskCompletionSessionRef.current.revoke();
     };
   }, [setDraftOwner]);
 
@@ -272,8 +282,11 @@ export const AuthProvider = ({ children }) => {
   const signOut = async () => {
     const signedOutUserId = activeUserIdRef.current || user?.id || null;
     const signingOutScope = shoppingDraftOwnerRef.current.getScope();
+    taskCompletionSessionRef.current.revoke();
     const { error } = await supabase.auth.signOut();
-    if (!error) {
+    if (error && activeUserIdRef.current && taskCompletionSessionRef.current.getScope() === null) {
+      taskCompletionSessionRef.current.setOwner(activeUserIdRef.current);
+    } else if (!error) {
       // A delayed sign-out response must not revoke an intervening sign-in.
       const currentScope = shoppingDraftOwnerRef.current.getScope();
       if (currentScope && currentScope !== signingOutScope) return { error };
@@ -299,8 +312,11 @@ export const AuthProvider = ({ children }) => {
 
     const signedOutUserId = activeUserIdRef.current || user?.id || null;
     const signingOutScope = shoppingDraftOwnerRef.current.getScope();
+    taskCompletionSessionRef.current.revoke();
     const { error } = await supabase.auth.signOut();
-    if (!error) {
+    if (error && activeUserIdRef.current && taskCompletionSessionRef.current.getScope() === null) {
+      taskCompletionSessionRef.current.setOwner(activeUserIdRef.current);
+    } else if (!error) {
       const currentScope = shoppingDraftOwnerRef.current.getScope();
       if (currentScope && currentScope !== signingOutScope) return { error };
       setDraftOwner(null);
@@ -316,6 +332,7 @@ export const AuthProvider = ({ children }) => {
   const value = {
     user,
     shoppingDraftScope: shoppingDraftScope?.userId === user?.id ? shoppingDraftScope : null,
+    taskCompletionSession: taskCompletionSessionRef.current,
     loading,
     signUp,
     signIn,
@@ -329,7 +346,9 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={value}>
-      {children}
+      <TaskCompletionSessionContext.Provider value={taskCompletionSessionRef.current}>
+        {children}
+      </TaskCompletionSessionContext.Provider>
     </AuthContext.Provider>
   );
 };

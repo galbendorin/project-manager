@@ -37,6 +37,10 @@ import { useTaskTextDrafts } from '../hooks/useTaskTextDrafts';
 import TodoViewHeaderControls from './TodoViewHeaderControls';
 import { buildTodoCardKey, useTodoKanbanBoard } from '../hooks/useTodoKanbanBoard';
 import { useTaskCardChecklists } from '../hooks/useTaskCardChecklists';
+import { useTaskCompletionSession } from '../contexts/TaskCompletionSessionContext';
+import { createTaskCompletionSession } from '../utils/taskCompletionSession';
+import { ensureRecurringManualTodoFollowUp } from '../hooks/projectData/recurringFollowUp';
+import { getNextRecurringDueDate } from '../utils/helpers';
 import {
   LEGACY_MANUAL_TODO_SELECT,
   MANUAL_TODO_SELECT,
@@ -44,6 +48,7 @@ import {
   SHOPPING_MANUAL_TODO_SELECT,
   isMissingSchemaFieldError,
   mapManualTodoRow,
+  normalizeTodoRecurrence,
 } from '../hooks/projectData/manualTodoUtils';
 import {
   TODO_FOCUS_VIEWS,
@@ -163,6 +168,7 @@ const TodoView = ({
   onTodoFocusHandled,
   onAddTodo,
   onUpdateTodo,
+  onRetryRecurringFollowUp,
   onDeleteTodo,
   onCompleteTodo,
   onOpenSourceTodo,
@@ -171,7 +177,21 @@ const TodoView = ({
   onMoveToPlan,
   onReturnFromPlan,
   onOpenPlan,
+  completionSession = null,
+  isWorkspaceMounted = null,
 }) => {
+  const contextSession = useTaskCompletionSession();
+  const fallbackSessionRef = useRef(null);
+  const usingFallbackSession = !completionSession && !contextSession;
+  if (usingFallbackSession && !fallbackSessionRef.current) {
+    fallbackSessionRef.current = createTaskCompletionSession({ initialUserId: currentUserId });
+  }
+  if (usingFallbackSession && fallbackSessionRef.current) {
+    fallbackSessionRef.current.setOwner(currentUserId);
+  }
+  const activeSession = completionSession || contextSession || fallbackSessionRef.current;
+  const [sessionSnapshot, setSessionSnapshot] = useState(() => activeSession.getSnapshot());
+  const mountedRef = useRef(true);
   const initialCommandStateRef = useRef(null);
   if (!initialCommandStateRef.current) {
     initialCommandStateRef.current = readTodoCommandState();
@@ -258,10 +278,35 @@ const TodoView = ({
   const [quickAddStatus, setQuickAddStatus] = useState({ context: quickAddContext, values: {} });
   const currentQuickAddStatus = { ...(quickAddStatus.context === quickAddContext ? quickAddStatus.values : {}) };
   quickAddOperations.current.pending.forEach((key) => { currentQuickAddStatus[key] = { saving: true }; });
-  const [pendingCompletedTodos, setPendingCompletedTodos] = useState({});
+  const [statusSavingId, setStatusSavingId] = useState('');
+  const pendingCompletedTodos = useMemo(() => {
+    const entries = sessionSnapshot?.userId === currentUserId
+      ? sessionSnapshot.pendingEntries
+      : [];
+    return Object.fromEntries(
+      entries
+        .filter((entry) => entry.userId === currentUserId)
+        .map((entry) => [
+          entry.key,
+          {
+            todo: {
+              ...entry.todo,
+              status: 'Done',
+              completedAt: entry.completedAt || entry.todo.completedAt || '',
+            },
+            bucketKey: entry.bucketKey,
+            displayIndex: entry.displayIndex,
+            committing: entry.committing,
+          },
+        ])
+    );
+  }, [currentUserId, sessionSnapshot]);
+  const sessionAlert = sessionSnapshot?.userId === currentUserId ? (sessionSnapshot.alert || '') : '';
+  const recurringRecoveries = useMemo(() => (
+    sessionSnapshot?.userId === currentUserId ? (sessionSnapshot.recurringRecoveries || []) : []
+  ), [currentUserId, sessionSnapshot]);
   const [todoDragState, setTodoDragState] = useState({ todo: null, sourceBucketKey: '', target: null });
   const quickAddInputRefs = useRef(new Map());
-  const completionTimeoutsRef = useRef(new Map());
   const previousProjectIdRef = useRef(currentProject?.id || null);
   const isMobile = useMediaQuery('(max-width: 768px)');
   const kanbanProjectMatches = projectFilter.length === 0 || (projectFilter.length === 1 && projectFilter[0] === currentProject?.id);
@@ -380,12 +425,30 @@ const TodoView = ({
     });
   }, [showFutureMonths]);
 
-  useEffect(() => () => {
-    completionTimeoutsRef.current.forEach((timeoutId) => {
-      window.clearTimeout(timeoutId);
+  useEffect(() => {
+    mountedRef.current = true;
+    setSessionSnapshot(activeSession.getSnapshot());
+    const unsubscribe = activeSession.subscribe(setSessionSnapshot);
+    const unregisterSink = activeSession.registerViewSink({
+      onManualResult: (result) => {
+        applyManualMutationResultRef.current(result);
+      },
+      onProjectConfirmed: (confirmedProject) => {
+        sourceMutationRevision.current += 1;
+        setAllProjectsData((prev) => prev.map((project) => (
+          project.id === confirmedProject.id ? confirmedProject : project
+        )));
+      },
     });
-    completionTimeoutsRef.current.clear();
-  }, []);
+    return () => {
+      mountedRef.current = false;
+      unregisterSink();
+      unsubscribe();
+      if (usingFallbackSession && fallbackSessionRef.current) {
+        fallbackSessionRef.current.dispose();
+      }
+    };
+  }, [activeSession, usingFallbackSession]);
 
   useEffect(() => {
     const nextProjectId = currentProject?.id || null;
@@ -402,9 +465,7 @@ const TodoView = ({
     setAllProjectManualTodos([]);
     setSourceLoadState({ owner: currentUserId, confirmed: false, error: '' });
     setSelectedTodo(null);
-    setPendingCompletedTodos({});
-    completionTimeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout));
-    completionTimeoutsRef.current.clear();
+    setStatusSavingId('');
     setPlanNotice('');
     setPlanningDrafts({ owner: currentUserId, values: {} });
     setQuickAddValues({}); setCreationDrafts({ owner: currentUserId, values: {} }); setCreationOpen(false);
@@ -414,7 +475,7 @@ const TodoView = ({
     let cancelled = false;
 
     const loadProjectOptions = async () => {
-      if (!currentUserId) return;
+      if (!currentUserId || scope === 'all') return;
 
       const { data, error } = await readCompleteTodoRows(() => supabase
         .from('projects')
@@ -434,7 +495,7 @@ const TodoView = ({
     return () => {
       cancelled = true;
     };
-  }, [currentUserId, sourceReloadNonce]);
+  }, [currentUserId, scope, sourceReloadNonce]);
 
   useEffect(() => {
     let cancelled = false;
@@ -467,6 +528,7 @@ const TodoView = ({
         const professionalProjects = (projectResponse.data || [])
           .filter((project) => !isShoppingListProject(project));
         const professionalProjectIds = new Set(professionalProjects.map((project) => project.id));
+        activeSession.syncConfirmedProjects(professionalProjects);
         setAllProjectsData(professionalProjects);
           setAllProjectManualTodos((manualTodoResponse.data || [])
             .map(mapManualTodoRow)
@@ -486,7 +548,7 @@ const TodoView = ({
     return () => {
       cancelled = true;
     };
-  }, [scope, currentUserId, sourceReloadNonce]);
+  }, [activeSession, scope, currentUserId, sourceReloadNonce]);
 
   useEffect(() => {
     setQuickAddProjectId((currentValue) => {
@@ -507,6 +569,7 @@ const TodoView = ({
   const personalPlan = useTodoEisenhowerMatrix({
     currentUserId, isExternalView, enabled: !isExternalView || viewMode === 'matrix',
     todos: personalPlanTodos, today, calendarEnabled: viewMode === 'calendar',
+    computeGroups: false,
   });
   const latestPersonalPlan = useRef(personalPlan);
   latestPersonalPlan.current = personalPlan;
@@ -583,7 +646,7 @@ const TodoView = ({
       setDeadlineSaves((previous) => ({ owner: currentUserId, ids: { ...(previous.owner === currentUserId ? previous.ids : {}), [todoId]: true } }));
     }
     try {
-    const originalTodo = allTodoItems.find((todo) => (todo._id || todo.id) === todoId) || null;
+    const originalTodo = options?.todoOverride || allTodoItems.find((todo) => (todo._id || todo.id) === todoId) || null;
     if (options?.moveWorkDay && options.expectedPreference) {
       const preference = latestPersonalPlan.current.preferences[matrixReference(originalTodo)?.task_key];
       const expected = options.expectedPreference;
@@ -594,7 +657,7 @@ const TodoView = ({
     }
     if (options?.retryPersonalOnly && originalTodo?.dueDate !== value) return null;
     const result = options?.retryPersonalOnly ? { confirmed: true, updatedTodo: originalTodo } : await onUpdateTodo(todoId, key, value, originalTodo, options);
-    if (currentOwner.current !== currentUserId || deadlineOperations.current !== operationScope) return null;
+    if (!mountedRef.current || currentOwner.current !== currentUserId || deadlineOperations.current !== operationScope) return result || null;
     applyManualMutationResult(result);
     if (confirmedDateWrite && options?.moveWorkDay && result?.confirmed && result.updatedTodo?.dueDate === value) {
       const saved = await latestPersonalPlan.current.planDay(result.updatedTodo, value, options.expectedPreference);
@@ -661,143 +724,509 @@ const TodoView = ({
     }
   }, [onDeleteTodo, currentUserId, allTodoItems, textDrafts]);
 
-  const clearPendingCompletion = useCallback((todoId) => {
-    const existingTimeoutId = completionTimeoutsRef.current.get(todoId);
-    if (existingTimeoutId) {
-      window.clearTimeout(existingTimeoutId);
-      completionTimeoutsRef.current.delete(todoId);
+  const allProjectsDataRef = useRef(allProjectsData);
+  allProjectsDataRef.current = allProjectsData;
+  const allTodoItemsRef = useRef(allTodoItems);
+  allTodoItemsRef.current = allTodoItems;
+  const currentProjectRef = useRef(currentProject);
+  currentProjectRef.current = currentProject;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const onUpdateTodoRef = useRef(onUpdateTodo);
+  onUpdateTodoRef.current = onUpdateTodo;
+  const onCompleteTodoRef = useRef(onCompleteTodo);
+  onCompleteTodoRef.current = onCompleteTodo;
+  const onRetryRecurringFollowUpRef = useRef(onRetryRecurringFollowUp);
+  onRetryRecurringFollowUpRef.current = onRetryRecurringFollowUp;
+  const isWorkspaceMountedRef = useRef(isWorkspaceMounted);
+  isWorkspaceMountedRef.current = isWorkspaceMounted;
+  const textDraftsRef = useRef(textDrafts);
+  textDraftsRef.current = textDrafts;
+  const handleUpdateTodoRef = useRef(handleUpdateTodo);
+  handleUpdateTodoRef.current = handleUpdateTodo;
+  const applyManualMutationResultRef = useRef(applyManualMutationResult);
+  applyManualMutationResultRef.current = applyManualMutationResult;
+
+  const retryRecurringRecovery = useCallback(async (pendingRecord, expectedScope = null) => {
+    const scopeToken = expectedScope || activeSession.getScope();
+    if (!scopeToken || !scopeToken.isCurrent() || !pendingRecord?.id) {
+      return { ok: false, cancelled: true };
     }
 
-    setPendingCompletedTodos((prev) => {
-      if (!Object.prototype.hasOwnProperty.call(prev, todoId)) return prev;
-      const next = { ...prev };
-      delete next[todoId];
-      return next;
-    });
-  }, []);
+    activeSession.setRecurringRecoveryRetrying(pendingRecord.id, true, scopeToken);
 
-  const completeCrossProjectTodo = useCallback(async (todo) => {
-    if (currentOwner.current !== currentUserId) return;
-    if (!todo?.projectId || (!todo?.isDerived && !todo?.planLink && !todo?.meta?.projectPlanLink)) {
-      if (onCompleteTodo) {
-        await onCompleteTodo(todo);
+    try {
+      const hostAlive = (
+        typeof isWorkspaceMountedRef.current === 'function'
+          ? isWorkspaceMountedRef.current()
+          : mountedRef.current
+      );
+
+      let result;
+      if (hostAlive && typeof onRetryRecurringFollowUpRef.current === 'function') {
+        result = await onRetryRecurringFollowUpRef.current(pendingRecord);
+      } else {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          result = { ok: false, error: new Error('Reconnect to save the next recurring task.') };
+        } else {
+          result = await ensureRecurringManualTodoFollowUp({
+            client: supabase,
+            userId: scopeToken.userId,
+            followUpId: pendingRecord.id,
+            sourceTodo: pendingRecord.sourceTodo,
+            normalizedRecurrence: pendingRecord.normalizedRecurrence,
+            nextRecurringDueDate: pendingRecord.nextRecurringDueDate,
+          });
+        }
       }
-      return;
+
+      if (!scopeToken.isCurrent()) {
+        return { ok: false, cancelled: true };
+      }
+
+      if (!result?.ok) {
+        activeSession.setRecurringRecoveryRetrying(pendingRecord.id, false, scopeToken);
+        activeSession.setAlert(
+          result?.error?.message || `Could not save the next recurring task for “${pendingRecord.title || 'Untitled'}”. Try again.`,
+          scopeToken
+        );
+        return { ok: false, error: result?.error };
+      }
+
+      activeSession.clearRecurringFollowUpId(pendingRecord.parentTodoId);
+      activeSession.clearRecurringRecovery(pendingRecord.id);
+      activeSession.clearAlert();
+
+      if (mountedRef.current && result.followUpTodo) {
+        applyManualMutationResultRef.current({ followUpTodo: result.followUpTodo });
+        setPlanNotice(`Saved next occurrence for “${result.followUpTodo.title || 'Untitled'}”.`);
+      } else if (result.followUpTodo) {
+        activeSession.notifyManualResult({ followUpTodo: result.followUpTodo }, scopeToken);
+      }
+
+      return { ok: true, followUpTodo: result.followUpTodo };
+    } catch (error) {
+      if (scopeToken.isCurrent()) {
+        activeSession.setRecurringRecoveryRetrying(pendingRecord.id, false, scopeToken);
+        activeSession.setAlert(
+          error?.message || `Could not save the next recurring task for “${pendingRecord.title || 'Untitled'}”. Try again.`,
+          scopeToken
+        );
+      }
+      return { ok: false, error };
+    }
+  }, [activeSession]);
+
+  const completeCrossProjectTodo = useCallback(async (todo, sessionScope = activeSession.getScope()) => {
+    if (!sessionScope || !sessionScope.isCurrent()) return { ok: false, cancelled: true };
+    if (!todo?.projectId || (!todo?.isDerived && !todo?.planLink && !todo?.meta?.projectPlanLink)) {
+      if (onCompleteTodoRef.current) {
+        const hostResult = await onCompleteTodoRef.current(todo);
+        if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
+        return hostResult?.ok === false ? hostResult : { ok: true };
+      }
+      return { ok: true };
     }
 
-    const targetProject = allProjectsData.find((project) => project.id === todo.projectId);
-    if (!targetProject) {
-      throw new Error('The source project is not loaded. Refresh Tasks before completing this item.');
+    return activeSession.enqueueProjectMutation(todo.projectId, async (queueScope) => {
+      if (!queueScope.isCurrent()) return { ok: false, cancelled: true };
+
+      let targetProject = activeSession.getConfirmedProject(todo.projectId)
+        || allProjectsDataRef.current.find((project) => project.id === todo.projectId)
+        || null;
+
+      if (!targetProject) {
+        const { data: fetchedProject, error: fetchError } = await supabase
+          .from('projects')
+          .select('id, name, tasks, registers, tracker, version')
+          .eq('id', todo.projectId)
+          .single();
+        if (!queueScope.isCurrent()) return { ok: false, cancelled: true };
+        if (fetchError || !fetchedProject) {
+          return {
+            ok: false,
+            error: `Could not complete “${todo.title || 'Untitled'}”: the source project could not be loaded. Reload Tasks and try again.`,
+          };
+        }
+        targetProject = fetchedProject;
+      }
+
+      const nowIso = new Date().toISOString();
+      if ((todo.planLink || todo.meta?.projectPlanLink) && !Number.isInteger(targetProject.version)) {
+        return {
+          ok: false,
+          error: `Could not complete “${todo.title || 'Untitled'}”: the source project version could not be checked. Reload Tasks and try again.`,
+        };
+      }
+
+      const completion = getTodoCompletionDescriptor(todo, getCurrentDate(), nowIso);
+      const prepared = buildCrossProjectTodoUpdateData(targetProject, completion, nowIso);
+      if (!prepared) {
+        return {
+          ok: false,
+          error: `Could not complete “${todo.title || 'Untitled'}”: the linked source could not be verified. Reload Tasks and try again.`,
+        };
+      }
+
+      let updateQuery = supabase
+        .from('projects')
+        .update(prepared.updateData)
+        .eq('id', todo.projectId);
+
+      if (Number.isInteger(targetProject.version)) {
+        updateQuery = updateQuery.eq('version', targetProject.version);
+      }
+
+      const { data, error } = await updateQuery
+        .select('version')
+        .maybeSingle();
+
+      if (!queueScope.isCurrent()) return { ok: false, cancelled: true };
+
+      if (error) {
+        return {
+          ok: false,
+          error: `Could not complete “${todo.title || 'Untitled'}”: ${error.message || 'save failed'}. Try again.`,
+        };
+      }
+
+      if (Number.isInteger(targetProject.version) && !data) {
+        return {
+          ok: false,
+          error: `Could not complete “${todo.title || 'Untitled'}”: this project changed in another session. Reload Tasks and try again.`,
+        };
+      }
+
+      const confirmedProject = {
+        ...prepared.nextProject,
+        version: Number.isInteger(data?.version) ? data.version : targetProject.version,
+      };
+      activeSession.setConfirmedProject(todo.projectId, confirmedProject, queueScope);
+
+      if (mountedRef.current) {
+        sourceMutationRevision.current += 1;
+        setAllProjectsData((prev) => prev.map((project) => (
+          project.id === todo.projectId ? confirmedProject : project
+        )));
+      } else {
+        activeSession.notifyProjectConfirmed(confirmedProject, queueScope);
+      }
+
+      return { ok: true };
+    }, sessionScope);
+  }, [activeSession]);
+
+  const directCompleteManualTodo = useCallback(async (sourceTodo, followUpId, sessionScope) => {
+    if (!sessionScope || !sessionScope.isCurrent()) return { ok: false, cancelled: true };
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return {
+        ok: false,
+        error: `Could not complete “${sourceTodo.title || 'Untitled'}” while offline. Reconnect and try again.`,
+      };
     }
 
     const nowIso = new Date().toISOString();
-    if ((todo.planLink || todo.meta?.projectPlanLink) && !Number.isInteger(targetProject.version)) throw new Error('The source project version could not be checked. Refresh Tasks before completing this item.');
-    const completion = getTodoCompletionDescriptor(todo, getCurrentDate(), nowIso);
-    const prepared = buildCrossProjectTodoUpdateData(targetProject, completion, nowIso);
+    const extendedFields = ['description', 'kanban_column_id', 'kanban_position'];
+    let supportsExtendedFields = true;
+    const runUpdate = (selectClause) => supabase
+      .from('manual_todos')
+      .update({
+        status: 'Done',
+        completed_at: sourceTodo.completedAt || nowIso,
+        updated_at: nowIso,
+      })
+      .eq('id', sourceTodo._id)
+      .select(`${selectClause}, user_id`)
+      .single();
 
-    if (!prepared) throw new Error('The linked source could not be verified. Refresh Tasks before completing this item.');
-
-    let updateQuery = supabase
-      .from('projects')
-      .update(prepared.updateData)
-      .eq('id', todo.projectId);
-
-    if (Number.isInteger(targetProject.version)) {
-      updateQuery = updateQuery.eq('version', targetProject.version);
+    let { data: updatedRow, error: updateError } = await runUpdate(MANUAL_TODO_SELECT);
+    if (updateError && isMissingSchemaFieldError(updateError, extendedFields)) {
+      supportsExtendedFields = false;
+      ({ data: updatedRow, error: updateError } = await runUpdate(LEGACY_MANUAL_TODO_SELECT));
     }
 
-    const { data, error } = await updateQuery
-      .select('version')
-      .maybeSingle();
-    if (currentOwner.current !== currentUserId) return;
+    if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
 
-    if (error) {
-      throw error;
+    if (updateError || !updatedRow || updatedRow.id !== sourceTodo._id) {
+      return {
+        ok: false,
+        error: `Could not complete “${sourceTodo.title || 'Untitled'}”. Check your connection and try again.`,
+      };
     }
 
-    if (Number.isInteger(targetProject.version) && !data) {
-      throw new Error('The other project changed before this task could be completed. Please reload the task list and try again.');
+    const updatedTodo = mapManualTodoRow(updatedRow);
+    const normalizedRecurrence = normalizeTodoRecurrence(sourceTodo.recurrence);
+    let followUpPending = null;
+    if (normalizedRecurrence && followUpId) {
+      const nextRecurringDueDate = getNextRecurringDueDate(sourceTodo.dueDate, normalizedRecurrence, getCurrentDate());
+      const followUpResult = await ensureRecurringManualTodoFollowUp({
+        client: supabase,
+        userId: sessionScope.userId,
+        followUpId,
+        sourceTodo: updatedTodo,
+        normalizedRecurrence,
+        nextRecurringDueDate,
+        supportsExtendedFields,
+        onSchemaFallback: () => {
+          supportsExtendedFields = false;
+        },
+      });
+      if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
+      if (!followUpResult.ok) {
+        followUpPending = {
+          id: followUpId,
+          parentTodoId: sourceTodo._id,
+          userId: sessionScope.userId,
+          sourceTodo: updatedTodo,
+          normalizedRecurrence,
+          nextRecurringDueDate,
+          title: updatedTodo.title || 'Untitled',
+          dueDate: nextRecurringDueDate || '',
+        };
+      } else {
+        return {
+          updatedTodo,
+          followUpTodo: followUpResult.followUpTodo,
+          confirmed: true,
+        };
+      }
     }
 
-    sourceMutationRevision.current += 1;
-    setAllProjectsData((prev) => prev.map((project) => (
-      project.id === todo.projectId
-        ? {
-            ...prepared.nextProject,
-            version: Number.isInteger(data?.version) ? data.version : project.version,
-          }
-        : project
-    )));
-  }, [allProjectsData, onCompleteTodo, currentUserId]);
+    return {
+      updatedTodo,
+      followUpTodo: null,
+      confirmed: true,
+      ...(followUpPending ? { followUpError: true, followUpPending } : {}),
+    };
+  }, []);
 
-  const persistCompletedTodo = useCallback(async (todo) => {
-    if (!todo?.isDerived && !todo?.planLink && !todo?.meta?.projectPlanLink) {
-      await handleUpdateTodo(todo._id, 'status', 'Done');
-      return;
+  const persistCompletedTodo = useCallback(async (todo, sessionScope = activeSession.getScope(), preFlushPromise = null) => {
+    if (!sessionScope || !sessionScope.isCurrent()) return { ok: false, cancelled: true };
+
+    let effectiveTodo = todo;
+    if (mountedRef.current) {
+      const latestItem = allTodoItemsRef.current.find((item) => taskViewIdentity(item) === taskViewIdentity(todo));
+      if (latestItem && latestItem.status !== 'Done') {
+        effectiveTodo = latestItem;
+      }
+    }
+
+    if (!effectiveTodo?.isDerived) {
+      if (preFlushPromise) {
+        const flushed = await preFlushPromise;
+        if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
+        if (!flushed?.ok) {
+          return {
+            ok: false,
+            error: flushed?.reason === 'invalid-title'
+              ? `Enter a task title before marking “${effectiveTodo.title || 'Untitled'}” Done.`
+              : `Could not mark “${effectiveTodo.title || 'Untitled'}” Done because title or description edits did not save.`,
+          };
+        }
+        if (flushed.todo) effectiveTodo = flushed.todo;
+      } else if (mountedRef.current && textDraftsRef.current.hasUnsaved(effectiveTodo)) {
+        const flushed = await textDraftsRef.current.flushBeforeComplete(effectiveTodo);
+        if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
+        if (!flushed?.ok) {
+          return {
+            ok: false,
+            error: flushed?.reason === 'invalid-title'
+              ? `Enter a task title before marking “${effectiveTodo.title || 'Untitled'}” Done.`
+              : `Could not mark “${effectiveTodo.title || 'Untitled'}” Done because title or description edits did not save.`,
+          };
+        }
+        if (flushed.todo) effectiveTodo = flushed.todo;
+      }
+    }
+
+    const hostAlive = (
+      typeof isWorkspaceMountedRef.current === 'function'
+        ? isWorkspaceMountedRef.current()
+        : mountedRef.current
+    );
+
+    if (!effectiveTodo?.isDerived && !effectiveTodo?.planLink && !effectiveTodo?.meta?.projectPlanLink) {
+      const followUpOperationId = effectiveTodo.recurrence
+        ? activeSession.getOrCreateRecurringFollowUpId(effectiveTodo._id)
+        : null;
+
+      let result = null;
+      if (mountedRef.current) {
+        result = await handleUpdateTodoRef.current(effectiveTodo._id, 'status', 'Done', {
+          todoOverride: effectiveTodo,
+          followUpOperationId,
+        });
+      } else if (hostAlive && typeof onUpdateTodoRef.current === 'function') {
+        result = await onUpdateTodoRef.current(effectiveTodo._id, 'status', 'Done', effectiveTodo, {
+          followUpOperationId,
+        });
+      } else {
+        result = await directCompleteManualTodo(effectiveTodo, followUpOperationId, sessionScope);
+      }
+
+      if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
+      if (!result || result.ok === false) {
+        return {
+          ok: false,
+          error: result?.error || `Could not complete “${effectiveTodo.title || 'Untitled'}”. Check your connection and try again.`,
+        };
+      }
+
+      if (!mountedRef.current && (result.updatedTodo || result.followUpTodo)) {
+        activeSession.notifyManualResult(result, sessionScope);
+      }
+
+      if (result.followUpPending) {
+        activeSession.recordRecurringRecovery({
+          ...result.followUpPending,
+          error: `Completed “${effectiveTodo.title || 'Untitled'}”, but its next recurring occurrence did not save. Retry without creating a duplicate.`,
+          retry: () => retryRecurringRecovery(result.followUpPending, sessionScope),
+        }, sessionScope);
+      } else {
+        activeSession.clearRecurringFollowUpId(effectiveTodo._id);
+      }
+
+      return { ok: true };
     }
 
     const isCrossProjectTodo = (
-      scope === 'all'
-      && todo?.projectId
-      && todo.projectId !== currentProject?.id
+      scopeRef.current === 'all'
+      && effectiveTodo?.projectId
+      && effectiveTodo.projectId !== currentProjectRef.current?.id
     );
 
     if (isCrossProjectTodo) {
-      await completeCrossProjectTodo(todo);
-      return;
+      return await completeCrossProjectTodo(effectiveTodo, sessionScope);
     }
 
-    if (onCompleteTodo) {
-      await onCompleteTodo(todo);
+    if (hostAlive && typeof onCompleteTodoRef.current === 'function') {
+      const result = await onCompleteTodoRef.current(effectiveTodo);
+      if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
+      if (result?.ok === false) {
+        return {
+          ok: false,
+          error: result.error || `Could not complete “${effectiveTodo.title || 'Untitled'}”. Try again.`,
+        };
+      }
+      return { ok: true };
     }
-  }, [completeCrossProjectTodo, currentProject?.id, handleUpdateTodo, onCompleteTodo, scope]);
 
-  const schedulePendingCompletion = useCallback((todo, delayMs) => {
-    const key = taskViewIdentity(todo);
-    const existingTimeoutId = completionTimeoutsRef.current.get(key);
-    if (existingTimeoutId) {
-      window.clearTimeout(existingTimeoutId);
+    if (effectiveTodo?.projectId) {
+      return await completeCrossProjectTodo(effectiveTodo, sessionScope);
     }
 
-    const timeoutId = window.setTimeout(() => {
-      Promise.resolve(persistCompletedTodo(todo))
-        .catch((error) => {
-          console.error('Failed to complete task from Tasks view:', error);
-        })
-        .finally(() => {
-          clearPendingCompletion(key);
-        });
-    }, delayMs);
-
-    completionTimeoutsRef.current.set(key, timeoutId);
-  }, [clearPendingCompletion, persistCompletedTodo]);
+    return { ok: false, error: `Could not complete “${effectiveTodo?.title || 'Untitled'}”.` };
+  }, [activeSession, completeCrossProjectTodo, directCompleteManualTodo, retryRecurringRecovery]);
 
   const handleCompleteTodo = useCallback((todo, bucketKey, displayIndex) => {
     if (!todo || isExternalView || !onCompleteTodo) return;
-    if (todo.planLinkUnavailable) { setPlanNotice('The linked plan task is unavailable. Reload its source project before completing it.'); return; }
-    if (!todo.isDerived && deadlineOperations.current.ids.has(todo._id)) { setPlanNotice('Wait for the deadline save before completing this task.'); return; }
-
-    const key = taskViewIdentity(todo);
-    if (Object.prototype.hasOwnProperty.call(pendingCompletedTodos, key)) {
-      clearPendingCompletion(key);
+    if (todo.planLinkUnavailable) {
+      activeSession.setAlert('The linked plan task is unavailable. Reload its source project before completing it.');
+      return;
+    }
+    if (!todo.isDerived && deadlineOperations.current.ids.has(todo._id)) {
+      setPlanNotice('Wait for the deadline save before completing this task.');
       return;
     }
 
-    setPendingCompletedTodos((prev) => ({
-      ...prev,
-      [key]: {
-        todo: {
-          ...todo,
-          status: 'Done',
-          completedAt: new Date().toISOString()
-        },
-        bucketKey,
-        displayIndex
-      }
-    }));
+    const key = taskViewIdentity(todo);
+    if (Object.prototype.hasOwnProperty.call(pendingCompletedTodos, key)) {
+      activeSession.cancel(key);
+      return;
+    }
 
-    schedulePendingCompletion(todo, isMobile ? MOBILE_COMPLETE_DELAY_MS : DESKTOP_COMPLETE_DELAY_MS);
-  }, [clearPendingCompletion, isExternalView, isMobile, onCompleteTodo, pendingCompletedTodos, schedulePendingCompletion]);
+    if (!todo.isDerived && textDrafts.hasInvalidTitle(todo)) {
+      activeSession.setAlert(`Enter a task title before marking “${todo.title || 'Untitled'}” Done.`);
+      return;
+    }
+
+    activeSession.clearAlert();
+    let preFlushPromise = null;
+    if (!todo.isDerived && textDrafts.hasUnsaved(todo)) {
+      preFlushPromise = textDrafts.flushBeforeComplete(todo);
+      const scopeAtSchedule = activeSession.getScope();
+      void preFlushPromise.then((flushed) => {
+        if (!flushed?.ok && scopeAtSchedule?.isCurrent() && activeSession.isPending(key)) {
+          activeSession.cancel(key);
+          activeSession.setAlert(
+            flushed?.reason === 'invalid-title'
+              ? `Enter a task title before marking “${todo.title || 'Untitled'}” Done.`
+              : `Could not mark “${todo.title || 'Untitled'}” Done because title or description edits did not save.`,
+            scopeAtSchedule
+          );
+        }
+      });
+    }
+
+    activeSession.schedule({
+      key,
+      todo: { ...todo, completedAt: '' },
+      bucketKey,
+      displayIndex,
+      delayMs: isMobile ? MOBILE_COMPLETE_DELAY_MS : DESKTOP_COMPLETE_DELAY_MS,
+      commit: (scopeToken) => persistCompletedTodo(todo, scopeToken, preFlushPromise),
+    });
+  }, [activeSession, isExternalView, isMobile, onCompleteTodo, pendingCompletedTodos, persistCompletedTodo, textDrafts]);
+
+  const handleDetailStatusChange = useCallback(async (todo, nextStatus) => {
+    if (!todo || todo.status === nextStatus) return null;
+    if (nextStatus !== 'Done') {
+      return handleUpdateTodo(todo._id, 'status', nextStatus);
+    }
+
+    const key = taskViewIdentity(todo);
+    activeSession.cancel(key);
+    activeSession.clearAlert();
+    setStatusSavingId(todo._id);
+
+    try {
+      let effectiveTodo = todo;
+      if (!todo.isDerived) {
+        const flushed = await textDrafts.flushBeforeComplete(todo);
+        if (!mountedRef.current || currentOwner.current !== currentUserId) return null;
+        if (!flushed?.ok) {
+          activeSession.setAlert(
+            flushed?.reason === 'invalid-title'
+              ? `Enter a task title before marking “${todo.title || 'Untitled'}” Done.`
+              : `Could not mark “${todo.title || 'Untitled'}” Done because title or description edits did not save. Retry saving your edits first.`
+          );
+          return null;
+        }
+        if (flushed.todo) effectiveTodo = flushed.todo;
+      }
+
+      const scopeSnapshot = activeSession.getScope();
+      const followUpOperationId = effectiveTodo.recurrence
+        ? activeSession.getOrCreateRecurringFollowUpId(effectiveTodo._id)
+        : null;
+      const result = await handleUpdateTodo(effectiveTodo._id, 'status', 'Done', {
+        todoOverride: effectiveTodo,
+        followUpOperationId,
+      });
+
+      if (!mountedRef.current || currentOwner.current !== currentUserId) return null;
+      if (!result) {
+        activeSession.setAlert(`Could not mark “${effectiveTodo.title || 'Untitled'}” Done. Check your connection and try again.`);
+        return null;
+      }
+
+      if (result.followUpPending) {
+        activeSession.recordRecurringRecovery({
+          ...result.followUpPending,
+          error: `Completed “${effectiveTodo.title || 'Untitled'}”, but its next recurring occurrence did not save. Retry without creating a duplicate.`,
+          retry: () => retryRecurringRecovery(result.followUpPending, scopeSnapshot),
+        }, scopeSnapshot);
+      } else {
+        activeSession.clearRecurringFollowUpId(effectiveTodo._id);
+      }
+
+      return result;
+    } finally {
+      if (mountedRef.current) {
+        setStatusSavingId((previous) => (previous === todo._id ? '' : previous));
+      }
+    }
+  }, [activeSession, currentUserId, handleUpdateTodo, retryRecurringRecovery, textDrafts]);
 
   const showCompletionTick = !isExternalView;
   const showQuickAdd = !isExternalView;
@@ -846,9 +1275,25 @@ const TodoView = ({
   const filterableBucketSections = showFutureMonths
     ? allBucketSections
     : allBucketSections.filter((bucket) => !bucket.key.startsWith('month:'));
-  const matrixSections = buildTodoCalendarSections(visibleOpenTodos,{today,showFutureMonths:true}).sections;
-  const matrixTodos = matrixSections.filter(section=>!bucketFilter.length||bucketFilter.includes(section.key)).flatMap(section=>section.items);
-  const matrix = { ...personalPlan, groups: groupMatrixTasks(matrixTodos, personalPlan.preferences, today) };
+  const matrixSections = useMemo(
+    () => buildTodoCalendarSections(visibleOpenTodos, { today, showFutureMonths: true }).sections,
+    [today, visibleOpenTodos],
+  );
+  const matrixTodos = useMemo(
+    () => matrixSections
+      .filter((section) => !bucketFilter.length || bucketFilter.includes(section.key))
+      .flatMap((section) => section.items)
+      .filter((item) => {
+        if (isExternalView) return true;
+        const ref = matrixReference(item);
+        return !ref || personalPlan.isKeyCovered(ref.task_key);
+      }),
+    [bucketFilter, isExternalView, matrixSections, personalPlan],
+  );
+  const matrix = useMemo(
+    () => ({ ...personalPlan, groups: groupMatrixTasks(matrixTodos, personalPlan.preferences, today) }),
+    [matrixTodos, personalPlan, today],
+  );
 
   const filteredBucketSections = filterableBucketSections.filter((bucket) => (
     bucketFilter.length === 0 || bucketFilter.includes(bucket.key)
@@ -973,6 +1418,8 @@ const TodoView = ({
       if (!record.task || record.stage !== 'planning' || record.failed || record.processing) continue;
       const task = personalPlanTodos.find(item => item._id === record.task._id);
       if (!task) continue;
+      const taskKey = matrixReference(task)?.task_key;
+      if (taskKey && !personalPlan.isKeyCovered(taskKey)) continue;
       record.processing = true;
       if (!record.expectedPreference) {
         const preference = personalPlan.preferences[matrixReference(task)?.task_key];
@@ -1267,10 +1714,39 @@ const TodoView = ({
           </div>
         ) : null}
         {sourceCurrent && planNotice ? <p role="status" className="m-3 rounded-xl border bg-indigo-50 p-3 text-sm">{planNotice}</p> : null}
-        {!isExternalView && (personalPlan.loading || personalPlan.error || !personalPlan.ready) ? (
+        {sessionAlert ? (
+          <div role="alert" className="task-session-alert-banner m-3 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
+            <span>{sessionAlert}</span>
+            <button type="button" onClick={() => activeSession.clearAlert()} className="min-h-11 shrink-0 px-3 font-semibold underline">Dismiss</button>
+          </div>
+        ) : null}
+        {recurringRecoveries.map((record) => (
+          <div key={record.id} role="alert" className="task-session-alert-banner m-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
+            <span>{record.error}</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={record.retrying}
+                onClick={() => { void record.retry?.(); }}
+                className="min-h-11 rounded-lg border border-amber-300 bg-white px-3 font-semibold"
+              >
+                {record.retrying ? 'Retrying…' : 'Retry next occurrence'}
+              </button>
+              <button
+                type="button"
+                disabled={record.retrying}
+                onClick={() => activeSession.clearRecurringRecovery(record.id)}
+                className="min-h-11 px-3 font-semibold underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ))}
+        {!isExternalView && (!personalPlan.ready || Boolean(personalPlan.error)) ? (
           <div role={personalPlan.error ? 'alert' : 'status'} className="m-3 rounded-xl border bg-slate-50 p-3 text-sm">
             {personalPlan.error || 'Checking your personal plan…'}
-            <button type="button" disabled={personalPlan.loading || personalPlan.offline || Object.keys(personalPlan.pending).length > 0} onClick={personalPlan.reload} className="ml-2 min-h-11 px-3 font-semibold underline">Retry personal plan</button>
+            <button type="button" disabled={personalPlan.loading || personalPlan.syncing || personalPlan.offline || Object.keys(personalPlan.pending).length > 0} onClick={personalPlan.reload} className="ml-2 min-h-11 px-3 font-semibold underline">Retry personal plan</button>
           </div>
         ) : null}
         {!isExternalView ? <div hidden={viewMode !== 'calendar'}><TodoCalendarView key={currentUserId} owner={currentUserId} enabled={viewMode === 'calendar'} today={today} selectedDay={calendarDay} onSelectDay={day => setCalendarSelection({ owner: currentUserId, day })}
@@ -1392,6 +1868,8 @@ const TodoView = ({
           onClose={() => setSelectedTodo(null)}
           onDeleteTodo={handleDeleteTodo}
           onUpdateTodo={handleUpdateTodo}
+          onChangeStatus={handleDetailStatusChange}
+          statusSaving={Boolean(statusSavingId && statusSavingId === selectedTodo._id)}
           titleDraft={textDrafts.read(selectedTodo, 'title')}
           onTitleChange={value => textDrafts.change(selectedTodo, value, 'title')}
           onSaveTitle={() => textDrafts.save(selectedTodo, 'title')}

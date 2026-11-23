@@ -398,3 +398,8 @@
 .task-reschedule-controls input[type="checkbox"] { width: 18px; min-height: 18px; flex-shrink: 0; }
 .task-creation-window .task-dialog-body { overflow-y: auto; }
 @media (max-width: 639px) { .task-creation-fields { grid-template-columns: 1fr; } .task-creation-fields input, .task-creation-fields select { font-size: 16px; } .task-creation-window { width: calc(100% - 20px); max-height: calc(100dvh - 24px); } }
+.task-matrix-undo-toast { position: fixed; right: 20px; bottom: 20px; z-index: 75; display: flex; flex-direction: column; gap: 8px; max-width: min(380px, calc(100% - 24px)); pointer-events: none; }
+.task-matrix-undo-toast-row { pointer-events: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px 8px 14px; border: 1px solid var(--task-border); border-radius: 12px; background: var(--task-ink); color: var(--task-surface); box-shadow: 0 12px 30px rgba(15, 23, 42, 0.24); font-size: 13px; }
+.task-matrix-undo-toast-row button { min-height: 44px; min-width: 64px; padding: 0 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.14); color: #fff; font-weight: 600; flex-shrink: 0; }
+.task-matrix-undo-toast-row button:hover { background: rgba(255, 255, 255, 0.24); }
+@media (max-width: 767px) { .task-matrix-undo-toast { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom, 0px)); max-width: none; } }

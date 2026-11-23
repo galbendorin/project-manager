@@ -57,7 +57,8 @@ export default function TodoCalendarView({ owner, enabled = true, today, selecte
   const pool = entries.filter(entry => entry.day === selectedDay);
   const editorEntry = entries.find(entry => taskViewIdentity(entry.todo) === editorKey);
   const prefFor = entry => plan.preferences[entry.reference?.task_key];
-  const blocked = entry => !entry.reference || !plan.ready || !plan.calendarReady || plan.loading || plan.offline || isLocked(entry.todo) || Boolean(plan.pending[entry.reference.task_key]);
+  const covered = entry => !entry.reference || (plan.isKeyCovered ? plan.isKeyCovered(entry.reference.task_key) : true);
+  const blocked = entry => !entry.reference || !plan.ready || !covered(entry) || !plan.calendarReady || plan.loading || plan.offline || isLocked(entry.todo) || Boolean(plan.pending[entry.reference.task_key]);
   const makeDraft = entry => ({ day: entry.day, start: calendarTime(entry.start ?? 600), duration: entry.duration ?? 30, expected: preferenceSnapshot(prefFor(entry)), error: '', pending: false });
   const updateDraft = (key, patch) => setDrafts(previous => ({ ...previous, [key]: { ...previous[key], ...patch } }));
   const open = entry => { const key = taskViewIdentity(entry.todo); setDrafts(previous => previous[key] ? previous : { ...previous, [key]: makeDraft(entry) }); setEditorKey(key); };

@@ -15,6 +15,7 @@ import ProjectFocusReadinessPanel from './ProjectFocusReadinessPanel';
 import { useProjectData } from '../hooks/useProjectData';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { usePlan } from '../contexts/PlanContext';
+import { useTaskCompletionSession } from '../contexts/TaskCompletionSessionContext';
 import { loadAiSettings, isAiConfigured } from '../utils/aiSettings';
 import { openFeedbackEmail } from '../utils/feedback';
 import MobileQuickCapture from './MobileQuickCapture';
@@ -135,6 +136,7 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     updateStatusReport,
     addTodo,
     updateTodo,
+    retryRecurringFollowUp,
     deleteTodo,
     completeTodoFromView,
     retryProjectSync,
@@ -142,9 +144,33 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
     setProjectData,
     setRegisters,
     setStatusReport,
+    setTodos,
     setTracker,
     updateRaciData,
   } = useProjectData(project.id, currentUserId);
+  const taskCompletionSession = useTaskCompletionSession();
+  useEffect(() => {
+    if (!taskCompletionSession) return undefined;
+    return taskCompletionSession.subscribeManualResults((result, scope) => {
+      if (!scope || scope.userId !== currentUserId) return;
+      const updated = result?.updatedTodo;
+      const followUp = result?.followUpTodo;
+      if (!updated && !followUp) return;
+      setTodos((prev) => {
+        let next = updated
+          ? prev.map((item) => (item._id === updated._id ? updated : item))
+          : [...prev];
+        if (
+          followUp
+          && (followUp.projectId || null) === (project?.id || null)
+          && !next.some((item) => item._id === followUp._id)
+        ) {
+          next = [...next, followUp];
+        }
+        return next;
+      });
+    });
+  }, [currentUserId, project?.id, setTodos, taskCompletionSession]);
   const projectedTracker = useMemo(() => tracker.map((item) => projectLinkedSource(item, 'tracker', projectData)), [tracker, projectData]);
   const projectedRegisters = useMemo(() => ({ ...registers, actions: (registers.actions || []).map((item) => projectLinkedSource(item, 'action', projectData)) }), [registers, projectData]);
   const externalPlanTasks = useMemo(() => projectData.filter((task) => planTaskVisibleExternally(task, registers, tracker)), [projectData, registers, tracker]);
@@ -708,8 +734,10 @@ export function MainApp({ project, currentUserId, currentUserName, accentTheme, 
                 onTodoFocusHandled={() => setPendingTodoFocusId(null)}
                 onAddTodo={addTodo}
                 onUpdateTodo={updateTodo}
+                onRetryRecurringFollowUp={retryRecurringFollowUp}
                 onDeleteTodo={deleteTodo}
                 onCompleteTodo={completeTodoFromView}
+                isWorkspaceMounted={() => sourceLeaveState.current.active}
               />
             </BlurOverlay>
           ) : activeTab === 'stakeholdersmgmt' ? (

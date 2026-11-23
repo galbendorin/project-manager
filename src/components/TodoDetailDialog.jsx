@@ -15,6 +15,7 @@ export default function TodoDetailDialog({
   onRetryChecklists, onAddChecklist, onAddChecklistItems, onDeleteChecklist,
   onDeleteChecklistItem, onMoveChecklistItem, onRenameChecklist,
   onRenameChecklistItem, onToggleChecklistItem,
+  onChangeStatus, statusSaving = false,
 }) {
   const dialog = useRef(null), onCloseRef = useRef(onClose);
   const requestClose = () => {
@@ -67,8 +68,9 @@ export default function TodoDetailDialog({
         <div className="task-property-fields">
           <Field label="Owner">{canEdit ? <input type="text" value={todo.owner || ''} onChange={e => update('owner', e.target.value)} /> : <Value>{todo.owner || 'Unassigned'}</Value>}</Field>
           <Field label="Repeat">{editSchedule ? <select value={todo.recurrence?.type || 'none'} onChange={e => update('recurrence', e.target.value === 'none' ? null : { type: e.target.value, interval: 1 })}>{recurrenceOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select> : <Value>{recurrenceLabel?.(todo.recurrence) || 'One-time'}</Value>}</Field>
-          <Field label="Status">{editSchedule ? <select value={todo.status || 'Open'} onChange={e => update('status', e.target.value)}>{['Open','Done'].map(s => <option key={s}>{s}</option>)}</select> : <Value>{todo.status || 'Open'}</Value>}</Field>
+          <Field label="Status">{editSchedule ? <select aria-label="Task status" disabled={statusSaving} value={todo.status || 'Open'} onChange={e => (onChangeStatus ? onChangeStatus(todo, e.target.value) : update('status', e.target.value))}>{['Open','Done'].map(s => <option key={s}>{s}</option>)}</select> : <Value>{todo.status || 'Open'}</Value>}</Field>
         </div>
+        {statusSaving ? <p role="status" className="task-description-feedback">Saving status…</p> : null}
         <TaskCardChecklistPanel presentation="editor" canEdit={checklistCanEdit} checklists={checklists} checklistsAvailable={checklistsAvailable} checklistsLoading={checklistsLoading} checklistMessage={checklistMessage} checklistsSaving={checklistsSaving} onRetryChecklists={onRetryChecklists} onAddChecklist={onAddChecklist} onAddChecklistItems={onAddChecklistItems} onDeleteChecklist={onDeleteChecklist} onDeleteChecklistItem={onDeleteChecklistItem} onMoveChecklistItem={onMoveChecklistItem} onRenameChecklist={onRenameChecklist} onRenameChecklistItem={onRenameChecklistItem} onToggleChecklistItem={onToggleChecklistItem} />
         <div className="task-dialog-secondary">
         {sourcePlanControls ? <details className="task-detail-disclosure" open={Boolean(todo.planLink || todo.meta?.projectPlanLink)}><summary>Project Plan</summary>{sourcePlanControls}</details> : null}

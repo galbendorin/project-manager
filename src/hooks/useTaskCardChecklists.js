@@ -137,11 +137,31 @@ export function useTaskCardChecklists({
   const [checklistMessage, setChecklistMessage] = useState('');
   const [checklistsAvailable, setChecklistsAvailable] = useState(true);
   const [checklistsSaving, setChecklistsSaving] = useState(0);
-  const lifecycle = useRef({ owner: currentUserId, active: true, revision: 0, load: 0, pending: 0, queues: new Map() });
+  const lifecycle = useRef({
+    owner: currentUserId,
+    active: true,
+    revision: 0,
+    load: 0,
+    pending: 0,
+    queues: new Map(),
+    loadedScopeKeys: new Set(),
+    needsReload: false,
+    needsFullReload: false,
+  });
 
   useEffect(() => {
     const previous = lifecycle.current;
-    const current = { owner: currentUserId, active: true, revision: 0, load: 0, pending: 0, queues: new Map() };
+    const current = {
+      owner: currentUserId,
+      active: true,
+      revision: 0,
+      load: 0,
+      pending: 0,
+      queues: new Map(),
+      loadedScopeKeys: new Set(),
+      needsReload: false,
+      needsFullReload: false,
+    };
     lifecycle.current = current;
     if (previous.owner !== currentUserId) {
       setChecklistsByScopeKey({});
@@ -157,38 +177,62 @@ export function useTaskCardChecklists({
   const checklistScopeSignature = JSON.stringify(buildChecklistScopes(todos));
   const checklistScopes = useMemo(() => JSON.parse(checklistScopeSignature), [checklistScopeSignature]);
 
-  const loadChecklists = useCallback(async () => {
+  const loadChecklists = useCallback(async ({ full = false } = {}) => {
     const session = lifecycle.current;
-    if (session.pending > 0) { session.needsReload = true; return; }
-    const load = ++session.load;
-    const revision = session.revision;
-    const current = () => session.active && lifecycle.current === session
-      && session.owner === currentUserId && session.load === load && session.revision === revision;
-    if (!currentUserId || checklistScopes.length === 0) {
+    if (session.pending > 0) {
+      session.needsReload = true;
+      if (full) session.needsFullReload = true;
+      return;
+    }
+
+    if (!currentUserId) {
+      session.loadedScopeKeys.clear();
       setChecklistsLoading(false);
       setChecklistsByScopeKey({});
       return;
     }
+
+    if (checklistScopes.length === 0) {
+      if (full) {
+        session.loadedScopeKeys.clear();
+        setChecklistsByScopeKey({});
+      }
+      setChecklistsLoading(false);
+      return;
+    }
+
+    const targetScopes = full
+      ? checklistScopes
+      : checklistScopes.filter((scope) => !session.loadedScopeKeys.has(scope.scopeKey));
+
+    if (!full && targetScopes.length === 0) {
+      setChecklistsLoading(false);
+      return;
+    }
+
+    const load = ++session.load;
+    const revision = session.revision;
+    const current = () => session.active && lifecycle.current === session
+      && session.owner === currentUserId && session.load === load && session.revision === revision;
 
     setChecklistsLoading(true);
     session.loading = true;
 
     try {
 
-    const projectIds = [...new Set(checklistScopes.map((scope) => scope.projectId).filter(Boolean))];
-    const cardKeys = [...new Set(checklistScopes.map((scope) => scope.cardKey).filter(Boolean))];
-    const personalCardKeys = checklistScopes
-      .filter((scope) => !scope.projectId)
-      .map((scope) => scope.cardKey)
-      .filter(Boolean);
+    const projectScopes = targetScopes.filter((scope) => Boolean(scope.projectId));
+    const personalScopes = targetScopes.filter((scope) => !scope.projectId);
+    const projectIds = [...new Set(projectScopes.map((scope) => scope.projectId))];
+    const projectCardKeys = [...new Set(projectScopes.map((scope) => scope.cardKey).filter(Boolean))];
+    const personalCardKeys = [...new Set(personalScopes.map((scope) => scope.cardKey).filter(Boolean))];
 
     const checklistQueries = [];
-    if (projectIds.length > 0) {
+    if (projectIds.length > 0 && projectCardKeys.length > 0) {
       checklistQueries.push(
         supabase
           .from('task_card_checklists')
           .select(CHECKLIST_SELECT)
-          .in('card_key', cardKeys)
+          .in('card_key', projectCardKeys)
           .in('project_id', projectIds)
           .order('position', { ascending: true })
       );
@@ -251,11 +295,25 @@ export function useTaskCardChecklists({
       itemRows = rows || [];
     }
 
-    const scopeKeys = new Set(checklistScopes.map((scope) => scope.scopeKey));
+    const activeScopeKeys = new Set(checklistScopes.map((scope) => scope.scopeKey));
+    const fetchedScopeKeys = new Set(targetScopes.map((scope) => scope.scopeKey));
     const grouped = groupChecklistsByScope(checklistRows || [], itemRows);
-    setChecklistsByScopeKey(Object.fromEntries(
-      Object.entries(grouped).filter(([scopeKey]) => scopeKeys.has(scopeKey))
-    ));
+    if (full) {
+      session.loadedScopeKeys = new Set(activeScopeKeys);
+      setChecklistsByScopeKey(Object.fromEntries(
+        Object.entries(grouped).filter(([scopeKey]) => activeScopeKeys.has(scopeKey))
+      ));
+    } else {
+      fetchedScopeKeys.forEach((scopeKey) => session.loadedScopeKeys.add(scopeKey));
+      setChecklistsByScopeKey((prev) => {
+        const next = { ...prev };
+        for (const scopeKey of fetchedScopeKeys) {
+          if (grouped[scopeKey]?.length) next[scopeKey] = grouped[scopeKey];
+          else delete next[scopeKey];
+        }
+        return next;
+      });
+    }
     setChecklistMessage('');
     setChecklistsAvailable(true);
     setChecklistsLoading(false);
@@ -268,7 +326,7 @@ export function useTaskCardChecklists({
   }, [checklistScopes, currentUserId]);
 
   useEffect(() => {
-    void loadChecklists();
+    void loadChecklists({ full: false });
     const session = lifecycle.current;
     return () => { session.load += 1; };
   }, [checklistScopeSignature, loadChecklists]);
@@ -276,10 +334,14 @@ export function useTaskCardChecklists({
   useEffect(() => {
     const session = lifecycle.current;
     if (session.pending === 0 && session.needsReload) {
+      const full = Boolean(session.needsFullReload);
       session.needsReload = false;
-      void loadChecklists();
+      session.needsFullReload = false;
+      void loadChecklists({ full });
     }
   }, [checklistsSaving, loadChecklists]);
+
+  const retryChecklists = useCallback(() => loadChecklists({ full: true }), [loadChecklists]);
 
   const getChecklistsForTodo = useCallback((todo) => {
     if (!todo) return [];
@@ -556,7 +618,7 @@ export function useTaskCardChecklists({
     checklistsAvailable,
     checklistsLoading,
     checklistsSaving: checklistsSaving > 0,
-    retryChecklists: loadChecklists,
+    retryChecklists,
     deleteChecklist,
     deleteChecklistItem,
     getChecklistSummaryForTodo,
