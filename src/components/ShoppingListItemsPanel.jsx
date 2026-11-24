@@ -1,5 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { isOfflineTempId } from '../utils/offlineState';
+import { filterOpenShoppingTodos, normalizeShoppingTodoTitle } from '../utils/shoppingListViewState';
+
+const SearchIcon = ({ className = '' }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.9"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
+  </svg>
+);
 
 const MEAL_PLAN_NOTICE_STORAGE_KEY = 'pmworkspace:shopping-meal-plan-notice-seen:v1';
 
@@ -95,6 +112,7 @@ export default function ShoppingListItemsPanel({
   retryTodoAction,
   savingTodoAction,
   savingTodoId,
+  selectedProjectId = '',
   setDesktopCompact,
   setEditingTitle,
   shouldCollapseBought,
@@ -106,9 +124,30 @@ export default function ShoppingListItemsPanel({
 }) {
   const duplicateBoughtCount = Math.max(0, completedTodos.length - completedTodoGroups.length);
   const openMealPlanTodoCount = openTodos.filter((todo) => todo.sourceType === 'meal_plan').length;
-  const sharedOpenTodos = openTodos.filter((todo) => !todo._shoppingOperationId);
-  const pendingOpenTodos = openTodos.filter((todo) => Boolean(todo._shoppingOperationId));
-  const displayOpenTodos = [...sharedOpenTodos, ...pendingOpenTodos];
+  const sharedOpenTodos = useMemo(() => openTodos.filter((todo) => !todo._shoppingOperationId), [openTodos]);
+  const pendingOpenTodos = useMemo(() => openTodos.filter((todo) => Boolean(todo._shoppingOperationId)), [openTodos]);
+  const displayOpenTodos = useMemo(() => [...sharedOpenTodos, ...pendingOpenTodos], [sharedOpenTodos, pendingOpenTodos]);
+  const searchInputId = useId();
+  const searchInputRef = useRef(null);
+  const [openSearchQuery, setOpenSearchQuery] = useState('');
+  const normalizedSearchQuery = normalizeShoppingTodoTitle(openSearchQuery);
+  const isFilteringOpen = normalizedSearchQuery.length > 0;
+  const filteredSharedOpenTodos = useMemo(
+    () => filterOpenShoppingTodos(sharedOpenTodos, openSearchQuery),
+    [sharedOpenTodos, openSearchQuery],
+  );
+  const filteredPendingOpenTodos = useMemo(
+    () => filterOpenShoppingTodos(pendingOpenTodos, openSearchQuery),
+    [pendingOpenTodos, openSearchQuery],
+  );
+  const filteredDisplayOpenTodos = useMemo(
+    () => [...filteredSharedOpenTodos, ...filteredPendingOpenTodos],
+    [filteredSharedOpenTodos, filteredPendingOpenTodos],
+  );
+
+  useEffect(() => {
+    setOpenSearchQuery('');
+  }, [selectedProjectId]);
   const [showMealPlanNotice, setShowMealPlanNotice] = useState(() => {
     if (typeof window === 'undefined') return true;
     return window.localStorage.getItem(MEAL_PLAN_NOTICE_STORAGE_KEY) !== 'true';
@@ -211,12 +250,69 @@ export default function ShoppingListItemsPanel({
                 </div>
               </div>
             ) : null}
+            {displayOpenTodos.length > 0 || openSearchQuery.length > 0 ? (
+              <div className="mb-3 space-y-2">
+                <label htmlFor={searchInputId} className="sr-only">
+                  Find an open grocery
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      ref={searchInputRef}
+                      id={searchInputId}
+                      type="search"
+                      value={openSearchQuery}
+                      onChange={(event) => setOpenSearchQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape' && openSearchQuery) {
+                          event.preventDefault();
+                          setOpenSearchQuery('');
+                        }
+                      }}
+                      placeholder="Find an open grocery..."
+                      autoComplete="off"
+                      className="pm-input min-h-[44px] w-full rounded-2xl py-2.5 pl-10 pr-4 text-base text-slate-900 placeholder-slate-400 sm:min-h-[40px] sm:text-sm [&::-webkit-search-cancel-button]:appearance-none"
+                    />
+                  </div>
+                  {openSearchQuery.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenSearchQuery('');
+                        searchInputRef.current?.focus();
+                      }}
+                      className="inline-flex min-h-[44px] shrink-0 items-center rounded-2xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 sm:min-h-[40px] sm:text-xs"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+                {isFilteringOpen && filteredDisplayOpenTodos.length > 0 ? (
+                  <p aria-live="polite" className="text-xs font-medium text-slate-500">
+                    Showing {filteredDisplayOpenTodos.length} of {displayOpenTodos.length} open {displayOpenTodos.length === 1 ? 'grocery' : 'groceries'}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="space-y-3">
               {displayOpenTodos.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-500">
                   Nothing open right now.
                 </div>
-              ) : displayOpenTodos.map((todo, index) => {
+              ) : filteredDisplayOpenTodos.length === 0 ? (
+                <div
+                  role="status"
+                  className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-600"
+                >
+                  <p className="font-semibold text-slate-900">
+                    No open groceries match “{openSearchQuery.trim()}”.
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Clear the search to see all {displayOpenTodos.length} open {displayOpenTodos.length === 1 ? 'item' : 'items'}.
+                  </p>
+                </div>
+              ) : filteredDisplayOpenTodos.map((todo, index) => {
                 const isExpanded = expandedOpenTodoId === todo._id;
                 const showHelperText = pendingCompleteId === todo._id
                   || savingTodoId === todo._id
@@ -231,7 +327,7 @@ export default function ShoppingListItemsPanel({
 
                 return (
                   <React.Fragment key={todo._id}>
-                    {index === sharedOpenTodos.length && pendingOpenTodos.length > 0 ? (
+                    {index === filteredSharedOpenTodos.length && filteredPendingOpenTodos.length > 0 ? (
                       <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
                         <p className="font-semibold text-sky-900">Saved changes</p>
                         <p className="mt-1 text-xs leading-5">These groceries are safely saved on this device and will join the shared list after sync.</p>

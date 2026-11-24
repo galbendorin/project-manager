@@ -5,6 +5,7 @@ import {
   applyShoppingQueueToTodos,
   buildMealPlanShoppingSyncPreview,
   createEmptyShoppingOfflineState,
+  filterOpenShoppingTodos,
   findUncertainShoppingCreateMatch,
   formatShoppingAddSummary,
   getShoppingEmptyState,
@@ -705,4 +706,26 @@ test('buildMealPlanShoppingSyncPreview reports bought generated rows separately 
   assert.equal(preview.counts.update, 1);
   assert.equal(preview.counts.completedGenerated, 1);
   assert.equal(preview.counts.boughtMatches, 0);
+});
+
+test('filterOpenShoppingTodos filters loaded item titles case-insensitively and preserves order', () => {
+  const openItems = [
+    { _id: 'todo-1', title: 'Whole milk', quantityValue: 2, quantityUnit: 'l' },
+    { _id: 'offline-2', title: 'Sourdough Bread', quantityValue: 1, quantityUnit: 'loaf' },
+    { _id: 'todo-3', title: 'Oat Milk', quantityValue: 1, quantityUnit: 'carton', meta: { note: 'bread' } },
+    { _id: 'pending-4', title: 'Almond   milk', _shoppingOperationId: 'op-4' },
+  ];
+
+  assert.deepEqual(filterOpenShoppingTodos(openItems, ''), openItems);
+  assert.deepEqual(filterOpenShoppingTodos(openItems, '   '), openItems);
+  assert.deepEqual(
+    filterOpenShoppingTodos(openItems, '  MILK ').map((todo) => todo._id),
+    ['todo-1', 'todo-3', 'pending-4'],
+  );
+  assert.deepEqual(
+    filterOpenShoppingTodos(openItems, 'bread').map((todo) => todo._id),
+    ['offline-2'],
+  );
+  assert.deepEqual(filterOpenShoppingTodos(openItems, 'carton'), []);
+  assert.deepEqual(filterOpenShoppingTodos(openItems, 'avocado'), []);
 });

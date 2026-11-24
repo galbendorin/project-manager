@@ -767,6 +767,7 @@ export default function ShoppingListView({ currentUserId }) {
                     retryTodoAction={retryTodoAction}
                     savingTodoAction={savingTodoAction}
                     savingTodoId={savingTodoId}
+                    selectedProjectId={selectedProjectId}
                     setDesktopCompact={setDesktopCompact}
                     setEditingTitle={handleEditingTitleChange}
                     shouldCollapseBought={shouldCollapseBought}

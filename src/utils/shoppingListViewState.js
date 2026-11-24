@@ -58,6 +58,13 @@ export const normalizeShoppingTodoTitle = (value = '') => (
     .replace(/\s+/g, ' ')
 );
 
+export const filterOpenShoppingTodos = (todos = [], query = '') => {
+  const items = Array.isArray(todos) ? todos : [];
+  const normalizedQuery = normalizeShoppingTodoTitle(query);
+  if (!normalizedQuery) return items;
+  return items.filter((todo) => normalizeShoppingTodoTitle(todo?.title).includes(normalizedQuery));
+};
+
 export const normalizeBoughtTodoTitle = normalizeShoppingTodoTitle;
 
 const getTodoActivityTime = (todo = {}) => (
