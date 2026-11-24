@@ -1,7 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import { formatCurrency, formatMonthLabel } from '../../utils/financePlanner';
+import React, { useMemo, useRef, useState } from 'react';
+import { formatCurrency, formatMonthLabel, getCurrentMonthKey } from '../../utils/financePlanner';
 import { buildFinancePlanSections } from '../../utils/financePlanRows';
-import { buildFinanceTimelinePeriods, FINANCE_PLAN_VIEW_OPTIONS } from '../../utils/financePeriods';
+import {
+  buildFinanceTimelinePeriods,
+  FINANCE_PLAN_VIEW_OPTIONS,
+  resolveFinanceCurrentMonthTarget,
+} from '../../utils/financePeriods';
 
 const money = (value, currency) => value === null || value === undefined ? '—' : formatCurrency(value, currency, {
   minimumFractionDigits: value % 100 === 0 ? 0 : 2,
@@ -34,8 +38,15 @@ export function FinancePlanViewSwitch({ value, onChange }) {
   </label>;
 }
 
-export default function FinancePeriodPlan({ view, referenceMonth, forecast = [], budgetItems = [], categories = [], snapshots = [], currencyCode = 'GBP', onOpenMonth, onChangeMonth, onEdit }) {
+export default function FinancePeriodPlan({ view, referenceMonth, currentMonthKey, forecast = [], budgetItems = [], categories = [], snapshots = [], currencyCode = 'GBP', onOpenMonth, onChangeMonth, onEdit }) {
   const [expanded, setExpanded] = useState(() => new Set());
+  const scrollRegionRef = useRef(null);
+  const activeCurrentMonth = currentMonthKey || getCurrentMonthKey();
+  const currentMonthTarget = useMemo(
+    () => resolveFinanceCurrentMonthTarget({ forecast, currentMonthKey: activeCurrentMonth }),
+    [forecast, activeCurrentMonth],
+  );
+  const canJumpToCurrentMonth = Boolean(currentMonthTarget);
   const periods = useMemo(() => buildFinanceTimelinePeriods({ forecast, view, referenceMonth, snapshots }), [forecast, view, referenceMonth, snapshots]);
   const label = FINANCE_PLAN_VIEW_OPTIONS.find(option => option.value === view)?.label || 'Period';
   const sections = useMemo(() => buildFinancePlanSections(budgetItems, categories)
@@ -46,6 +57,19 @@ export default function FinancePeriodPlan({ view, referenceMonth, forecast = [],
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
+  const jumpToCurrentMonth = () => {
+    if (!currentMonthTarget) return;
+    if (referenceMonth !== currentMonthTarget) {
+      onChangeMonth?.(currentMonthTarget);
+      return;
+    }
+    const container = scrollRegionRef.current;
+    if (!container) return;
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ left: 0, behavior: 'auto' });
+    }
+    container.scrollLeft = 0;
+  };
   const itemLabel = item => {
     const duplicates = budgetItems.filter(candidate => candidate.name === item.name).length > 1;
     return duplicates ? `${item.name} · ${item.startMonth}${item.endMonth ? ` to ${item.endMonth}` : ''}` : item.name;
@@ -53,16 +77,29 @@ export default function FinancePeriodPlan({ view, referenceMonth, forecast = [],
   if (!periods.length) return <section aria-label={`${label} household plan`} className="rounded-2xl border border-slate-200 bg-white p-5 text-[14px] text-slate-600">No forecast months available for this view.</section>;
 
   return <section aria-label={`${label} household plan`} className="min-w-0 rounded-2xl border border-slate-200 bg-white">
-    <div className="flex flex-col justify-between gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:p-5">
+    <div className="flex flex-col justify-between gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-end sm:p-5">
       <div>
         <h2 className="text-[18px] font-semibold text-slate-950">Household plan · {label}</h2>
         <p className="mt-1 text-[13px] leading-5 text-slate-500">{formatMonthLabel(periods[0].startMonth)} to {formatMonthLabel(periods.at(-1).endMonth)} · {periods.length} {view === 'quarterly' ? 'quarters' : view === 'halfyear' ? 'half-years' : 'years'}</p>
       </div>
-      <label className="min-w-0 text-[12px] font-semibold text-slate-500 sm:w-[180px] sm:shrink-0">Start from
-          <select value={referenceMonth} onChange={event => onChangeMonth(event.target.value)} className="pm-input mt-1 block min-h-[44px] w-full rounded-xl px-3 text-[16px] text-slate-950 sm:text-[14px]">
-            {forecast.map(month => <option key={month.monthKey} value={month.monthKey}>{formatMonthLabel(month.monthKey)}</option>)}
-          </select>
-      </label>
+      <div className="flex flex-wrap items-end gap-2 sm:shrink-0">
+        <label className="min-w-0 flex-1 text-[12px] font-semibold text-slate-500 sm:w-[180px] sm:flex-none">Start from
+            <select value={referenceMonth} onChange={event => onChangeMonth(event.target.value)} className="pm-input mt-1 block min-h-[44px] w-full rounded-xl px-3 text-[16px] text-slate-950 sm:text-[14px]">
+              {forecast.map(month => <option key={month.monthKey} value={month.monthKey}>{formatMonthLabel(month.monthKey)}</option>)}
+            </select>
+        </label>
+        <button
+          type="button"
+          onClick={jumpToCurrentMonth}
+          disabled={!canJumpToCurrentMonth}
+          title={!canJumpToCurrentMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(activeCurrentMonth)
+            ? `${formatMonthLabel(activeCurrentMonth)} is outside this forecast`
+            : undefined}
+          className="min-h-[44px] shrink-0 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-[14px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          This month
+        </button>
+      </div>
     </div>
     <p className="px-4 pt-3 text-[12px] leading-5 text-slate-500 sm:px-5">Scroll right to plan further ahead. Totals cover whole calendar periods; savings show the balance at each period’s end. Partial periods include only months in your plan.</p>
     <div className="flex flex-wrap justify-end gap-2 px-3 pt-2">
@@ -71,11 +108,11 @@ export default function FinancePeriodPlan({ view, referenceMonth, forecast = [],
     </div>
 
     <div className="p-3 pt-1 sm:p-4 sm:pt-1">
-      <div key={`${view}:${referenceMonth}`} tabIndex="0" role="region" aria-label={`${label} plan table. Scroll horizontally for future periods.`} className="overflow-x-auto rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--pm-accent)]/30">
+      <div key={`${view}:${referenceMonth}`} ref={scrollRegionRef} tabIndex="0" role="region" aria-label={`${label} plan table. Scroll horizontally for future periods.`} className="overflow-x-auto rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--pm-accent)]/30">
         <table className="w-max min-w-full border-separate border-spacing-0 text-[13px]">
           <caption className="sr-only">{label} household income, grouped expenses and end-of-period savings across the forecast.</caption>
           <thead><tr><th scope="col" className={`${labelColumn} z-20 border-b border-r border-slate-200 bg-slate-50 p-3 text-left text-slate-700`}>Household plan</th>
-            {periods.map(period => <th scope="col" key={period.id} className="w-[132px] min-w-[132px] max-w-[132px] border-b border-slate-200 bg-slate-50 px-3 py-3 text-right align-top text-slate-800">
+            {periods.map(period => <th scope="col" key={period.id} data-current-period={currentMonthTarget && period.startMonth <= currentMonthTarget && currentMonthTarget <= period.endMonth ? 'true' : undefined} className="w-[132px] min-w-[132px] max-w-[132px] border-b border-slate-200 bg-slate-50 px-3 py-3 text-right align-top text-slate-800">
               <span className="block font-bold">{period.label}</span><span title={period.rangeLabel} className="mt-1 block text-[11px] font-normal text-slate-500">{period.rangeLabel.replace(/\s\d{4}/g, '')}</span>
               {period.isPartial ? <span className="mt-1 block text-[11px] font-semibold text-amber-700">Partial · {period.monthCount} of {period.expectedMonths} months</span> : null}
               <button type="button" onClick={() => onOpenMonth(period.startMonth)} className="mt-1 min-h-[44px] text-[12px] font-semibold text-[var(--pm-accent)]" aria-label={`Open ${period.label} in Monthly`}>Monthly detail</button>
