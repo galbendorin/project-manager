@@ -4,7 +4,6 @@ import { buildFinanceForecast } from './financePlanner.js';
 import {
   buildFinancePeriods,
   buildFinanceTimelinePeriods,
-  findFinancePeriodContainingMonth,
   getFinancePlanYears,
   resolveFinanceCurrentMonthTarget,
 } from './financePeriods.js';
@@ -136,16 +135,4 @@ test('resolveFinanceCurrentMonthTarget returns the current month only when it ex
   assert.equal(resolveFinanceCurrentMonthTarget({ forecast, currentMonthKey: '2027-01' }), '');
   assert.equal(resolveFinanceCurrentMonthTarget({ forecast: [], currentMonthKey: '2026-06' }), '');
   assert.equal(resolveFinanceCurrentMonthTarget({ forecast, currentMonthKey: 'bad' }), '');
-});
-
-test('findFinancePeriodContainingMonth locates matching quarterly, half-year, and yearly periods', () => {
-  const quarters = buildFinanceTimelinePeriods({ forecast, view: 'quarterly', referenceMonth: '2026-01' });
-  const halves = buildFinanceTimelinePeriods({ forecast, view: 'halfyear', referenceMonth: '2026-01' });
-  const years = buildFinanceTimelinePeriods({ forecast, view: 'yearly', referenceMonth: '2026-01' });
-
-  assert.equal(findFinancePeriodContainingMonth(quarters, '2026-05'), 1);
-  assert.equal(findFinancePeriodContainingMonth(halves, '2026-10'), 1);
-  assert.equal(findFinancePeriodContainingMonth(years, '2026-12'), 0);
-  assert.equal(findFinancePeriodContainingMonth(quarters, '2027-02'), -1);
-  assert.equal(findFinancePeriodContainingMonth(quarters, 'bad'), -1);
 });

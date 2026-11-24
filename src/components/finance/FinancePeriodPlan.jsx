@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { formatCurrency, formatMonthLabel, getCurrentMonthKey } from '../../utils/financePlanner';
 import { buildFinancePlanSections } from '../../utils/financePlanRows';
 import {
   buildFinanceTimelinePeriods,
   FINANCE_PLAN_VIEW_OPTIONS,
-  findFinancePeriodContainingMonth,
   resolveFinanceCurrentMonthTarget,
 } from '../../utils/financePeriods';
 
@@ -42,8 +41,6 @@ export function FinancePlanViewSwitch({ value, onChange }) {
 export default function FinancePeriodPlan({ view, referenceMonth, currentMonthKey, forecast = [], budgetItems = [], categories = [], snapshots = [], currencyCode = 'GBP', onOpenMonth, onChangeMonth, onEdit }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const scrollRegionRef = useRef(null);
-  const [scrollToCurrentRequest, setScrollToCurrentRequest] = useState(0);
-  const lastHandledScrollRequestRef = useRef(0);
   const activeCurrentMonth = currentMonthKey || getCurrentMonthKey();
   const currentMonthTarget = useMemo(
     () => resolveFinanceCurrentMonthTarget({ forecast, currentMonthKey: activeCurrentMonth }),
@@ -62,33 +59,17 @@ export default function FinancePeriodPlan({ view, referenceMonth, currentMonthKe
   });
   const jumpToCurrentMonth = () => {
     if (!currentMonthTarget) return;
-    setScrollToCurrentRequest(count => count + 1);
     if (referenceMonth !== currentMonthTarget) {
       onChangeMonth?.(currentMonthTarget);
+      return;
     }
-  };
-  useEffect(() => {
-    if (!scrollToCurrentRequest || scrollToCurrentRequest === lastHandledScrollRequestRef.current) return;
-    if (!currentMonthTarget) return;
-    if (referenceMonth !== currentMonthTarget && onChangeMonth) return;
     const container = scrollRegionRef.current;
     if (!container) return;
-    const targetIndex = findFinancePeriodContainingMonth(periods, currentMonthTarget);
-    if (targetIndex < 0) return;
-    lastHandledScrollRequestRef.current = scrollToCurrentRequest;
-    let nextLeft = 0;
-    if (targetIndex > 0 && typeof container.querySelector === 'function') {
-      const stickyHeader = container.querySelector('thead th');
-      const targetHeader = container.querySelector(`thead th[data-period-id="${periods[targetIndex].id}"]`);
-      if (targetHeader) {
-        nextLeft = Math.max(0, (targetHeader.offsetLeft || 0) - (stickyHeader?.offsetWidth || 0));
-      }
-    }
     if (typeof container.scrollTo === 'function') {
-      container.scrollTo({ left: nextLeft, behavior: 'auto' });
+      container.scrollTo({ left: 0, behavior: 'auto' });
     }
-    container.scrollLeft = nextLeft;
-  }, [scrollToCurrentRequest, referenceMonth, periods, currentMonthTarget, onChangeMonth]);
+    container.scrollLeft = 0;
+  };
   const itemLabel = item => {
     const duplicates = budgetItems.filter(candidate => candidate.name === item.name).length > 1;
     return duplicates ? `${item.name} · ${item.startMonth}${item.endMonth ? ` to ${item.endMonth}` : ''}` : item.name;
@@ -131,7 +112,7 @@ export default function FinancePeriodPlan({ view, referenceMonth, currentMonthKe
         <table className="w-max min-w-full border-separate border-spacing-0 text-[13px]">
           <caption className="sr-only">{label} household income, grouped expenses and end-of-period savings across the forecast.</caption>
           <thead><tr><th scope="col" className={`${labelColumn} z-20 border-b border-r border-slate-200 bg-slate-50 p-3 text-left text-slate-700`}>Household plan</th>
-            {periods.map(period => <th scope="col" key={period.id} data-period-id={period.id} data-current-period={currentMonthTarget && period.startMonth <= currentMonthTarget && currentMonthTarget <= period.endMonth ? 'true' : undefined} className="w-[132px] min-w-[132px] max-w-[132px] border-b border-slate-200 bg-slate-50 px-3 py-3 text-right align-top text-slate-800">
+            {periods.map(period => <th scope="col" key={period.id} data-current-period={currentMonthTarget && period.startMonth <= currentMonthTarget && currentMonthTarget <= period.endMonth ? 'true' : undefined} className="w-[132px] min-w-[132px] max-w-[132px] border-b border-slate-200 bg-slate-50 px-3 py-3 text-right align-top text-slate-800">
               <span className="block font-bold">{period.label}</span><span title={period.rangeLabel} className="mt-1 block text-[11px] font-normal text-slate-500">{period.rangeLabel.replace(/\s\d{4}/g, '')}</span>
               {period.isPartial ? <span className="mt-1 block text-[11px] font-semibold text-amber-700">Partial · {period.monthCount} of {period.expectedMonths} months</span> : null}
               <button type="button" onClick={() => onOpenMonth(period.startMonth)} className="mt-1 min-h-[44px] text-[12px] font-semibold text-[var(--pm-accent)]" aria-label={`Open ${period.label} in Monthly`}>Monthly detail</button>

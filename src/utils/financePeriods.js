@@ -64,8 +64,3 @@ export const resolveFinanceCurrentMonthTarget = ({ forecast = [], currentMonthKe
   if (!monthPattern.test(currentMonthKey)) return '';
   return forecast.some(month => month?.monthKey === currentMonthKey) ? currentMonthKey : '';
 };
-
-export const findFinancePeriodContainingMonth = (periods = [], monthKey) => {
-  if (!monthPattern.test(monthKey)) return -1;
-  return periods.findIndex(period => period?.startMonth <= monthKey && monthKey <= period?.endMonth);
-};
