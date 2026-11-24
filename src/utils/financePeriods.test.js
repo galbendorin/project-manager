@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildFinanceForecast } from './financePlanner.js';
-import { buildFinancePeriods, buildFinanceTimelinePeriods, getFinancePlanYears } from './financePeriods.js';
+import {
+  buildFinancePeriods,
+  buildFinanceTimelinePeriods,
+  getFinancePlanYears,
+  resolveFinanceCurrentMonthTarget,
+} from './financePeriods.js';
 
 const item = (id, amountPence, extra = {}) => ({ id, name: id, amountPence, startMonth: '2026-01', frequency: 'monthly', flowType: 'expense', classification: 'essential', ...extra });
 const items = [
@@ -122,4 +127,12 @@ test('changing the start month keeps its whole calendar period and omits earlier
   assert.deepEqual(buildFinanceTimelinePeriods({ forecast, view: 'quarterly', referenceMonth: 'bad' }), []);
   assert.deepEqual(buildFinanceTimelinePeriods({ forecast, view: 'yearly', referenceMonth: '2027-01' }), []);
   assert.deepEqual(buildFinanceTimelinePeriods({ forecast: [], view: 'yearly', referenceMonth: '2026-01' }), []);
+});
+
+test('resolveFinanceCurrentMonthTarget returns the current month only when it exists in the forecast', () => {
+  assert.equal(resolveFinanceCurrentMonthTarget({ forecast, currentMonthKey: '2026-06' }), '2026-06');
+  assert.equal(resolveFinanceCurrentMonthTarget({ forecast, currentMonthKey: '2025-12' }), '');
+  assert.equal(resolveFinanceCurrentMonthTarget({ forecast, currentMonthKey: '2027-01' }), '');
+  assert.equal(resolveFinanceCurrentMonthTarget({ forecast: [], currentMonthKey: '2026-06' }), '');
+  assert.equal(resolveFinanceCurrentMonthTarget({ forecast, currentMonthKey: 'bad' }), '');
 });

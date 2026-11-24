@@ -59,3 +59,8 @@ export const buildFinanceTimelinePeriods = ({ forecast = [], view, referenceMont
     .flatMap(year => buildFinancePeriods({ forecast, view, year, snapshots }))
     .filter(period => period.endMonth >= referenceMonth);
 };
+
+export const resolveFinanceCurrentMonthTarget = ({ forecast = [], currentMonthKey } = {}) => {
+  if (!monthPattern.test(currentMonthKey)) return '';
+  return forecast.some(month => month?.monthKey === currentMonthKey) ? currentMonthKey : '';
+};

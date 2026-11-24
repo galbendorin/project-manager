@@ -100,3 +100,98 @@ test('yearly rows open an editing month within their original schedule, never af
     assert.equal(f.transport.calls.length, 0);
   } finally { await f.close(); }
 });
+
+test('This month shortcut jumps back to the current month across all three period views and brings it into view when already selected', async () => {
+  const scrollNodes = [];
+  const transport = mockTransport(() => { throw new Error('Summary views must not write data'); });
+  const load = await sourceModules(transport);
+  const { buildFinanceForecast } = await load('src/utils/financePlanner.js');
+  const PeriodPlan = (await load('src/components/finance/FinancePeriodPlan.jsx')).default;
+  const budgetItems = [
+    { id: 'salary', name: 'Salary', flowType: 'income', amountPence: 300000, frequency: 'monthly', startMonth: '2026-01' },
+    { id: 'rent', name: 'Rent', flowType: 'expense', amountPence: 120000, frequency: 'monthly', startMonth: '2026-01' },
+  ];
+  const forecast = buildFinanceForecast({ startMonth: '2026-01', months: 36, openingCashPence: 100000, budgetItems });
+  let changedMonth = '2027-06';
+  const createNodeMock = (element) => {
+    if (element.type === 'div' && element.props.role === 'region') {
+      const node = {
+        scrollLeft: 0,
+        scrollTo({ left }) { node.scrollLeft = left; },
+        querySelector() { return null; },
+      };
+      scrollNodes.push(node);
+      return node;
+    }
+    return null;
+  };
+  let root;
+  const render = async (overrides = {}) => {
+    const props = {
+      view: 'quarterly',
+      referenceMonth: changedMonth,
+      currentMonthKey: '2026-06',
+      forecast,
+      budgetItems,
+      snapshots: [],
+      categories: [],
+      onOpenMonth: () => {},
+      onChangeMonth: (month) => { changedMonth = month; },
+      onEdit: () => {},
+      ...overrides,
+    };
+    if (!root) {
+      await act(async () => { root = create(React.createElement(PeriodPlan, props), { createNodeMock }); });
+    } else {
+      await act(async () => { root.update(React.createElement(PeriodPlan, props)); });
+    }
+    return props;
+  };
+
+  try {
+    for (const view of ['quarterly', 'halfyear', 'yearly']) {
+      changedMonth = '2027-06';
+      await render({ view, referenceMonth: changedMonth });
+      const thisMonthBtn = () => root.root.findAllByType('button').find(node => name(node) === 'This month');
+      assert.equal(thisMonthBtn().props.disabled, false);
+
+      await act(async () => { thisMonthBtn().props.onClick(); });
+      assert.equal(changedMonth, '2026-06');
+      await render({ view, referenceMonth: changedMonth });
+
+      const headers = root.root.findAllByType('thead')[0].findAllByType('th').slice(1);
+      assert.equal(headers[0].props['data-current-period'], 'true');
+
+      // Simulate scrolling away while current month is already selected, then click This month again
+      const container = scrollNodes.at(-1);
+      container.scrollLeft = 420;
+      await act(async () => { thisMonthBtn().props.onClick(); });
+      assert.equal(container.scrollLeft, 0);
+
+      // Repeat a second time to verify repeated clicks still bring it back into view
+      container.scrollLeft = 280;
+      await act(async () => { thisMonthBtn().props.onClick(); });
+      assert.equal(container.scrollLeft, 0);
+    }
+    assert.equal(transport.calls.length, 0);
+  } finally {
+    await act(async () => root?.unmount());
+  }
+});
+
+test('This month shortcut stays disabled and preserves valid selection when current month is outside the forecast', async () => {
+  for (const outsideMonth of ['2025-12', '2028-01']) {
+    const f = await fixture({ currentMonthKey: outsideMonth, referenceMonth: '2026-10' });
+    try {
+      const btn = f.root.root.findAllByType('button').find(node => name(node) === 'This month');
+      assert.ok(btn);
+      assert.equal(btn.props.disabled, true);
+      assert.equal(f.root.root.findAllByType('select')[0].props.value, '2026-10');
+      await act(async () => { btn.props.onClick(); });
+      assert.equal(f.changedMonth, undefined);
+      assert.equal(f.root.root.findAllByType('select')[0].props.value, '2026-10');
+    } finally {
+      await f.close();
+    }
+  }
+});

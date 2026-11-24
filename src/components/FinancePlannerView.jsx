@@ -1175,7 +1175,7 @@ export default function FinancePlannerView({ onGoToProjects }) {
         <main id="finance-panel-plan" role="tabpanel" aria-labelledby="finance-tab-plan" className="space-y-4">
           <FinancePlanViewSwitch value={planView} onChange={setPlanView} />
           {planView !== 'monthly' ? <FinancePeriodPlan key={householdAccess.ownerUserId} view={planView}
-            referenceMonth={selectedMonth.monthKey} forecast={forecast} budgetItems={finance.budgetItems}
+            referenceMonth={selectedMonth.monthKey} currentMonthKey={currentMonthKey} forecast={forecast} budgetItems={finance.budgetItems}
             categories={finance.categories} snapshots={finance.balanceSnapshots} currencyCode={currencyCode}
             onChangeMonth={setSelectedMonthKey} onEdit={(item, monthKey) => { setSelectedMonthKey(monthKey); setEditingItem(item); }}
             onOpenMonth={monthKey => { setSelectedMonthKey(monthKey); setPlanView('monthly'); }} /> : null}
