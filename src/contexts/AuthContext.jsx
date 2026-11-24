@@ -202,7 +202,10 @@ export const AuthProvider = ({ children }) => {
         const previousUserId = activeUserIdRef.current;
         // Revoke immediately, before asynchronous device cleanup and before
         // React can batch a subsequent sign-in to the same account.
-        if (event === 'SIGNED_OUT') setDraftOwner(null);
+        if (event === 'SIGNED_OUT') {
+          taskCompletionSessionRef.current.revoke({ clearPersisted: true });
+          setDraftOwner(null);
+        }
         activeUserIdRef.current = session?.user?.id || null;
         if (session?.user) {
           acceptSessionUser(session.user);
@@ -290,6 +293,7 @@ export const AuthProvider = ({ children }) => {
       // A delayed sign-out response must not revoke an intervening sign-in.
       const currentScope = shoppingDraftOwnerRef.current.getScope();
       if (currentScope && currentScope !== signingOutScope) return { error };
+      taskCompletionSessionRef.current.revoke({ clearPersisted: true, userId: signedOutUserId });
       setDraftOwner(null);
       activeUserIdRef.current = null;
       cachedOfflineUserRef.current = null;
@@ -319,6 +323,7 @@ export const AuthProvider = ({ children }) => {
     } else if (!error) {
       const currentScope = shoppingDraftOwnerRef.current.getScope();
       if (currentScope && currentScope !== signingOutScope) return { error };
+      taskCompletionSessionRef.current.revoke({ clearPersisted: true, userId: signedOutUserId });
       setDraftOwner(null);
       activeUserIdRef.current = null;
       cachedOfflineUserRef.current = null;

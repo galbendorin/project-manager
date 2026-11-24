@@ -1,3 +1,6 @@
+import { deriveRecurringFollowUpId, isValidRecurringUuid } from '../hooks/projectData/recurringFollowUp.js';
+import { buildRecurringRecoveryKey } from './offlineState.js';
+
 const createSessionUuid = () => {
   if (typeof globalThis !== 'undefined' && typeof globalThis.crypto?.randomUUID === 'function') {
     return globalThis.crypto.randomUUID();
@@ -9,8 +12,21 @@ const createSessionUuid = () => {
   });
 };
 
+const serializeRecovery = (item) => ({
+  id: item.id,
+  parentTodoId: item.parentTodoId || null,
+  userId: item.userId,
+  sourceTodo: item.sourceTodo || null,
+  normalizedRecurrence: item.normalizedRecurrence || null,
+  nextRecurringDueDate: item.nextRecurringDueDate || '',
+  title: item.title || 'Untitled',
+  dueDate: item.dueDate || '',
+  error: item.error || `Completed “${item.title || 'Untitled'}”, but its next recurring occurrence did not save. Retry without creating a duplicate.`,
+});
+
 export function createTaskCompletionSession({
   initialUserId = null,
+  storage = null,
   setTimer = (fn, delay) => (
     typeof window !== 'undefined' && typeof window.setTimeout === 'function'
       ? window.setTimeout(fn, delay)
@@ -44,6 +60,72 @@ export function createTaskCompletionSession({
     alert: '',
     todoViewMounted: false,
   });
+
+  const resolveStorage = () => {
+    if (storage) return storage;
+    try {
+      return typeof window !== 'undefined' ? window.localStorage : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const persistRecoveriesForUser = (userId) => {
+    const activeStorage = resolveStorage();
+    if (!activeStorage || !userId) return;
+    const key = buildRecurringRecoveryKey(userId);
+    const records = [...recurringRecoveries.values()]
+      .filter((item) => item?.userId === userId && item?.sourceTodo && item?.normalizedRecurrence)
+      .map(serializeRecovery);
+    try {
+      if (records.length === 0) {
+        activeStorage.removeItem(key);
+      } else {
+        activeStorage.setItem(key, JSON.stringify(records));
+      }
+    } catch {
+      // Ignore storage quota / privacy mode errors.
+    }
+  };
+
+  const clearPersistedRecoveries = (userId) => {
+    const activeStorage = resolveStorage();
+    if (!activeStorage || !userId) return;
+    try {
+      activeStorage.removeItem(buildRecurringRecoveryKey(userId));
+    } catch {
+      // Ignore storage access errors.
+    }
+  };
+
+  const hydratePersistedRecoveries = (userId) => {
+    const activeStorage = resolveStorage();
+    if (!activeStorage || !userId) return;
+    try {
+      const raw = activeStorage.getItem(buildRecurringRecoveryKey(userId));
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      for (const item of parsed) {
+        if (
+          !item
+          || !isValidRecurringUuid(item.id)
+          || item.userId !== userId
+          || !item.sourceTodo
+          || !item.normalizedRecurrence
+        ) {
+          continue;
+        }
+        recurringRecoveries.set(item.id, {
+          ...serializeRecovery(item),
+          retrying: false,
+          retry: null,
+        });
+      }
+    } catch {
+      // Ignore malformed persisted recovery state.
+    }
+  };
 
   const buildSnapshot = () => {
     snapshot = Object.freeze({
@@ -164,7 +246,8 @@ export function createTaskCompletionSession({
     }
   };
 
-  const revoke = () => {
+  const revoke = ({ clearPersisted = false, userId: targetUserId = null } = {}) => {
+    const previousUserId = targetUserId || current?.userId || null;
     current = null;
     for (const entry of pending.values()) {
       clearEntry(entry);
@@ -176,6 +259,9 @@ export function createTaskCompletionSession({
     recurringRecoveries.clear();
     alert = '';
     detachPageListeners();
+    if (clearPersisted && previousUserId) {
+      clearPersistedRecoveries(previousUserId);
+    }
     notify();
   };
 
@@ -196,6 +282,7 @@ export function createTaskCompletionSession({
       isCurrent: () => current === scope,
     });
     current = scope;
+    hydratePersistedRecoveries(normalized);
     notify();
     return scope;
   };
@@ -305,7 +392,7 @@ export function createTaskCompletionSession({
     if (!current || !todoId) return null;
     let id = recurringFollowUpIds.get(todoId);
     if (!id) {
-      id = createSessionUuid();
+      id = deriveRecurringFollowUpId(todoId) || createSessionUuid();
       recurringFollowUpIds.set(todoId, id);
     }
     return id;
@@ -318,15 +405,13 @@ export function createTaskCompletionSession({
 
   const recordRecurringRecovery = (record, expectedScope = current) => {
     if (!current || expectedScope !== current || !record?.id) return;
+    const ownerId = record.userId || expectedScope?.userId || current.userId;
     recurringRecoveries.set(record.id, {
-      id: record.id,
-      parentTodoId: record.parentTodoId || null,
-      title: record.title || 'Untitled',
-      dueDate: record.dueDate || '',
-      error: record.error || `Completed “${record.title || 'Untitled'}”, but its next recurring occurrence did not save. Retry without creating a duplicate.`,
+      ...serializeRecovery({ ...record, userId: ownerId }),
       retrying: Boolean(record.retrying),
-      retry: record.retry,
+      retry: typeof record.retry === 'function' ? record.retry : null,
     });
+    persistRecoveriesForUser(ownerId);
     notify();
   };
 
@@ -339,7 +424,13 @@ export function createTaskCompletionSession({
 
   const clearRecurringRecovery = (id) => {
     if (!id || !recurringRecoveries.has(id)) return;
+    const existing = recurringRecoveries.get(id);
     recurringRecoveries.delete(id);
+    if (existing?.userId) {
+      persistRecoveriesForUser(existing.userId);
+    } else if (current?.userId) {
+      persistRecoveriesForUser(current.userId);
+    }
     notify();
   };
 

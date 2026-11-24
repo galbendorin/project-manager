@@ -236,6 +236,14 @@ export const useProjectData = (projectId, userId = null) => {
         : { ok: false, error: `Could not complete “${todo.title || 'Untitled'}”. Try again.` };
     }
 
+    const targetProjectId = todo?.planLink?.projectId || todo?.meta?.projectPlanLink?.projectId || todo?.projectId || null;
+    if (targetProjectId && projectId && targetProjectId !== projectId) {
+      return {
+        ok: false,
+        error: `Could not complete “${todo?.title || 'Untitled'}” because it belongs to another project.`,
+      };
+    }
+
     if (completion.kind === 'register') {
       setRegisters((prev) => patchRegisterItemInState(
         prev,
@@ -274,7 +282,7 @@ export const useProjectData = (projectId, userId = null) => {
     }
 
     return { ok: true };
-  }, [queueProjectSyncOp, updateTask, updateTodo]);
+  }, [projectId, queueProjectSyncOp, updateTask, updateTodo]);
 
   // ==================== TEMPLATE ====================
 

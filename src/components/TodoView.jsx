@@ -39,7 +39,12 @@ import { buildTodoCardKey, useTodoKanbanBoard } from '../hooks/useTodoKanbanBoar
 import { useTaskCardChecklists } from '../hooks/useTaskCardChecklists';
 import { useTaskCompletionSession } from '../contexts/TaskCompletionSessionContext';
 import { createTaskCompletionSession } from '../utils/taskCompletionSession';
-import { ensureRecurringManualTodoFollowUp } from '../hooks/projectData/recurringFollowUp';
+import {
+  completeRecurringManualTodoAtomic,
+  deriveRecurringFollowUpId,
+  ensureRecurringManualTodoFollowUp,
+  isValidRecurringUuid,
+} from '../hooks/projectData/recurringFollowUp';
 import { getNextRecurringDueDate } from '../utils/helpers';
 import {
   LEGACY_MANUAL_TODO_SELECT,
@@ -746,6 +751,7 @@ const TodoView = ({
   handleUpdateTodoRef.current = handleUpdateTodo;
   const applyManualMutationResultRef = useRef(applyManualMutationResult);
   applyManualMutationResultRef.current = applyManualMutationResult;
+  const supportsAtomicRecurringRpcRef = useRef(true);
 
   const retryRecurringRecovery = useCallback(async (pendingRecord, expectedScope = null) => {
     const scopeToken = expectedScope || activeSession.getScope();
@@ -764,7 +770,7 @@ const TodoView = ({
 
       let result;
       if (hostAlive && typeof onRetryRecurringFollowUpRef.current === 'function') {
-        result = await onRetryRecurringFollowUpRef.current(pendingRecord);
+        result = await onRetryRecurringFollowUpRef.current(pendingRecord, { sessionScope: scopeToken });
       } else {
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
           result = { ok: false, error: new Error('Reconnect to save the next recurring task.') };
@@ -776,11 +782,12 @@ const TodoView = ({
             sourceTodo: pendingRecord.sourceTodo,
             normalizedRecurrence: pendingRecord.normalizedRecurrence,
             nextRecurringDueDate: pendingRecord.nextRecurringDueDate,
+            isCurrent: () => scopeToken.isCurrent(),
           });
         }
       }
 
-      if (!scopeToken.isCurrent()) {
+      if (!scopeToken.isCurrent() || result?.cancelled) {
         return { ok: false, cancelled: true };
       }
 
@@ -817,29 +824,35 @@ const TodoView = ({
     }
   }, [activeSession]);
 
-  const completeCrossProjectTodo = useCallback(async (todo, sessionScope = activeSession.getScope()) => {
+  const resolveTodoTargetProjectId = (todo) => (
+    todo?.planLink?.projectId
+    || todo?.meta?.projectPlanLink?.projectId
+    || todo?.projectId
+    || null
+  );
+
+  const completeCrossProjectTodo = useCallback(async (todo, sessionScope = activeSession.getScope(), explicitProjectId = null) => {
     if (!sessionScope || !sessionScope.isCurrent()) return { ok: false, cancelled: true };
-    if (!todo?.projectId || (!todo?.isDerived && !todo?.planLink && !todo?.meta?.projectPlanLink)) {
-      if (onCompleteTodoRef.current) {
-        const hostResult = await onCompleteTodoRef.current(todo);
-        if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
-        return hostResult?.ok === false ? hostResult : { ok: true };
-      }
-      return { ok: true };
+    const targetProjectId = explicitProjectId || resolveTodoTargetProjectId(todo);
+    if (!targetProjectId || (!todo?.isDerived && !todo?.planLink && !todo?.meta?.projectPlanLink)) {
+      return {
+        ok: false,
+        error: `Could not complete “${todo?.title || 'Untitled'}”: the source project could not be verified. Reload Tasks and try again.`,
+      };
     }
 
-    return activeSession.enqueueProjectMutation(todo.projectId, async (queueScope) => {
+    return activeSession.enqueueProjectMutation(targetProjectId, async (queueScope) => {
       if (!queueScope.isCurrent()) return { ok: false, cancelled: true };
 
-      let targetProject = activeSession.getConfirmedProject(todo.projectId)
-        || allProjectsDataRef.current.find((project) => project.id === todo.projectId)
+      let targetProject = activeSession.getConfirmedProject(targetProjectId)
+        || allProjectsDataRef.current.find((project) => project.id === targetProjectId)
         || null;
 
       if (!targetProject) {
         const { data: fetchedProject, error: fetchError } = await supabase
           .from('projects')
           .select('id, name, tasks, registers, tracker, version')
-          .eq('id', todo.projectId)
+          .eq('id', targetProjectId)
           .single();
         if (!queueScope.isCurrent()) return { ok: false, cancelled: true };
         if (fetchError || !fetchedProject) {
@@ -871,7 +884,7 @@ const TodoView = ({
       let updateQuery = supabase
         .from('projects')
         .update(prepared.updateData)
-        .eq('id', todo.projectId);
+        .eq('id', targetProjectId);
 
       if (Number.isInteger(targetProject.version)) {
         updateQuery = updateQuery.eq('version', targetProject.version);
@@ -901,12 +914,12 @@ const TodoView = ({
         ...prepared.nextProject,
         version: Number.isInteger(data?.version) ? data.version : targetProject.version,
       };
-      activeSession.setConfirmedProject(todo.projectId, confirmedProject, queueScope);
+      activeSession.setConfirmedProject(targetProjectId, confirmedProject, queueScope);
 
       if (mountedRef.current) {
         sourceMutationRevision.current += 1;
         setAllProjectsData((prev) => prev.map((project) => (
-          project.id === todo.projectId ? confirmedProject : project
+          project.id === targetProjectId ? confirmedProject : project
         )));
       } else {
         activeSession.notifyProjectConfirmed(confirmedProject, queueScope);
@@ -926,6 +939,45 @@ const TodoView = ({
     }
 
     const nowIso = new Date().toISOString();
+    const normalizedRecurrence = normalizeTodoRecurrence(sourceTodo.recurrence);
+    const nextRecurringDueDate = normalizedRecurrence
+      ? getNextRecurringDueDate(sourceTodo.dueDate, normalizedRecurrence, getCurrentDate())
+      : '';
+    const effectiveFollowUpId = normalizedRecurrence
+      ? (isValidRecurringUuid(followUpId) ? followUpId : deriveRecurringFollowUpId(sourceTodo._id))
+      : null;
+
+    if (normalizedRecurrence && supportsAtomicRecurringRpcRef.current) {
+      const rpcResult = await completeRecurringManualTodoAtomic({
+        client: supabase,
+        todoId: sourceTodo._id,
+        followUpId: effectiveFollowUpId,
+        nextRecurringDueDate,
+        completedAt: sourceTodo.completedAt || nowIso,
+        isCurrent: () => sessionScope.isCurrent(),
+      });
+      if (rpcResult.cancelled || !sessionScope.isCurrent()) {
+        return { ok: false, cancelled: true };
+      }
+      if (rpcResult.ok) {
+        return {
+          updatedTodo: rpcResult.updatedTodo,
+          followUpTodo: rpcResult.followUpTodo,
+          confirmed: true,
+          atomic: true,
+        };
+      }
+      if (!rpcResult.missingRpc) {
+        return {
+          ok: false,
+          error: `Could not complete “${sourceTodo.title || 'Untitled'}”. Check your connection and try again.`,
+        };
+      }
+      supportsAtomicRecurringRpcRef.current = false;
+    }
+
+    if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
+
     const extendedFields = ['description', 'kanban_column_id', 'kanban_position'];
     let supportsExtendedFields = true;
     const runUpdate = (selectClause) => supabase
@@ -940,12 +992,13 @@ const TodoView = ({
       .single();
 
     let { data: updatedRow, error: updateError } = await runUpdate(MANUAL_TODO_SELECT);
+    if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
+
     if (updateError && isMissingSchemaFieldError(updateError, extendedFields)) {
       supportsExtendedFields = false;
       ({ data: updatedRow, error: updateError } = await runUpdate(LEGACY_MANUAL_TODO_SELECT));
+      if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
     }
-
-    if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
 
     if (updateError || !updatedRow || updatedRow.id !== sourceTodo._id) {
       return {
@@ -955,14 +1008,12 @@ const TodoView = ({
     }
 
     const updatedTodo = mapManualTodoRow(updatedRow);
-    const normalizedRecurrence = normalizeTodoRecurrence(sourceTodo.recurrence);
     let followUpPending = null;
-    if (normalizedRecurrence && followUpId) {
-      const nextRecurringDueDate = getNextRecurringDueDate(sourceTodo.dueDate, normalizedRecurrence, getCurrentDate());
+    if (normalizedRecurrence && effectiveFollowUpId) {
       const followUpResult = await ensureRecurringManualTodoFollowUp({
         client: supabase,
         userId: sessionScope.userId,
-        followUpId,
+        followUpId: effectiveFollowUpId,
         sourceTodo: updatedTodo,
         normalizedRecurrence,
         nextRecurringDueDate,
@@ -970,11 +1021,12 @@ const TodoView = ({
         onSchemaFallback: () => {
           supportsExtendedFields = false;
         },
+        isCurrent: () => sessionScope.isCurrent(),
       });
-      if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
+      if (!sessionScope.isCurrent() || followUpResult.cancelled) return { ok: false, cancelled: true };
       if (!followUpResult.ok) {
         followUpPending = {
-          id: followUpId,
+          id: effectiveFollowUpId,
           parentTodoId: sourceTodo._id,
           userId: sessionScope.userId,
           sourceTodo: updatedTodo,
@@ -1055,10 +1107,12 @@ const TodoView = ({
         result = await handleUpdateTodoRef.current(effectiveTodo._id, 'status', 'Done', {
           todoOverride: effectiveTodo,
           followUpOperationId,
+          sessionScope,
         });
       } else if (hostAlive && typeof onUpdateTodoRef.current === 'function') {
         result = await onUpdateTodoRef.current(effectiveTodo._id, 'status', 'Done', effectiveTodo, {
           followUpOperationId,
+          sessionScope,
         });
       } else {
         result = await directCompleteManualTodo(effectiveTodo, followUpOperationId, sessionScope);
@@ -1089,17 +1143,22 @@ const TodoView = ({
       return { ok: true };
     }
 
-    const isCrossProjectTodo = (
-      scopeRef.current === 'all'
-      && effectiveTodo?.projectId
-      && effectiveTodo.projectId !== currentProjectRef.current?.id
-    );
-
-    if (isCrossProjectTodo) {
-      return await completeCrossProjectTodo(effectiveTodo, sessionScope);
+    const targetProjectId = resolveTodoTargetProjectId(effectiveTodo);
+    if (!targetProjectId) {
+      return { ok: false, error: `Could not complete “${effectiveTodo?.title || 'Untitled'}”. Reload its source project and try again.` };
     }
 
-    if (hostAlive && typeof onCompleteTodoRef.current === 'function') {
+    const isCurrentProject = Boolean(
+      hostAlive
+      && currentProjectRef.current?.id
+      && targetProjectId === currentProjectRef.current.id
+    );
+
+    if (!isCurrentProject) {
+      return await completeCrossProjectTodo(effectiveTodo, sessionScope, targetProjectId);
+    }
+
+    if (typeof onCompleteTodoRef.current === 'function') {
       const result = await onCompleteTodoRef.current(effectiveTodo);
       if (!sessionScope.isCurrent()) return { ok: false, cancelled: true };
       if (result?.ok === false) {
@@ -1111,11 +1170,7 @@ const TodoView = ({
       return { ok: true };
     }
 
-    if (effectiveTodo?.projectId) {
-      return await completeCrossProjectTodo(effectiveTodo, sessionScope);
-    }
-
-    return { ok: false, error: `Could not complete “${effectiveTodo?.title || 'Untitled'}”.` };
+    return await completeCrossProjectTodo(effectiveTodo, sessionScope, targetProjectId);
   }, [activeSession, completeCrossProjectTodo, directCompleteManualTodo, retryRecurringRecovery]);
 
   const handleCompleteTodo = useCallback((todo, bucketKey, displayIndex) => {
@@ -1174,6 +1229,9 @@ const TodoView = ({
       return handleUpdateTodo(todo._id, 'status', nextStatus);
     }
 
+    const scopeSnapshot = activeSession.getScope();
+    if (!scopeSnapshot || !scopeSnapshot.isCurrent()) return null;
+
     const key = taskViewIdentity(todo);
     activeSession.cancel(key);
     activeSession.clearAlert();
@@ -1183,30 +1241,34 @@ const TodoView = ({
       let effectiveTodo = todo;
       if (!todo.isDerived) {
         const flushed = await textDrafts.flushBeforeComplete(todo);
-        if (!mountedRef.current || currentOwner.current !== currentUserId) return null;
+        if (!scopeSnapshot.isCurrent() || !mountedRef.current || currentOwner.current !== currentUserId) return null;
         if (!flushed?.ok) {
           activeSession.setAlert(
             flushed?.reason === 'invalid-title'
               ? `Enter a task title before marking “${todo.title || 'Untitled'}” Done.`
-              : `Could not mark “${todo.title || 'Untitled'}” Done because title or description edits did not save. Retry saving your edits first.`
+              : `Could not mark “${todo.title || 'Untitled'}” Done because title or description edits did not save. Retry saving your edits first.`,
+            scopeSnapshot
           );
           return null;
         }
         if (flushed.todo) effectiveTodo = flushed.todo;
       }
 
-      const scopeSnapshot = activeSession.getScope();
       const followUpOperationId = effectiveTodo.recurrence
         ? activeSession.getOrCreateRecurringFollowUpId(effectiveTodo._id)
         : null;
       const result = await handleUpdateTodo(effectiveTodo._id, 'status', 'Done', {
         todoOverride: effectiveTodo,
         followUpOperationId,
+        sessionScope: scopeSnapshot,
       });
 
-      if (!mountedRef.current || currentOwner.current !== currentUserId) return null;
+      if (!scopeSnapshot.isCurrent() || !mountedRef.current || currentOwner.current !== currentUserId) return null;
       if (!result) {
-        activeSession.setAlert(`Could not mark “${effectiveTodo.title || 'Untitled'}” Done. Check your connection and try again.`);
+        activeSession.setAlert(
+          `Could not mark “${effectiveTodo.title || 'Untitled'}” Done. Check your connection and try again.`,
+          scopeSnapshot
+        );
         return null;
       }
 
@@ -1682,7 +1744,11 @@ const TodoView = ({
           onAddMatrixTask={!isExternalView && onAddTodo ? () => openCreation(viewMode === 'calendar' ? `calendar:${calendarDay}` : 'matrix') : undefined}
           quickCaptureStatus={isExternalView ? undefined : quickCaptureStatus}
           onScopeChange={handleScopeChange}
-          onRefreshTasks={scope === 'all' ? () => { setSourceReloadNonce(value => value + 1); void personalPlan.reload(); } : undefined}
+          onRefreshTasks={scope === 'all' ? () => {
+            setSourceReloadNonce((value) => value + 1);
+            void personalPlan.reload();
+            void retryChecklists();
+          } : undefined}
           projectFilter={projectFilter}
           projectSelectOptions={projectSelectOptions}
           recurrenceFilter={recurrenceFilter}
@@ -1710,7 +1776,7 @@ const TodoView = ({
         {scope === 'all' && (loadingAllProjects || sourceLoadState.error || !sourceCurrent) ? (
           <div role={sourceLoadState.error ? 'alert' : 'status'} className="m-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
             {sourceCurrent && sourceLoadState.error ? sourceLoadState.error : 'Checking tasks across all projects…'}
-            <button type="button" disabled={loadingAllProjects} onClick={() => setSourceReloadNonce((value) => value + 1)} className="ml-2 min-h-11 px-3 font-semibold underline">Retry loading</button>
+            <button type="button" disabled={loadingAllProjects} onClick={() => { setSourceReloadNonce((value) => value + 1); void personalPlan.reload(); void retryChecklists(); }} className="ml-2 min-h-11 px-3 font-semibold underline">Retry loading</button>
           </div>
         ) : null}
         {sourceCurrent && planNotice ? <p role="status" className="m-3 rounded-xl border bg-indigo-50 p-3 text-sm">{planNotice}</p> : null}
@@ -1727,7 +1793,7 @@ const TodoView = ({
               <button
                 type="button"
                 disabled={record.retrying}
-                onClick={() => { void record.retry?.(); }}
+                onClick={() => { void (record.retry ? record.retry() : retryRecurringRecovery(record, activeSession.getScope())); }}
                 className="min-h-11 rounded-lg border border-amber-300 bg-white px-3 font-semibold"
               >
                 {record.retrying ? 'Retrying…' : 'Retry next occurrence'}

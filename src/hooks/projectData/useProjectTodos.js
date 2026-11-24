@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useTaskCompletionSession } from '../../contexts/TaskCompletionSessionContext';
 import {
   createLocalManualTodo,
   buildLocalTodoUpdate,
@@ -7,7 +8,8 @@ import {
   buildTodoUpdatePatch,
 } from './todos';
 import {
-  createRecurringUuid,
+  completeRecurringManualTodoAtomic,
+  deriveRecurringFollowUpId,
   ensureRecurringManualTodoFollowUp,
   isValidRecurringUuid,
 } from './recurringFollowUp';
@@ -142,6 +144,7 @@ const applyQueuedTodoChanges = (baseTodos = [], queue = [], now) => {
 };
 
 export function useProjectTodos({
+  completionSession = null,
   isOnline,
   now,
   projectId,
@@ -150,12 +153,15 @@ export function useProjectTodos({
   setUsingOfflineSnapshot,
   userId,
 }) {
+  const contextTaskSession = useTaskCompletionSession();
+  const effectiveSession = completionSession || contextTaskSession;
   const [todos, setTodos] = useState([]);
   const [todoQueue, setTodoQueue] = useState([]);
   const [todoQueueRetryToken, setTodoQueueRetryToken] = useState(0);
 
   const supportsManualTodosTableRef = useRef(true);
   const supportsExtendedManualTodoFieldsRef = useRef(true);
+  const supportsAtomicRecurringRpcRef = useRef(true);
   const todoQueueRef = useRef([]);
   const syncingTodoQueueRef = useRef(false);
   const todoQueueRetryTimeoutRef = useRef(null);
@@ -532,10 +538,23 @@ export function useProjectTodos({
     return localTodo;
   }, [isOnline, now, projectId, setOfflinePendingSync, userId]);
 
-  const updateTodo = useCallback(async (todoId, key, value, todoOverride = null, { requireConfirmation = false, followUpOperationId = null } = {}) => {
+  const updateTodo = useCallback(async (todoId, key, value, todoOverride = null, { requireConfirmation = false, followUpOperationId = null, sessionScope = null } = {}) => {
     const todo = todoOverride || todos.find((item) => item._id === todoId);
     if (!todo) return null;
     if (requireConfirmation && (!userId || !supportsManualTodosTableRef.current || !isOnline || isOfflineTempId(todoId))) return null;
+
+    const hookSession = creationSession.current;
+    const authScope = sessionScope || effectiveSession?.getScope?.() || null;
+    if (effectiveSession && (!authScope || authScope.userId !== userId || !authScope.isCurrent())) {
+      return null;
+    }
+    const isCurrent = () => (
+      hookSession.active
+      && creationSession.current === hookSession
+      && (!effectiveSession || (authScope !== null && authScope.isCurrent()))
+      && (!sessionScope || sessionScope.isCurrent())
+    );
+    if (!isCurrent()) return null;
 
     const ts = now();
     const {
@@ -602,6 +621,51 @@ export function useProjectTodos({
       return { updatedTodo: localUpdated, followUpTodo: queuedFollowUp };
     }
 
+    const followUpId = transitionedToDone && normalizedRecurrence
+      ? (isValidRecurringUuid(followUpOperationId) ? followUpOperationId : deriveRecurringFollowUpId(todoId))
+      : null;
+
+    if (transitionedToDone && normalizedRecurrence && supportsAtomicRecurringRpcRef.current) {
+      const rpcResult = await completeRecurringManualTodoAtomic({
+        client: supabase,
+        todoId,
+        followUpId,
+        nextRecurringDueDate,
+        completedAt: localUpdated.completedAt || ts,
+        isCurrent,
+      });
+      if (rpcResult.cancelled || !isCurrent()) {
+        return null;
+      }
+      if (rpcResult.ok) {
+        const { updatedTodo, followUpTodo } = rpcResult;
+        setTodos((prev) => {
+          const next = prev.map((item) => (item._id === todoId ? updatedTodo : item));
+          if (
+            followUpTodo
+            && (followUpTodo.projectId || null) === (projectId || null)
+            && !next.some((item) => item._id === followUpTodo._id)
+          ) {
+            next.push(followUpTodo);
+          }
+          return next;
+        });
+        return {
+          updatedTodo,
+          followUpTodo,
+          confirmed: true,
+          atomic: true,
+        };
+      }
+      if (!rpcResult.missingRpc) {
+        console.error('Failed to complete recurring manual todo atomically:', rpcResult.error);
+        return null;
+      }
+      supportsAtomicRecurringRpcRef.current = false;
+    }
+
+    if (!isCurrent()) return null;
+
     const patch = buildTodoUpdatePatch({
       todo,
       key,
@@ -628,12 +692,15 @@ export function useProjectTodos({
       return query.select(fields).single();
     };
     let { data: updatedRow, error: updateError } = await saveUpdate(updatePayload, selectClause);
+    if (!isCurrent()) return null;
 
     if (updateError && supportsExtendedManualTodoFieldsRef.current && isMissingSchemaFieldError(updateError, EXTENDED_MANUAL_TODO_FIELDS)) {
       supportsExtendedManualTodoFieldsRef.current = false;
+      if (!isCurrent()) return null;
       selectClause = LEGACY_MANUAL_TODO_SELECT;
       updatePayload = buildManualTodoUpdatePayload(queuePatch, false);
       ({ data: updatedRow, error: updateError } = await saveUpdate(updatePayload, selectClause));
+      if (!isCurrent()) return null;
     }
 
     if (updateError && isMissingRelationError(updateError, 'manual_todos')) {
@@ -655,9 +722,7 @@ export function useProjectTodos({
     let missingManualTodosOnInsert = false;
 
     if (transitionedToDone && normalizedRecurrence) {
-      const followUpId = isValidRecurringUuid(followUpOperationId)
-        ? followUpOperationId
-        : createRecurringUuid();
+      if (!isCurrent()) return null;
 
       const followUpResult = await ensureRecurringManualTodoFollowUp({
         client: supabase,
@@ -670,7 +735,12 @@ export function useProjectTodos({
         onSchemaFallback: () => {
           supportsExtendedManualTodoFieldsRef.current = false;
         },
+        isCurrent,
       });
+
+      if (!isCurrent() || followUpResult.cancelled) {
+        return null;
+      }
 
       if (followUpResult.ok) {
         followUpTodo = followUpResult.followUpTodo;
@@ -694,6 +764,8 @@ export function useProjectTodos({
       }
     }
 
+    if (!isCurrent()) return null;
+
     setTodos((prev) => {
       const next = prev.map((item) => (item._id === todoId ? updatedTodo : item));
       if (
@@ -716,11 +788,18 @@ export function useProjectTodos({
       confirmed: true,
       ...(followUpError ? { followUpError: true, followUpPending } : {}),
     };
-  }, [isOnline, now, projectId, setOfflinePendingSync, todos, userId]);
+  }, [effectiveSession, isOnline, now, projectId, setOfflinePendingSync, todos, userId]);
 
-  const retryRecurringFollowUp = useCallback(async (pendingRecord) => {
-    const session = creationSession.current;
-    if (!session.active || !userId || pendingRecord?.userId !== userId) {
+  const retryRecurringFollowUp = useCallback(async (pendingRecord, { sessionScope = null } = {}) => {
+    const hookSession = creationSession.current;
+    const authScope = sessionScope || effectiveSession?.getScope?.() || null;
+    const isCurrent = () => (
+      hookSession.active
+      && creationSession.current === hookSession
+      && (!effectiveSession || (authScope !== null && authScope.isCurrent()))
+      && (!sessionScope || sessionScope.isCurrent())
+    );
+    if (!isCurrent() || !userId || pendingRecord?.userId !== userId) {
       return { ok: false, cancelled: true };
     }
     if (!isOnline) {
@@ -738,9 +817,10 @@ export function useProjectTodos({
       onSchemaFallback: () => {
         supportsExtendedManualTodoFieldsRef.current = false;
       },
+      isCurrent,
     });
 
-    if (!session.active || creationSession.current !== session) {
+    if (!isCurrent() || result.cancelled) {
       return { ok: false, cancelled: true };
     }
 
@@ -756,7 +836,7 @@ export function useProjectTodos({
       ));
     }
     return { ok: true, followUpTodo: result.followUpTodo };
-  }, [isOnline, projectId, userId]);
+  }, [effectiveSession, isOnline, projectId, userId]);
 
   const deleteTodo = useCallback(async (todoId) => {
     const previousTodos = todos;

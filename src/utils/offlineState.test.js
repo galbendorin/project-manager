@@ -5,6 +5,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import {
   buildOfflineUserKey,
   buildHouseholdAccessKey,
+  buildRecurringRecoveryKey,
   clearCachedOfflineUser,
   loadCachedOfflineUser,
   saveCachedOfflineUser,
@@ -108,6 +109,11 @@ test('shouldClearUserOfflineKey removes signed-out user data and navigation stat
   assert.equal(shouldClearUserOfflineKey('pmworkspace:offline:project:v1:user-1:project-1', 'user-1'), true);
   assert.equal(shouldClearUserOfflineKey('pmworkspace:itil-foundation-quiz:user-1:v1', 'user-1'), true);
   assert.equal(shouldClearUserOfflineKey('pmworkspace:household-access:v1:user-1', 'user-1'), true);
+  assert.equal(
+    buildRecurringRecoveryKey('user-1'),
+    'pmworkspace:recurring-recovery:v1:user-1'
+  );
+  assert.equal(shouldClearUserOfflineKey(buildRecurringRecoveryKey('user-1'), 'user-1'), true);
   assert.equal(shouldClearUserOfflineKey('pmworkspace:offline-user:v1:user-1', 'user-1'), true);
   assert.equal(shouldClearUserOfflineKey('pmworkspace:offline-user-active:v1', 'user-1'), true);
   assert.equal(shouldClearUserOfflineKey('pmworkspace:last-project:v1', 'user-1'), true);
@@ -116,6 +122,7 @@ test('shouldClearUserOfflineKey removes signed-out user data and navigation stat
 
 test('shouldClearUserOfflineKey never removes another account cache or harmless preferences', () => {
   assert.equal(shouldClearUserOfflineKey('pmworkspace:shopping-offline:v1:user-2', 'user-1'), false);
+  assert.equal(shouldClearUserOfflineKey(buildRecurringRecoveryKey('user-2'), 'user-1'), false);
   assert.equal(shouldClearUserOfflineKey('pmworkspace:shopping-ui:v1', 'user-1'), false);
   assert.equal(shouldClearUserOfflineKey('pmworkspace:shopping-offline:v1:user-1', ''), false);
 });

@@ -61,19 +61,20 @@ function makeManualTimerDriver() {
   };
 }
 
-function makeMatrixWindow({ matrixMode = true, timerDriver = null } = {}) {
+function makeMatrixWindow({ matrixMode = true, timerDriver = null, storageInitial = {} } = {}) {
+  const store = new Map([
+    ['pmworkspace:todo-view-mode:v1', matrixMode ? '{"mode":"matrix"}' : '{"mode":"list"}'],
+    ['pmworkspace:todo-command-state:v1', '{"scope":"all","focusView":"all"}'],
+    ...Object.entries(storageInitial),
+  ]);
   const storage = {
-    getItem: (key) => {
-      if (key === 'pmworkspace:todo-view-mode:v1') {
-        return matrixMode ? '{"mode":"matrix"}' : '{"mode":"list"}';
-      }
-      if (key === 'pmworkspace:todo-command-state:v1') {
-        return '{"scope":"all","focusView":"all"}';
-      }
-      return null;
+    get length() {
+      return store.size;
     },
-    setItem() {},
-    removeItem() {},
+    key: (index) => [...store.keys()][index] ?? null,
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: (key) => store.delete(key),
   };
   const winListeners = new Map();
   const docListeners = new Map();
@@ -97,7 +98,7 @@ function makeMatrixWindow({ matrixMode = true, timerDriver = null } = {}) {
     addEventListener: (name, fn) => docListeners.set(name, fn),
     removeEventListener: (name) => docListeners.delete(name),
   };
-  return { window, document, winListeners, docListeners };
+  return { window, document, winListeners, docListeners, store };
 }
 
 test('matrix preference hook skips queries on completion removal and fetches only uncovered delta keys without dropping readiness', async () => {
@@ -747,7 +748,7 @@ test('rapid same-project derived completions serialize CAS versions and surface 
   }
 });
 
-test('failed recurring follow-up is recoverable without duplicates across outage and lost-ACK retry paths', async () => {
+test('failed recurring follow-up is recoverable without duplicates across outage, lost-ACK, tabs, and page reload', async () => {
   let dbRows = new Map([
     [todoOneId, {
       id: todoOneId,
@@ -766,10 +767,13 @@ test('failed recurring follow-up is recoverable without duplicates across outage
     }],
   ]);
 
-  let insertMode = 'fail-before-write'; // then 'fail-after-write' on separate retry test
+  let insertMode = 'fail-before-write';
   let insertAttempts = 0;
 
   const transport = mockTransport((request) => {
+    if (request.operation === 'rpc' && request.name === 'complete_recurring_manual_todo_v1') {
+      return { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.complete_recurring_manual_todo_v1' } };
+    }
     if (request.table === 'projects') {
       return { data: [{ id: projectOneId, name: 'Ops', tasks: [], registers: {}, tracker: [], version: 1 }], count: 1, error: null };
     }
@@ -810,48 +814,72 @@ test('failed recurring follow-up is recoverable without duplicates across outage
   const { window, document } = makeMatrixWindow({ timerDriver });
   const load = await sourceModules(transport, { window, document, navigator: { onLine: true } });
   const { useProjectTodos } = await load('src/hooks/projectData/useProjectTodos.js');
+  const { deriveRecurringFollowUpId } = await load('src/hooks/projectData/recurringFollowUp.js');
+  const { createTaskCompletionSession } = await load('src/utils/taskCompletionSession.js');
+  const TaskCompletionSessionOverlay = (await load('src/components/TaskCompletionSessionOverlay.jsx')).default;
   const TodoView = (await load('src/components/TodoView.jsx')).default;
   const Matrix = (await load('src/components/TodoEisenhowerMatrix.jsx')).default;
+
+  const tabOneSession = createTaskCompletionSession({
+    initialUserId: owner,
+    storage: window.localStorage,
+    setTimer: (fn, delay) => timerDriver.setTimeout(fn, delay),
+    clearTimer: (id) => timerDriver.clearTimeout(id),
+  });
+  const tabTwoSession = createTaskCompletionSession({
+    initialUserId: owner,
+    storage: window.localStorage,
+  });
+  const deterministicFollowUpId = deriveRecurringFollowUpId(todoOneId);
+  assert.equal(tabOneSession.getOrCreateRecurringFollowUpId(todoOneId), deterministicFollowUpId);
+  assert.equal(tabTwoSession.getOrCreateRecurringFollowUpId(todoOneId), deterministicFollowUpId);
+  tabTwoSession.dispose();
 
   const project = { id: projectOneId, name: 'Ops', tasks: [], registers: {}, tracker: [], version: 1 };
 
   let hookRef;
-  function Harness() {
-    const todoState = useProjectTodos({
-      isOnline: true,
-      now: () => '2026-10-08T12:00:00Z',
-      projectId: projectOneId,
-      setLastSaved() {},
-      setOfflinePendingSync() {},
-      setUsingOfflineSnapshot() {},
-      userId: owner,
-    });
-    hookRef = todoState;
-    React.useEffect(() => {
-      void todoState.loadTodos();
-    }, []);
-    return React.createElement(TodoView, {
-      todos: todoState.todos,
-      currentProject: project,
-      projectData: [],
-      registers: {},
-      tracker: [],
-      currentUserId: owner,
-      currentUserName: 'Owner',
-      isExternalView: false,
-      onCompleteTodo: async () => ({ ok: true }),
-      onUpdateTodo: todoState.updateTodo,
-      onRetryRecurringFollowUp: todoState.retryRecurringFollowUp,
-    });
+  function makeHarness(sessionInstance) {
+    return function Harness() {
+      const todoState = useProjectTodos({
+        completionSession: sessionInstance,
+        isOnline: true,
+        now: () => '2026-10-08T12:00:00Z',
+        projectId: projectOneId,
+        setLastSaved() {},
+        setOfflinePendingSync() {},
+        setUsingOfflineSnapshot() {},
+        userId: owner,
+      });
+      hookRef = todoState;
+      React.useEffect(() => {
+        void todoState.loadTodos();
+      }, []);
+      return React.createElement(TodoView, {
+        todos: todoState.todos,
+        currentProject: project,
+        projectData: [],
+        registers: {},
+        tracker: [],
+        currentUserId: owner,
+        currentUserName: 'Owner',
+        isExternalView: false,
+        completionSession: sessionInstance,
+        onCompleteTodo: async () => ({ ok: true }),
+        onUpdateTodo: todoState.updateTodo,
+        onRetryRecurringFollowUp: todoState.retryRecurringFollowUp,
+      });
+    };
   }
 
   let root;
+  let reloadedOverlayRoot = null;
+  let reloadedSession = null;
   await act(async () => {
-    root = create(React.createElement(Harness));
+    root = create(React.createElement(makeHarness(tabOneSession)));
   });
 
   try {
-    // 1) Failing insert before DB write: parent is Done, NO unpersisted ghost row added to state!
+    // 1) Failing insert before DB write: parent is Done, NO ghost row, recovery persisted cleanly.
     const completeBtn = root.root.findByType(Matrix).findAllByType('button')
       .find((b) => b.props['aria-label'] === 'Complete Weekly payroll');
     await act(async () => {
@@ -865,20 +893,53 @@ test('failed recurring follow-up is recoverable without duplicates across outage
     assert.equal(hookRef.todos.filter((t) => t.status === 'Open').length, 0);
     assert.equal(dbRows.size, 1);
 
-    const retryBtn = root.root.findAllByType('button').find((b) => b.children.includes('Retry next occurrence'));
-    assert.ok(retryBtn);
+    const persistedRaw = window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`);
+    assert.ok(persistedRaw);
+    const persisted = JSON.parse(persistedRaw);
+    assert.equal(persisted.length, 1);
+    assert.equal(persisted[0].id, deterministicFollowUpId);
 
-    // Attempt 2: Lost ACK path — insert writes row with SAME ID then fails response and transient reconcile fails.
+    // 2) Simulate full page reload before returning to Tasks: unmount TodoView & tear down in-memory session.
+    await act(async () => {
+      root.unmount();
+    });
+    root = null;
+    tabOneSession.revoke();
+
+    reloadedSession = createTaskCompletionSession({
+      initialUserId: owner,
+      storage: window.localStorage,
+      setTimer: (fn, delay) => timerDriver.setTimeout(fn, delay),
+      clearTimer: (id) => timerDriver.clearTimeout(id),
+    });
+    await act(async () => {
+      reloadedOverlayRoot = create(React.createElement(TaskCompletionSessionOverlay, {
+        session: reloadedSession,
+        userId: owner,
+      }));
+    });
+
+    const overlayRetryBtn = reloadedOverlayRoot.root.findAllByType('button')
+      .find((b) => b.children.includes('Retry next occurrence'));
+    assert.ok(overlayRetryBtn);
+
+    // Attempt 2 from reloaded overlay (lost ACK): writes row with SAME deterministic ID, keeps recovery persisted.
     insertMode = 'fail-after-write-block-reconcile';
     await act(async () => {
-      await retryBtn.props.onClick();
+      await overlayRetryBtn.props.onClick();
     });
     assert.equal(insertAttempts, 2);
     assert.equal(dbRows.size, 2);
+    assert.ok(dbRows.has(deterministicFollowUpId));
+    assert.ok(window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`));
 
-    // Attempt 3: Reconcile succeeds and finds the committed row WITHOUT inserting a duplicate!
+    // 3) Re-enter Tasks after reload and retry: reconciles committed row WITHOUT inserting a duplicate!
+    await act(async () => {
+      root = create(React.createElement(makeHarness(reloadedSession)));
+    });
     insertMode = 'ok';
     const retryAgainBtn = root.root.findAllByType('button').find((b) => b.children.includes('Retry next occurrence'));
+    assert.ok(retryAgainBtn);
     await act(async () => {
       await retryAgainBtn.props.onClick();
     });
@@ -886,12 +947,31 @@ test('failed recurring follow-up is recoverable without duplicates across outage
     assert.equal(insertAttempts, 2);
     assert.equal(dbRows.size, 2);
     assert.equal(hookRef.todos.filter((t) => t.status === 'Open').length, 1);
+    assert.equal(hookRef.todos.find((t) => t.status === 'Open')._id, deterministicFollowUpId);
+    assert.equal(window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`), null);
     assert.equal(
       root.root.findAllByType('button').some((b) => b.children.includes('Retry next occurrence')),
       false
     );
+
+    // Explicit sign-out revocation clears any persisted recovery record synchronously.
+    reloadedSession.recordRecurringRecovery({
+      id: deterministicFollowUpId,
+      parentTodoId: todoOneId,
+      userId: owner,
+      sourceTodo: { _id: todoOneId, projectId: projectOneId, title: 'Weekly payroll' },
+      normalizedRecurrence: { type: 'weekly', interval: 1 },
+      nextRecurringDueDate: '2026-10-15',
+      title: 'Weekly payroll',
+    });
+    assert.ok(window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`));
+    reloadedSession.revoke({ clearPersisted: true });
+    assert.equal(window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`), null);
   } finally {
-    await act(async () => root.unmount());
+    if (root) await act(async () => root.unmount());
+    if (reloadedOverlayRoot) await act(async () => reloadedOverlayRoot.unmount());
+    tabOneSession.dispose();
+    reloadedSession?.dispose();
   }
 });
 
@@ -1090,5 +1170,507 @@ test('marking Done finishes saving dirty title and description edits first and b
     assert.equal(writeLog[1].originalDescription, 'Failed before matrix complete');
   } finally {
     await act(async () => root.unmount());
+  }
+});
+
+test('switching scope to This Project + Other during Undo window still routes completion to the task source project', async () => {
+  const timerDriver = makeManualTimerDriver();
+  const { window, document } = makeMatrixWindow({ timerDriver });
+  const currentProject = {
+    id: projectOneId,
+    name: 'Alpha',
+    version: 1,
+    tasks: [{ id: 1, name: 'Alpha task 1', start: '2026-10-08', dur: 1, pct: 0, indent: 0, tracked: true }],
+    registers: {},
+    tracker: [],
+  };
+  let remoteProject = {
+    id: projectTwoId,
+    name: 'Beta',
+    version: 1,
+    tasks: [{ id: 1, name: 'Beta task 1', start: '2026-10-08', dur: 1, pct: 0, indent: 0, tracked: true }],
+    registers: {},
+    tracker: [],
+  };
+  const projectUpdates = [];
+  const completeTodoCalls = [];
+
+  const transport = mockTransport((request) => {
+    if (request.table === 'projects' && request.operation === 'select') {
+      return { data: [structuredClone(currentProject), structuredClone(remoteProject)], count: 2, error: null };
+    }
+    if (request.table === 'projects' && request.operation === 'update') {
+      const targetId = request.filters.find((f) => f.args[0] === 'id')?.args?.[1];
+      projectUpdates.push({ targetId, tasks: request.payload.tasks });
+      remoteProject = { ...remoteProject, ...request.payload, version: remoteProject.version + 1 };
+      return { data: { version: remoteProject.version }, error: null };
+    }
+    return { data: [], count: 0, error: null };
+  });
+
+  const load = await sourceModules(transport, { window, document, navigator: { onLine: true } });
+  const TodoView = (await load('src/components/TodoView.jsx')).default;
+  const Matrix = (await load('src/components/TodoEisenhowerMatrix.jsx')).default;
+  const { useProjectData } = await load('src/hooks/useProjectData.js');
+
+  let root;
+  await act(async () => {
+    root = create(React.createElement(TodoView, {
+      todos: [],
+      currentProject,
+      projectData: currentProject.tasks,
+      registers: currentProject.registers,
+      tracker: currentProject.tracker,
+      currentUserId: owner,
+      currentUserName: 'Owner',
+      isExternalView: false,
+      onCompleteTodo: async (todo) => {
+        completeTodoCalls.push(todo);
+        return { ok: true };
+      },
+    }));
+  });
+
+  try {
+    const betaCompleteBtn = root.root.findByType(Matrix).findAllByType('button')
+      .find((b) => b.props['aria-label'] === 'Complete Beta task 1');
+    assert.ok(betaCompleteBtn);
+    await act(async () => {
+      betaCompleteBtn.props.onClick();
+    });
+
+    // Switch scope to "This Project + Other" BEFORE Undo timer fires.
+    const scopeSelect = root.root.findByProps({ 'aria-label': 'Task scope' });
+    await act(async () => {
+      scopeSelect.props.onChange({ target: { value: 'project' } });
+    });
+
+    await act(async () => {
+      await timerDriver.runAll();
+    });
+
+    assert.equal(completeTodoCalls.length, 0);
+    assert.equal(projectUpdates.length, 1);
+    assert.equal(projectUpdates[0].targetId, projectTwoId);
+    assert.equal(projectUpdates[0].tasks[0].pct, 100);
+    assert.equal(currentProject.tasks[0].pct, 0);
+
+    // Defense-in-depth inside useProjectData.completeTodoFromView refuses cross-project schedule mutations.
+    const dataHook = await mountHook(
+      ({ id, user }) => useProjectData(id, user),
+      { id: projectOneId, user: owner },
+    );
+    try {
+      let mismatchedResult;
+      await act(async () => {
+        mismatchedResult = await dataHook.value.completeTodoFromView({
+          _id: 'schedule_1',
+          isDerived: true,
+          projectId: projectTwoId,
+          originType: 'schedule',
+          originTaskId: 1,
+          title: 'Beta task 1',
+        });
+      });
+      assert.equal(mismatchedResult.ok, false);
+    } finally {
+      await dataHook.close();
+    }
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test('atomic recurring RPC saves parent and follow-up in one call and never falls back on non-missing errors', async () => {
+  const { window, document } = makeMatrixWindow();
+  let failRpc = false;
+
+  const recurringParent = {
+    _id: todoOneId,
+    projectId: projectOneId,
+    title: 'Monthly audit',
+    description: 'Check invoices',
+    dueDate: '2026-10-08',
+    owner: 'Owner',
+    assigneeUserId: owner,
+    status: 'Open',
+    recurrence: { type: 'monthly', interval: 1 },
+  };
+
+  const load = await sourceModules(mockTransport(() => ({ data: [] })), {
+    window,
+    document,
+    navigator: { onLine: true },
+  });
+  const { deriveRecurringFollowUpId } = await load('src/hooks/projectData/recurringFollowUp.js');
+  const expectedFollowUpId = deriveRecurringFollowUpId(todoOneId);
+
+  const transport = mockTransport((request) => {
+    if (request.operation === 'rpc' && request.name === 'complete_recurring_manual_todo_v1') {
+      if (failRpc) {
+        return { data: null, error: { code: '42501', message: 'Row-level security denied' } };
+      }
+      return {
+        data: {
+          updated_todo: {
+            id: todoOneId,
+            user_id: owner,
+            project_id: projectOneId,
+            title: recurringParent.title,
+            description: recurringParent.description,
+            due_date: recurringParent.dueDate,
+            owner_text: recurringParent.owner,
+            assignee_user_id: owner,
+            status: 'Done',
+            recurrence: recurringParent.recurrence,
+            completed_at: '2026-10-08T12:00:00Z',
+          },
+          follow_up_todo: {
+            id: request.payload.p_follow_up_id,
+            user_id: owner,
+            project_id: projectOneId,
+            title: recurringParent.title,
+            description: recurringParent.description,
+            due_date: request.payload.p_next_due_date,
+            owner_text: recurringParent.owner,
+            assignee_user_id: owner,
+            status: 'Open',
+            recurrence: recurringParent.recurrence,
+            completed_at: null,
+          },
+        },
+        error: null,
+      };
+    }
+    return { data: [], count: 0, error: null };
+  });
+
+  const loadAtomic = await sourceModules(transport, { window, document, navigator: { onLine: true } });
+  const { useProjectTodos } = await loadAtomic('src/hooks/projectData/useProjectTodos.js');
+  const hook = await mountHook(useProjectTodos, {
+    userId: owner,
+    projectId: projectOneId,
+    isOnline: true,
+    now: () => '2026-10-08T12:00:00Z',
+    setLastSaved() {},
+    setOfflinePendingSync() {},
+    setUsingOfflineSnapshot() {},
+  });
+
+  try {
+    let result;
+    await act(async () => {
+      result = await hook.value.updateTodo(todoOneId, 'status', 'Done', recurringParent);
+    });
+    assert.equal(result?.confirmed, true);
+    assert.equal(result?.atomic, true);
+    assert.equal(result?.updatedTodo?.status, 'Done');
+    assert.equal(result?.followUpTodo?._id, expectedFollowUpId);
+
+    const rpcCalls = transport.calls.filter((c) => c.operation === 'rpc');
+    assert.equal(rpcCalls.length, 1);
+    assert.equal(rpcCalls[0].payload.p_follow_up_id, expectedFollowUpId);
+    assert.equal(
+      transport.calls.some((c) => c.table === 'manual_todos' && ['update', 'insert'].includes(c.operation)),
+      false
+    );
+    assert.equal(hook.value.todos.filter((t) => t._id === expectedFollowUpId && t.status === 'Open').length, 1);
+
+    failRpc = true;
+    const beforeFailureCalls = transport.calls.length;
+    let deniedResult;
+    await act(async () => {
+      deniedResult = await hook.value.updateTodo(todoOneId, 'status', 'Done', recurringParent);
+    });
+    assert.equal(deniedResult, null);
+    assert.equal(
+      transport.calls.slice(beforeFailureCalls).some((c) => c.table === 'manual_todos'),
+      false
+    );
+  } finally {
+    await hook.close();
+  }
+});
+
+test('signing out and back into the same account mid-hook recurring save stops subsequent reconcile and insert writes', async () => {
+  const { window, document } = makeMatrixWindow();
+  let holdUpdate = false;
+  let updateGate = null;
+  let reconcileGate = null;
+
+  const recurringParent = {
+    _id: todoOneId,
+    projectId: projectOneId,
+    title: 'Sign-out guard hook',
+    description: 'Notes',
+    dueDate: '2026-10-08',
+    owner: 'Owner',
+    assigneeUserId: owner,
+    status: 'Open',
+    recurrence: { type: 'weekly', interval: 1 },
+  };
+
+  const transport = mockTransport(async (request) => {
+    if (request.operation === 'rpc' && request.name === 'complete_recurring_manual_todo_v1') {
+      return { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.complete_recurring_manual_todo_v1' } };
+    }
+    if (request.table === 'manual_todos' && request.operation === 'update') {
+      if (holdUpdate && updateGate) await updateGate.promise;
+      return {
+        data: {
+          id: todoOneId,
+          user_id: owner,
+          project_id: projectOneId,
+          title: recurringParent.title,
+          description: recurringParent.description,
+          due_date: recurringParent.dueDate,
+          owner_text: recurringParent.owner,
+          assignee_user_id: owner,
+          status: 'Done',
+          recurrence: recurringParent.recurrence,
+          completed_at: '2026-10-08T12:00:00Z',
+        },
+        error: null,
+      };
+    }
+    if (request.table === 'manual_todos' && request.operation === 'select') {
+      if (reconcileGate) await reconcileGate.promise;
+      return { data: null, error: null };
+    }
+    return { data: [], count: 0, error: null };
+  });
+
+  const load = await sourceModules(transport, { window, document, navigator: { onLine: true } });
+  const { useProjectTodos } = await load('src/hooks/projectData/useProjectTodos.js');
+  const { createTaskCompletionSession } = await load('src/utils/taskCompletionSession.js');
+  const session = createTaskCompletionSession({ initialUserId: owner, storage: window.localStorage });
+
+  const hook = await mountHook(useProjectTodos, {
+    completionSession: session,
+    userId: owner,
+    projectId: projectOneId,
+    isOnline: true,
+    now: () => '2026-10-08T12:00:00Z',
+    setLastSaved() {},
+    setOfflinePendingSync() {},
+    setUsingOfflineSnapshot() {},
+  });
+
+  try {
+    // 1) Hold awaited reconcile read inside ensureRecurringManualTodoFollowUp -> A -> signed out -> A -> 0 inserts.
+    reconcileGate = deferred();
+    let pendingFirst;
+    await act(async () => {
+      pendingFirst = hook.value.updateTodo(todoOneId, 'status', 'Done', recurringParent);
+      await flushMicrotasks();
+    });
+    assert.equal(transport.calls.filter((c) => c.table === 'manual_todos' && c.operation === 'select').length, 1);
+
+    session.revoke({ clearPersisted: true });
+    session.setOwner(owner);
+
+    let firstResult;
+    await act(async () => {
+      reconcileGate.resolve();
+      firstResult = await pendingFirst;
+    });
+    assert.equal(firstResult, null);
+    assert.equal(transport.calls.filter((c) => c.table === 'manual_todos' && c.operation === 'insert').length, 0);
+    assert.equal(hook.value.todos.length, 0);
+
+    // 2) Hold initial UPDATE -> A -> signed out -> A -> 0 reconcile select or insert calls.
+    const callsBeforeSecond = transport.calls.length;
+    holdUpdate = true;
+    reconcileGate = null;
+    updateGate = deferred();
+    let pendingSecond;
+    await act(async () => {
+      pendingSecond = hook.value.updateTodo(todoOneId, 'status', 'Done', recurringParent);
+      await flushMicrotasks();
+    });
+
+    session.revoke({ clearPersisted: true });
+    session.setOwner(owner);
+
+    let secondResult;
+    await act(async () => {
+      updateGate.resolve();
+      secondResult = await pendingSecond;
+    });
+    assert.equal(secondResult, null);
+    const secondCalls = transport.calls.slice(callsBeforeSecond);
+    assert.equal(secondCalls.some((c) => c.table === 'manual_todos' && ['select', 'insert'].includes(c.operation)), false);
+  } finally {
+    await hook.close();
+    session.dispose();
+  }
+});
+
+test('overlapping full priority reload stays full and Refresh tasks reloads cached checklists', async () => {
+  const { window, document } = makeMatrixWindow();
+  const todoA = { _id: todoOneId, projectId: projectOneId, title: 'Task A', dueDate: '2026-10-08', status: 'Open' };
+  const todoB = { _id: todoTwoId, projectId: projectOneId, title: 'Task B', dueDate: '2026-10-09', status: 'Open' };
+  const todoC = { _id: todoThreeId, projectId: projectOneId, title: 'Task C', dueDate: '2026-10-10', status: 'Open' };
+
+  const prefRows = {
+    [`manual:${todoOneId}`]: { id: 'p-1', user_id: owner, task_key: `manual:${todoOneId}`, manual_quadrant: 'urgent_important', version: 1 },
+    [`manual:${todoTwoId}`]: { id: 'p-2', user_id: owner, task_key: `manual:${todoTwoId}`, manual_quadrant: 'not_urgent_important', version: 1 },
+    [`manual:${todoThreeId}`]: { id: 'p-3', user_id: owner, task_key: `manual:${todoThreeId}`, manual_quadrant: 'urgent_not_important', version: 1 },
+  };
+  let reloadGate = null;
+  let holdNextReload = false;
+
+  const prefTransport = mockTransport(async (request) => {
+    if (request.table === 'task_eisenhower_preferences' && request.operation === 'select') {
+      if (holdNextReload) {
+        holdNextReload = false;
+        reloadGate = deferred();
+        await reloadGate.promise;
+      }
+      const requested = request.filters.find((f) => f.method === 'in')?.args?.[1] || [];
+      const rows = requested.map((k) => structuredClone(prefRows[k])).filter(Boolean);
+      return { data: rows, count: rows.length, error: null };
+    }
+    return { data: [], count: 0, error: null };
+  });
+
+  const loadMatrix = await sourceModules(prefTransport, { window, document, navigator: { onLine: true } });
+  const { useTodoEisenhowerMatrix } = await loadMatrix('src/hooks/useTodoEisenhowerMatrix.js');
+  const matrixHook = await mountHook(useTodoEisenhowerMatrix, {
+    currentUserId: owner,
+    isExternalView: false,
+    enabled: true,
+    todos: [todoA, todoB],
+    today: '2026-10-08',
+  });
+
+  try {
+    assert.equal(matrixHook.value.preferences[`manual:${todoOneId}`].manual_quadrant, 'urgent_important');
+
+    // Remote priority changes, then reload() is overlapped by a new task triggering background delta effect.
+    prefRows[`manual:${todoOneId}`] = {
+      ...prefRows[`manual:${todoOneId}`],
+      manual_quadrant: 'not_urgent_not_important',
+      version: 2,
+    };
+    holdNextReload = true;
+    let reloadPromise;
+    await act(async () => {
+      reloadPromise = matrixHook.value.reload();
+      await flushMicrotasks();
+    });
+
+    await matrixHook.update({
+      currentUserId: owner,
+      isExternalView: false,
+      enabled: true,
+      todos: [todoA, todoB, todoC],
+      today: '2026-10-08',
+    });
+
+    await act(async () => {
+      reloadGate.resolve();
+      await reloadPromise;
+      await flushMicrotasks();
+    });
+
+    const latestSelectKeys = prefTransport.calls.filter((c) => c.table === 'task_eisenhower_preferences').at(-1)
+      .filters.find((f) => f.method === 'in').args[1];
+    assert.deepEqual(latestSelectKeys, [`manual:${todoOneId}`, `manual:${todoTwoId}`, `manual:${todoThreeId}`].sort());
+    assert.equal(matrixHook.value.preferences[`manual:${todoOneId}`].manual_quadrant, 'not_urgent_not_important');
+    assert.equal(matrixHook.value.preferences[`manual:${todoOneId}`].version, 2);
+    assert.equal(matrixHook.value.isKeyCovered(`manual:${todoThreeId}`), true);
+  } finally {
+    await matrixHook.close();
+  }
+
+  // Part B: Refresh tasks in TodoView triggers full checklist reload (even across cached cards + overlapping new card).
+  let checklistTitle = 'Initial checklist';
+  let checklistRows = [
+    { id: 'chk-1', user_id: owner, project_id: projectOneId, card_key: `manual:${todoOneId}`, title: checklistTitle, position: 0 },
+  ];
+  let includeSecondTodoInDb = false;
+
+  const refreshTransport = mockTransport((request) => {
+    if (request.table === 'projects') {
+      return { data: [{ id: projectOneId, name: 'Ops', tasks: [], registers: {}, tracker: [], version: 1 }], count: 1, error: null };
+    }
+    if (request.table === 'manual_todos' && request.operation === 'select') {
+      const list = [
+        { id: todoOneId, project_id: projectOneId, title: 'Task A', due_date: '2026-10-08', status: 'Open' },
+        ...(includeSecondTodoInDb
+          ? [{ id: todoTwoId, project_id: projectOneId, title: 'Task B', due_date: '2026-10-08', status: 'Open' }]
+          : []),
+      ];
+      return { data: list, count: list.length, error: null };
+    }
+    if (request.table === 'task_card_checklists') {
+      const cardKeys = request.filters.find((f) => f.method === 'in' && f.args[0] === 'card_key')?.args?.[1] || [];
+      return {
+        data: checklistRows
+          .filter((row) => cardKeys.includes(row.card_key))
+          .map((row) => ({ ...row, title: checklistTitle })),
+        error: null,
+      };
+    }
+    if (request.table === 'task_card_checklist_items') {
+      return { data: [], error: null };
+    }
+    if (request.table === 'task_eisenhower_preferences') {
+      return { data: [], count: 0, error: null };
+    }
+    return { data: [], count: 0, error: null };
+  });
+
+  const loadView = await sourceModules(refreshTransport, { window, document, navigator: { onLine: true } });
+  const TodoView = (await loadView('src/components/TodoView.jsx')).default;
+  const Dialog = (await loadView('src/components/TodoDetailDialog.jsx')).default;
+  const Matrix = (await loadView('src/components/TodoEisenhowerMatrix.jsx')).default;
+
+  let viewRoot;
+  await act(async () => {
+    viewRoot = create(React.createElement(TodoView, {
+      todos: [{ _id: todoOneId, projectId: projectOneId, title: 'Task A', dueDate: '2026-10-08', status: 'Open' }],
+      currentProject: { id: projectOneId, name: 'Ops', tasks: [], registers: {}, tracker: [], version: 1 },
+      projectData: [],
+      registers: {},
+      tracker: [],
+      currentUserId: owner,
+      currentUserName: 'Owner',
+      isExternalView: false,
+      onCompleteTodo: async () => ({ ok: true }),
+    }));
+  });
+
+  try {
+    const callsBeforeRefresh = refreshTransport.calls.length;
+    checklistTitle = 'Refreshed checklist';
+    includeSecondTodoInDb = true;
+
+    const refreshBtn = viewRoot.root.findByProps({ 'aria-label': 'Refresh tasks' });
+    await act(async () => {
+      refreshBtn.props.onClick();
+      await flushMicrotasks();
+    });
+
+    const checklistCallsAfterRefresh = refreshTransport.calls
+      .slice(callsBeforeRefresh)
+      .filter((c) => c.table === 'task_card_checklists');
+    assert.ok(checklistCallsAfterRefresh.length >= 1);
+    assert.ok(
+      checklistCallsAfterRefresh.some((c) =>
+        c.filters.find((f) => f.args[0] === 'card_key')?.args?.[1]?.includes(`manual:${todoOneId}`)
+      )
+    );
+
+    const openTaskAButton = viewRoot.root.findByType(Matrix).findAllByType('button')
+      .find((b) => b.children.includes('Task A'));
+    await act(async () => {
+      openTaskAButton.props.onClick();
+    });
+    assert.ok(viewRoot.root.findAllByType(Dialog).length === 1);
+    assert.ok(JSON.stringify(viewRoot.toJSON()).includes('Refreshed checklist'));
+  } finally {
+    await act(async () => viewRoot.unmount());
   }
 });

@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { ensureRecurringManualTodoFollowUp } from '../hooks/projectData/recurringFollowUp';
+import { supabase } from '../lib/supabase';
 
 export default function TaskCompletionSessionOverlay({ session, userId }) {
   const [snapshot, setSnapshot] = useState(() => (
@@ -26,6 +28,67 @@ export default function TaskCompletionSessionOverlay({ session, userId }) {
     return null;
   }
 
+  const retryRecoveryRecord = async (record) => {
+    if (!record?.id) return { ok: false };
+    if (typeof record.retry === 'function') {
+      return await record.retry();
+    }
+
+    const scopeToken = session.getScope();
+    if (!scopeToken || !scopeToken.isCurrent() || scopeToken.userId !== userId) {
+      return { ok: false, cancelled: true };
+    }
+
+    session.setRecurringRecoveryRetrying(record.id, true, scopeToken);
+
+    try {
+      let result;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        result = { ok: false, error: new Error('Reconnect to save the next recurring task.') };
+      } else {
+        result = await ensureRecurringManualTodoFollowUp({
+          client: supabase,
+          userId,
+          followUpId: record.id,
+          sourceTodo: record.sourceTodo,
+          normalizedRecurrence: record.normalizedRecurrence,
+          nextRecurringDueDate: record.nextRecurringDueDate,
+          isCurrent: () => scopeToken.isCurrent(),
+        });
+      }
+
+      if (!scopeToken.isCurrent() || result?.cancelled) {
+        return { ok: false, cancelled: true };
+      }
+
+      if (!result?.ok) {
+        session.setRecurringRecoveryRetrying(record.id, false, scopeToken);
+        session.setAlert(
+          result?.error?.message || `Could not save the next recurring task for “${record.title || 'Untitled'}”. Try again.`,
+          scopeToken
+        );
+        return { ok: false, error: result?.error };
+      }
+
+      session.clearRecurringFollowUpId(record.parentTodoId);
+      session.clearRecurringRecovery(record.id);
+      session.clearAlert();
+      if (result.followUpTodo) {
+        session.notifyManualResult({ followUpTodo: result.followUpTodo }, scopeToken);
+      }
+      return { ok: true, followUpTodo: result.followUpTodo };
+    } catch (error) {
+      if (scopeToken.isCurrent()) {
+        session.setRecurringRecoveryRetrying(record.id, false, scopeToken);
+        session.setAlert(
+          error?.message || `Could not save the next recurring task for “${record.title || 'Untitled'}”. Try again.`,
+          scopeToken
+        );
+      }
+      return { ok: false, error };
+    }
+  };
+
   return (
     <>
       {alert || recoveries.length ? (
@@ -45,7 +108,7 @@ export default function TaskCompletionSessionOverlay({ session, userId }) {
                 <button
                   type="button"
                   disabled={record.retrying}
-                  onClick={() => { void record.retry?.(); }}
+                  onClick={() => { void retryRecoveryRecord(record); }}
                   className="min-h-11 rounded-lg border border-amber-300 bg-white px-3 font-semibold"
                 >
                   {record.retrying ? 'Retrying…' : 'Retry next occurrence'}
@@ -64,7 +127,7 @@ export default function TaskCompletionSessionOverlay({ session, userId }) {
         </div>
       ) : null}
       {pendingEntries.length ? (
-        <div role="status" aria-live="polite" className="pm-task-ui task-matrix-undo-toast">
+        <div role="status" aria-live="polite" className="pm-task-dialog task-matrix-undo-toast">
           {pendingEntries.map((entry) => (
             <div key={entry.key} className="task-matrix-undo-toast-row">
               <span className="truncate">

@@ -72,6 +72,7 @@ export function useTodoEisenhowerMatrix({
       coveredKeys: new Set(),
       load: 0,
       loading: false,
+      fullLoadInFlight: false,
       writes: new Set(),
       revision: 0,
       fullReloadNeeded: false,
@@ -119,10 +120,18 @@ export function useTodoEisenhowerMatrix({
     }
 
     const allKeys = JSON.parse(latestKeysRef.current);
-    const shouldReplaceAll = Boolean(full || !scope.initialized);
-    const requestedKeys = shouldReplaceAll
-      ? allKeys
-      : allKeys.filter((key) => !scope.coveredKeys.has(key));
+    const uncoveredKeys = allKeys.filter((key) => !scope.coveredKeys.has(key));
+    if (!full && scope.initialized && !scope.fullReloadNeeded && uncoveredKeys.length === 0) {
+      return;
+    }
+
+    const shouldReplaceAll = Boolean(
+      full
+      || !scope.initialized
+      || scope.fullLoadInFlight
+      || scope.fullReloadNeeded
+    );
+    const requestedKeys = shouldReplaceAll ? allKeys : uncoveredKeys;
 
     if (!shouldReplaceAll && requestedKeys.length === 0) {
       return;
@@ -134,8 +143,12 @@ export function useTodoEisenhowerMatrix({
       return;
     }
 
-    if (shouldReplaceAll) scope.fullReloadNeeded = false;
-    else scope.deltaSyncNeeded = false;
+    if (shouldReplaceAll) {
+      scope.fullReloadNeeded = false;
+      scope.fullLoadInFlight = true;
+    } else {
+      scope.deltaSyncNeeded = false;
+    }
 
     scope.loading = true;
     const load = ++scope.load;
@@ -259,6 +272,7 @@ export function useTodoEisenhowerMatrix({
     } finally {
       if (scope.active && scope === session.current && load === scope.load) {
         scope.loading = false;
+        scope.fullLoadInFlight = false;
         setLoading(false);
         setSyncing(false);
       }
@@ -342,7 +356,8 @@ export function useTodoEisenhowerMatrix({
         (quadrant === undefined || (old.manual_quadrant === quadrant && old.manual_quadrant_day === patch.manual_quadrant_day))) return true;
       scope.writes.add(key);
       scope.revision += 1;
-      if (scope.loading) scope.deltaSyncNeeded = true;
+      if (scope.fullLoadInFlight) scope.fullReloadNeeded = true;
+      else if (scope.loading) scope.deltaSyncNeeded = true;
       setPending((prev) => ({ ...prev, [key]: true }));
       if (expected && !matchesPreferenceSnapshot(old, expected)) {
         scope.writes.delete(key);

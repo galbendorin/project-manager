@@ -3,6 +3,7 @@ const SHOPPING_OFFLINE_PREFIX = 'pmworkspace:shopping-offline:v1';
 const TIMESHEET_OFFLINE_PREFIX = 'pmworkspace:timesheet-offline:v1';
 const ITIL_QUIZ_PREFIX = 'pmworkspace:itil-foundation-quiz';
 const HOUSEHOLD_ACCESS_PREFIX = 'pmworkspace:household-access:v1';
+const RECURRING_RECOVERY_PREFIX = 'pmworkspace:recurring-recovery:v1';
 const OFFLINE_USER_PREFIX = 'pmworkspace:offline-user:v1';
 const ACTIVE_OFFLINE_USER_KEY = 'pmworkspace:offline-user-active:v1';
 const NAVIGATION_CACHE_KEYS = new Set([
@@ -214,6 +215,10 @@ export const buildHouseholdAccessKey = (userId = 'anon') => (
   `${HOUSEHOLD_ACCESS_PREFIX}:${userId}`
 );
 
+export const buildRecurringRecoveryKey = (userId = 'anon') => (
+  `${RECURRING_RECOVERY_PREFIX}:${userId}`
+);
+
 export const buildOfflineUserKey = (userId = 'anon') => (
   `${OFFLINE_USER_PREFIX}:${userId}`
 );
@@ -278,6 +283,7 @@ export const shouldClearUserOfflineKey = (key, userId) => {
     || normalizedKey.startsWith(`${ITIL_QUIZ_PREFIX}:${normalizedUserId}:`)
     || normalizedKey === buildOfflineUserKey(normalizedUserId)
     || normalizedKey === buildHouseholdAccessKey(normalizedUserId)
+    || normalizedKey === buildRecurringRecoveryKey(normalizedUserId)
     || normalizedKey === `pmworkspace:todo-matrix-focus:v1:${normalizedUserId}`
     || normalizedKey === `pmworkspace:todo-matrix-layout:v1:${normalizedUserId}`;
 };
