@@ -436,6 +436,27 @@ export function createTaskCompletionSession({
     notify();
   };
 
+  const clearRecurringRecoveriesForParent = (parentTodoId) => {
+    if (!parentTodoId) return;
+    let changed = false;
+    let ownerId = current?.userId || null;
+    for (const [id, item] of recurringRecoveries.entries()) {
+      if (item?.parentTodoId === parentTodoId || item?.sourceTodo?._id === parentTodoId) {
+        recurringRecoveries.delete(id);
+        ownerId = item?.userId || ownerId;
+        changed = true;
+      }
+    }
+    if (recurringFollowUpIds.delete(parentTodoId)) {
+      changed = true;
+    }
+    if (!changed) return;
+    if (ownerId) {
+      persistRecoveriesForUser(ownerId);
+    }
+    notify();
+  };
+
   const setAlert = (message, expectedScope = current) => {
     if (expectedScope && expectedScope !== current) return;
     const next = String(message || '').trim();
@@ -543,6 +564,7 @@ export function createTaskCompletionSession({
     recordRecurringRecovery,
     setRecurringRecoveryRetrying,
     clearRecurringRecovery,
+    clearRecurringRecoveriesForParent,
     setAlert,
     clearAlert,
     setTodoViewMounted,

@@ -800,12 +800,21 @@ const TodoView = ({
       }
 
       if (!result?.ok) {
-        activeSession.setRecurringRecoveryRetrying(pendingRecord.id, false, scopeToken);
+        if (result?.staleCompletion) {
+          activeSession.clearRecurringFollowUpId(pendingRecord.parentTodoId);
+          activeSession.clearRecurringRecovery(pendingRecord.id);
+        } else {
+          activeSession.setRecurringRecoveryRetrying(pendingRecord.id, false, scopeToken);
+        }
         activeSession.setAlert(
           result?.error?.message || `Could not save the next recurring task for “${pendingRecord.title || 'Untitled'}”. Try again.`,
           scopeToken
         );
-        return { ok: false, error: result?.error };
+        return {
+          ok: false,
+          staleCompletion: Boolean(result?.staleCompletion),
+          error: result?.error,
+        };
       }
 
       activeSession.clearRecurringFollowUpId(pendingRecord.parentTodoId);

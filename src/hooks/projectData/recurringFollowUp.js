@@ -5,6 +5,7 @@ import {
   isMissingRelationError,
   isMissingSchemaFieldError,
   mapManualTodoRow,
+  normalizeTodoRecurrence,
 } from './manualTodoUtils.js';
 
 const EXTENDED_MANUAL_TODO_FIELDS = ['description', 'kanban_column_id', 'kanban_position'];
@@ -153,12 +154,28 @@ export const isMissingRecurringRpcError = (error) => {
     && (message.includes('could not find') || message.includes('does not exist'));
 };
 
+export const isStaleRecurringCompletionError = (error) => {
+  const code = String(error?.code || '').trim().toUpperCase();
+  if (code === '40001') return true;
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toUpperCase();
+  return message.includes('RECURRING_COMPLETION_STALE');
+};
+
+const parseComparableTimestamp = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+};
+
 export async function completeRecurringManualTodoAtomic({
   client,
   todoId,
   followUpId = null,
   fallbackDate = null,
   completedAt = null,
+  requireAlreadyDone = false,
+  expectedCompletedAt = null,
   isCurrent = () => true,
 }) {
   const active = () => (typeof isCurrent === 'function' ? Boolean(isCurrent()) : true);
@@ -170,12 +187,19 @@ export async function completeRecurringManualTodoAtomic({
   }
 
   try {
-    const { data, error } = await client.rpc('complete_recurring_manual_todo_v1', {
+    const rpcPayload = {
       p_todo_id: todoId,
       p_fallback_date: fallbackDate || null,
       p_completed_at: completedAt || null,
       p_follow_up_id: isValidRecurringUuid(followUpId) ? followUpId : null,
-    });
+      ...(requireAlreadyDone
+        ? {
+            p_require_already_done: true,
+            p_expected_completed_at: expectedCompletedAt || null,
+          }
+        : {}),
+    };
+    const { data, error } = await client.rpc('complete_recurring_manual_todo_v1', rpcPayload);
     if (!active()) {
       return { ok: false, cancelled: true, missingRpc: false };
     }
@@ -183,6 +207,7 @@ export async function completeRecurringManualTodoAtomic({
       return {
         ok: false,
         missingRpc: isMissingRecurringRpcError(error),
+        staleCompletion: isStaleRecurringCompletionError(error),
         error,
       };
     }
@@ -193,7 +218,7 @@ export async function completeRecurringManualTodoAtomic({
         error: new Error('The completed recurring task could not be confirmed.'),
       };
     }
-    if (data.follow_up_todo && !hasVerifiedRecurrenceLink(data.follow_up_todo, todoId)) {
+    if (data.follow_up_todo && data.follow_up_todo.recurrence_source_todo_id !== todoId) {
       return {
         ok: false,
         missingRpc: false,
@@ -213,6 +238,7 @@ export async function completeRecurringManualTodoAtomic({
     return {
       ok: false,
       missingRpc: isMissingRecurringRpcError(error),
+      staleCompletion: isStaleRecurringCompletionError(error),
       error,
     };
   }
@@ -226,6 +252,8 @@ export async function ensureRecurringManualTodoFollowUp({
   normalizedRecurrence,
   nextRecurringDueDate,
   supportsExtendedFields = true,
+  requireParentDone = false,
+  expectedCompletedAt = null,
   onSchemaFallback,
   isCurrent = () => true,
 }) {
@@ -318,6 +346,55 @@ export async function ensureRecurringManualTodoFollowUp({
   };
 
   try {
+    if (requireParentDone) {
+      const parentRes = await client
+        .from('manual_todos')
+        .select('id, status, completed_at, recurrence, project_id, user_id')
+        .eq('id', sourceTodo._id)
+        .maybeSingle();
+      if (!active()) {
+        return { ok: false, cancelled: true, missingTable: false };
+      }
+      if (parentRes.error) {
+        return {
+          ok: false,
+          missingTable: isMissingRelationError(parentRes.error, 'manual_todos'),
+          error: parentRes.error,
+        };
+      }
+      const parentRow = parentRes.data;
+      if (!parentRow || parentRow.status !== 'Done') {
+        return {
+          ok: false,
+          staleCompletion: true,
+          missingTable: false,
+          error: new Error('This task was reopened or changed before its next occurrence could be saved.'),
+        };
+      }
+      if (expectedCompletedAt) {
+        const actualMs = parseComparableTimestamp(parentRow.completed_at);
+        const expectedMs = parseComparableTimestamp(expectedCompletedAt);
+        const matchesCompletedAt = (actualMs !== null && expectedMs !== null)
+          ? actualMs === expectedMs
+          : String(parentRow.completed_at || '') === String(expectedCompletedAt || '');
+        if (!matchesCompletedAt) {
+          return {
+            ok: false,
+            staleCompletion: true,
+            missingTable: false,
+            error: new Error('This task was reopened or changed before its next occurrence could be saved.'),
+          };
+        }
+      }
+      if (!normalizeTodoRecurrence(parentRow.recurrence)) {
+        return {
+          ok: true,
+          followUpTodo: null,
+          alreadyExisted: false,
+        };
+      }
+    }
+
     const existing = await reconcile();
     if (!active() || existing.cancelled) {
       return { ok: false, cancelled: true, missingTable: false };
@@ -430,13 +507,16 @@ export async function recoverRecurringManualTodoFollowUp({
   }
 
   const effectiveParentId = parentTodoId || sourceTodo?._id || null;
+  const expectedCompletedAt = completedAt || sourceTodo?.completedAt || null;
   if (supportsAtomicRpc && isValidRecurringUuid(effectiveParentId)) {
     const rpcResult = await completeRecurringManualTodoAtomic({
       client,
       todoId: effectiveParentId,
       followUpId,
       fallbackDate,
-      completedAt: completedAt || sourceTodo?.completedAt || null,
+      completedAt: expectedCompletedAt,
+      requireAlreadyDone: true,
+      expectedCompletedAt,
       isCurrent,
     });
     if (rpcResult.cancelled || !active()) {
@@ -454,7 +534,10 @@ export async function recoverRecurringManualTodoFollowUp({
       return {
         ok: false,
         missingTable: false,
-        error: rpcResult.error,
+        staleCompletion: Boolean(rpcResult.staleCompletion),
+        error: rpcResult.staleCompletion
+          ? new Error('This task was reopened or changed before its next occurrence could be saved.')
+          : rpcResult.error,
       };
     }
     onMissingAtomicRpc?.();
@@ -468,6 +551,8 @@ export async function recoverRecurringManualTodoFollowUp({
     normalizedRecurrence,
     nextRecurringDueDate,
     supportsExtendedFields,
+    requireParentDone: true,
+    expectedCompletedAt,
     onSchemaFallback,
     isCurrent,
   });

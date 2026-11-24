@@ -184,6 +184,19 @@ export const replaceQueuedTargetId = (queue, previousId, nextId) => (
   })
 );
 
-export const removeQueuedTargetOps = (queue, targetId) => (
-  (Array.isArray(queue) ? queue : []).filter((item) => item?.targetId !== targetId)
-);
+export const collectRemovedQueuedTargetIds = (queue, targetId) => {
+  const removedIds = new Set();
+  if (!targetId) return removedIds;
+  removedIds.add(targetId);
+  const items = Array.isArray(queue) ? queue : [];
+  for (const descendantId of collectDescendantFollowUpIds(items, targetId)) {
+    removedIds.add(descendantId);
+  }
+  return removedIds;
+};
+
+export const removeQueuedTargetOps = (queue, targetId) => {
+  const items = Array.isArray(queue) ? queue : [];
+  const removedIds = collectRemovedQueuedTargetIds(items, targetId);
+  return items.filter((item) => !removedIds.has(item?.targetId));
+};

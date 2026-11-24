@@ -45,8 +45,8 @@ async function withSavepoint(action) {
   }
 }
 
-before(async () => {
-  await db.exec(`
+async function setupBaseSchema(targetDb) {
+  await targetDb.exec(`
     create role anon;
     create role authenticated;
     create role service_role bypassrls;
@@ -195,6 +195,12 @@ before(async () => {
     create policy "manual_todos_delete_own" on public.manual_todos
       for delete using (public.can_access_manual_todo(project_id, user_id, auth.uid()));
   `);
+}
+
+let migrationSql = '';
+
+before(async () => {
+  await setupBaseSchema(db);
 
   // Verify upgrade safety over an earlier 4-arg version using p_next_due_date (avoids SQLSTATE 42P13).
   await db.exec(`
@@ -206,12 +212,12 @@ before(async () => {
     ) returns jsonb language sql as $$ select '{}'::jsonb $$;
   `);
 
-  const migration = await readFile(
+  migrationSql = await readFile(
     new URL('../sql/2026-11-23_atomic_recurring_todo_completion.sql', import.meta.url),
     'utf8'
   );
-  await db.exec(migration);
-  await db.exec(migration);
+  await db.exec(migrationSql);
+  await db.exec(migrationSql);
 });
 
 after(() => db.close());
@@ -219,12 +225,18 @@ after(() => db.close());
 test('migration locks function grants strictly to authenticated and service_role and respects RLS across owners and collaborators', async () => {
   const privs = (await db.query(`
     select
-      has_function_privilege('anon', 'public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid)', 'execute') as anon_exec,
-      has_function_privilege('public', 'public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid)', 'execute') as public_exec,
-      has_function_privilege('authenticated', 'public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid)', 'execute') as auth_exec,
+      has_function_privilege('anon', 'public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean, timestamptz)', 'execute') as anon_exec,
+      has_function_privilege('public', 'public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean, timestamptz)', 'execute') as public_exec,
+      has_function_privilege('authenticated', 'public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean, timestamptz)', 'execute') as auth_exec,
       has_function_privilege('anon', 'public.next_recurring_todo_due_date_v1(date, jsonb)', 'execute') as date_anon_exec,
       has_function_privilege('public', 'public.next_recurring_todo_due_date_v1(date, jsonb)', 'execute') as date_public_exec,
-      has_function_privilege('authenticated', 'public.next_recurring_todo_due_date_v1(date, jsonb)', 'execute') as date_auth_exec
+      has_function_privilege('authenticated', 'public.next_recurring_todo_due_date_v1(date, jsonb)', 'execute') as date_auth_exec,
+      has_function_privilege('anon', 'public.recurring_todo_write_context_v1()', 'execute') as ctx_anon_exec,
+      has_function_privilege('public', 'public.recurring_todo_write_context_v1()', 'execute') as ctx_public_exec,
+      has_function_privilege('authenticated', 'public.recurring_todo_write_context_v1()', 'execute') as ctx_auth_exec,
+      has_function_privilege('anon', 'public.guard_manual_todo_recurrence_link_v1()', 'execute') as guard_anon_exec,
+      has_function_privilege('public', 'public.guard_manual_todo_recurrence_link_v1()', 'execute') as guard_public_exec,
+      has_function_privilege('authenticated', 'public.guard_manual_todo_recurrence_link_v1()', 'execute') as guard_auth_exec
   `)).rows[0];
 
   assert.equal(privs.anon_exec, false);
@@ -233,6 +245,12 @@ test('migration locks function grants strictly to authenticated and service_role
   assert.equal(privs.date_anon_exec, false);
   assert.equal(privs.date_public_exec, false);
   assert.equal(privs.date_auth_exec, true);
+  assert.equal(privs.ctx_anon_exec, false);
+  assert.equal(privs.ctx_public_exec, false);
+  assert.equal(privs.ctx_auth_exec, true);
+  assert.equal(privs.guard_anon_exec, false);
+  assert.equal(privs.guard_public_exec, false);
+  assert.equal(privs.guard_auth_exec, false);
 
   await asUser(userA, async () => {
     const privateId = '66666666-6666-4666-8666-666666666601';
@@ -314,26 +332,22 @@ test('SQL recurrence date calculation matches JS getNextRecurringDueDate across 
   });
 });
 
-test('Finding 1: rejects unlinked same-id collisions, recovers verified legacy meta rows once, and enforces DB uniqueness', async () => {
+test('Finding 1: rejects unlinked same-id collisions and enforces DB uniqueness across concurrent calls', async () => {
   await asUser(userA, async () => {
     const parentId = '88888888-8888-4888-8888-888888888801';
     const unrelatedId = '88888888-8888-4888-8888-888888888802';
     const otherParentId = '88888888-8888-4888-8888-888888888803';
     const foreignFollowUpId = '88888888-8888-4888-8888-888888888804';
-    const legacyParentId = '88888888-8888-4888-8888-888888888805';
-    const legacyFollowUpId = '88888888-8888-4888-8888-888888888806';
 
     await db.query(
       `insert into public.manual_todos(id, user_id, project_id, title, due_date, recurrence, meta, recurrence_source_todo_id)
        values
-         ($1, $7, $8, 'Parent A', '2026-10-08', '{"type":"weekly","interval":1}'::jsonb, '{}'::jsonb, null),
-         ($2, $7, $8, 'Unrelated task in same project', '2026-12-01', null, '{}'::jsonb, null),
-         ($3, $7, $8, 'Other parent', '2026-10-01', '{"type":"weekly","interval":1}'::jsonb, '{}'::jsonb, null),
-         ($4, $7, $8, 'Foreign follow-up', '2026-10-08', '{"type":"weekly","interval":1}'::jsonb, '{}'::jsonb, $3),
-         ($5, $7, $8, 'Legacy parent', '2026-10-08', '{"type":"weekly","interval":1}'::jsonb, '{}'::jsonb, null),
-         ($6, $7, $8, 'Legacy follow-up', '2026-10-15', '{"type":"weekly","interval":1}'::jsonb, jsonb_build_object('recurrenceSourceTodoId', $5::text), null)`,
-      [parentId, unrelatedId, otherParentId, foreignFollowUpId, legacyParentId, legacyFollowUpId, userA, sharedProject]
+         ($1, $4, $5, 'Parent A', '2026-10-08', '{"type":"weekly","interval":1}'::jsonb, '{}'::jsonb, null),
+         ($2, $4, $5, 'Unrelated task in same project', '2026-12-01', null, '{}'::jsonb, null),
+         ($3, $4, $5, 'Other parent', '2026-10-01', '{"type":"weekly","interval":1}'::jsonb, '{}'::jsonb, null)`,
+      [parentId, unrelatedId, otherParentId, userA, sharedProject]
     );
+    await db.query('select public.complete_recurring_manual_todo_v1($1, null, null, $2)', [otherParentId, foreignFollowUpId]);
 
     // Passing p_follow_up_id colliding with an unrelated task must reject and roll back parent Done.
     await assert.rejects(
@@ -359,15 +373,6 @@ test('Finding 1: rejects unlinked same-id collisions, recovers verified legacy m
       'Open'
     );
 
-    // Pre-migration legacy row with verified meta.recurrenceSourceTodoId is recovered and promoted to recurrence_source_todo_id.
-    const legacyRes = (await db.query(
-      'select public.complete_recurring_manual_todo_v1($1, null, null, $2) as payload',
-      [legacyParentId, '88888888-8888-4888-8888-888888888899']
-    )).rows[0].payload;
-    assert.equal(legacyRes.updated_todo.status, 'Done');
-    assert.equal(legacyRes.follow_up_todo.id, legacyFollowUpId);
-    assert.equal(legacyRes.follow_up_todo.recurrence_source_todo_id, legacyParentId);
-
     // Second call (simulating second tab with a different UUID) returns the exact same single linked follow-up.
     const tab1 = (await db.query(
       'select public.complete_recurring_manual_todo_v1($1, null, null, $2) as payload',
@@ -386,7 +391,7 @@ test('Finding 1: rejects unlinked same-id collisions, recovers verified legacy m
       1
     );
 
-    // Direct duplicate insert violating idx_manual_todos_unique_recurrence_source fails with 23505.
+    // Direct insert attempting to bypass RPC using recurrence_source_todo_id is blocked by trigger (22023).
     await assert.rejects(
       withSavepoint(() =>
         db.query(
@@ -395,7 +400,7 @@ test('Finding 1: rejects unlinked same-id collisions, recovers verified legacy m
           [userA, sharedProject, parentId]
         )
       ),
-      (err) => err.code === '23505'
+      (err) => err.code === '22023'
     );
   });
 });
@@ -448,4 +453,177 @@ test('Finding 2: computes follow-up deadline from locked row after concurrent ed
     )).rows[0].payload;
     assert.equal(undatedRes.follow_up_todo.due_date, '2026-12-01');
   });
+});
+
+test('Review Finding 1: retry mode rejects reopened or re-completed tasks and never re-completes an Open task', async () => {
+  await asUser(userA, async () => {
+    const taskId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01';
+    const followId1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11';
+    const followId2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa12';
+    const t1 = '2026-10-08T12:00:00Z';
+    const t2 = '2026-10-09T09:30:00Z';
+
+    await db.query(
+      `insert into public.manual_todos(id, user_id, project_id, title, due_date, status, completed_at, recurrence)
+       values ($1, $2, $3, 'Reopened series', '2026-10-08', 'Done', $4, '{"type":"weekly","interval":1}'::jsonb)`,
+      [taskId, userA, sharedProject, t1]
+    );
+
+    // User reopens the task in the app.
+    await db.query(`update public.manual_todos set status = 'Open', completed_at = null where id = $1`, [taskId]);
+
+    // Stale retry with p_require_already_done = true must fail (40001), leave task Open, and create 0 follow-ups.
+    await assert.rejects(
+      withSavepoint(() =>
+        db.query(
+          'select public.complete_recurring_manual_todo_v1($1, $2, $3, $4, true, $3)',
+          [taskId, '2026-10-08', t1, followId1]
+        )
+      ),
+      (err) => err.code === '40001'
+    );
+    const afterReopenRetry = (await db.query('select status, completed_at from public.manual_todos where id = $1', [taskId])).rows[0];
+    assert.equal(afterReopenRetry.status, 'Open');
+    assert.equal(afterReopenRetry.completed_at, null);
+    assert.equal(
+      Number((await db.query('select count(*) from public.manual_todos where recurrence_source_todo_id = $1', [taskId])).rows[0].count),
+      0
+    );
+
+    // User later completes the task again at t2: retry still holding old t1 rejects (40001), retry holding t2 succeeds.
+    await db.query(`update public.manual_todos set status = 'Done', completed_at = $2 where id = $1`, [taskId, t2]);
+    await assert.rejects(
+      withSavepoint(() =>
+        db.query(
+          'select public.complete_recurring_manual_todo_v1($1, $2, $3, $4, true, $3)',
+          [taskId, '2026-10-08', t1, followId1]
+        )
+      ),
+      (err) => err.code === '40001'
+    );
+
+    const retryCurrent = (await db.query(
+      'select public.complete_recurring_manual_todo_v1($1, $2, $3, $4, true, $3) as payload',
+      [taskId, '2026-10-08', t2, followId2]
+    )).rows[0].payload;
+    assert.equal(retryCurrent.updated_todo.status, 'Done');
+    assert.equal(retryCurrent.follow_up_todo.id, followId2);
+    assert.equal(retryCurrent.follow_up_todo.recurrence_source_todo_id, taskId);
+  });
+});
+
+test('Review Finding 3: trigger protects links/meta, parent deletion sets null safely, and migration backfill enforces ownership boundaries', async () => {
+  await asUser(userA, async () => {
+    const parentId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb01';
+    const followUpId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb02';
+    const normalId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb03';
+
+    await db.query(
+      `insert into public.manual_todos(id, user_id, project_id, title, due_date, recurrence)
+       values ($1, $3, $4, 'Protected series', '2026-10-08', '{"type":"weekly","interval":1}'::jsonb),
+              ($2, $3, $4, 'Normal task', '2026-10-09', null)`,
+      [parentId, normalId, userA, sharedProject]
+    );
+    await db.query('select public.complete_recurring_manual_todo_v1($1, null, null, $2)', [parentId, followUpId]);
+
+    // Direct INSERT with editable meta.recurrenceSourceTodoId is rejected.
+    await assert.rejects(
+      withSavepoint(() =>
+        db.query(
+          `insert into public.manual_todos(id, user_id, project_id, title, meta)
+           values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb10', $1, $2, 'Forged meta insert', jsonb_build_object('recurrenceSourceTodoId', $3::text))`,
+          [userA, sharedProject, parentId]
+        )
+      ),
+      (err) => err.code === '22023'
+    );
+
+    // Direct UPDATE trying to add/tamper meta.recurrenceSourceTodoId or mutate recurrence_source_todo_id is rejected.
+    await assert.rejects(
+      withSavepoint(() =>
+        db.query(
+          `update public.manual_todos set meta = jsonb_build_object('recurrenceSourceTodoId', $2::text) where id = $1`,
+          [normalId, parentId]
+        )
+      ),
+      (err) => err.code === '22023'
+    );
+    await assert.rejects(
+      withSavepoint(() =>
+        db.query(`update public.manual_todos set meta = '{}'::jsonb where id = $1`, [followUpId])
+      ),
+      (err) => err.code === '22023'
+    );
+    await assert.rejects(
+      withSavepoint(() =>
+        db.query(`update public.manual_todos set recurrence_source_todo_id = null where id = $1`, [followUpId])
+      ),
+      (err) => err.code === '22023'
+    );
+
+    // Ordinary edits to follow-up title, due_date, or moving project succeed without triggering link immutability.
+    await db.query(`update public.manual_todos set title = 'Renamed follow-up', due_date = '2026-10-22' where id = $1`, [followUpId]);
+    assert.equal(
+      (await db.query('select title from public.manual_todos where id = $1', [followUpId])).rows[0].title,
+      'Renamed follow-up'
+    );
+
+    // Deleting the completed parent triggers ON DELETE SET NULL without hitting trigger immutability.
+    await db.query('delete from public.manual_todos where id = $1', [parentId]);
+    assert.equal(
+      (await db.query('select recurrence_source_todo_id from public.manual_todos where id = $1', [followUpId])).rows[0].recurrence_source_todo_id,
+      null
+    );
+  });
+
+  // Pre-migration database simulation: verify backfill promotes valid same-project & personal rows while rejecting spoofs.
+  const preDb = new PGlite();
+  try {
+    await setupBaseSchema(preDb);
+
+    const projParent = 'cccccccc-cccc-4ccc-8ccc-cccccccccc01';
+    const projValidChild = 'cccccccc-cccc-4ccc-8ccc-cccccccccc02';
+    const personalParent = 'cccccccc-cccc-4ccc-8ccc-cccccccccc03';
+    const personalValidChild = 'cccccccc-cccc-4ccc-8ccc-cccccccccc04';
+    const openParent = 'cccccccc-cccc-4ccc-8ccc-cccccccccc05';
+    const openParentChild = 'cccccccc-cccc-4ccc-8ccc-cccccccccc06';
+    const crossUserSpoof = 'cccccccc-cccc-4ccc-8ccc-cccccccccc07';
+    const crossProjSpoof = 'cccccccc-cccc-4ccc-8ccc-cccccccccc08';
+    const olderChild = 'cccccccc-cccc-4ccc-8ccc-cccccccccc09';
+
+    await preDb.query(
+      `insert into public.manual_todos(id, user_id, project_id, title, status, completed_at, recurrence, created_at, meta)
+       values
+         ($1, $10, $13, 'Legacy shared Done', 'Done', '2026-10-01T12:00:00Z', '{"type":"weekly","interval":1}'::jsonb, '2026-10-01T10:00:00Z', '{}'::jsonb),
+         ($2, $11, $13, 'Legacy shared follow-up', 'Open', null, '{"type":"weekly","interval":1}'::jsonb, '2026-10-01T12:01:00Z', jsonb_build_object('recurrenceSourceTodoId', $1::text)),
+         ($3, $10, null, 'Legacy personal Done', 'Done', '2026-10-02T12:00:00Z', '{"type":"weekly","interval":1}'::jsonb, '2026-10-02T10:00:00Z', '{}'::jsonb),
+         ($4, $10, null, 'Legacy personal follow-up', 'Open', null, '{"type":"weekly","interval":1}'::jsonb, '2026-10-02T12:01:00Z', jsonb_build_object('recurrenceSourceTodoId', $3::text)),
+         ($5, $10, $13, 'Open parent', 'Open', null, '{"type":"weekly","interval":1}'::jsonb, '2026-10-03T10:00:00Z', '{}'::jsonb),
+         ($6, $10, $13, 'Fake child for open parent', 'Open', null, null, '2026-10-03T12:00:00Z', jsonb_build_object('recurrenceSourceTodoId', $5::text)),
+         ($7, $11, null, 'Cross-user personal spoof', 'Open', null, null, '2026-10-02T12:05:00Z', jsonb_build_object('recurrenceSourceTodoId', $3::text)),
+         ($8, $12, $14, 'Cross-project spoof', 'Open', null, null, '2026-10-01T12:05:00Z', jsonb_build_object('recurrenceSourceTodoId', $1::text)),
+         ($9, $10, $13, 'Older than parent spoof', 'Open', null, null, '2026-09-20T10:00:00Z', jsonb_build_object('recurrenceSourceTodoId', $1::text))`,
+      [
+        projParent, projValidChild, personalParent, personalValidChild,
+        openParent, openParentChild, crossUserSpoof, crossProjSpoof, olderChild,
+        userA, userB, userC, sharedProject, otherProject,
+      ]
+    );
+
+    await preDb.exec(migrationSql);
+
+    const links = new Map(
+      (await preDb.query('select id, recurrence_source_todo_id from public.manual_todos'))
+        .rows.map((r) => [r.id, r.recurrence_source_todo_id])
+    );
+
+    assert.equal(links.get(projValidChild), projParent);
+    assert.equal(links.get(personalValidChild), personalParent);
+    assert.equal(links.get(openParentChild), null);
+    assert.equal(links.get(crossUserSpoof), null);
+    assert.equal(links.get(crossProjSpoof), null);
+    assert.equal(links.get(olderChild), null);
+  } finally {
+    await preDb.close();
+  }
 });

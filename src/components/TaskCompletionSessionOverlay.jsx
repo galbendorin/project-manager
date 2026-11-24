@@ -76,12 +76,21 @@ export default function TaskCompletionSessionOverlay({ session, userId }) {
       }
 
       if (!result?.ok) {
-        session.setRecurringRecoveryRetrying(record.id, false, scopeToken);
+        if (result?.staleCompletion) {
+          session.clearRecurringFollowUpId(record.parentTodoId);
+          session.clearRecurringRecovery(record.id);
+        } else {
+          session.setRecurringRecoveryRetrying(record.id, false, scopeToken);
+        }
         session.setAlert(
           result?.error?.message || `Could not save the next recurring task for “${record.title || 'Untitled'}”. Try again.`,
           scopeToken
         );
-        return { ok: false, error: result?.error };
+        return {
+          ok: false,
+          staleCompletion: Boolean(result?.staleCompletion),
+          error: result?.error,
+        };
       }
 
       session.clearRecurringFollowUpId(record.parentTodoId);

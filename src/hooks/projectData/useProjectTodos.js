@@ -19,6 +19,7 @@ import {
   MANUAL_TODO_SELECT,
   LEGACY_MANUAL_TODO_SELECT,
   mapManualTodoRow,
+  normalizeTodoRecurrence,
   isMissingRelationError,
   isMissingSchemaFieldError,
 } from './manualTodoUtils';
@@ -27,6 +28,7 @@ import {
   isOfflineTempId,
 } from '../../utils/offlineState';
 import {
+  collectRemovedQueuedTargetIds,
   enqueueCreate,
   enqueueDelete,
   enqueueRecurringComplete,
@@ -249,18 +251,29 @@ export function useProjectTodos({
     return nextTodos;
   }, [now, projectId, userId]);
 
+  const hasQueuedTodos = todoQueue.length > 0;
+  const syncScopeRef = useRef({ active: false });
+
   useEffect(() => {
-    if (!projectId || !userId || !supportsManualTodosTableRef.current || !isOnline || todoQueue.length === 0) {
+    const scope = { active: Boolean(projectId && userId && isOnline && supportsManualTodosTableRef.current) };
+    syncScopeRef.current = scope;
+    return () => {
+      scope.active = false;
+    };
+  }, [effectiveSession, isOnline, projectId, userId]);
+
+  useEffect(() => {
+    if (!projectId || !userId || !supportsManualTodosTableRef.current || !isOnline || !hasQueuedTodos) {
       return undefined;
     }
 
     if (syncingTodoQueueRef.current) return undefined;
 
-    let cancelled = false;
+    const syncScope = syncScopeRef.current;
     const session = creationSession.current;
     const authScope = effectiveSession?.getScope?.() || null;
     const isQueueActive = () => (
-      !cancelled
+      syncScope.active
       && session.active
       && creationSession.current === session
       && (!effectiveSession || (authScope !== null && authScope.userId === userId && authScope.isCurrent()))
@@ -282,10 +295,50 @@ export function useProjectTodos({
     const syncTodoQueue = async () => {
       syncingTodoQueueRef.current = true;
 
+      const applyRecurringCompletionSync = (op, updatedTodo, followUpTodo) => {
+        const remainingQueue = todoQueueRef.current.slice(1);
+        const droppedFollowUpIds = op.followUpLocalId && !followUpTodo
+          ? collectRemovedQueuedTargetIds(remainingQueue, op.followUpLocalId)
+          : new Set(op.followUpLocalId ? [op.followUpLocalId] : []);
+        if (todoQueueRetryTimeoutRef.current) {
+          window.clearTimeout(todoQueueRetryTimeoutRef.current);
+          todoQueueRetryTimeoutRef.current = null;
+        }
+        setTodos((prev) => {
+          const mapped = prev
+            .filter((item) => !droppedFollowUpIds.has(item._id))
+            .map((item) => (item._id === op.targetId ? updatedTodo : item));
+          if (
+            followUpTodo
+            && (followUpTodo.projectId || null) === (projectId || null)
+            && !mapped.some((item) => item._id === followUpTodo._id)
+          ) {
+            mapped.push(followUpTodo);
+          }
+          return mapped;
+        });
+        advanceQueue((prev) => {
+          const rest = prev.slice(1);
+          if (!op.followUpLocalId) return rest;
+          return followUpTodo
+            ? replaceQueuedTargetId(rest, op.followUpLocalId, followUpTodo._id)
+            : removeQueuedTargetOps(rest, op.followUpLocalId);
+        });
+        setLastSaved(new Date());
+        setUsingOfflineSnapshot(false);
+      };
+
       try {
         while (isQueueActive() && todoQueueRef.current.length > 0) {
           const [op] = todoQueueRef.current;
           if (!op) break;
+
+          if (op.kind !== 'create' && isOfflineTempId(op.targetId)) {
+            const droppedIds = collectRemovedQueuedTargetIds(todoQueueRef.current, op.targetId);
+            setTodos((prev) => prev.filter((item) => !droppedIds.has(item._id)));
+            advanceQueue((prev) => removeQueuedTargetOps(prev, op.targetId));
+            continue;
+          }
 
           if (op.kind === 'create') {
             let selectClause = supportsExtendedManualTodoFieldsRef.current
@@ -415,33 +468,7 @@ export function useProjectTodos({
               if (!isQueueActive() || rpcResult.cancelled) break;
 
               if (rpcResult.ok) {
-                const { updatedTodo, followUpTodo } = rpcResult;
-                if (todoQueueRetryTimeoutRef.current) {
-                  window.clearTimeout(todoQueueRetryTimeoutRef.current);
-                  todoQueueRetryTimeoutRef.current = null;
-                }
-                setTodos((prev) => {
-                  const mapped = prev
-                    .filter((item) => !op.followUpLocalId || item._id !== op.followUpLocalId)
-                    .map((item) => (item._id === op.targetId ? updatedTodo : item));
-                  if (
-                    followUpTodo
-                    && (followUpTodo.projectId || null) === (projectId || null)
-                    && !mapped.some((item) => item._id === followUpTodo._id)
-                  ) {
-                    mapped.push(followUpTodo);
-                  }
-                  return mapped;
-                });
-                advanceQueue((prev) => {
-                  const rest = prev.slice(1);
-                  if (!op.followUpLocalId) return rest;
-                  return followUpTodo
-                    ? replaceQueuedTargetId(rest, op.followUpLocalId, followUpTodo._id)
-                    : removeQueuedTargetOps(rest, op.followUpLocalId);
-                });
-                setLastSaved(new Date());
-                setUsingOfflineSnapshot(false);
+                applyRecurringCompletionSync(op, rpcResult.updatedTodo, rpcResult.followUpTodo);
                 continue;
               }
 
@@ -494,60 +521,40 @@ export function useProjectTodos({
             }
 
             const updatedTodo = mapManualTodoRow(data);
-            const followUpResult = await ensureRecurringManualTodoFollowUp({
-              client: supabase,
-              userId,
-              followUpId,
-              sourceTodo: { ...(op.sourceTodo || {}), ...updatedTodo },
-              normalizedRecurrence: op.normalizedRecurrence,
-              nextRecurringDueDate: op.nextRecurringDueDate || fallbackDate,
-              supportsExtendedFields: supportsExtendedManualTodoFieldsRef.current,
-              onSchemaFallback: () => {
-                supportsExtendedManualTodoFieldsRef.current = false;
-              },
-              isCurrent: isQueueActive,
-            });
-            if (!isQueueActive() || followUpResult.cancelled) break;
+            const effectiveRecurrence = normalizeTodoRecurrence(updatedTodo.recurrence);
+            let followUpTodo = null;
+            if (effectiveRecurrence) {
+              const followUpResult = await ensureRecurringManualTodoFollowUp({
+                client: supabase,
+                userId,
+                followUpId,
+                sourceTodo: { ...(op.sourceTodo || {}), ...updatedTodo },
+                normalizedRecurrence: effectiveRecurrence,
+                nextRecurringDueDate: op.nextRecurringDueDate || fallbackDate,
+                supportsExtendedFields: supportsExtendedManualTodoFieldsRef.current,
+                onSchemaFallback: () => {
+                  supportsExtendedManualTodoFieldsRef.current = false;
+                },
+                isCurrent: isQueueActive,
+              });
+              if (!isQueueActive() || followUpResult.cancelled) break;
 
-            if (followUpResult.missingTable) {
-              supportsManualTodosTableRef.current = false;
-              advanceQueue(() => []);
-              break;
-            }
-
-            if (!followUpResult.ok) {
-              console.error('Failed to sync queued recurring follow-up todo:', followUpResult.error);
-              scheduleRetry();
-              break;
-            }
-
-            const { followUpTodo } = followUpResult;
-            if (todoQueueRetryTimeoutRef.current) {
-              window.clearTimeout(todoQueueRetryTimeoutRef.current);
-              todoQueueRetryTimeoutRef.current = null;
-            }
-            setTodos((prev) => {
-              const mapped = prev
-                .filter((item) => !op.followUpLocalId || item._id !== op.followUpLocalId)
-                .map((item) => (item._id === op.targetId ? updatedTodo : item));
-              if (
-                followUpTodo
-                && (followUpTodo.projectId || null) === (projectId || null)
-                && !mapped.some((item) => item._id === followUpTodo._id)
-              ) {
-                mapped.push(followUpTodo);
+              if (followUpResult.missingTable) {
+                supportsManualTodosTableRef.current = false;
+                advanceQueue(() => []);
+                break;
               }
-              return mapped;
-            });
-            advanceQueue((prev) => {
-              const rest = prev.slice(1);
-              if (!op.followUpLocalId) return rest;
-              return followUpTodo
-                ? replaceQueuedTargetId(rest, op.followUpLocalId, followUpTodo._id)
-                : removeQueuedTargetOps(rest, op.followUpLocalId);
-            });
-            setLastSaved(new Date());
-            setUsingOfflineSnapshot(false);
+
+              if (!followUpResult.ok) {
+                console.error('Failed to sync queued recurring follow-up todo:', followUpResult.error);
+                scheduleRetry();
+                break;
+              }
+
+              followUpTodo = followUpResult.followUpTodo || null;
+            }
+
+            applyRecurringCompletionSync(op, updatedTodo, followUpTodo);
             continue;
           }
 
@@ -585,11 +592,8 @@ export function useProjectTodos({
     };
 
     void syncTodoQueue();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [effectiveSession, isOnline, now, projectId, setLastSaved, setUsingOfflineSnapshot, todoQueue.length, todoQueueRetryToken, userId]);
+    return undefined;
+  }, [effectiveSession, hasQueuedTodos, isOnline, now, projectId, setLastSaved, setUsingOfflineSnapshot, todoQueueRetryToken, userId]);
 
   const addTodo = useCallback(async (todoData = {}, { requireConfirmation = false, operationId } = {}) => {
     const ts = now();
@@ -819,6 +823,9 @@ export function useProjectTodos({
         return enqueueUpdate(prev, todoId, queuePatch);
       });
       setOfflinePendingSync(true);
+      if (key === 'status' && nextStatus === 'Open') {
+        effectiveSession?.clearRecurringRecoveriesForParent?.(todoId);
+      }
       return { updatedTodo: localUpdated, followUpTodo: queuedFollowUp };
     }
 
@@ -981,6 +988,10 @@ export function useProjectTodos({
       return next;
     });
 
+    if (key === 'status' && nextStatus === 'Open') {
+      effectiveSession?.clearRecurringRecoveriesForParent?.(todoId);
+    }
+
     if (missingManualTodosOnInsert) {
       return { updatedTodo, followUpTodo };
     }
@@ -1035,7 +1046,11 @@ export function useProjectTodos({
     }
 
     if (!result.ok) {
-      return { ok: false, error: result.error };
+      return {
+        ok: false,
+        staleCompletion: Boolean(result.staleCompletion),
+        error: result.error,
+      };
     }
 
     if (result.updatedTodo || result.followUpTodo) {
@@ -1062,13 +1077,18 @@ export function useProjectTodos({
 
   const deleteTodo = useCallback(async (todoId) => {
     const previousTodos = todos;
-    setTodos((prev) => prev.filter((todo) => todo._id !== todoId));
+    const isOfflineDelete = !isOnline || isOfflineTempId(todoId);
+    const droppedIds = isOfflineDelete
+      ? collectRemovedQueuedTargetIds(todoQueueRef.current, todoId)
+      : new Set([todoId]);
+    setTodos((prev) => prev.filter((todo) => !droppedIds.has(todo._id)));
 
     if (!userId || !supportsManualTodosTableRef.current) return true;
 
-    if (!isOnline || isOfflineTempId(todoId)) {
+    if (isOfflineDelete) {
       setTodoQueue((prev) => enqueueDelete(prev, todoId));
       setOfflinePendingSync(true);
+      droppedIds.forEach((id) => effectiveSession?.clearRecurringRecoveriesForParent?.(id));
       return true;
     }
 
@@ -1086,8 +1106,9 @@ export function useProjectTodos({
       setTodos(previousTodos);
       return false;
     }
+    effectiveSession?.clearRecurringRecoveriesForParent?.(todoId);
     return true;
-  }, [isOnline, setOfflinePendingSync, todos, userId]);
+  }, [effectiveSession, isOnline, setOfflinePendingSync, todos, userId]);
 
   return {
     addTodo,

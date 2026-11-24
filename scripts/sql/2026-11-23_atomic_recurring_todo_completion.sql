@@ -9,9 +9,155 @@ alter table public.manual_todos
   add column if not exists recurrence_source_todo_id uuid null
   references public.manual_todos(id) on delete set null;
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+    join pg_namespace n on n.oid = t.relnamespace
+    where n.nspname = 'public'
+      and t.relname = 'manual_todos'
+      and c.conname = 'manual_todos_recurrence_source_not_self'
+  ) then
+    alter table public.manual_todos
+      add constraint manual_todos_recurrence_source_not_self
+      check (recurrence_source_todo_id is null or recurrence_source_todo_id <> id);
+  end if;
+end
+$$;
+
 create unique index if not exists idx_manual_todos_unique_recurrence_source
   on public.manual_todos (recurrence_source_todo_id)
   where recurrence_source_todo_id is not null;
+
+create or replace function public.recurring_todo_write_context_v1()
+returns jsonb
+language plpgsql
+stable
+security invoker
+set search_path = ''
+as $$
+begin
+  return nullif(pg_catalog.current_setting('pmworkspace.recurring_todo_write', true), '')::jsonb;
+exception when others then
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_manual_todo_recurrence_link_guard_v1 on public.manual_todos;
+
+with candidate_links as (
+  select
+    child.id as child_id,
+    parent.id as parent_id,
+    count(*) over (partition by parent.id) as candidate_count
+  from public.manual_todos child
+  join public.manual_todos parent
+    on coalesce(child.meta->>'recurrenceSourceTodoId', '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+   and parent.id = (child.meta->>'recurrenceSourceTodoId')::uuid
+  where child.recurrence_source_todo_id is null
+    and child.id <> parent.id
+    and parent.status = 'Done'
+    and child.created_at >= parent.created_at
+    and (
+      (parent.project_id is not null and child.project_id = parent.project_id)
+      or (parent.project_id is null and child.project_id is null and child.user_id = parent.user_id)
+    )
+    and not exists (
+      select 1
+      from public.manual_todos existing_link
+      where existing_link.recurrence_source_todo_id = parent.id
+    )
+)
+update public.manual_todos mt
+set recurrence_source_todo_id = candidate_links.parent_id
+from candidate_links
+where mt.id = candidate_links.child_id
+  and candidate_links.candidate_count = 1
+  and mt.recurrence_source_todo_id is null;
+
+create or replace function public.guard_manual_todo_recurrence_link_v1()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  context_value jsonb;
+  trusted boolean := false;
+  parent_row public.manual_todos%rowtype;
+  link_changed boolean;
+  meta_link_changed boolean;
+begin
+  if tg_op = 'INSERT' then
+    if new.recurrence_source_todo_id is null
+      and not (coalesce(new.meta, '{}'::jsonb) ? 'recurrenceSourceTodoId') then
+      return new;
+    end if;
+
+    context_value := public.recurring_todo_write_context_v1();
+    trusted := (
+      auth.uid() is not null
+      and context_value->>'action' = 'complete_recurring'
+      and context_value->>'actor' = auth.uid()::text
+      and context_value->>'parentId' = coalesce(new.recurrence_source_todo_id::text, '')
+      and context_value->>'followUpId' = coalesce(new.id::text, '')
+    );
+    if not coalesce(trusted, false) then
+      raise exception using errcode = '22023', message = 'RECURRENCE_LINK_RESERVED';
+    end if;
+
+    if new.recurrence_source_todo_id is null
+      or new.recurrence_source_todo_id = new.id
+      or coalesce(new.meta->>'recurrenceSourceTodoId', '') <> new.recurrence_source_todo_id::text then
+      raise exception using errcode = '23514', message = 'RECURRENCE_LINK_BOUNDARY_INVALID';
+    end if;
+
+    select *
+    into parent_row
+    from public.manual_todos
+    where id = new.recurrence_source_todo_id;
+
+    if not found
+      or parent_row.status is distinct from 'Done'
+      or not (
+        (parent_row.project_id is not null and new.project_id = parent_row.project_id)
+        or (parent_row.project_id is null and new.project_id is null and new.user_id = parent_row.user_id)
+      ) then
+      raise exception using errcode = '23514', message = 'RECURRENCE_LINK_BOUNDARY_INVALID';
+    end if;
+
+    return new;
+  end if;
+
+  link_changed := new.recurrence_source_todo_id is distinct from old.recurrence_source_todo_id;
+  meta_link_changed := (coalesce(new.meta, '{}'::jsonb)->'recurrenceSourceTodoId')
+    is distinct from (coalesce(old.meta, '{}'::jsonb)->'recurrenceSourceTodoId');
+
+  if not link_changed and not meta_link_changed then
+    return new;
+  end if;
+
+  if link_changed
+    and not meta_link_changed
+    and old.recurrence_source_todo_id is not null
+    and new.recurrence_source_todo_id is null
+    and not exists (
+      select 1
+      from public.manual_todos p
+      where p.id = old.recurrence_source_todo_id
+    ) then
+    return new;
+  end if;
+
+  raise exception using errcode = '22023', message = 'RECURRENCE_LINK_IMMUTABLE';
+end;
+$$;
+
+create trigger trg_manual_todo_recurrence_link_guard_v1
+  before insert or update on public.manual_todos
+  for each row execute function public.guard_manual_todo_recurrence_link_v1();
 
 create or replace function public.next_recurring_todo_due_date_v1(
   p_base_date date,
@@ -98,12 +244,16 @@ end;
 $$;
 
 drop function if exists public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid);
+drop function if exists public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean);
+drop function if exists public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean, timestamptz);
 
 create or replace function public.complete_recurring_manual_todo_v1(
   p_todo_id uuid,
   p_fallback_date date default null,
   p_completed_at timestamptz default null,
-  p_follow_up_id uuid default null
+  p_follow_up_id uuid default null,
+  p_require_already_done boolean default false,
+  p_expected_completed_at timestamptz default null
 ) returns jsonb
 language plpgsql
 security invoker
@@ -114,7 +264,6 @@ declare
   effective_now timestamptz := timezone('utc', now());
   existing public.manual_todos%rowtype;
   updated_row public.manual_todos%rowtype;
-  legacy_follow_up_row public.manual_todos%rowtype;
   follow_up_row public.manual_todos%rowtype;
   base_due_date date;
   computed_next_due_date date;
@@ -142,7 +291,13 @@ begin
     raise exception using errcode = '42501', message = 'TODO_ACCESS_REQUIRED';
   end if;
 
-  if existing.status is distinct from 'Done' then
+  if coalesce(p_require_already_done, false) then
+    if existing.status is distinct from 'Done'
+      or (p_expected_completed_at is not null and existing.completed_at is distinct from p_expected_completed_at) then
+      raise exception using errcode = '40001', message = 'RECURRING_COMPLETION_STALE';
+    end if;
+    updated_row := existing;
+  elsif existing.status is distinct from 'Done' then
     update public.manual_todos
     set
       status = 'Done',
@@ -164,46 +319,18 @@ begin
     where recurrence_source_todo_id = updated_row.id
     limit 1;
 
-    if not found then
-      select *
-      into legacy_follow_up_row
-      from public.manual_todos
-      where recurrence_source_todo_id is null
-        and coalesce(meta->>'recurrenceSourceTodoId', '') = updated_row.id::text
-        and project_id is not distinct from updated_row.project_id
-        and id <> updated_row.id
-      order by (p_follow_up_id is not null and id = p_follow_up_id) desc, created_at asc
-      limit 1
-      for update;
-
-      if found then
-        begin
-          update public.manual_todos
-          set recurrence_source_todo_id = updated_row.id
-          where id = legacy_follow_up_row.id
-            and recurrence_source_todo_id is null
-          returning * into follow_up_row;
-        exception
-          when unique_violation then
-            select *
-            into follow_up_row
-            from public.manual_todos
-            where recurrence_source_todo_id = updated_row.id
-            limit 1;
-        end;
-
-        if follow_up_row.id is null then
-          select *
-          into follow_up_row
-          from public.manual_todos
-          where recurrence_source_todo_id = updated_row.id
-          limit 1;
-        end if;
-      end if;
-    end if;
-
     if follow_up_row.id is null then
       target_follow_up_id := coalesce(p_follow_up_id, pg_catalog.gen_random_uuid());
+      perform pg_catalog.set_config(
+        'pmworkspace.recurring_todo_write',
+        jsonb_build_object(
+          'action', 'complete_recurring',
+          'actor', actor_id::text,
+          'parentId', updated_row.id::text,
+          'followUpId', target_follow_up_id::text
+        )::text,
+        true
+      );
       begin
         insert into public.manual_todos (
           id,
@@ -239,8 +366,10 @@ begin
           updated_row.id
         )
         returning * into follow_up_row;
+        perform pg_catalog.set_config('pmworkspace.recurring_todo_write', '', true);
       exception
         when unique_violation then
+          perform pg_catalog.set_config('pmworkspace.recurring_todo_write', '', true);
           select *
           into follow_up_row
           from public.manual_todos
@@ -250,6 +379,9 @@ begin
           if follow_up_row.id is null then
             raise;
           end if;
+        when others then
+          perform pg_catalog.set_config('pmworkspace.recurring_todo_write', '', true);
+          raise;
       end;
     end if;
 
@@ -268,7 +400,15 @@ $$;
 revoke all on function public.next_recurring_todo_due_date_v1(date, jsonb) from public, anon, authenticated;
 grant execute on function public.next_recurring_todo_due_date_v1(date, jsonb) to authenticated, service_role;
 
-revoke all on function public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid) from public, anon, authenticated;
-grant execute on function public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid) to authenticated, service_role;
+revoke all on function public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean, timestamptz) from public, anon, authenticated;
+grant execute on function public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean, timestamptz) to authenticated, service_role;
+
+revoke all on function public.recurring_todo_write_context_v1() from public, anon, authenticated;
+grant execute on function public.recurring_todo_write_context_v1() to authenticated, service_role;
+
+revoke all on function public.guard_manual_todo_recurrence_link_v1() from public, anon, authenticated;
+grant execute on function public.guard_manual_todo_recurrence_link_v1() to service_role;
+
+notify pgrst, 'reload schema';
 
 commit;
