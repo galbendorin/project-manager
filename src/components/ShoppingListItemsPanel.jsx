@@ -303,10 +303,10 @@ export default function ShoppingListItemsPanel({
               ) : filteredDisplayOpenTodos.length === 0 ? (
                 <div
                   role="status"
-                  className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-600"
+                  className="min-w-0 break-words rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-4 text-sm text-slate-600"
                 >
                   <p className="font-semibold text-slate-900">
-                    No open groceries match “{openSearchQuery.trim()}”.
+                    No open groceries match this search.
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
                     Clear the search to see all {displayOpenTodos.length} open {displayOpenTodos.length === 1 ? 'item' : 'items'}.

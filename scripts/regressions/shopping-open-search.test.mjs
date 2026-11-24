@@ -166,11 +166,13 @@ test('open grocery search filters case-insensitively, preserves order/sync/Bough
     });
     assert.equal(f.toggled.at(-1)?._id, 'todo-eggs');
 
+    const longUnbrokenQuery = 'x'.repeat(180);
     await act(async () => {
-      findSearchInput().props.onChange({ target: { value: 'avocado' } });
+      findSearchInput().props.onChange({ target: { value: longUnbrokenQuery } });
     });
     assert.deepEqual(openRowIds(), []);
-    assert.ok(f.root.root.findAll((node) => textContent(node).includes('No open groceries match “avocado”.')).length > 0);
+    assert.ok(f.root.root.findAll((node) => textContent(node).includes('No open groceries match this search.')).length > 0);
+    assert.equal(f.root.root.findAll((node) => textContent(node).includes(longUnbrokenQuery)).length, 0);
     assert.equal(f.root.root.findAll((node) => textContent(node) === 'Nothing open right now.').length, 0);
     assert.ok(f.root.root.findAll((node) => textContent(node) === 'Brown Eggs').length > 0, 'Bought history stays intact on no-match');
 
