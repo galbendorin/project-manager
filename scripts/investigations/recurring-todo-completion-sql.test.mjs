@@ -478,7 +478,7 @@ test('Review Finding 1: retry mode rejects reopened or re-completed tasks and ne
     // User reopens the task in the app.
     await db.query(`update public.manual_todos set status = 'Open', completed_at = null where id = $1`, [taskId]);
 
-    // Stale retry with p_require_already_done = true must fail (40001), leave task Open, and create 0 follow-ups.
+    // Stale retry with p_require_already_done = true must fail (P0001), leave task Open, and create 0 follow-ups.
     await assert.rejects(
       withSavepoint(() =>
         db.query(
@@ -486,7 +486,7 @@ test('Review Finding 1: retry mode rejects reopened or re-completed tasks and ne
           [taskId, '2026-10-08', t1, followId1]
         )
       ),
-      (err) => err.code === '40001'
+      (err) => err.code === 'P0001' && /RECURRING_COMPLETION_STALE/.test(err.message)
     );
     const afterReopenRetry = (await db.query('select status, completed_at from public.manual_todos where id = $1', [taskId])).rows[0];
     assert.equal(afterReopenRetry.status, 'Open');
@@ -496,7 +496,7 @@ test('Review Finding 1: retry mode rejects reopened or re-completed tasks and ne
       0
     );
 
-    // User later completes the task again at t2: retry still holding old t1 rejects (40001), retry holding t2 succeeds.
+    // User later completes the task again at t2: retry still holding old t1 rejects (P0001), retry holding t2 succeeds.
     await db.query(`update public.manual_todos set status = 'Done', completed_at = $2 where id = $1`, [taskId, t2]);
     await assert.rejects(
       withSavepoint(() =>
@@ -505,7 +505,7 @@ test('Review Finding 1: retry mode rejects reopened or re-completed tasks and ne
           [taskId, '2026-10-08', t1, followId1]
         )
       ),
-      (err) => err.code === '40001'
+      (err) => err.code === 'P0001' && /RECURRING_COMPLETION_STALE/.test(err.message)
     );
 
     const retryCurrent = (await db.query(

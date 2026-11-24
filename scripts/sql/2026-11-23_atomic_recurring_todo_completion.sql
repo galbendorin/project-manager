@@ -330,7 +330,7 @@ begin
   if coalesce(p_require_already_done, false) then
     if existing.status is distinct from 'Done'
       or (p_expected_completed_at is not null and existing.completed_at is distinct from p_expected_completed_at) then
-      raise exception using errcode = '40001', message = 'RECURRING_COMPLETION_STALE';
+      raise exception using errcode = 'P0001', message = 'RECURRING_COMPLETION_STALE';
     end if;
     updated_row := existing;
   elsif existing.status is distinct from 'Done' then

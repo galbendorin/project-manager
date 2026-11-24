@@ -2005,14 +2005,14 @@ test('saved recurring recovery retries route through complete_recurring_manual_t
         if (staleOutcome === 'transient-40001') {
           return { data: null, error: { code: '40001', message: 'could not serialize access due to concurrent update' } };
         }
-        return { data: null, error: { code: '40001', message: 'RECURRING_COMPLETION_STALE' } };
+        return { data: null, error: { code: 'P0001', message: 'RECURRING_COMPLETION_STALE' } };
       }
       return { data: [], error: null };
     });
     const staleLoader = await sourceModules(staleTransport, { window, document, navigator: { onLine: true } });
     const { isStaleRecurringCompletionError } = await staleLoader('src/hooks/projectData/recurringFollowUp.js');
     assert.equal(isStaleRecurringCompletionError({ code: '40001', message: 'could not serialize access due to concurrent update' }), false);
-    assert.equal(isStaleRecurringCompletionError({ code: '40001', message: 'RECURRING_COMPLETION_STALE' }), true);
+    assert.equal(isStaleRecurringCompletionError({ code: 'P0001', message: 'RECURRING_COMPLETION_STALE' }), true);
 
     const StaleOverlay = (await staleLoader('src/components/TaskCompletionSessionOverlay.jsx')).default;
     const staleOverlayRoot = create(React.createElement(StaleOverlay, {
