@@ -155,8 +155,6 @@ export const isMissingRecurringRpcError = (error) => {
 };
 
 export const isStaleRecurringCompletionError = (error) => {
-  const code = String(error?.code || '').trim().toUpperCase();
-  if (code === '40001') return true;
   const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toUpperCase();
   return message.includes('RECURRING_COMPLETION_STALE');
 };

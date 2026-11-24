@@ -236,7 +236,10 @@ test('migration locks function grants strictly to authenticated and service_role
       has_function_privilege('authenticated', 'public.recurring_todo_write_context_v1()', 'execute') as ctx_auth_exec,
       has_function_privilege('anon', 'public.guard_manual_todo_recurrence_link_v1()', 'execute') as guard_anon_exec,
       has_function_privilege('public', 'public.guard_manual_todo_recurrence_link_v1()', 'execute') as guard_public_exec,
-      has_function_privilege('authenticated', 'public.guard_manual_todo_recurrence_link_v1()', 'execute') as guard_auth_exec
+      has_function_privilege('authenticated', 'public.guard_manual_todo_recurrence_link_v1()', 'execute') as guard_auth_exec,
+      has_function_privilege('anon', 'public.recurring_todo_has_follow_up_v1(uuid)', 'execute') as has_fu_anon_exec,
+      has_function_privilege('public', 'public.recurring_todo_has_follow_up_v1(uuid)', 'execute') as has_fu_public_exec,
+      has_function_privilege('authenticated', 'public.recurring_todo_has_follow_up_v1(uuid)', 'execute') as has_fu_auth_exec
   `)).rows[0];
 
   assert.equal(privs.anon_exec, false);
@@ -251,6 +254,9 @@ test('migration locks function grants strictly to authenticated and service_role
   assert.equal(privs.guard_anon_exec, false);
   assert.equal(privs.guard_public_exec, false);
   assert.equal(privs.guard_auth_exec, false);
+  assert.equal(privs.has_fu_anon_exec, false);
+  assert.equal(privs.has_fu_public_exec, false);
+  assert.equal(privs.has_fu_auth_exec, true);
 
   await asUser(userA, async () => {
     const privateId = '66666666-6666-4666-8666-666666666601';
@@ -626,4 +632,79 @@ test('Review Finding 3: trigger protects links/meta, parent deletion sets null s
   } finally {
     await preDb.close();
   }
+});
+
+test('Review Finding 1 (5b90e6e): moving follow-up to private list preserves privacy, prevents duplicates, and unblocks shared task completion', async () => {
+  await asUser(userA, async () => {
+    const sharedParent = 'dddddddd-dddd-4ddd-8ddd-dddddddddd01';
+    const privateFollowUp = 'dddddddd-dddd-4ddd-8ddd-dddddddddd02';
+    const collaboratorAttemptId = 'dddddddd-dddd-4ddd-8ddd-dddddddddd09';
+    const freshAfterDeleteId = 'dddddddd-dddd-4ddd-8ddd-dddddddddd10';
+
+    await db.query(
+      `insert into public.manual_todos(id, user_id, project_id, title, due_date, recurrence)
+       values ($1, $2, $3, 'Shared recurring task', '2026-10-08', '{"type":"weekly","interval":1}'::jsonb)`,
+      [sharedParent, userA, sharedProject]
+    );
+    await db.query(
+      'select public.complete_recurring_manual_todo_v1($1, $2, $3, $4)',
+      [sharedParent, '2026-10-08', '2026-10-08T12:00:00Z', privateFollowUp]
+    );
+
+    // Owner moves the follow-up to private Other / no project and reopens the original shared task.
+    await db.query('update public.manual_todos set project_id = null where id = $1', [privateFollowUp]);
+    await db.query(`update public.manual_todos set status = 'Open', completed_at = null where id = $1`, [sharedParent]);
+
+    // Collaborator cannot see the owner's private follow-up, yet completing the shared task must succeed without leaking or duplicating.
+    await db.query("select set_config('request.jwt.claim.sub', $1, true)", [userB]);
+    assert.equal(
+      Number((await db.query('select count(*) from public.manual_todos where id = $1', [privateFollowUp])).rows[0].count),
+      0
+    );
+
+    const collabComplete = (await db.query(
+      'select public.complete_recurring_manual_todo_v1($1, $2, $3, $4) as payload',
+      [sharedParent, '2026-10-08', '2026-10-10T09:00:00Z', collaboratorAttemptId]
+    )).rows[0].payload;
+    assert.equal(collabComplete.updated_todo.status, 'Done');
+    assert.equal(collabComplete.follow_up_todo, null);
+
+    // Retry while parent remains Done also succeeds cleanly without leaking private follow-up.
+    const collabRetry = (await db.query(
+      'select public.complete_recurring_manual_todo_v1($1, $2, $3, $4, true, $3) as payload',
+      [sharedParent, '2026-10-08', collabComplete.updated_todo.completed_at, collaboratorAttemptId]
+    )).rows[0].payload;
+    assert.equal(collabRetry.updated_todo.status, 'Done');
+    assert.equal(collabRetry.follow_up_todo, null);
+
+    // Outsider cannot use recurring_todo_has_follow_up_v1 as an existence oracle.
+    await db.query("select set_config('request.jwt.claim.sub', $1, true)", [userC]);
+    assert.equal(
+      (await db.query('select public.recurring_todo_has_follow_up_v1($1) as has_fu', [sharedParent])).rows[0].has_fu,
+      false
+    );
+
+    // Switch back to owner: only the original single private follow-up exists, zero duplicates.
+    await db.query("select set_config('request.jwt.claim.sub', $1, true)", [userA]);
+    const ownerFollowUps = (await db.query(
+      'select id, project_id from public.manual_todos where recurrence_source_todo_id = $1',
+      [sharedParent]
+    )).rows;
+    assert.equal(ownerFollowUps.length, 1);
+    assert.equal(ownerFollowUps[0].id, privateFollowUp);
+    assert.equal(ownerFollowUps[0].project_id, null);
+
+    // Once owner deletes the private follow-up and reopens the parent, collaborator creates a fresh shared follow-up cleanly.
+    await db.query('delete from public.manual_todos where id = $1', [privateFollowUp]);
+    await db.query(`update public.manual_todos set status = 'Open', completed_at = null where id = $1`, [sharedParent]);
+
+    await db.query("select set_config('request.jwt.claim.sub', $1, true)", [userB]);
+    const freshRes = (await db.query(
+      'select public.complete_recurring_manual_todo_v1($1, $2, $3, $4) as payload',
+      [sharedParent, '2026-10-08', '2026-10-12T09:00:00Z', freshAfterDeleteId]
+    )).rows[0].payload;
+    assert.equal(freshRes.follow_up_todo.id, freshAfterDeleteId);
+    assert.equal(freshRes.follow_up_todo.project_id, sharedProject);
+    assert.equal(freshRes.follow_up_todo.recurrence_source_todo_id, sharedParent);
+  });
 });

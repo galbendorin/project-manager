@@ -1998,15 +1998,22 @@ test('saved recurring recovery retries route through complete_recurring_manual_t
     });
     assert.equal(reloadedSession.getSnapshot().recurringRecoveries.length, 1);
 
-    // Retry when RPC reports 40001 RECURRING_COMPLETION_STALE (task reopened remotely) clears obsolete banner + storage.
-    let staleOverlayAlert = null;
+    // Transient 40001 serialization conflict must NOT discard the saved recovery; only explicit RECURRING_COMPLETION_STALE clears it.
+    let staleOutcome = 'transient-40001';
     const staleTransport = mockTransport((request) => {
       if (request.operation === 'rpc' && request.name === 'complete_recurring_manual_todo_v1') {
+        if (staleOutcome === 'transient-40001') {
+          return { data: null, error: { code: '40001', message: 'could not serialize access due to concurrent update' } };
+        }
         return { data: null, error: { code: '40001', message: 'RECURRING_COMPLETION_STALE' } };
       }
       return { data: [], error: null };
     });
     const staleLoader = await sourceModules(staleTransport, { window, document, navigator: { onLine: true } });
+    const { isStaleRecurringCompletionError } = await staleLoader('src/hooks/projectData/recurringFollowUp.js');
+    assert.equal(isStaleRecurringCompletionError({ code: '40001', message: 'could not serialize access due to concurrent update' }), false);
+    assert.equal(isStaleRecurringCompletionError({ code: '40001', message: 'RECURRING_COMPLETION_STALE' }), true);
+
     const StaleOverlay = (await staleLoader('src/components/TaskCompletionSessionOverlay.jsx')).default;
     const staleOverlayRoot = create(React.createElement(StaleOverlay, {
       session: reloadedSession,
@@ -2017,7 +2024,19 @@ test('saved recurring recovery retries route through complete_recurring_manual_t
         .find((b) => b.children.includes('Retry next occurrence'))
         .props.onClick();
     });
-    staleOverlayAlert = reloadedSession.getSnapshot().alert;
+    assert.equal(reloadedSession.getSnapshot().recurringRecoveries.length, 1);
+    assert.ok(window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`));
+    assert.ok(
+      staleOverlayRoot.root.findAllByType('button').some((b) => b.children.includes('Retry next occurrence'))
+    );
+
+    staleOutcome = 'explicit-stale';
+    await act(async () => {
+      await staleOverlayRoot.root.findAllByType('button')
+        .find((b) => b.children.includes('Retry next occurrence'))
+        .props.onClick();
+    });
+    const staleOverlayAlert = reloadedSession.getSnapshot().alert;
     assert.match(staleOverlayAlert, /reopened or changed/i);
     assert.equal(reloadedSession.getSnapshot().recurringRecoveries.length, 0);
     assert.equal(window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`), null);

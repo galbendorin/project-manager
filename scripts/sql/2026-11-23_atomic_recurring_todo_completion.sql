@@ -243,6 +243,41 @@ begin
 end;
 $$;
 
+drop function if exists public.recurring_todo_has_follow_up_v1(uuid);
+
+create or replace function public.recurring_todo_has_follow_up_v1(
+  p_parent_todo_id uuid
+) returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  actor_id uuid := auth.uid();
+  parent_row public.manual_todos%rowtype;
+begin
+  if actor_id is null or p_parent_todo_id is null then
+    return false;
+  end if;
+
+  select *
+  into parent_row
+  from public.manual_todos
+  where id = p_parent_todo_id;
+
+  if not found or not public.can_access_manual_todo(parent_row.project_id, parent_row.user_id, actor_id) then
+    return false;
+  end if;
+
+  return exists (
+    select 1
+    from public.manual_todos mt
+    where mt.recurrence_source_todo_id = parent_row.id
+  );
+end;
+$$;
+
 drop function if exists public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid);
 drop function if exists public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean);
 drop function if exists public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean, timestamptz);
@@ -265,6 +300,7 @@ declare
   existing public.manual_todos%rowtype;
   updated_row public.manual_todos%rowtype;
   follow_up_row public.manual_todos%rowtype;
+  follow_up_exists_hidden boolean := false;
   base_due_date date;
   computed_next_due_date date;
   target_follow_up_id uuid;
@@ -320,72 +356,81 @@ begin
     limit 1;
 
     if follow_up_row.id is null then
-      target_follow_up_id := coalesce(p_follow_up_id, pg_catalog.gen_random_uuid());
-      perform pg_catalog.set_config(
-        'pmworkspace.recurring_todo_write',
-        jsonb_build_object(
-          'action', 'complete_recurring',
-          'actor', actor_id::text,
-          'parentId', updated_row.id::text,
-          'followUpId', target_follow_up_id::text
-        )::text,
-        true
-      );
-      begin
-        insert into public.manual_todos (
-          id,
-          user_id,
-          project_id,
-          title,
-          description,
-          due_date,
-          owner_text,
-          assignee_user_id,
-          status,
-          recurrence,
-          kanban_column_id,
-          kanban_position,
-          meta,
-          completed_at,
-          recurrence_source_todo_id
-        ) values (
-          target_follow_up_id,
-          actor_id,
-          updated_row.project_id,
-          coalesce(nullif(updated_row.title, ''), 'New Task'),
-          coalesce(updated_row.description, ''),
-          computed_next_due_date,
-          coalesce(nullif(updated_row.owner_text, ''), 'PM'),
-          coalesce(updated_row.assignee_user_id, actor_id),
-          'Open',
-          updated_row.recurrence,
-          updated_row.kanban_column_id,
-          0,
-          jsonb_build_object('recurrenceSourceTodoId', updated_row.id::text),
-          null,
-          updated_row.id
-        )
-        returning * into follow_up_row;
-        perform pg_catalog.set_config('pmworkspace.recurring_todo_write', '', true);
-      exception
-        when unique_violation then
+      if public.recurring_todo_has_follow_up_v1(updated_row.id) then
+        follow_up_exists_hidden := true;
+      else
+        target_follow_up_id := coalesce(p_follow_up_id, pg_catalog.gen_random_uuid());
+        perform pg_catalog.set_config(
+          'pmworkspace.recurring_todo_write',
+          jsonb_build_object(
+            'action', 'complete_recurring',
+            'actor', actor_id::text,
+            'parentId', updated_row.id::text,
+            'followUpId', target_follow_up_id::text
+          )::text,
+          true
+        );
+        begin
+          insert into public.manual_todos (
+            id,
+            user_id,
+            project_id,
+            title,
+            description,
+            due_date,
+            owner_text,
+            assignee_user_id,
+            status,
+            recurrence,
+            kanban_column_id,
+            kanban_position,
+            meta,
+            completed_at,
+            recurrence_source_todo_id
+          ) values (
+            target_follow_up_id,
+            actor_id,
+            updated_row.project_id,
+            coalesce(nullif(updated_row.title, ''), 'New Task'),
+            coalesce(updated_row.description, ''),
+            computed_next_due_date,
+            coalesce(nullif(updated_row.owner_text, ''), 'PM'),
+            coalesce(updated_row.assignee_user_id, actor_id),
+            'Open',
+            updated_row.recurrence,
+            updated_row.kanban_column_id,
+            0,
+            jsonb_build_object('recurrenceSourceTodoId', updated_row.id::text),
+            null,
+            updated_row.id
+          )
+          returning * into follow_up_row;
           perform pg_catalog.set_config('pmworkspace.recurring_todo_write', '', true);
-          select *
-          into follow_up_row
-          from public.manual_todos
-          where recurrence_source_todo_id = updated_row.id
-          limit 1;
+        exception
+          when unique_violation then
+            perform pg_catalog.set_config('pmworkspace.recurring_todo_write', '', true);
+            select *
+            into follow_up_row
+            from public.manual_todos
+            where recurrence_source_todo_id = updated_row.id
+            limit 1;
 
-          if follow_up_row.id is null then
+            if follow_up_row.id is null then
+              if public.recurring_todo_has_follow_up_v1(updated_row.id) then
+                follow_up_exists_hidden := true;
+              else
+                raise;
+              end if;
+            end if;
+          when others then
+            perform pg_catalog.set_config('pmworkspace.recurring_todo_write', '', true);
             raise;
-          end if;
-        when others then
-          perform pg_catalog.set_config('pmworkspace.recurring_todo_write', '', true);
-          raise;
-      end;
+        end;
+      end if;
     end if;
 
-    if follow_up_row.id is null or follow_up_row.recurrence_source_todo_id is distinct from updated_row.id then
+    if not follow_up_exists_hidden
+      and (follow_up_row.id is null or follow_up_row.recurrence_source_todo_id is distinct from updated_row.id) then
       raise exception using errcode = '23514', message = 'FOLLOW_UP_LINK_NOT_VERIFIED';
     end if;
   end if;
@@ -399,6 +444,9 @@ $$;
 
 revoke all on function public.next_recurring_todo_due_date_v1(date, jsonb) from public, anon, authenticated;
 grant execute on function public.next_recurring_todo_due_date_v1(date, jsonb) to authenticated, service_role;
+
+revoke all on function public.recurring_todo_has_follow_up_v1(uuid) from public, anon, authenticated;
+grant execute on function public.recurring_todo_has_follow_up_v1(uuid) to authenticated, service_role;
 
 revoke all on function public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean, timestamptz) from public, anon, authenticated;
 grant execute on function public.complete_recurring_manual_todo_v1(uuid, date, timestamptz, uuid, boolean, timestamptz) to authenticated, service_role;
