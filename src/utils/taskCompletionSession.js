@@ -19,6 +19,8 @@ const serializeRecovery = (item) => ({
   sourceTodo: item.sourceTodo || null,
   normalizedRecurrence: item.normalizedRecurrence || null,
   nextRecurringDueDate: item.nextRecurringDueDate || '',
+  fallbackDate: item.fallbackDate || '',
+  completedAt: item.completedAt || item.sourceTodo?.completedAt || '',
   title: item.title || 'Untitled',
   dueDate: item.dueDate || '',
   error: item.error || `Completed “${item.title || 'Untitled'}”, but its next recurring occurrence did not save. Retry without creating a duplicate.`,

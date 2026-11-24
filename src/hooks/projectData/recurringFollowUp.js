@@ -136,6 +136,15 @@ export const createRecurringUuid = () => {
 
 export const isValidRecurringUuid = (value) => UUID_PATTERN.test(String(value || '').trim());
 
+export const hasVerifiedRecurrenceLink = (row, parentTodoId) => Boolean(
+  row
+  && parentTodoId
+  && (
+    row.recurrence_source_todo_id === parentTodoId
+    || row.meta?.recurrenceSourceTodoId === parentTodoId
+  )
+);
+
 export const isMissingRecurringRpcError = (error) => {
   const code = String(error?.code || '').trim().toUpperCase();
   if (code === '42883' || code === 'PGRST202') return true;
@@ -148,7 +157,7 @@ export async function completeRecurringManualTodoAtomic({
   client,
   todoId,
   followUpId = null,
-  nextRecurringDueDate = null,
+  fallbackDate = null,
   completedAt = null,
   isCurrent = () => true,
 }) {
@@ -163,7 +172,7 @@ export async function completeRecurringManualTodoAtomic({
   try {
     const { data, error } = await client.rpc('complete_recurring_manual_todo_v1', {
       p_todo_id: todoId,
-      p_next_due_date: nextRecurringDueDate || null,
+      p_fallback_date: fallbackDate || null,
       p_completed_at: completedAt || null,
       p_follow_up_id: isValidRecurringUuid(followUpId) ? followUpId : null,
     });
@@ -182,6 +191,13 @@ export async function completeRecurringManualTodoAtomic({
         ok: false,
         missingRpc: false,
         error: new Error('The completed recurring task could not be confirmed.'),
+      };
+    }
+    if (data.follow_up_todo && !hasVerifiedRecurrenceLink(data.follow_up_todo, todoId)) {
+      return {
+        ok: false,
+        missingRpc: false,
+        error: new Error('The next recurring task link could not be verified.'),
       };
     }
 
@@ -217,17 +233,30 @@ export async function ensureRecurringManualTodoFollowUp({
   if (!active()) {
     return { ok: false, cancelled: true, missingTable: false };
   }
-  if (!client || !userId || !isValidRecurringUuid(followUpId) || !sourceTodo || !normalizedRecurrence) {
+  if (!client || !userId || !isValidRecurringUuid(followUpId) || !sourceTodo?._id || !normalizedRecurrence) {
     return { ok: false, missingTable: false, error: new Error('Invalid recurring follow-up parameters.') };
   }
 
   let extended = Boolean(supportsExtendedFields);
   const selectFor = (useExtended) => `${useExtended ? MANUAL_TODO_SELECT : LEGACY_MANUAL_TODO_SELECT}, user_id`;
 
-  const matchesScope = (row) => (
+  const matchesVerifiedScope = (row) => (
     row?.id === followUpId
     && (sourceTodo.projectId ? row?.project_id === sourceTodo.projectId : row?.user_id === userId)
+    && hasVerifiedRecurrenceLink(row, sourceTodo._id)
   );
+
+  const buildFollowUpPayload = (useExtended) => ({
+    ...buildRecurringFollowUpInsert({
+      userId,
+      localUpdated: sourceTodo,
+      normalizedRecurrence,
+      nextRecurringDueDate,
+      supportsExtendedFields: useExtended,
+    }),
+    id: followUpId,
+    meta: { recurrenceSourceTodoId: sourceTodo._id },
+  });
 
   const reconcile = async () => {
     if (!active()) {
@@ -271,11 +300,21 @@ export async function ensureRecurringManualTodoFollowUp({
       };
     }
 
-    if (matchesScope(result.data)) {
+    if (matchesVerifiedScope(result.data)) {
       return { cancelled: false, row: result.data, error: null, missingTable: false };
     }
 
-    return { cancelled: false, row: null, error: null, missingTable: false };
+    if (result.data) {
+      return {
+        cancelled: false,
+        row: null,
+        error: new Error('An unlinked task already occupies the recurring follow-up identity.'),
+        collision: true,
+        missingTable: false,
+      };
+    }
+
+    return { cancelled: false, row: null, error: null, collision: false, missingTable: false };
   };
 
   try {
@@ -289,22 +328,16 @@ export async function ensureRecurringManualTodoFollowUp({
     if (existing.row) {
       return { ok: true, followUpTodo: mapManualTodoRow(existing.row), alreadyExisted: true };
     }
+    if (existing.collision) {
+      return { ok: false, missingTable: false, error: existing.error };
+    }
 
     if (!active()) {
       return { ok: false, cancelled: true, missingTable: false };
     }
 
     let select = selectFor(extended);
-    let payload = {
-      ...buildRecurringFollowUpInsert({
-        userId,
-        localUpdated: sourceTodo,
-        normalizedRecurrence,
-        nextRecurringDueDate,
-        supportsExtendedFields: extended,
-      }),
-      id: followUpId,
-    };
+    let payload = buildFollowUpPayload(extended);
 
     let result = await client
       .from('manual_todos')
@@ -323,16 +356,7 @@ export async function ensureRecurringManualTodoFollowUp({
         return { ok: false, cancelled: true, missingTable: false };
       }
       select = selectFor(false);
-      payload = {
-        ...buildRecurringFollowUpInsert({
-          userId,
-          localUpdated: sourceTodo,
-          normalizedRecurrence,
-          nextRecurringDueDate,
-          supportsExtendedFields: false,
-        }),
-        id: followUpId,
-      };
+      payload = buildFollowUpPayload(false);
       result = await client
         .from('manual_todos')
         .insert(payload)
@@ -344,7 +368,7 @@ export async function ensureRecurringManualTodoFollowUp({
       }
     }
 
-    if (!result.error && matchesScope(result.data)) {
+    if (!result.error && matchesVerifiedScope(result.data)) {
       return { ok: true, followUpTodo: mapManualTodoRow(result.data), alreadyExisted: false };
     }
 
@@ -370,7 +394,7 @@ export async function ensureRecurringManualTodoFollowUp({
     return {
       ok: false,
       missingTable: false,
-      error: result.error || postCheck.error || new Error('The next recurring task could not be confirmed.'),
+      error: postCheck.error || result.error || new Error('The next recurring task could not be confirmed.'),
     };
   } catch (error) {
     if (!active()) {
@@ -382,4 +406,69 @@ export async function ensureRecurringManualTodoFollowUp({
       error,
     };
   }
+}
+
+export async function recoverRecurringManualTodoFollowUp({
+  client,
+  userId,
+  parentTodoId = null,
+  followUpId,
+  sourceTodo,
+  normalizedRecurrence,
+  nextRecurringDueDate,
+  fallbackDate = null,
+  completedAt = null,
+  supportsAtomicRpc = true,
+  supportsExtendedFields = true,
+  onMissingAtomicRpc,
+  onSchemaFallback,
+  isCurrent = () => true,
+}) {
+  const active = () => (typeof isCurrent === 'function' ? Boolean(isCurrent()) : true);
+  if (!active()) {
+    return { ok: false, cancelled: true, missingTable: false };
+  }
+
+  const effectiveParentId = parentTodoId || sourceTodo?._id || null;
+  if (supportsAtomicRpc && isValidRecurringUuid(effectiveParentId)) {
+    const rpcResult = await completeRecurringManualTodoAtomic({
+      client,
+      todoId: effectiveParentId,
+      followUpId,
+      fallbackDate,
+      completedAt: completedAt || sourceTodo?.completedAt || null,
+      isCurrent,
+    });
+    if (rpcResult.cancelled || !active()) {
+      return { ok: false, cancelled: true, missingTable: false };
+    }
+    if (rpcResult.ok) {
+      return {
+        ok: true,
+        updatedTodo: rpcResult.updatedTodo,
+        followUpTodo: rpcResult.followUpTodo,
+        atomic: true,
+      };
+    }
+    if (!rpcResult.missingRpc) {
+      return {
+        ok: false,
+        missingTable: false,
+        error: rpcResult.error,
+      };
+    }
+    onMissingAtomicRpc?.();
+  }
+
+  return await ensureRecurringManualTodoFollowUp({
+    client,
+    userId,
+    followUpId,
+    sourceTodo,
+    normalizedRecurrence,
+    nextRecurringDueDate,
+    supportsExtendedFields,
+    onSchemaFallback,
+    isCurrent,
+  });
 }

@@ -797,6 +797,7 @@ test('failed recurring follow-up is recoverable without duplicates across outage
     }
     if (request.table === 'manual_todos' && request.operation === 'insert') {
       insertAttempts += 1;
+      assert.equal(request.payload.meta?.recurrenceSourceTodoId, todoOneId);
       if (insertMode === 'fail-before-write') {
         return { data: null, error: { message: 'Synthetic outage before insert' } };
       }
@@ -1281,9 +1282,10 @@ test('switching scope to This Project + Other during Undo window still routes co
   }
 });
 
-test('atomic recurring RPC saves parent and follow-up in one call and never falls back on non-missing errors', async () => {
+test('atomic recurring RPC saves parent and follow-up in one call, computes date from locked row, and rejects unlinked collisions', async () => {
   const { window, document } = makeMatrixWindow();
   let failRpc = false;
+  let omitFollowUpLink = false;
 
   const recurringParent = {
     _id: todoOneId,
@@ -1302,7 +1304,7 @@ test('atomic recurring RPC saves parent and follow-up in one call and never fall
     document,
     navigator: { onLine: true },
   });
-  const { deriveRecurringFollowUpId } = await load('src/hooks/projectData/recurringFollowUp.js');
+  const { deriveRecurringFollowUpId, ensureRecurringManualTodoFollowUp } = await load('src/hooks/projectData/recurringFollowUp.js');
   const expectedFollowUpId = deriveRecurringFollowUpId(todoOneId);
 
   const transport = mockTransport((request) => {
@@ -1331,11 +1333,13 @@ test('atomic recurring RPC saves parent and follow-up in one call and never fall
             project_id: projectOneId,
             title: recurringParent.title,
             description: recurringParent.description,
-            due_date: request.payload.p_next_due_date,
+            due_date: '2026-11-08',
             owner_text: recurringParent.owner,
             assignee_user_id: owner,
             status: 'Open',
             recurrence: recurringParent.recurrence,
+            recurrence_source_todo_id: omitFollowUpLink ? null : todoOneId,
+            meta: omitFollowUpLink ? {} : { recurrenceSourceTodoId: todoOneId },
             completed_at: null,
           },
         },
@@ -1366,15 +1370,26 @@ test('atomic recurring RPC saves parent and follow-up in one call and never fall
     assert.equal(result?.atomic, true);
     assert.equal(result?.updatedTodo?.status, 'Done');
     assert.equal(result?.followUpTodo?._id, expectedFollowUpId);
+    assert.equal(result?.followUpTodo?.dueDate, '2026-11-08');
 
     const rpcCalls = transport.calls.filter((c) => c.operation === 'rpc');
     assert.equal(rpcCalls.length, 1);
     assert.equal(rpcCalls[0].payload.p_follow_up_id, expectedFollowUpId);
+    assert.equal(typeof rpcCalls[0].payload.p_fallback_date, 'string');
+    assert.equal('p_next_due_date' in rpcCalls[0].payload, false);
     assert.equal(
       transport.calls.some((c) => c.table === 'manual_todos' && ['update', 'insert'].includes(c.operation)),
       false
     );
     assert.equal(hook.value.todos.filter((t) => t._id === expectedFollowUpId && t.status === 'Open').length, 1);
+
+    omitFollowUpLink = true;
+    let unlinkedRpcResult;
+    await act(async () => {
+      unlinkedRpcResult = await hook.value.updateTodo(todoOneId, 'status', 'Done', recurringParent);
+    });
+    assert.equal(unlinkedRpcResult, null);
+    omitFollowUpLink = false;
 
     failRpc = true;
     const beforeFailureCalls = transport.calls.length;
@@ -1387,6 +1402,43 @@ test('atomic recurring RPC saves parent and follow-up in one call and never fall
       transport.calls.slice(beforeFailureCalls).some((c) => c.table === 'manual_todos'),
       false
     );
+
+    // Pre-migration reconcile must never confirm an unrelated row that merely shares followUpId without a verified link.
+    const unlinkedCollisionRow = {
+      id: expectedFollowUpId,
+      user_id: owner,
+      project_id: projectOneId,
+      title: 'Unrelated pre-existing row',
+      due_date: '2026-12-25',
+      owner_text: 'Owner',
+      assignee_user_id: owner,
+      status: 'Open',
+      recurrence: { type: 'monthly', interval: 1 },
+      recurrence_source_todo_id: null,
+      meta: {},
+      completed_at: null,
+    };
+    const collisionTransport = mockTransport((request) => {
+      if (request.table === 'manual_todos' && request.operation === 'select') {
+        return { data: unlinkedCollisionRow, error: null };
+      }
+      if (request.table === 'manual_todos' && request.operation === 'insert') {
+        return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } };
+      }
+      return { data: null, error: null };
+    });
+    const collisionResult = await ensureRecurringManualTodoFollowUp({
+      client: collisionTransport,
+      userId: owner,
+      followUpId: expectedFollowUpId,
+      sourceTodo: recurringParent,
+      normalizedRecurrence: recurringParent.recurrence,
+      nextRecurringDueDate: '2026-11-08',
+      nowIso: '2026-10-08T12:00:00Z',
+      supportsExtendedFields: true,
+    });
+    assert.equal(collisionResult.ok, false);
+    assert.equal(collisionResult.followUpTodo ?? null, null);
   } finally {
     await hook.close();
   }
@@ -1672,5 +1724,506 @@ test('overlapping full priority reload stays full and Refresh tasks reloads cach
     assert.ok(JSON.stringify(viewRoot.toJSON()).includes('Refreshed checklist'));
   } finally {
     await act(async () => viewRoot.unmount());
+  }
+});
+
+test('saved recurring recovery retries route through complete_recurring_manual_todo_v1 once migration is installed and handle cleared recurrence', async () => {
+  const timerDriver = makeManualTimerDriver();
+  const { window, document } = makeMatrixWindow({ timerDriver });
+  const seedLoader = await sourceModules(mockTransport(() => ({ data: [] })), {
+    window,
+    document,
+    navigator: { onLine: true },
+  });
+  const { deriveRecurringFollowUpId } = await seedLoader('src/hooks/projectData/recurringFollowUp.js');
+  const { createTaskCompletionSession } = await seedLoader('src/utils/taskCompletionSession.js');
+  const expectedFollowUpId = deriveRecurringFollowUpId(todoOneId);
+
+  const preMigrationSession = createTaskCompletionSession({
+    initialUserId: owner,
+    storage: window.localStorage,
+  });
+  preMigrationSession.recordRecurringRecovery({
+    id: expectedFollowUpId,
+    parentTodoId: todoOneId,
+    userId: owner,
+    sourceTodo: {
+      _id: todoOneId,
+      projectId: projectOneId,
+      title: 'Weekly payroll',
+      dueDate: '2026-10-08',
+      recurrence: { type: 'weekly', interval: 1 },
+    },
+    normalizedRecurrence: { type: 'weekly', interval: 1 },
+    nextRecurringDueDate: '2026-10-15',
+    fallbackDate: '2026-10-08',
+    completedAt: '2026-10-08T12:00:00Z',
+    title: 'Weekly payroll',
+  });
+  preMigrationSession.dispose();
+
+  const persistedBeforeReload = JSON.parse(
+    window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`) || '[]'
+  );
+  assert.equal(persistedBeforeReload.length, 1);
+  assert.equal(persistedBeforeReload[0].fallbackDate, '2026-10-08');
+  assert.equal(persistedBeforeReload[0].completedAt, '2026-10-08T12:00:00Z');
+
+  let rpcOutcome = 'non-missing-error';
+  const transport = mockTransport((request) => {
+    if (request.operation === 'rpc' && request.name === 'complete_recurring_manual_todo_v1') {
+      if (rpcOutcome === 'non-missing-error') {
+        return { data: null, error: { code: '42501', message: 'Temporary RLS denial' } };
+      }
+      if (rpcOutcome === 'cleared-recurrence') {
+        return {
+          data: {
+            updated_todo: {
+              id: todoTwoId,
+              user_id: owner,
+              project_id: projectOneId,
+              title: 'Cancelled series',
+              due_date: '2026-10-10',
+              status: 'Done',
+              recurrence: null,
+              completed_at: '2026-10-08T12:00:00Z',
+            },
+            follow_up_todo: null,
+          },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          updated_todo: {
+            id: todoOneId,
+            user_id: owner,
+            project_id: projectOneId,
+            title: 'Weekly payroll',
+            due_date: '2026-10-20',
+            status: 'Done',
+            recurrence: { type: 'weekly', interval: 2 },
+            completed_at: '2026-10-08T12:00:00Z',
+          },
+          follow_up_todo: {
+            id: request.payload.p_follow_up_id,
+            user_id: owner,
+            project_id: projectOneId,
+            title: 'Weekly payroll',
+            due_date: '2026-11-03',
+            status: 'Open',
+            recurrence: { type: 'weekly', interval: 2 },
+            recurrence_source_todo_id: todoOneId,
+            meta: { recurrenceSourceTodoId: todoOneId },
+            completed_at: null,
+          },
+        },
+        error: null,
+      };
+    }
+    if (request.table === 'manual_todos' && request.operation === 'select') {
+      return {
+        data: [
+          {
+            id: todoOneId,
+            user_id: owner,
+            project_id: projectOneId,
+            title: 'Weekly payroll',
+            due_date: '2026-10-08',
+            status: 'Done',
+            recurrence: { type: 'weekly', interval: 1 },
+            completed_at: '2026-10-08T12:00:00Z',
+          },
+          {
+            id: todoTwoId,
+            user_id: owner,
+            project_id: projectOneId,
+            title: 'Cancelled series',
+            due_date: '2026-10-10',
+            status: 'Done',
+            recurrence: { type: 'weekly', interval: 1 },
+            completed_at: '2026-10-08T12:00:00Z',
+          },
+        ],
+        count: 2,
+        error: null,
+      };
+    }
+    return { data: [], count: 0, error: null };
+  });
+
+  const postMigrationLoader = await sourceModules(transport, {
+    window,
+    document,
+    navigator: { onLine: true },
+  });
+  const postSessionMod = await postMigrationLoader('src/utils/taskCompletionSession.js');
+  const TaskCompletionSessionOverlay = (await postMigrationLoader('src/components/TaskCompletionSessionOverlay.jsx')).default;
+  const { useProjectTodos } = await postMigrationLoader('src/hooks/projectData/useProjectTodos.js');
+
+  const reloadedSession = postSessionMod.createTaskCompletionSession({
+    initialUserId: owner,
+    storage: window.localStorage,
+    setTimer: (fn, delay) => timerDriver.setTimeout(fn, delay),
+    clearTimer: (id) => timerDriver.clearTimeout(id),
+  });
+
+  let overlayRoot = null;
+  let hook = null;
+  try {
+    await act(async () => {
+      overlayRoot = create(React.createElement(TaskCompletionSessionOverlay, {
+        session: reloadedSession,
+        userId: owner,
+      }));
+    });
+
+    const retryBtn = overlayRoot.root.findAllByType('button')
+      .find((b) => b.children.includes('Retry next occurrence'));
+    assert.ok(retryBtn);
+
+    // Non-missing RPC failure must not fall back to direct manual_todos writes and keeps recovery persisted.
+    await act(async () => {
+      await retryBtn.props.onClick();
+    });
+    const firstRpc = transport.calls.filter((c) => c.operation === 'rpc');
+    assert.equal(firstRpc.length, 1);
+    assert.equal(firstRpc[0].name, 'complete_recurring_manual_todo_v1');
+    assert.equal(firstRpc[0].payload.p_todo_id, todoOneId);
+    assert.equal(firstRpc[0].payload.p_fallback_date, '2026-10-08');
+    assert.equal(firstRpc[0].payload.p_completed_at, '2026-10-08T12:00:00Z');
+    assert.equal(
+      transport.calls.some((c) => c.table === 'manual_todos' && ['update', 'insert', 'select'].includes(c.operation)),
+      false
+    );
+    assert.ok(window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`));
+
+    // Succeeds through RPC and clears persisted recovery cleanly.
+    rpcOutcome = 'ok';
+    await act(async () => {
+      await overlayRoot.root.findAllByType('button')
+        .find((b) => b.children.includes('Retry next occurrence'))
+        .props.onClick();
+    });
+    assert.equal(transport.calls.filter((c) => c.operation === 'rpc').length, 2);
+    assert.equal(
+      transport.calls.some((c) => c.table === 'manual_todos' && ['update', 'insert'].includes(c.operation)),
+      false
+    );
+    assert.equal(window.localStorage.getItem(`pmworkspace:recurring-recovery:v1:${owner}`), null);
+    assert.equal(
+      overlayRoot.root.findAllByType('button').some((b) => b.children.includes('Retry next occurrence')),
+      false
+    );
+
+    await act(async () => {
+      overlayRoot.unmount();
+    });
+    overlayRoot = null;
+
+    // Also verify useProjectTodos.retryRecurringFollowUp updates parent + followUp from server and accepts follow_up_todo: null when recurrence was cleared remotely.
+    hook = await mountHook(useProjectTodos, {
+      userId: owner,
+      projectId: projectOneId,
+      isOnline: true,
+      completionSession: reloadedSession,
+      now: () => '2026-10-08T12:00:00Z',
+      setLastSaved() {},
+      setOfflinePendingSync() {},
+      setUsingOfflineSnapshot() {},
+    });
+    await act(async () => {
+      await hook.value.loadTodos();
+      await flushMicrotasks();
+    });
+
+    let hookRetryRes;
+    await act(async () => {
+      hookRetryRes = await hook.value.retryRecurringFollowUp({
+        id: expectedFollowUpId,
+        parentTodoId: todoOneId,
+        userId: owner,
+        sourceTodo: { _id: todoOneId, projectId: projectOneId, title: 'Weekly payroll' },
+        normalizedRecurrence: { type: 'weekly', interval: 1 },
+        nextRecurringDueDate: '2026-10-15',
+        fallbackDate: '2026-10-08',
+        completedAt: '2026-10-08T12:00:00Z',
+      });
+    });
+    assert.equal(hookRetryRes.ok, true);
+    assert.equal(hookRetryRes.updatedTodo?.dueDate, '2026-10-20');
+    assert.equal(hookRetryRes.followUpTodo?.dueDate, '2026-11-03');
+    assert.equal(hook.value.todos.find((t) => t._id === expectedFollowUpId)?.dueDate, '2026-11-03');
+
+    rpcOutcome = 'cleared-recurrence';
+    let clearedRes;
+    await act(async () => {
+      clearedRes = await hook.value.retryRecurringFollowUp({
+        id: deriveRecurringFollowUpId(todoTwoId),
+        parentTodoId: todoTwoId,
+        userId: owner,
+        sourceTodo: { _id: todoTwoId, projectId: projectOneId, title: 'Cancelled series' },
+        normalizedRecurrence: { type: 'weekly', interval: 1 },
+        nextRecurringDueDate: '2026-10-17',
+        fallbackDate: '2026-10-10',
+        completedAt: '2026-10-08T12:00:00Z',
+      });
+    });
+    assert.equal(clearedRes.ok, true);
+    assert.equal(clearedRes.followUpTodo, null);
+    assert.equal(clearedRes.updatedTodo?.recurrence, null);
+    assert.equal(hook.value.todos.find((t) => t._id === todoTwoId)?.recurrence, null);
+    assert.equal(hook.value.todos.filter((t) => t.status === 'Open').length, 1);
+  } finally {
+    if (hook) await hook.close();
+    if (overlayRoot) await act(async () => overlayRoot.unmount());
+    reloadedSession.dispose();
+  }
+});
+
+test('offline recurring completion and edits route through complete_recurring_manual_todo_v1 on reconnect without bypassing recurrence link', async () => {
+  const timerDriver = makeManualTimerDriver();
+  const { window, document } = makeMatrixWindow({ timerDriver });
+
+  const transport = mockTransport((request) => {
+    if (request.operation === 'rpc' && request.name === 'complete_recurring_manual_todo_v1') {
+      const parentId = request.payload.p_todo_id;
+      const followUpId = request.payload.p_follow_up_id;
+      return {
+        data: {
+          updated_todo: {
+            id: parentId,
+            user_id: owner,
+            project_id: projectOneId,
+            title: 'Monthly sync check',
+            due_date: '2026-10-20',
+            owner_text: 'Owner',
+            assignee_user_id: owner,
+            status: 'Done',
+            recurrence: { type: 'monthly', interval: 1 },
+            completed_at: request.payload.p_completed_at || '2026-10-08T12:00:00Z',
+          },
+          follow_up_todo: {
+            id: followUpId,
+            user_id: owner,
+            project_id: projectOneId,
+            title: 'Monthly sync check',
+            due_date: '2026-11-20',
+            owner_text: 'Owner',
+            assignee_user_id: owner,
+            status: 'Open',
+            recurrence: { type: 'monthly', interval: 1 },
+            recurrence_source_todo_id: parentId,
+            meta: { recurrenceSourceTodoId: parentId },
+            completed_at: null,
+          },
+        },
+        error: null,
+      };
+    }
+    if (request.table === 'manual_todos' && request.operation === 'select') {
+      return {
+        data: [
+          {
+            id: todoOneId,
+            user_id: owner,
+            project_id: projectOneId,
+            title: 'Monthly sync check',
+            due_date: '2026-10-08',
+            owner_text: 'Owner',
+            assignee_user_id: owner,
+            status: 'Open',
+            recurrence: { type: 'monthly', interval: 1 },
+            completed_at: null,
+          },
+        ],
+        count: 1,
+        error: null,
+      };
+    }
+    if (request.table === 'manual_todos' && request.operation === 'insert') {
+      return {
+        data: {
+          ...request.payload,
+          id: request.payload.id || todoThreeId,
+          created_at: '2026-10-08T12:00:00Z',
+          updated_at: '2026-10-08T12:00:00Z',
+        },
+        error: null,
+      };
+    }
+    if (request.table === 'manual_todos' && request.operation === 'update') {
+      const targetId = request.filters.find((f) => f.args[0] === 'id')?.args?.[1];
+      return {
+        data: {
+          id: targetId,
+          user_id: owner,
+          project_id: projectOneId,
+          title: request.payload.title || 'Monthly sync check',
+          due_date: '2026-11-20',
+          owner_text: 'Owner',
+          assignee_user_id: owner,
+          status: 'Open',
+          recurrence: { type: 'monthly', interval: 1 },
+          recurrence_source_todo_id: todoOneId,
+          meta: { recurrenceSourceTodoId: todoOneId },
+          completed_at: null,
+        },
+        error: null,
+      };
+    }
+    return { data: [], count: 0, error: null };
+  });
+
+  const loader = await sourceModules(transport, {
+    window,
+    document,
+    navigator: { onLine: true },
+  });
+  const offlineQueueMod = await loader('src/utils/offlineQueue.js');
+  const { deriveRecurringFollowUpId, isValidRecurringUuid } = await loader('src/hooks/projectData/recurringFollowUp.js');
+  const { useProjectTodos } = await loader('src/hooks/projectData/useProjectTodos.js');
+
+  // Verify queue state transitions for follow-up deletion vs offline-created parent deletion (including chained follow-ups).
+  let q = [];
+  q = offlineQueueMod.enqueueCreate(q, { localId: 'offline-todo-parent-1', title: 'Draft' });
+  q = offlineQueueMod.enqueueRecurringComplete(q, {
+    targetId: 'offline-todo-parent-1',
+    followUpLocalId: 'offline-todo-follow-1',
+    patch: { status: 'Done' },
+    completedAt: '2026-10-08T12:00:00Z',
+    fallbackDate: '2026-10-08',
+    sourceTodo: { _id: 'offline-todo-parent-1', title: 'Draft' },
+    normalizedRecurrence: { type: 'weekly', interval: 1 },
+    nextRecurringDueDate: '2026-10-15',
+  });
+  q = offlineQueueMod.enqueueUpdate(q, 'offline-todo-follow-1', { title: 'Renamed follow-up' });
+  q = offlineQueueMod.enqueueRecurringComplete(q, {
+    targetId: 'offline-todo-follow-1',
+    followUpLocalId: 'offline-todo-follow-2',
+    patch: { status: 'Done' },
+    completedAt: '2026-10-08T12:05:00Z',
+    fallbackDate: '2026-10-15',
+    sourceTodo: { _id: 'offline-todo-follow-1', title: 'Renamed follow-up' },
+    normalizedRecurrence: { type: 'weekly', interval: 1 },
+    nextRecurringDueDate: '2026-10-22',
+  });
+
+  const expectedServerFollowUpId = deriveRecurringFollowUpId(todoOneId);
+  const afterFollowUpDelete = offlineQueueMod.enqueueDelete(q, 'offline-todo-follow-1');
+  assert.equal(afterFollowUpDelete.some((op) => op.kind === 'update' && op.targetId === 'offline-todo-follow-1'), false);
+  assert.equal(afterFollowUpDelete.some((op) => op.kind === 'complete-recurring' && op.targetId === 'offline-todo-follow-1'), false);
+  assert.equal(afterFollowUpDelete.some((op) => op.targetId === 'offline-todo-follow-2'), false);
+  assert.equal(afterFollowUpDelete.some((op) => op.kind === 'complete-recurring' && op.targetId === 'offline-todo-parent-1'), true);
+  assert.equal(afterFollowUpDelete.some((op) => op.kind === 'delete' && op.targetId === 'offline-todo-follow-1'), true);
+  const remappedDelete = offlineQueueMod.replaceQueuedTargetId(afterFollowUpDelete, 'offline-todo-follow-1', expectedServerFollowUpId);
+  assert.equal(remappedDelete.some((op) => op.kind === 'delete' && op.targetId === expectedServerFollowUpId), true);
+  const afterParentDelete = offlineQueueMod.enqueueDelete(q, 'offline-todo-parent-1');
+  assert.equal(afterParentDelete.length, 0);
+  const baseProps = {
+    userId: owner,
+    projectId: projectOneId,
+    isOnline: true,
+    now: () => '2026-10-08T12:00:00Z',
+    setLastSaved() {},
+    setOfflinePendingSync() {},
+    setUsingOfflineSnapshot() {},
+  };
+
+  const hook = await mountHook(useProjectTodos, baseProps);
+  try {
+    await act(async () => {
+      await hook.value.loadTodos();
+      await flushMicrotasks();
+    });
+    assert.equal(hook.value.todos.length, 1);
+
+    // Go offline, complete the recurring task, and immediately edit its optimistic follow-up title.
+    await hook.update({ ...baseProps, isOnline: false });
+    const onlineCallsBeforeOfflineWork = transport.calls.length;
+
+    let offlineCompleteResult;
+    const sourceTodo = hook.value.todos[0];
+    await act(async () => {
+      offlineCompleteResult = await hook.value.updateTodo(todoOneId, 'status', 'Done', sourceTodo);
+    });
+    const localFollowUp = offlineCompleteResult?.followUpTodo;
+    assert.ok(localFollowUp?._id);
+
+    await act(async () => {
+      await hook.value.updateTodo(localFollowUp._id, 'title', 'Edited follow-up title', localFollowUp);
+    });
+
+    assert.equal(transport.calls.length, onlineCallsBeforeOfflineWork);
+    assert.equal(hook.value.todos.find((t) => t._id === todoOneId)?.status, 'Done');
+    assert.equal(hook.value.todos.find((t) => t._id === localFollowUp._id)?.title, 'Edited follow-up title');
+
+    // Reconnect and verify sync replays through complete_recurring_manual_todo_v1 before patching the server follow-up UUID.
+    await hook.update({ ...baseProps, isOnline: true });
+    await act(async () => {
+      await flushMicrotasks(24);
+    });
+
+    const rpcCalls = transport.calls.filter((c) => c.operation === 'rpc');
+    assert.equal(rpcCalls.length, 1);
+    assert.equal(rpcCalls[0].name, 'complete_recurring_manual_todo_v1');
+    assert.equal(rpcCalls[0].payload.p_todo_id, todoOneId);
+    assert.equal(isValidRecurringUuid(rpcCalls[0].payload.p_follow_up_id), true);
+    assert.equal(rpcCalls[0].payload.p_follow_up_id, expectedServerFollowUpId);
+
+    // Must not issue any direct raw manual_todos insert/update for the parent or follow-up creation itself.
+    assert.equal(transport.calls.some((c) => c.table === 'manual_todos' && c.operation === 'insert'), false);
+    const updateCalls = transport.calls.filter((c) => c.table === 'manual_todos' && c.operation === 'update');
+    assert.equal(updateCalls.length, 1);
+    assert.equal(updateCalls[0].filters.find((f) => f.args[0] === 'id')?.args?.[1], expectedServerFollowUpId);
+    assert.equal(updateCalls[0].payload.title, 'Edited follow-up title');
+
+    assert.equal(hook.value.todoQueue.length, 0);
+    const syncedFollowUp = hook.value.todos.find((t) => t._id === expectedServerFollowUpId);
+    assert.ok(syncedFollowUp);
+    assert.equal(syncedFollowUp.dueDate, '2026-11-20');
+    assert.equal(syncedFollowUp.title, 'Edited follow-up title');
+
+    // Case 2: offline-created recurring parent completed offline promotes create -> server UUID before atomic RPC.
+    const callsBeforeOfflineCreate = transport.calls.length;
+    await hook.update({ ...baseProps, isOnline: false });
+    let offlineCreatedParent;
+    await act(async () => {
+      offlineCreatedParent = await hook.value.addTodo({
+        title: 'Offline recurring item',
+        dueDate: '2026-10-08',
+        recurrence: { type: 'weekly', interval: 1 },
+      });
+    });
+    assert.ok(offlineCreatedParent?._id);
+
+    let offlineCreatedCompleteResult;
+    await act(async () => {
+      offlineCreatedCompleteResult = await hook.value.updateTodo(
+        offlineCreatedParent._id,
+        'status',
+        'Done',
+        offlineCreatedParent
+      );
+    });
+    assert.ok(offlineCreatedCompleteResult?.followUpTodo?._id);
+
+    await hook.update({ ...baseProps, isOnline: true });
+    await act(async () => {
+      await flushMicrotasks(24);
+    });
+
+    const case2Calls = transport.calls.slice(callsBeforeOfflineCreate);
+    const case2Inserts = case2Calls.filter((c) => c.table === 'manual_todos' && c.operation === 'insert');
+    const case2Rpcs = case2Calls.filter((c) => c.operation === 'rpc');
+    assert.equal(case2Inserts.length, 1);
+    assert.equal(case2Inserts[0].payload.title, 'Offline recurring item');
+    assert.equal(case2Rpcs.length, 1);
+    assert.equal(case2Rpcs[0].name, 'complete_recurring_manual_todo_v1');
+    assert.equal(case2Rpcs[0].payload.p_todo_id, todoThreeId);
+    assert.equal(case2Rpcs[0].payload.p_follow_up_id, deriveRecurringFollowUpId(todoThreeId));
+    assert.equal(hook.value.todoQueue.length, 0);
+  } finally {
+    await hook.close();
   }
 });

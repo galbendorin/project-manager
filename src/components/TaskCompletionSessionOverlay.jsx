@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { ensureRecurringManualTodoFollowUp } from '../hooks/projectData/recurringFollowUp';
+import React, { useEffect, useRef, useState } from 'react';
+import { recoverRecurringManualTodoFollowUp } from '../hooks/projectData/recurringFollowUp';
 import { supabase } from '../lib/supabase';
+import { getCurrentDate } from '../utils/helpers';
 
 export default function TaskCompletionSessionOverlay({ session, userId }) {
+  const supportsAtomicRpcRef = useRef(true);
+  const supportsExtendedFieldsRef = useRef(true);
   const [snapshot, setSnapshot] = useState(() => (
     session ? session.getSnapshot() : null
   ));
@@ -46,13 +49,24 @@ export default function TaskCompletionSessionOverlay({ session, userId }) {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         result = { ok: false, error: new Error('Reconnect to save the next recurring task.') };
       } else {
-        result = await ensureRecurringManualTodoFollowUp({
+        result = await recoverRecurringManualTodoFollowUp({
           client: supabase,
           userId,
+          parentTodoId: record.parentTodoId || record.sourceTodo?._id || null,
           followUpId: record.id,
           sourceTodo: record.sourceTodo,
           normalizedRecurrence: record.normalizedRecurrence,
           nextRecurringDueDate: record.nextRecurringDueDate,
+          fallbackDate: record.fallbackDate || getCurrentDate(),
+          completedAt: record.completedAt || record.sourceTodo?.completedAt || null,
+          supportsAtomicRpc: supportsAtomicRpcRef.current,
+          supportsExtendedFields: supportsExtendedFieldsRef.current,
+          onMissingAtomicRpc: () => {
+            supportsAtomicRpcRef.current = false;
+          },
+          onSchemaFallback: () => {
+            supportsExtendedFieldsRef.current = false;
+          },
           isCurrent: () => scopeToken.isCurrent(),
         });
       }
@@ -73,10 +87,13 @@ export default function TaskCompletionSessionOverlay({ session, userId }) {
       session.clearRecurringFollowUpId(record.parentTodoId);
       session.clearRecurringRecovery(record.id);
       session.clearAlert();
-      if (result.followUpTodo) {
-        session.notifyManualResult({ followUpTodo: result.followUpTodo }, scopeToken);
+      if (result.updatedTodo || result.followUpTodo) {
+        session.notifyManualResult({
+          updatedTodo: result.updatedTodo,
+          followUpTodo: result.followUpTodo,
+        }, scopeToken);
       }
-      return { ok: true, followUpTodo: result.followUpTodo };
+      return { ok: true, updatedTodo: result.updatedTodo, followUpTodo: result.followUpTodo };
     } catch (error) {
       if (scopeToken.isCurrent()) {
         session.setRecurringRecoveryRetrying(record.id, false, scopeToken);

@@ -44,6 +44,7 @@ import {
   deriveRecurringFollowUpId,
   ensureRecurringManualTodoFollowUp,
   isValidRecurringUuid,
+  recoverRecurringManualTodoFollowUp,
 } from '../hooks/projectData/recurringFollowUp';
 import { getNextRecurringDueDate } from '../utils/helpers';
 import {
@@ -775,13 +776,20 @@ const TodoView = ({
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
           result = { ok: false, error: new Error('Reconnect to save the next recurring task.') };
         } else {
-          result = await ensureRecurringManualTodoFollowUp({
+          result = await recoverRecurringManualTodoFollowUp({
             client: supabase,
             userId: scopeToken.userId,
+            parentTodoId: pendingRecord.parentTodoId || pendingRecord.sourceTodo?._id || null,
             followUpId: pendingRecord.id,
             sourceTodo: pendingRecord.sourceTodo,
             normalizedRecurrence: pendingRecord.normalizedRecurrence,
             nextRecurringDueDate: pendingRecord.nextRecurringDueDate,
+            fallbackDate: pendingRecord.fallbackDate || getCurrentDate(),
+            completedAt: pendingRecord.completedAt || pendingRecord.sourceTodo?.completedAt || null,
+            supportsAtomicRpc: supportsAtomicRecurringRpcRef.current,
+            onMissingAtomicRpc: () => {
+              supportsAtomicRecurringRpcRef.current = false;
+            },
             isCurrent: () => scopeToken.isCurrent(),
           });
         }
@@ -804,14 +812,24 @@ const TodoView = ({
       activeSession.clearRecurringRecovery(pendingRecord.id);
       activeSession.clearAlert();
 
-      if (mountedRef.current && result.followUpTodo) {
-        applyManualMutationResultRef.current({ followUpTodo: result.followUpTodo });
-        setPlanNotice(`Saved next occurrence for “${result.followUpTodo.title || 'Untitled'}”.`);
-      } else if (result.followUpTodo) {
-        activeSession.notifyManualResult({ followUpTodo: result.followUpTodo }, scopeToken);
+      if (mountedRef.current && (result.updatedTodo || result.followUpTodo)) {
+        applyManualMutationResultRef.current({
+          updatedTodo: result.updatedTodo,
+          followUpTodo: result.followUpTodo,
+        });
+        setPlanNotice(
+          result.followUpTodo
+            ? `Saved next occurrence for “${result.followUpTodo.title || 'Untitled'}”.`
+            : `Confirmed completion for “${result.updatedTodo?.title || pendingRecord.title || 'Untitled'}”.`
+        );
+      } else if (result.updatedTodo || result.followUpTodo) {
+        activeSession.notifyManualResult({
+          updatedTodo: result.updatedTodo,
+          followUpTodo: result.followUpTodo,
+        }, scopeToken);
       }
 
-      return { ok: true, followUpTodo: result.followUpTodo };
+      return { ok: true, updatedTodo: result.updatedTodo, followUpTodo: result.followUpTodo };
     } catch (error) {
       if (scopeToken.isCurrent()) {
         activeSession.setRecurringRecoveryRetrying(pendingRecord.id, false, scopeToken);
@@ -939,9 +957,10 @@ const TodoView = ({
     }
 
     const nowIso = new Date().toISOString();
+    const fallbackDate = getCurrentDate();
     const normalizedRecurrence = normalizeTodoRecurrence(sourceTodo.recurrence);
     const nextRecurringDueDate = normalizedRecurrence
-      ? getNextRecurringDueDate(sourceTodo.dueDate, normalizedRecurrence, getCurrentDate())
+      ? getNextRecurringDueDate(sourceTodo.dueDate, normalizedRecurrence, fallbackDate)
       : '';
     const effectiveFollowUpId = normalizedRecurrence
       ? (isValidRecurringUuid(followUpId) ? followUpId : deriveRecurringFollowUpId(sourceTodo._id))
@@ -952,7 +971,7 @@ const TodoView = ({
         client: supabase,
         todoId: sourceTodo._id,
         followUpId: effectiveFollowUpId,
-        nextRecurringDueDate,
+        fallbackDate,
         completedAt: sourceTodo.completedAt || nowIso,
         isCurrent: () => sessionScope.isCurrent(),
       });
@@ -1032,6 +1051,8 @@ const TodoView = ({
           sourceTodo: updatedTodo,
           normalizedRecurrence,
           nextRecurringDueDate,
+          fallbackDate,
+          completedAt: updatedTodo.completedAt || nowIso,
           title: updatedTodo.title || 'Untitled',
           dueDate: nextRecurringDueDate || '',
         };
