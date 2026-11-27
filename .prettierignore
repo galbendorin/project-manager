@@ -1,0 +1,9 @@
+dist/
+node_modules/
+coverage/
+tmp/
+backups/
+backup-pack/
+package-lock.json
+public/
+scripts/sql/
