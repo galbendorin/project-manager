@@ -42,6 +42,8 @@ Run `npm run smoke:local` before pushing live when `.env.smoke.local` or `SMOKE_
 
 For phone-sensitive changes, also verify at `390px` and `1280px` viewports and follow [docs/mobile-regression-checklist.md](mobile-regression-checklist.md).
 
+For database schema, RLS, or RPC changes, place new timestamped migrations in `supabase/migrations/` (see [supabase/README.md](../supabase/README.md)) rather than modifying historical scripts in `scripts/sql/`.
+
 ### Release flow
 
 1. Create a `codex/<topic>` branch from `origin/main`.
