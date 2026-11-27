@@ -1,208 +1,81 @@
-# Project Manager Pro
+# PM Workspace
 
-A professional project management application with Gantt charts, RAID logs, and real-time collaboration features.
+Project management and household workspace built with **Vite**, **React 18**, **Tailwind CSS**, **Supabase**, and **Vercel** serverless functions, with offline-capable PWA support.
 
-## 🚀 Features
+## Capabilities
 
-- **Gantt Chart** - Visual project timeline with dependencies
-- **Task Management** - Create, edit, and track tasks with progress
-- **RAID Logs** - Risk, Issue, Action, and Decision tracking
-- **Cost Register** - Budget and expense tracking
-- **Change Control** - Manage project changes
-- **Communication Plan** - Stakeholder management
-- **Excel Export** - Export all data to spreadsheets
-- **External View** - Share filtered views with stakeholders
+### Core Project Workspace
+- **Projects & Schedule** — Project selector, Gantt timeline, dependencies (`FS`, `SS`, `FF`, `SF`), and Excel import/export.
+- **Registers & Governance** — RAID logs (Risks, Issues, Actions, Decisions), Tracker, Cost/Financials, Change Control, Stakeholders, RACI, External View, and Status Reports.
+- **Tasks & Planning** — Personal and project tasks with Eisenhower Matrix, Kanban board, Calendar, checklists, and recurring follow-ups.
+- **Timesheets (`/track`)** — Weekly project-linked time tracking with offline queueing.
+- **Billing & AI** — Stripe Checkout / Customer Portal (`/api/create-checkout-session`, `/api/customer-portal`, `/api/stripe-webhook`) and AI report/task assistance (`/api/ai-generate`).
 
-## 📋 Prerequisites
+### Account-Gated Tools
+Gated per account (`household_tools_enabled`, finance access, or account allowlist):
+- **Household Finance (`/finance`)**, **Meal Planner (`/meals`)**, **Shopping List (`/shopping`)**, **Baby Care (`/baby`)**, **Habits (`/habits`)**, **Weight (`/weight`)**, and **ITIL Quiz (`/itil-quiz`)**.
 
-Before you begin, you'll need to install:
+## Prerequisites
+- **Node.js** 20+ and **npm**
+- **Git**
 
-1. **Node.js** (v18 or higher)
-   - Download from: https://nodejs.org/
-   - Choose the LTS (Long Term Support) version
-   - This includes npm (Node Package Manager)
+## Local Setup
 
-2. **Git**
-   - Download from: https://git-scm.com/downloads
-   - Follow the installation wizard with default settings
-
-## 🛠️ Installation
-
-### Step 1: Extract the Project
-
-1. Download and extract the `project-manager.zip` file
-2. Open Terminal (Applications → Utilities → Terminal)
-3. Navigate to the project folder:
+1. Install dependencies:
    ```bash
-   cd ~/Downloads/project-manager
+   npm install
    ```
-
-### Step 2: Install Dependencies
-
-Run this command to install all required packages:
-
-```bash
-npm install
-```
-
-This will take 2-3 minutes and download all necessary libraries.
-
-### Step 3: Start Development Server
-
-```bash
-npm run dev
-```
-
-Your app will open at: **http://localhost:3000**
-
-## 🌐 Deploying to Vercel
-
-### First Time Setup
-
-1. **Create a Vercel Account**
-   - Go to https://vercel.com
-   - Click "Sign Up" and choose "Continue with GitHub"
-
-2. **Install Vercel CLI** (Optional, for command line deployment)
+2. Configure environment variables:
    ```bash
-   npm install -g vercel
+   cp .env.example .env.local
    ```
-
-3. **Deploy from GitHub** (Recommended Method)
-   
-   a. Push your code to GitHub:
+   Fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`. Never expose `SUPABASE_SERVICE_ROLE_KEY` or other secrets in `VITE_*` variables.
+3. Start the Vite dev server (opens at **http://localhost:3002**):
    ```bash
-   # Initialize git (first time only)
-   git init
-   git add .
-   git commit -m "Initial commit"
-   
-   # Create a new repository on GitHub.com
-   # Then link it and push:
-   git remote add origin https://github.com/YOUR_USERNAME/project-manager.git
-   git branch -M main
-   git push -u origin main
+   npm run dev
    ```
-   
-   b. Import to Vercel:
-   - Log into Vercel dashboard
-   - Click "Add New Project"
-   - Import your GitHub repository
-   - Click "Deploy"
-   
-   That's it! Vercel will automatically build and deploy your app.
+   If testing `/api/*` serverless routes locally, also run `vercel dev --listen 3001` (matching the `/api` proxy in `vite.config.js`).
 
-4. **Deploy via CLI** (Alternative Method)
-   ```bash
-   vercel
-   ```
-   Follow the prompts to deploy.
+## Common Scripts
 
-### Future Updates
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start Vite dev server on port `3002` |
+| `npm run build` | Build production bundle into `dist/` and inject PWA precache manifest |
+| `npm run preview` | Preview the production build locally |
+| `npm run check:react-hooks` | Verify React hook import rules across `src/` |
+| `npm run lint` | Run ESLint across `src`, `api`, `scripts`, and config files |
+| `npm test` | Run unit tests (`./src/**/*.test.js`) |
+| `npm run test:ci` | Run hook checks, ESLint, and unit tests |
+| `TZ=Europe/London node --experimental-vm-modules --test scripts/regressions/*.test.mjs` | Run React regression suites |
+| `npm run release:preflight -- --skip-smoke` | Run hooks, lint, unit tests, regressions, and production build |
+| `npm run smoke:shopping` | Run headless Playwright Shopping smoke test |
+| `npm run smoke:local` | Run authenticated browser smoke suite (`.env.smoke.local`) |
+| `npm run backup:projects` / `backup:list` / `backup:restore` | Legacy project backup scripts (see `docs/household-backup-restore.md` for Q12 rehearsal) |
 
-After your initial deployment, any time you push to GitHub, Vercel automatically redeploys:
+## Repository Layout
 
-```bash
-git add .
-git commit -m "Your update message"
-git push
-```
-
-## 📁 Project Structure
-
-```
-project-manager/
+```text
+├── api/                    # Vercel serverless endpoints (auth, billing, AI, push, sharing)
+├── docs/                   # Verification notes, checklists, and workflow docs
+├── public/                 # Static assets, PWA manifest, and service worker (sw.js)
+├── scripts/
+│   ├── investigations/     # PGlite / PostgreSQL SQL tests and browser test fixtures
+│   ├── regressions/        # React VM-module regression suites
+│   └── sql/                # Ordered SQL migrations and verification scripts
 ├── src/
-│   ├── components/       # React components
-│   │   ├── Header.jsx
-│   │   ├── Navigation.jsx
-│   │   ├── ScheduleView.jsx
-│   │   ├── ScheduleGrid.jsx
-│   │   ├── GanttChart.jsx
-│   │   ├── RegisterView.jsx
-│   │   └── TaskModal.jsx
-│   ├── hooks/           # Custom React hooks
-│   │   └── useProjectData.js
-│   ├── utils/           # Helper functions
-│   │   ├── constants.js
-│   │   └── helpers.js
-│   ├── styles/          # CSS files
-│   │   └── index.css
-│   ├── App.jsx          # Main app component
-│   └── main.jsx         # Entry point
-├── public/              # Static assets
-├── index.html           # HTML template
-├── package.json         # Dependencies
-└── vite.config.js       # Build configuration
+│   ├── components/         # React views and mobile layouts
+│   ├── contexts/           # Auth, Plan, and TaskCompletionSession contexts
+│   ├── hooks/              # Feature hooks and projectData persistence/sync
+│   ├── lib/                # Supabase client setup
+│   ├── styles/             # Tailwind + shared CSS
+│   └── utils/              # Pure domain logic, offline stores, and unit tests
+├── package.json
+├── vercel.json             # Security headers (CSP, HSTS) and SPA rewrites
+└── vite.config.js
 ```
 
-## 💡 Usage Tips
-
-### Creating Tasks
-1. Click "New Task" in the header
-2. Fill in task details (name, dates, duration)
-3. Set dependencies using Predecessor ID
-4. Click "Save Changes"
-
-### Managing Dependencies
-- **FS (Finish-to-Start)**: Task B starts when Task A finishes
-- **SS (Start-to-Start)**: Task B starts when Task A starts
-- **FF (Finish-to-Finish)**: Task B finishes when Task A finishes
-- **SF (Start-to-Finish)**: Task B finishes when Task A starts
-
-### Track Actions
-- Check the "Track" box to automatically create an action item
-- Updates to the task will sync with the action log
-
-### External View
-- Toggle "External View" to share filtered data with stakeholders
-- Only items marked as "public" (eye icon) will be visible
-
-## 🔧 Development Commands
-
-```bash
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
-```
-
-## 🐛 Troubleshooting
-
-### "Command not found: npm"
-- Node.js is not installed. Install from https://nodejs.org/
-
-### Port 3000 already in use
-- Change the port in `vite.config.js`
-- Or kill the process using port 3000
-
-### Build errors
-- Delete `node_modules` folder and `package-lock.json`
-- Run `npm install` again
-
-## 🚧 Roadmap (Next Features)
-
-- [ ] User authentication (Supabase)
-- [ ] Real-time collaboration
-- [ ] File attachments
-- [ ] Comments and mentions
-- [ ] Email notifications
-- [ ] Custom templates
-- [ ] Advanced reporting
-- [ ] Mobile app
-
-## 📝 License
-
-This project is for personal and commercial use.
-
-## 🤝 Support
-
-For issues or questions, create an issue on GitHub or contact support.
-
----
-
-Built with ❤️ using React + Vite + Tailwind CSS
+## Deployment & Release Hygiene
+- Production deploys automatically from `main` on Vercel (`project-manager-app`).
+- Develop changes on dedicated `codex/*` branches, verify locally and via Vercel preview + GitHub Actions CI before merging (see [docs/repo-workflow.md](docs/repo-workflow.md)).
+- Apply required SQL migrations from `scripts/sql/` in Supabase before deploying server/client code that depends on new columns, RPCs, or RLS policies.
