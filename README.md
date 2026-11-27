@@ -44,11 +44,13 @@ Gated per account (`household_tools_enabled`, finance access, or account allowli
 | `npm run build` | Build production bundle into `dist/` and inject PWA precache manifest |
 | `npm run preview` | Preview the production build locally |
 | `npm run check:react-hooks` | Verify React hook import rules across `src/` |
+| `npm run check:sql-migrations` | Validate tracked `supabase/migrations/` filenames and function `REVOKE` safety |
 | `npm run lint` | Run ESLint across `src`, `api`, `scripts`, and config files |
+| `npm run typecheck` | Run opt-in TypeScript checks (`tsc -p jsconfig.json --noEmit`) |
 | `npm test` | Run unit tests (`./src/**/*.test.js`) |
-| `npm run test:ci` | Run hook checks, ESLint, and unit tests |
+| `npm run test:ci` | Run hook checks, SQL migration guard, ESLint, typecheck, and unit tests |
 | `TZ=Europe/London node --experimental-vm-modules --test scripts/regressions/*.test.mjs` | Run React regression suites |
-| `npm run release:preflight -- --skip-smoke` | Run hooks, lint, unit tests, regressions, and production build |
+| `npm run release:preflight -- --skip-smoke` | Run hooks, SQL migration guard, lint, typecheck, unit tests, regressions, and production build |
 | `npm run smoke:shopping` | Run headless Playwright Shopping smoke test |
 | `npm run smoke:local` | Run authenticated browser smoke suite (`.env.smoke.local`) |
 | `npm run backup:projects` / `backup:list` / `backup:restore` | Legacy project backup scripts (see `docs/household-backup-restore.md` for Q12 rehearsal) |
@@ -62,7 +64,7 @@ Gated per account (`household_tools_enabled`, finance access, or account allowli
 ├── scripts/
 │   ├── investigations/     # PGlite / PostgreSQL SQL tests and browser test fixtures
 │   ├── regressions/        # React VM-module regression suites
-│   └── sql/                # Ordered SQL migrations and verification scripts
+│   └── sql/                # Historical SQL scripts (archive & test fixtures)
 ├── src/
 │   ├── components/         # React views and mobile layouts
 │   ├── contexts/           # Auth, Plan, and TaskCompletionSession contexts
@@ -70,6 +72,8 @@ Gated per account (`household_tools_enabled`, finance access, or account allowli
 │   ├── lib/                # Supabase client setup
 │   ├── styles/             # Tailwind + shared CSS
 │   └── utils/              # Pure domain logic, offline stores, and unit tests
+├── supabase/
+│   └── migrations/         # Tracked forward SQL migrations (see supabase/README.md)
 ├── package.json
 ├── vercel.json             # Security headers (CSP, HSTS) and SPA rewrites
 └── vite.config.js
@@ -78,4 +82,4 @@ Gated per account (`household_tools_enabled`, finance access, or account allowli
 ## Deployment & Release Hygiene
 - Production deploys automatically from `main` on Vercel (`project-manager-app`).
 - Develop changes on dedicated `codex/*` branches, verify locally and via Vercel preview + GitHub Actions CI before merging (see [docs/repo-workflow.md](docs/repo-workflow.md)).
-- Apply required SQL migrations from `scripts/sql/` in Supabase before deploying server/client code that depends on new columns, RPCs, or RLS policies.
+- Add all new SQL migrations under `supabase/migrations/` (see [supabase/README.md](supabase/README.md)); historical scripts remain archived in `scripts/sql/`. Apply required migrations in Supabase before deploying server/client code that depends on new columns, RPCs, or RLS policies.

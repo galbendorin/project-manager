@@ -7,3 +7,4 @@ backup-pack/
 package-lock.json
 public/
 scripts/sql/
+supabase/migrations/

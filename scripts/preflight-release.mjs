@@ -23,6 +23,7 @@ if (regressionTestFiles.length === 0) {
 
 const commands = [
   ['npm', ['run', 'check:react-hooks']],
+  ['npm', ['run', 'check:sql-migrations']],
   ['npm', ['run', 'lint']],
   ['npm', ['run', 'typecheck']],
   ['npm', ['test']],
