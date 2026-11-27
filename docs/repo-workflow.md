@@ -1,35 +1,24 @@
 ## Repo workflow
 
 ### Source of truth
-
-- Primary working repo: `/Users/doringalben/Documents/New project 2/project-manager-live`
+- Work directly from the cloned `project-manager` repository root.
 - GitHub remote: `https://github.com/galbendorin/project-manager.git`
 
-Work from this repo for all app changes.
-
-Treat these folders as older archives or scratch copies unless the user explicitly moves the active project again:
-
-- `/Users/doringalben/Documents/New project 2`
-- `/Users/doringalben/Documents/project-manager`
-- `/tmp/project-manager-publish`
-
 ### Branch rules
-
-- `main` = stable branch only; do not push it live while it is behind `origin/main` or has unrelated local changes.
-- Work branches should follow `codex/<topic>`.
-- Keep household tools behind `household_tools_enabled` and out of the public PM launch surface unless explicitly enabled.
+- `main` is live production (Vercel auto-deploys from `main`). Never push directly to `main` while behind `origin/main` or with unverified local changes.
+- Feature and fix branches should follow `codex/<topic>`, created from updated `origin/main`.
+- Keep household tools gated behind `household_tools_enabled` and out of the public PM launch surface unless explicitly enabled.
 
 ### Local workflow
 
 ```bash
-cd "/Users/doringalben/Documents/New project 2/project-manager-live"
 git status --short --branch
 git fetch origin
 npm install
 npm run dev
 ```
 
-If the worktree is clean and `main` is behind, sync before release work:
+If the worktree is clean and `main` is behind, sync before starting branch work:
 
 ```bash
 git pull --ff-only origin main
@@ -37,33 +26,30 @@ git pull --ff-only origin main
 
 ### Before pushing
 
-Run the local preflight from the real repo:
+Run local preflight from the repository root:
 
 ```bash
 npm run release:preflight
 ```
 
-If authenticated smoke credentials are not available locally, run the deterministic checks and skip smoke only for local iteration:
+If authenticated smoke credentials are not available locally, run deterministic checks and skip smoke only for local iteration:
 
 ```bash
 npm run release:preflight -- --skip-smoke
 ```
 
-Run `npm run smoke:local` before pushing live when `.env.smoke.local` or `SMOKE_*` environment variables are available. See `docs/smoke-testing.md`.
+Run `npm run smoke:local` before pushing live when `.env.smoke.local` or `SMOKE_*` environment variables are available. See [docs/smoke-testing.md](smoke-testing.md).
 
-For phone-sensitive changes, also run the manual checklist in `docs/mobile-regression-checklist.md`.
+For phone-sensitive changes, also verify at `390px` and `1280px` viewports and follow [docs/mobile-regression-checklist.md](mobile-regression-checklist.md).
 
 ### Release flow
 
-1. Do the work on a `codex/*` branch.
-2. Push the branch to GitHub.
-3. Review the Vercel preview deployment.
-4. Test the main user journeys there.
-5. Merge to `main` only when the preview is approved.
-6. Let production deploy from `main`.
+1. Create a `codex/<topic>` branch from `origin/main`.
+2. Push the branch and open a pull request against `main`.
+3. Verify the Vercel preview deployment and all required GitHub Actions checks on the exact PR head SHA.
+4. Complete peer review before merging.
+5. Merge to `main` only after preview, review, and hosted CI pass, then confirm the post-merge `main` GitHub Actions run completes successfully.
 
 ### Working principle
 
 Preview first, production second.
-
-That keeps redesign work, UI experiments, and bug fixes from going live before we have checked them properly.
