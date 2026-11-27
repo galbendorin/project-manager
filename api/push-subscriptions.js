@@ -4,8 +4,12 @@ import {
   requireAuthenticatedUser,
 } from './_auth.js';
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
+import {
+  validateAndNormalizePushSubscription,
+  validatePushEndpointUrl,
+} from './_webPush.js';
 
-const supabase = getAdminSupabase();
+const defaultSupabase = getAdminSupabase();
 
 const isMissingPushTableError = (error) => {
   const code = String(error?.code || '').toLowerCase();
@@ -34,16 +38,23 @@ export const resolvePushSubscriptionWriteAction = ({ existingUserId, currentUser
   return { action: 'reject', reason: 'claimed-by-other-user' };
 };
 
-const loadExistingPushSubscription = async (endpoint = '') => {
-  return supabase
+export const createPushSubscriptionsHandler = ({
+  supabase = defaultSupabase,
+  applyCors = applyApiCors,
+  requireUser = requireAuthenticatedUser,
+  rateLimit = checkRateLimit,
+  getIp = getClientIp,
+  sendRateLimit = sendRateLimitResponse,
+  validateEndpoint = validatePushEndpointUrl,
+  validateSubscription = validateAndNormalizePushSubscription,
+} = {}) => async function handler(req, res) {
+  const loadExistingPushSubscription = async (endpoint = '') => supabase
     .from('push_subscriptions')
     .select('id, user_id')
     .eq('endpoint', endpoint)
     .maybeSingle();
-};
 
-export default async function handler(req, res) {
-  applyApiCors(req, res);
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -58,22 +69,25 @@ export default async function handler(req, res) {
   }
 
   try {
-    const user = await requireAuthenticatedUser(req, res);
+    const user = await requireUser(req, res);
     if (!user) return;
 
-    const limitResult = await checkRateLimit({
-      key: `push-subscriptions:${user.id}:${getClientIp(req)}`,
+    const limitResult = await rateLimit({
+      key: `push-subscriptions:${user.id}:${getIp(req)}`,
       max: 20,
       windowMs: 5 * 60_000,
+      strictShared: true,
     });
     if (!limitResult.ok) {
-      return sendRateLimitResponse(res, limitResult, 'Too many notification changes. Please wait a moment and try again.');
+      return sendRateLimit(res, limitResult, 'Too many notification changes. Please wait a moment and try again.');
     }
 
     if (req.method === 'DELETE') {
-      const endpoint = String(req.body?.endpoint || '').trim();
-      if (!endpoint) {
-        return res.status(400).json({ error: 'Missing push subscription endpoint.' });
+      let endpoint;
+      try {
+        endpoint = validateEndpoint(req.body?.endpoint);
+      } catch (validationError) {
+        return res.status(400).json({ error: validationError.message });
       }
 
       const { error } = await supabase
@@ -96,16 +110,18 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, message: 'Phone alerts are off on this device.' });
     }
 
-    const subscription = req.body?.subscription;
-    const endpoint = String(subscription?.endpoint || '').trim();
-    if (!endpoint || typeof subscription !== 'object') {
-      return res.status(400).json({ error: 'Missing push subscription details.' });
+    let normalizedSubscription;
+    try {
+      normalizedSubscription = validateSubscription(req.body?.subscription);
+    } catch (validationError) {
+      return res.status(400).json({ error: validationError.message });
     }
 
+    const endpoint = normalizedSubscription.endpoint;
     const payload = {
       user_id: user.id,
       endpoint,
-      subscription,
+      subscription: normalizedSubscription,
       user_agent: String(req.headers['user-agent'] || '').slice(0, 500),
       is_active: true,
       last_seen_at: new Date().toISOString(),
@@ -203,4 +219,6 @@ export default async function handler(req, res) {
     console.error('Push subscription error:', error);
     return res.status(500).json({ error: 'Unable to update phone alerts right now.' });
   }
-}
+};
+
+export default createPushSubscriptionsHandler();

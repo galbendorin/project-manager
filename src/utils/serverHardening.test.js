@@ -8,6 +8,8 @@ const { resolveProjectInviteRpcResponse } = await import('../../api/project-memb
 const {
   PENDING_INVITE_ACCEPT_RATE_LIMIT,
   buildPendingInviteAcceptRateLimitKey,
+  createPendingInviteAcceptHandler,
+  hasVerifiedInviteEmail,
 } = await import('../../api/project-members-accept-pending.js');
 const { resolveAiAllowanceFailure } = await import('../../api/ai-generate.js');
 
@@ -61,6 +63,103 @@ test('pending invite acceptance uses a strict user and IP scoped rate limit', ()
     windowMs: 5 * 60_000,
     strictShared: true,
   });
+});
+
+test('hasVerifiedInviteEmail requires both an email address and email_confirmed_at', () => {
+  assert.equal(hasVerifiedInviteEmail({ email: 'member@example.com', email_confirmed_at: null }), false);
+  assert.equal(hasVerifiedInviteEmail({ email: 'member@example.com', email_confirmed_at: '' }), false);
+  assert.equal(hasVerifiedInviteEmail({ email: '  ', email_confirmed_at: '2026-11-17T00:00:00Z' }), false);
+  assert.equal(hasVerifiedInviteEmail({ email: 'member@example.com', email_confirmed_at: '2026-11-17T00:00:00Z' }), true);
+});
+
+test('createPendingInviteAcceptHandler blocks unverified emails with 403 before querying invites', async () => {
+  let queriedDb = false;
+  const handler = createPendingInviteAcceptHandler({
+    supabase: {
+      from() {
+        queriedDb = true;
+        throw new Error('Must not query DB for unverified user');
+      },
+    },
+    applyCors: () => {},
+    requireUser: async () => ({
+      id: 'user-unverified',
+      email: 'invited@example.com',
+      email_confirmed_at: null,
+    }),
+    rateLimit: async () => ({ ok: true }),
+  });
+
+  const res = {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+  };
+
+  await handler({ method: 'POST', headers: {} }, res);
+
+  assert.equal(queriedDb, false);
+  assert.equal(res.statusCode, 403);
+  assert.deepEqual(res.body, {
+    ok: false,
+    code: 'email_not_verified',
+    error: 'Verify your account email before accepting pending project invitations.',
+  });
+});
+
+test('createPendingInviteAcceptHandler allows verified users to check pending invites', async () => {
+  let lookedUpEmail = null;
+  const handler = createPendingInviteAcceptHandler({
+    supabase: {
+      from(table) {
+        assert.equal(table, 'project_member_invites');
+        return {
+          select() { return this; },
+          eq(column, value) {
+            if (column === 'member_email') lookedUpEmail = value;
+            return this;
+          },
+          is() { return this; },
+          then(resolve) {
+            return Promise.resolve({ data: [], error: null }).then(resolve);
+          },
+        };
+      },
+    },
+    applyCors: () => {},
+    requireUser: async () => ({
+      id: 'user-verified',
+      email: 'Invited@Example.com',
+      email_confirmed_at: '2026-11-17T00:00:00Z',
+    }),
+    rateLimit: async () => ({ ok: true }),
+  });
+
+  const res = {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+  };
+
+  await handler({ method: 'POST', headers: {} }, res);
+
+  assert.equal(lookedUpEmail, 'invited@example.com');
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { ok: true, acceptedCount: 0, skippedCount: 0 });
 });
 
 test('resolveAiAllowanceFailure returns user-facing entitlement errors', () => {

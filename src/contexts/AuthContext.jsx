@@ -145,7 +145,8 @@ export const AuthProvider = ({ children }) => {
     const acceptPendingProjectInvites = async (session) => {
       const accessToken = session?.access_token;
       const email = session?.user?.email;
-      if (!accessToken || !email) return;
+      const isEmailVerified = Boolean(session?.user?.email_confirmed_at);
+      if (!accessToken || !email || !isEmailVerified) return;
 
       try {
         await fetch('/api/project-members-accept-pending', {
@@ -222,7 +223,10 @@ export const AuthProvider = ({ children }) => {
           setIsPasswordRecovery(false);
           clearRecoveryUrl();
           void clearSignedOutDeviceState(previousUserId);
-        } else if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user?.email) {
+        } else if (
+          (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED')
+          && session?.user?.email
+        ) {
           void acceptPendingProjectInvites(session);
         }
         finishBootstrap();

@@ -20,6 +20,7 @@ import { estimateRecipeNutritionFromStarterCatalog } from '../utils/mealCalorieC
 import { isNameOnlyMeal, MEAL_NAME_MAX_LENGTH } from '../utils/mealNamePlanning';
 import { generateAiContent } from '../utils/aiClient';
 import { isAiConfigured, loadAiSettings } from '../utils/aiSettings';
+import { buildNewRecipeDraftStorageKey } from '../utils/offlineState';
 
 const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 const AUDIENCE_OPTIONS = ['all', 'adults', 'kids'];
@@ -250,7 +251,7 @@ const DEFAULT_FORM_STATE = {
   externalId: '',
 };
 
-const NEW_RECIPE_DRAFT_STORAGE_KEY = 'pmworkspace.mealPlanner.newRecipeDraft.v1';
+const LEGACY_NEW_RECIPE_DRAFT_STORAGE_KEY = 'pmworkspace.mealPlanner.newRecipeDraft.v1';
 
 const compileIngredientRow = (row = {}) => {
   const ingredientName = String(row.ingredientName || '').trim();
@@ -329,19 +330,25 @@ const normalizeDraftRecipeFormState = (formState = {}) => ({
     : DEFAULT_FORM_STATE.ingredientLines.map(createIngredientFormLine),
 });
 
-const clearNewRecipeDraft = () => {
+const clearNewRecipeDraft = (currentUserId = '') => {
   if (typeof window === 'undefined') return;
   try {
-    window.sessionStorage.removeItem(NEW_RECIPE_DRAFT_STORAGE_KEY);
+    const storageKey = buildNewRecipeDraftStorageKey(currentUserId);
+    if (storageKey) {
+      window.sessionStorage.removeItem(storageKey);
+    }
+    window.sessionStorage.removeItem(LEGACY_NEW_RECIPE_DRAFT_STORAGE_KEY);
   } catch {
     // Session storage may be unavailable in private or restricted browser modes.
   }
 };
 
-const readNewRecipeDraft = () => {
+const readNewRecipeDraft = (currentUserId = '') => {
   if (typeof window === 'undefined') return null;
+  const storageKey = buildNewRecipeDraftStorageKey(currentUserId);
+  if (!storageKey) return null;
   try {
-    const rawDraft = window.sessionStorage.getItem(NEW_RECIPE_DRAFT_STORAGE_KEY);
+    const rawDraft = window.sessionStorage.getItem(storageKey);
     if (!rawDraft) return null;
     const parsedDraft = JSON.parse(rawDraft);
     const formState = normalizeDraftRecipeFormState(parsedDraft?.formState || {});
@@ -357,15 +364,22 @@ const readNewRecipeDraft = () => {
   }
 };
 
-const writeNewRecipeDraft = ({ formState, quickPasteText = '', quickPasteMessage = '' } = {}) => {
+const writeNewRecipeDraft = ({
+  formState,
+  quickPasteText = '',
+  quickPasteMessage = '',
+  currentUserId = '',
+} = {}) => {
   if (typeof window === 'undefined') return;
   if (formState?.id) return;
+  const storageKey = buildNewRecipeDraftStorageKey(currentUserId);
+  if (!storageKey) return;
   if (!hasRecipeDraftContent(formState) && !String(quickPasteText || '').trim()) {
-    clearNewRecipeDraft();
+    clearNewRecipeDraft(currentUserId);
     return;
   }
   try {
-    window.sessionStorage.setItem(NEW_RECIPE_DRAFT_STORAGE_KEY, JSON.stringify({
+    window.sessionStorage.setItem(storageKey, JSON.stringify({
       formState: normalizeDraftRecipeFormState(formState),
       quickPasteText,
       quickPasteMessage,
@@ -376,7 +390,7 @@ const writeNewRecipeDraft = ({ formState, quickPasteText = '', quickPasteMessage
   }
 };
 
-const buildRecipeFormModalStart = (initialState = DEFAULT_FORM_STATE) => {
+const buildRecipeFormModalStart = (initialState = DEFAULT_FORM_STATE, currentUserId = '') => {
   if (initialState?.id) {
     return {
       formState: initialState,
@@ -386,7 +400,7 @@ const buildRecipeFormModalStart = (initialState = DEFAULT_FORM_STATE) => {
     };
   }
 
-  const draft = readNewRecipeDraft();
+  const draft = readNewRecipeDraft(currentUserId);
   if (!draft) {
     return {
       formState: initialState,
@@ -661,10 +675,10 @@ function ModalShell({ children, onClose, wide = false, label }) {
   );
 }
 
-function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfig }) {
+function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfig, currentUserId }) {
   const initialModalStateRef = useRef(null);
   if (!initialModalStateRef.current) {
-    initialModalStateRef.current = buildRecipeFormModalStart(initialState);
+    initialModalStateRef.current = buildRecipeFormModalStart(initialState, currentUserId);
   }
 
   const [form, setForm] = useState(initialModalStateRef.current.formState);
@@ -688,7 +702,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
   };
 
   useEffect(() => {
-    const nextStart = buildRecipeFormModalStart(initialState);
+    const nextStart = buildRecipeFormModalStart(initialState, currentUserId);
     setForm(nextStart.formState);
     setQuickPasteText(nextStart.quickPasteText);
     setQuickPasteOpen(!initialState?.id);
@@ -700,7 +714,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
       result: null,
     });
     setAiCleanupLoading(false);
-  }, [initialState]);
+  }, [initialState, currentUserId]);
 
   useEffect(() => {
     if (form.id) return;
@@ -708,8 +722,9 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
       formState: form,
       quickPasteText,
       quickPasteMessage,
+      currentUserId,
     });
-  }, [form, quickPasteText, quickPasteMessage]);
+  }, [form, quickPasteText, quickPasteMessage, currentUserId]);
 
   const handleIngredientChange = (index, key, value) => {
     clearEstimateFeedback();
@@ -756,7 +771,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
         ingredientsRaw: ingredientLines.map((line) => line.rawText).join(', '),
       });
       if (!form.id) {
-        clearNewRecipeDraft();
+        clearNewRecipeDraft(currentUserId);
       }
     } catch {
       // Error banner already set in the data hook.
@@ -885,6 +900,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
       formState: nextForm,
       quickPasteText: rawText,
       quickPasteMessage: parsedMessage,
+      currentUserId,
     });
 
     const result = await applyCalorieEstimate(nextForm, { replaceForm: true });
@@ -962,6 +978,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
         formState: nextForm,
         quickPasteText: cleanedText,
         quickPasteMessage: cleanupMessage,
+        currentUserId,
       });
 
       const estimateResult = await applyCalorieEstimate(nextForm, { replaceForm: true });
@@ -985,7 +1002,7 @@ function RecipeFormModal({ initialState, onClose, onSave, saving, aiCleanupConfi
   };
 
   const handleDiscardDraft = () => {
-    clearNewRecipeDraft();
+    clearNewRecipeDraft(currentUserId);
     setForm(initialState);
     setQuickPasteText('');
     setQuickPasteMessage('');
@@ -4436,6 +4453,7 @@ export default function MealPlannerView({ currentUserEmail, currentUserId }) {
           onSave={handleCreateOrUpdateRecipe}
           saving={saving}
           aiCleanupConfig={aiCleanupConfig}
+          currentUserId={currentUserId}
         />
       ) : null}
 

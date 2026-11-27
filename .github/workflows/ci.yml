@@ -44,6 +44,8 @@ jobs:
           PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/investigations/baby-and-habit-child-rls.test.mjs
           PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/investigations/pro-subscription-status.test.mjs
           PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/investigations/server-only-rpc-grants.test.mjs
+          PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/investigations/push-subscriptions-rls.test.mjs
+          PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" node --test scripts/investigations/invite-project-member-verified-sql.test.mjs
 
       - name: Build app
         run: npm run build
