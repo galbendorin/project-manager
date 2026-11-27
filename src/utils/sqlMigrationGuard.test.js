@@ -116,5 +116,6 @@ test('workspace supabase/migrations passes validateMigrationFiles', async () => 
 
   const result = validateMigrationFiles(files);
   assert.equal(result.ok, true);
-  assert.equal(result.checkedCount, 1);
+  assert.equal(result.checkedCount, files.length);
+  assert.ok(result.checkedCount >= 1);
 });
