@@ -1,13 +1,31 @@
 import { spawn } from 'node:child_process';
+import { readdir } from 'node:fs/promises';
+import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 const args = new Set(process.argv.slice(2));
 const shouldSkipSmoke = args.has('--skip-smoke') || process.env.PREFLIGHT_SKIP_SMOKE === '1';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, '..');
+const regressionsDir = path.join(scriptDir, 'regressions');
+
+const regressionEntries = await readdir(regressionsDir, { withFileTypes: true });
+const regressionTestFiles = regressionEntries
+  .filter((entry) => entry.isFile() && entry.name.endsWith('.test.mjs'))
+  .map((entry) => path.relative(repoRoot, path.join(regressionsDir, entry.name)))
+  .sort();
+
+if (regressionTestFiles.length === 0) {
+  throw new Error(`No regression test files found in ${regressionsDir}`);
+}
 
 const commands = [
   ['npm', ['run', 'check:react-hooks']],
   ['npm', ['run', 'lint']],
   ['npm', ['test']],
+  ['node', ['--experimental-vm-modules', '--test', ...regressionTestFiles], { TZ: 'Europe/London' }],
   ['npm', ['run', 'build']],
   ...(
     shouldSkipSmoke
@@ -16,12 +34,12 @@ const commands = [
   ),
 ];
 
-const runCommand = (command, commandArgs) => new Promise((resolve, reject) => {
+const runCommand = (command, commandArgs, extraEnv = {}) => new Promise((resolve, reject) => {
   const label = [command, ...commandArgs].join(' ');
   console.log(`\n> ${label}`);
 
   const child = spawn(command, commandArgs, {
-    env: process.env,
+    env: { ...process.env, ...extraEnv },
     shell: process.platform === 'win32',
     stdio: 'inherit',
   });
@@ -37,8 +55,8 @@ const runCommand = (command, commandArgs) => new Promise((resolve, reject) => {
 });
 
 try {
-  for (const [command, commandArgs] of commands) {
-    await runCommand(command, commandArgs);
+  for (const [command, commandArgs, extraEnv] of commands) {
+    await runCommand(command, commandArgs, extraEnv);
   }
 
   if (shouldSkipSmoke) {
