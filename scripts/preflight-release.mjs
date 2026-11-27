@@ -24,6 +24,7 @@ if (regressionTestFiles.length === 0) {
 const commands = [
   ['npm', ['run', 'check:react-hooks']],
   ['npm', ['run', 'lint']],
+  ['npm', ['run', 'typecheck']],
   ['npm', ['test']],
   ['node', ['--experimental-vm-modules', '--test', ...regressionTestFiles], { TZ: 'Europe/London' }],
   ['npm', ['run', 'build']],

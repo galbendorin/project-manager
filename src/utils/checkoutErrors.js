@@ -1,5 +1,14 @@
+// @ts-check
+
+/**
+ * @param {{ status?: number | string, message?: string } | Error | string | null | undefined} error
+ * @returns {string}
+ */
 export function getCheckoutErrorMessage(error) {
-  const status = Number(error?.status || 0);
+  const status =
+    typeof error === 'object' && error !== null && 'status' in error
+      ? Number(error.status || 0)
+      : 0;
   const message = error instanceof Error ? error.message : String(error || '');
   const normalized = message.toLowerCase();
 

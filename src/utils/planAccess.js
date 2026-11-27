@@ -1,9 +1,53 @@
+// @ts-check
+
 import { TRIAL_LENGTH_DAYS } from './trialOffer.js';
 
+/**
+ * @typedef {'starter' | 'trial' | 'pro' | 'team'} PlanKey
+ *
+ * @typedef {Object} UserProfile
+ * @property {string} [id]
+ * @property {string | null} [plan]
+ * @property {string | null} [subscription_status]
+ * @property {string | null} [trial_start]
+ * @property {string | number | Date | null} [trial_ends]
+ * @property {number} [ai_reports_used]
+ * @property {string | null} [ai_reports_reset_at]
+ * @property {boolean} [is_admin]
+ * @property {boolean} [household_tools_enabled]
+ * @property {boolean} [platform_ai_enabled]
+ * @property {boolean} [is_platform_admin]
+ * @property {string} [created_at]
+ * @property {string} [updated_at]
+ *
+ * @typedef {Object} PlanLimits
+ * @property {string} label
+ * @property {number} maxProjects
+ * @property {number} maxTasksPerProject
+ * @property {number} taskGrace
+ * @property {number} aiReportsPerMonth
+ * @property {boolean} canExport
+ * @property {boolean} canImport
+ * @property {boolean} canBaseline
+ * @property {boolean} canUseAi
+ * @property {boolean} canUseAiAssistant
+ * @property {boolean} canExportAiReport
+ * @property {string[] | null} fullAccessTabs
+ */
+
+/**
+ * @param {UserProfile | null | undefined} [profile]
+ * @returns {boolean}
+ */
 export const isAdminProfile = (profile = null) => Boolean(
   profile?.is_admin || profile?.is_platform_admin
 );
 
+/**
+ * @param {UserProfile | null | undefined} [profile]
+ * @param {{ hasSharedHouseholdProjectAccess?: boolean }} [options]
+ * @returns {boolean}
+ */
 export const canAccessHouseholdTools = (profile = null, {
   hasSharedHouseholdProjectAccess = false,
 } = {}) => Boolean(
@@ -13,8 +57,13 @@ export const canAccessHouseholdTools = (profile = null, {
   || profile?.is_platform_admin
 );
 
+/**
+ * @param {UserProfile | null | undefined} [profile]
+ * @returns {boolean}
+ */
 export const canUsePlatformAi = (profile = null) => Boolean(profile?.platform_ai_enabled);
 
+/** @type {Record<PlanKey, PlanLimits>} */
 export const PLAN_LIMITS = {
   starter: {
     label: 'Starter',
@@ -83,6 +132,10 @@ export const ALL_TABS = [
 
 export const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due'];
 
+/**
+ * @param {{ profile?: UserProfile | null, now?: Date }} params
+ * @returns {PlanKey}
+ */
 export const resolveRealPlan = ({ profile, now = new Date() }) => {
   if (isAdminProfile(profile)) return 'team';
   if (!profile) return 'starter';
@@ -105,8 +158,16 @@ export const resolveRealPlan = ({ profile, now = new Date() }) => {
   return 'starter';
 };
 
+/**
+ * @param {string | null | undefined} plan
+ * @returns {PlanLimits}
+ */
 export const getPlanLimits = (plan) => PLAN_LIMITS[plan] || PLAN_LIMITS.starter;
 
+/**
+ * @param {string} userId
+ * @param {Date} [now]
+ */
 export const buildDefaultUserProfile = (userId, now = new Date()) => {
   const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const trialEnd = new Date(now.getTime() + TRIAL_LENGTH_DAYS * 24 * 60 * 60 * 1000);
