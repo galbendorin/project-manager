@@ -1,0 +1,130 @@
+name: Scheduled Backup & DR Rehearsal
+
+on:
+  schedule:
+    # Weekly Sunday at 03:00 UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      run_project_backup:
+        description: 'Run encrypted project JSON backup when backup secrets are configured'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  dr-rehearsal-and-health:
+    # Pin to ubuntu-24.04 with Node 22 (native WebSocket support & consistent toolchain).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run isolated household restore rehearsal and backup unit tests
+        run: |
+          npm install --prefix "$RUNNER_TEMP/household-restore" --no-audit --no-fund @electric-sql/pglite@0.5.8
+          PGLITE_MODULE="$RUNNER_TEMP/household-restore/node_modules/@electric-sql/pglite/dist/index.js" \
+            node --test scripts/household-backup.test.mjs src/utils/backupTools.test.js
+
+      - name: Probe production /api/health endpoint
+        env:
+          PRODUCTION_HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL }}
+        run: |
+          TARGET_URL="${PRODUCTION_HEALTH_URL:-https://pmworkspace.com/api/health}"
+          echo "Checking health endpoint: $TARGET_URL"
+          RESPONSE="$(curl -fsS --max-time 15 "$TARGET_URL")"
+          node -e "
+            const body = JSON.parse(process.argv[1]);
+            if (!body?.ok || body?.status !== 'ok') {
+              console.error('Unhealthy response:', body);
+              process.exit(1);
+            }
+            console.log('Health check passed:', JSON.stringify(body.checks));
+          " "$RESPONSE"
+
+  encrypted-project-backup:
+    # Run independently so a Vercel/app outage never skips a Supabase backup.
+    if: github.event_name == 'schedule' || inputs.run_project_backup != false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run and encrypt weekly project backup (when configured)
+        id: encrypted_backup
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          BACKUP_USER_EMAIL: ${{ secrets.BACKUP_USER_EMAIL }}
+          BACKUP_USER_PASSWORD: ${{ secrets.BACKUP_USER_PASSWORD }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          BACKUP_OUT="$RUNNER_TEMP/backup-out"
+          ARCHIVE_OUT="$RUNNER_TEMP/pmw-projects-backup.tar.gz.enc"
+          trap 'rm -rf "$BACKUP_OUT"' EXIT
+
+          has_any=0
+          for var_name in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY BACKUP_USER_EMAIL BACKUP_USER_PASSWORD BACKUP_ENCRYPTION_PASSPHRASE; do
+            if [ -n "${!var_name:-}" ]; then
+              has_any=1
+            fi
+          done
+
+          if [ "$has_any" -eq 0 ]; then
+            echo "Backup secrets not configured; skipping encrypted project export."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          for var_name in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY BACKUP_USER_EMAIL BACKUP_USER_PASSWORD BACKUP_ENCRYPTION_PASSPHRASE; do
+            if [ -z "${!var_name:-}" ]; then
+              echo "ERROR: Partial backup configuration; missing secret $var_name. Refusing unencrypted or incomplete backup."
+              exit 1
+            fi
+          done
+
+          rm -rf "$BACKUP_OUT" "$ARCHIVE_OUT"
+
+          npm run backup:projects -- --out-dir "$BACKUP_OUT"
+          npm run backup:verify -- "$BACKUP_OUT"
+
+          tar -czf - -C "$BACKUP_OUT" . \
+            | openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt -pass env:BACKUP_ENCRYPTION_PASSPHRASE -out "$ARCHIVE_OUT"
+
+          chmod 600 "$ARCHIVE_OUT"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload encrypted backup artifact
+        if: steps.encrypted_backup.outputs.created == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmw-projects-backup-encrypted
+          path: ${{ runner.temp }}/pmw-projects-backup.tar.gz.enc
+          retention-days: 30
+          if-no-files-found: error
