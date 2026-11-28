@@ -53,7 +53,7 @@ Gated per account (`household_tools_enabled`, finance access, or account allowli
 | `npm run release:preflight -- --skip-smoke` | Run hooks, SQL migration guard, lint, typecheck, unit tests, regressions, and production build |
 | `npm run smoke:shopping` | Run headless Playwright Shopping smoke test |
 | `npm run smoke:local` | Run authenticated browser smoke suite (`.env.smoke.local`) |
-| `npm run backup:projects` / `backup:list` / `backup:restore` | Legacy project backup scripts (see `docs/household-backup-restore.md` for Q12 rehearsal) |
+| `npm run backup:projects` / `backup:verify` / `backup:list` / `backup:restore` | Project JSON backup, checksum verification, and restore scripts (see [docs/disaster-recovery-runbook.md](docs/disaster-recovery-runbook.md) and [docs/household-backup-restore.md](docs/household-backup-restore.md)) |
 
 ## Repository Layout
 

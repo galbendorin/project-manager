@@ -20,6 +20,7 @@
     "test:ci": "npm run check:react-hooks && npm run check:sql-migrations && npm run lint && npm run typecheck && node --test --test-reporter=spec ./src/**/*.test.js",
     "ci": "npm run test:ci && npm run build",
     "backup:projects": "node scripts/backup_projects.cjs",
+    "backup:verify": "node scripts/verify-project-backup.mjs",
     "backup:list": "node scripts/list_project_ids.cjs",
     "backup:restore": "node scripts/restore_project.cjs"
   },
