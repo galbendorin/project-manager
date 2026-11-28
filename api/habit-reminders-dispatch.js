@@ -105,7 +105,7 @@ export const createHabitRemindersDispatcher = ({
   const { data: reminders, error: remindersError } = await fetchAllPagedRows(
     () => supabase
       .from('habit_reminders')
-      .select('id, user_id, habit_id, title, reminder_time, frequency, weekdays, timezone, is_enabled, last_triggered_date')
+      .select('id, user_id, habit_id, household_project_id, title, reminder_time, frequency, weekdays, timezone, is_enabled, last_triggered_date')
       .eq('is_enabled', true),
     { pageSize },
   );
@@ -138,6 +138,7 @@ export const createHabitRemindersDispatcher = ({
       deactivated: 0,
       skippedNoSubscription: 0,
       skippedArchived: 0,
+      skippedUnauthorized: 0,
       skippedRace: 0,
     };
   }
@@ -159,7 +160,7 @@ export const createHabitRemindersDispatcher = ({
       habitIds,
       (habitChunk) => supabase
         .from('habit_items')
-        .select('id, user_id, name, archived_at')
+        .select('id, user_id, household_project_id, name, archived_at')
         .in('id', habitChunk),
       { chunkSize: idChunkSize, pageSize },
     ),
@@ -171,6 +172,64 @@ export const createHabitRemindersDispatcher = ({
   if (habitsResult.error) {
     throw new Error(`Failed to load habit items: ${habitsResult.error.message || 'unknown error'}`);
   }
+
+  const householdProjectIds = [...new Set([
+    ...dueEntries.map(({ reminder }) => reminder.household_project_id),
+    ...(habitsResult.data || []).map((habit) => habit.household_project_id),
+  ].filter(Boolean))];
+
+  const projectOwnerById = new Map();
+  const projectMembersByProject = new Map();
+  if (householdProjectIds.length > 0) {
+    const [projectsResult, membersResult] = await Promise.all([
+      fetchRowsByIdChunks(
+        householdProjectIds,
+        (projectChunk) => supabase
+          .from('projects')
+          .select('id, user_id')
+          .in('id', projectChunk),
+        { chunkSize: idChunkSize, pageSize },
+      ),
+      fetchRowsByIdChunks(
+        householdProjectIds,
+        (projectChunk) => supabase
+          .from('project_members')
+          .select('id, project_id, user_id')
+          .in('project_id', projectChunk),
+        { chunkSize: idChunkSize, pageSize },
+      ),
+    ]);
+
+    if (projectsResult.error) {
+      throw new Error(`Failed to load household projects: ${projectsResult.error.message || 'unknown error'}`);
+    }
+    if (membersResult.error) {
+      throw new Error(`Failed to load household project members: ${membersResult.error.message || 'unknown error'}`);
+    }
+
+    for (const project of projectsResult.data || []) {
+      if (project?.id && project?.user_id) {
+        projectOwnerById.set(project.id, project.user_id);
+      }
+    }
+    for (const member of membersResult.data || []) {
+      if (!member?.project_id || !member?.user_id) continue;
+      const members = projectMembersByProject.get(member.project_id) || new Set();
+      members.add(member.user_id);
+      projectMembersByProject.set(member.project_id, members);
+    }
+  }
+
+  const canUserAccessHabitRecord = (record, userId) => {
+    if (!record || !userId) return false;
+    if (record.household_project_id) {
+      return (
+        projectOwnerById.get(record.household_project_id) === userId
+        || Boolean(projectMembersByProject.get(record.household_project_id)?.has(userId))
+      );
+    }
+    return record.user_id === userId;
+  };
 
   const subscriptionsByUser = new Map();
   for (const row of subscriptionsResult.data || []) {
@@ -191,12 +250,22 @@ export const createHabitRemindersDispatcher = ({
   let deactivated = 0;
   let skippedNoSubscription = 0;
   let skippedArchived = 0;
+  let skippedUnauthorized = 0;
   let skippedRace = 0;
 
   for (const { reminder, evaluation } of dueEntries) {
+    if (!canUserAccessHabitRecord(reminder, reminder.user_id)) {
+      skippedUnauthorized += 1;
+      continue;
+    }
+
     const habit = reminder.habit_id ? habitById.get(reminder.habit_id) : null;
     if (reminder.habit_id && (!habit || Boolean(habit.archived_at))) {
       skippedArchived += 1;
+      continue;
+    }
+    if (reminder.habit_id && !canUserAccessHabitRecord(habit, reminder.user_id)) {
+      skippedUnauthorized += 1;
       continue;
     }
 
@@ -297,6 +366,7 @@ export const createHabitRemindersDispatcher = ({
     deactivated,
     skippedNoSubscription,
     skippedArchived,
+    skippedUnauthorized,
     skippedRace,
   };
 };

@@ -9,6 +9,8 @@ const createDispatcherSupabaseStub = ({
   reminders = [],
   subscriptions = [],
   habits = [],
+  projects = [],
+  projectMembers = [],
   claimRaceIds = new Set(),
 } = {}) => {
   const claimUpdates = [];
@@ -79,6 +81,8 @@ const createDispatcherSupabaseStub = ({
         if (table === 'habit_reminders') rows = [...reminders];
         if (table === 'push_subscriptions') rows = [...subscriptions];
         if (table === 'habit_items') rows = [...habits];
+        if (table === 'projects') rows = [...projects];
+        if (table === 'project_members') rows = [...projectMembers];
 
         for (const filter of filters) {
           if (filter.op === 'eq') rows = rows.filter((row) => row[filter.col] === filter.val);
@@ -429,4 +433,107 @@ test('createHabitRemindersDispatcher paginates reminders and chunks subscription
     { endpoint: 'https://fcm.googleapis.com/fcm/send/u1', title: 'Page 1 due' },
     { endpoint: 'https://fcm.googleapis.com/fcm/send/u2', title: 'Page 2 due' },
   ]);
+});
+
+test('createHabitRemindersDispatcher skips shared habit reminders after a user loses household project access', async () => {
+  const reminders = [
+    {
+      id: 'rem-active-member',
+      user_id: 'user-member',
+      habit_id: 'hab-shared',
+      household_project_id: 'proj-household',
+      title: 'Active collaborator reminder',
+      reminder_time: '21:00:00',
+      frequency: 'daily',
+      weekdays: [],
+      timezone: 'Europe/London',
+      is_enabled: true,
+      last_triggered_date: null,
+    },
+    {
+      id: 'rem-removed-creator',
+      user_id: 'user-removed',
+      habit_id: 'hab-shared',
+      household_project_id: 'proj-household',
+      title: 'Removed collaborator reminder',
+      reminder_time: '21:00:00',
+      frequency: 'daily',
+      weekdays: [],
+      timezone: 'Europe/London',
+      is_enabled: true,
+      last_triggered_date: null,
+    },
+    {
+      id: 'rem-personal-linked-removed-habit',
+      user_id: 'user-removed',
+      habit_id: 'hab-shared',
+      household_project_id: null,
+      title: 'Personal reminder linked to former household habit',
+      reminder_time: '21:00:00',
+      frequency: 'daily',
+      weekdays: [],
+      timezone: 'Europe/London',
+      is_enabled: true,
+      last_triggered_date: null,
+    },
+  ];
+  const subscriptions = [
+    {
+      id: 'sub-member',
+      user_id: 'user-member',
+      endpoint: 'https://fcm.googleapis.com/fcm/send/member',
+      is_active: true,
+      subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/member' },
+    },
+    {
+      id: 'sub-removed',
+      user_id: 'user-removed',
+      endpoint: 'https://fcm.googleapis.com/fcm/send/removed',
+      is_active: true,
+      subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/removed' },
+    },
+  ];
+  const habits = [
+    {
+      id: 'hab-shared',
+      user_id: 'user-removed',
+      household_project_id: 'proj-household',
+      name: 'Private Household Habit',
+      archived_at: null,
+    },
+  ];
+  const projects = [{ id: 'proj-household', user_id: 'user-owner' }];
+  const projectMembers = [{ id: 'pm-1', project_id: 'proj-household', user_id: 'user-member' }];
+
+  const supabase = createDispatcherSupabaseStub({
+    reminders,
+    subscriptions,
+    habits,
+    projects,
+    projectMembers,
+  });
+  const sentPayloads = [];
+  const dispatch = createHabitRemindersDispatcher({
+    supabase,
+    now: () => new Date('2026-11-28T21:10:00Z'),
+    isPushConfigured: () => true,
+    sendPush: async ({ subscription, payload }) => {
+      sentPayloads.push({ endpoint: subscription.endpoint, body: payload.body });
+    },
+    deactivatePush: async () => {},
+  });
+
+  const result = await dispatch();
+  assert.equal(result.claimed, 1);
+  assert.equal(result.sent, 1);
+  assert.equal(result.skippedUnauthorized, 2);
+  assert.deepEqual(sentPayloads, [
+    {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/member',
+      body: 'Time to log "Private Household Habit" in Track Habits.',
+    },
+  ]);
+  assert.equal(reminders[0].last_triggered_date, '2026-11-28');
+  assert.equal(reminders[1].last_triggered_date, null);
+  assert.equal(reminders[2].last_triggered_date, null);
 });

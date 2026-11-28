@@ -483,29 +483,41 @@ const RemindersView = ({
   const handleTogglePush = async () => {
     setDeviceBusy(true);
     const enabling = !pushState.enabled;
-    const result = enabling
-      ? await enablePushAlerts()
-      : await disablePushAlerts();
-    updatePushState(result);
-    setDeviceMessageTone(enabling && !result.enabled ? 'error' : 'info');
-    setDeviceMessage(result.message || 'Alert status updated.');
-    setDeviceBusy(false);
+    try {
+      const result = enabling
+        ? await enablePushAlerts()
+        : await disablePushAlerts();
+      updatePushState(result);
+      setDeviceMessageTone(enabling && !result.enabled ? 'error' : 'info');
+      setDeviceMessage(result.message || 'Alert status updated.');
+    } catch (error) {
+      setDeviceMessageTone('error');
+      setDeviceMessage(error?.message || 'Unable to update phone alert settings right now.');
+    } finally {
+      setDeviceBusy(false);
+    }
   };
 
   const handleTest = async () => {
     setDeviceBusy(true);
-    const result = await sendHabitReminderTestAlert();
-    onPushStateChange((current) => ({
-      ...current,
-      supported: Boolean(result.supported),
-      permission: result.permission || current.permission,
-      enabled: result.enabled === false ? false : current.enabled,
-      checked: true,
-    }));
-    const testFailed = Boolean(result.message && !/sent/i.test(result.message));
-    setDeviceMessageTone(testFailed ? 'error' : 'info');
-    setDeviceMessage(result.message || 'Test reminder requested.');
-    setDeviceBusy(false);
+    try {
+      const result = await sendHabitReminderTestAlert();
+      onPushStateChange((current) => ({
+        ...current,
+        supported: Boolean(result.supported),
+        permission: result.permission || current.permission,
+        enabled: result.enabled === false ? false : current.enabled,
+        checked: true,
+      }));
+      const testFailed = Boolean(result.message && !/sent/i.test(result.message));
+      setDeviceMessageTone(testFailed ? 'error' : 'info');
+      setDeviceMessage(result.message || 'Test reminder requested.');
+    } catch (error) {
+      setDeviceMessageTone('error');
+      setDeviceMessage(error?.message || 'Unable to send a test reminder right now.');
+    } finally {
+      setDeviceBusy(false);
+    }
   };
 
   const statusBadge = pushState.permission === 'denied'
