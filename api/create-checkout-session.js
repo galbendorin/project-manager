@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import { applyApiCors, getAdminSupabase, requireAuthenticatedUser } from './_auth.js';
+import { logServerError, recordServerMetric } from './_observability.js';
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -57,6 +58,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Server billing configuration is incomplete.' });
   }
 
+  const startedAt = performance.now();
   try {
     const user = await requireAuthenticatedUser(req, res);
     if (!user) return;
@@ -94,9 +96,17 @@ export default async function handler(req, res) {
 
     if (checkoutStartError) {
       if (isMissingCheckoutRpcError(checkoutStartError)) {
+        recordServerMetric('billing.checkout', 1, { outcome: 'migration_missing' });
         return res.status(503).json({ error: CHECKOUT_MIGRATION_ERROR });
       }
-      console.error('Failed to start protected checkout flow:', checkoutStartError);
+      logServerError({
+        event: 'billing.checkout_start_failed',
+        route: '/api/create-checkout-session',
+        req,
+        status: 500,
+        error: checkoutStartError,
+      });
+      recordServerMetric('billing.checkout', 1, { outcome: 'error' });
       return res.status(500).json({ error: 'Unable to start checkout right now.' });
     }
 
@@ -111,6 +121,7 @@ export default async function handler(req, res) {
     }
 
     if (checkoutStart.session_url) {
+      recordServerMetric('billing.checkout', 1, { plan, outcome: 'reused' });
       return res.status(200).json({ url: checkoutStart.session_url, reused: true });
     }
 
@@ -121,7 +132,14 @@ export default async function handler(req, res) {
       .single();
 
     if (profileError && profileError.code !== 'PGRST116') {
-      console.error('Failed to load billing profile:', profileError);
+      logServerError({
+        event: 'billing.checkout_profile_load_failed',
+        route: '/api/create-checkout-session',
+        req,
+        status: 500,
+        error: profileError,
+      });
+      recordServerMetric('billing.checkout', 1, { plan, outcome: 'error' });
       return res.status(500).json({ error: 'Unable to load billing profile.' });
     }
 
@@ -156,7 +174,12 @@ export default async function handler(req, res) {
         target_checkout_id: checkoutId,
         failure_reason: String(stripeError?.message || 'stripe-create-failed').slice(0, 500),
       }).catch((rpcError) => {
-        console.error('Failed to mark checkout attempt as failed:', rpcError);
+        logServerError({
+          event: 'billing.checkout_mark_failed_error',
+          route: '/api/create-checkout-session',
+          req,
+          error: rpcError,
+        });
       });
       throw stripeError;
     }
@@ -171,17 +194,32 @@ export default async function handler(req, res) {
       });
 
       if (completeCheckoutError) {
-        console.error('Failed to persist checkout session metadata:', completeCheckoutError);
+        logServerError({
+          event: 'billing.checkout_persist_metadata_failed',
+          route: '/api/create-checkout-session',
+          req,
+          error: completeCheckoutError,
+        });
       }
     }
 
     if (!session?.url) {
+      recordServerMetric('billing.checkout', 1, { plan, outcome: 'error' });
       return res.status(500).json({ error: 'Unable to start checkout right now.' });
     }
 
+    recordServerMetric('billing.checkout', 1, { plan, outcome: 'created' });
     return res.status(200).json({ url: session.url });
   } catch (err) {
-    console.error('Stripe checkout error:', err);
+    logServerError({
+      event: 'billing.checkout_failed',
+      route: '/api/create-checkout-session',
+      req,
+      status: 500,
+      durationMs: performance.now() - startedAt,
+      error: err,
+    });
+    recordServerMetric('billing.checkout', 1, { outcome: 'error' });
     return res.status(500).json({ error: 'Unable to start checkout right now.' });
   }
 }

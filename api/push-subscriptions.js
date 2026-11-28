@@ -3,6 +3,7 @@ import {
   getAdminSupabase,
   requireAuthenticatedUser,
 } from './_auth.js';
+import { createClientErrorHandler, createHealthHandler } from './_health.js';
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
 import {
   getWebPushPublicKey,
@@ -12,6 +13,8 @@ import {
 } from './_webPush.js';
 
 const defaultSupabase = getAdminSupabase();
+const defaultHealthHandler = createHealthHandler({ supabase: defaultSupabase });
+const defaultClientErrorHandler = createClientErrorHandler();
 
 const isMissingPushTableError = (error) => {
   const code = String(error?.code || '').toLowerCase();
@@ -51,7 +54,27 @@ export const createPushSubscriptionsHandler = ({
   validateSubscription = validateAndNormalizePushSubscription,
   getPublicKey = getWebPushPublicKey,
   isPushConfigured = isWebPushConfigured,
+  handleHealth = defaultHealthHandler,
+  handleClientError = defaultClientErrorHandler,
 } = {}) => async function handler(req, res) {
+  const rawQueryOp = Array.isArray(req.query?.op) ? req.query.op.at(-1) : req.query?.op;
+  let requestedOp = String(rawQueryOp || '').trim().toLowerCase();
+  if (!requestedOp && req.url) {
+    try {
+      const ops = new URL(req.url, 'http://localhost').searchParams.getAll('op');
+      requestedOp = String(ops.at(-1) || '').trim().toLowerCase();
+    } catch {
+      requestedOp = '';
+    }
+  }
+
+  if (requestedOp === 'health') {
+    return handleHealth(req, res);
+  }
+  if (requestedOp === 'client-error') {
+    return handleClientError(req, res);
+  }
+
   const loadExistingPushSubscription = async (endpoint = '') => supabase
     .from('push_subscriptions')
     .select('id, user_id')

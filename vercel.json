@@ -60,6 +60,14 @@
   },
   "rewrites": [
     {
+      "source": "/api/health",
+      "destination": "/api/push-subscriptions?op=health"
+    },
+    {
+      "source": "/api/client-error",
+      "destination": "/api/push-subscriptions?op=client-error"
+    },
+    {
       "source": "/api/push-public-key",
       "destination": "/api/push-subscriptions"
     },

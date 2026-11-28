@@ -1,6 +1,12 @@
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import { buffer } from 'micro';
+import {
+  logServerError,
+  logServerInfo,
+  logServerWarn,
+  recordServerMetric,
+} from './_observability.js';
 
 export function resolveSupabaseConfig(env = process.env) {
   const supabaseUrl = env?.SUPABASE_URL || env?.VITE_SUPABASE_URL || '';
@@ -310,10 +316,14 @@ export async function reconcileStripeWebhookEvent({
     }
 
     if (!profile) {
-      console.error('Could not find billing profile for Stripe event:', {
-        eventType: context.eventType,
-        subscriptionId: liveSubscription.id,
-        customerId: resolvedCustomerId,
+      logServerError({
+        event: 'stripe_webhook.profile_not_found',
+        route: '/api/stripe-webhook',
+        meta: {
+          eventType: context.eventType,
+          subscriptionId: liveSubscription.id,
+          customerId: resolvedCustomerId,
+        },
       });
       return { handled: false, reason: 'profile_not_found' };
     }
@@ -355,7 +365,12 @@ export async function reconcileStripeWebhookEvent({
 
     const { data: updatedRows, error: updateError } = await query.select(PROFILE_SELECT_FIELDS);
     if (updateError) {
-      console.error('Failed to update user_profiles from Stripe webhook:', updateError);
+      logServerError({
+        event: 'stripe_webhook.profile_update_failed',
+        route: '/api/stripe-webhook',
+        error: updateError,
+        meta: { eventType: context.eventType, profileId: profile.id },
+      });
       throw updateError;
     }
 
@@ -380,7 +395,11 @@ export async function reconcileStripeWebhookEvent({
       .eq('stripe_session_id', context.checkoutSessionId);
 
     if (checkoutSessionError) {
-      console.warn('Failed to mark billing checkout session as completed:', checkoutSessionError.message || checkoutSessionError);
+      logServerWarn({
+        event: 'stripe_webhook.checkout_session_mark_failed',
+        route: '/api/stripe-webhook',
+        error: checkoutSessionError,
+      });
     }
   }
 
@@ -418,6 +437,7 @@ export function createStripeWebhookHandler({
       return res.status(500).json({ error: 'Server billing configuration is incomplete.' });
     }
 
+    const startedAt = performance.now();
     const sig = req.headers['stripe-signature'];
     const rawBody = await readRawBody(req);
 
@@ -425,24 +445,55 @@ export function createStripeWebhookHandler({
     try {
       event = stripeClient.webhooks.constructEvent(rawBody, sig, webhookSecret);
     } catch (err) {
-      console.error('Webhook signature verification failed:', err.message);
+      const durationMs = performance.now() - startedAt;
+      logServerError({
+        event: 'stripe_webhook.signature_invalid',
+        route: '/api/stripe-webhook',
+        req,
+        status: 400,
+        durationMs,
+        error: err,
+      });
+      recordServerMetric('stripe_webhook.event', 1, { eventType: 'invalid_signature', outcome: 'rejected' });
       return res.status(400).json({ error: `Webhook Error: ${err.message}` });
     }
 
     try {
+      let outcome = 'ignored';
       if (HANDLED_EVENT_TYPES.has(event.type)) {
-        await reconcileStripeWebhookEvent({
+        const result = await reconcileStripeWebhookEvent({
           event,
           stripeClient,
           supabaseClient,
         });
+        outcome = result?.skipped ? 'skipped' : result?.handled ? 'processed' : 'unhandled_profile';
       } else {
-        console.log('Unhandled event type:', event.type);
+        logServerInfo({
+          event: 'stripe_webhook.ignored_event',
+          route: '/api/stripe-webhook',
+          req,
+          status: 200,
+          meta: { eventType: event.type },
+        });
       }
 
+      const durationMs = performance.now() - startedAt;
+      recordServerMetric('stripe_webhook.event', 1, { eventType: event.type, outcome });
+      recordServerMetric('stripe_webhook.duration_ms', Math.round(durationMs), { eventType: event.type, outcome });
       return res.status(200).json({ received: true });
     } catch (err) {
-      console.error('Webhook processing error:', err);
+      const durationMs = performance.now() - startedAt;
+      logServerError({
+        event: 'stripe_webhook.processing_failed',
+        route: '/api/stripe-webhook',
+        req,
+        status: 500,
+        durationMs,
+        error: err,
+        meta: { eventType: event.type },
+      });
+      recordServerMetric('stripe_webhook.event', 1, { eventType: event.type, outcome: 'error' });
+      recordServerMetric('stripe_webhook.duration_ms', Math.round(durationMs), { eventType: event.type, outcome: 'error' });
       return res.status(500).json({ error: 'Webhook processing failed' });
     }
   };

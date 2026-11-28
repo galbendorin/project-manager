@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { buildChunkRecoveryUrl } from '../utils/appUpdateRecovery';
+import { reportClientError } from '../utils/clientErrorTelemetry';
 
 // Place within the page Suspense boundary so loading placeholders do not clear the guard.
 export function AppStartupReady() {
@@ -25,6 +26,7 @@ export default class AppErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error('PM Workspace could not render.', error, info);
+    reportClientError({ error, info, kind: 'react-error-boundary' });
     const recovery = window.__PMW_APP_RECOVERY__;
     if (!recovery?.recover(error)) recovery?.fail();
   }
