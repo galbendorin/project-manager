@@ -8,6 +8,7 @@
  */
 
 import { applyApiCors, getAdminSupabase, requireAuthenticatedUser } from './_auth.js'
+import { logServerError, recordServerMetric } from './_observability.js'
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js'
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
@@ -147,6 +148,8 @@ export default async function handler(req, res) {
   // Clamp maxTokens to prevent abuse
   const safeMaxTokens = Math.min(Math.max(parseInt(maxTokens) || 4096, 256), 16384)
   const usageSource = requestedPlatformKey ? 'platform' : 'byok'
+  const normalizedProvider = String(resolvedProvider || '').toLowerCase()
+  const startedAt = performance.now()
   let reservationId = ''
   let allowanceFinalized = false
 
@@ -158,19 +161,30 @@ export default async function handler(req, res) {
 
     if (allowanceClaimError) {
       if (isMissingAiAllowanceRpcError(allowanceClaimError)) {
+        recordServerMetric('ai_generate.request', 1, { provider: normalizedProvider, source: usageSource, outcome: 'migration_missing' })
         return res.status(503).json({ error: 'AI entitlements are not configured yet. Apply the latest billing migration first.' })
       }
-      console.error('Failed to claim AI allowance:', allowanceClaimError)
+      logServerError({
+        event: 'ai_generate.allowance_claim_failed',
+        route: '/api/ai-generate',
+        req,
+        status: 500,
+        error: allowanceClaimError,
+        meta: { provider: normalizedProvider, source: usageSource },
+      })
+      recordServerMetric('ai_generate.request', 1, { provider: normalizedProvider, source: usageSource, outcome: 'error' })
       return res.status(500).json({ error: 'Unable to verify AI access for this account.' })
     }
 
     if (!allowanceClaim?.ok) {
       const failure = resolveAiAllowanceFailure(allowanceClaim)
+      recordServerMetric('ai_generate.request', 1, { provider: normalizedProvider, source: usageSource, outcome: 'denied' })
       return res.status(failure.status).json({ error: failure.error })
     }
 
     reservationId = String(allowanceClaim.reservation_id || '')
     if (!reservationId) {
+      recordServerMetric('ai_generate.request', 1, { provider: normalizedProvider, source: usageSource, outcome: 'error' })
       return res.status(500).json({ error: 'Unable to verify AI access for this account.' })
     }
 
@@ -197,21 +211,48 @@ export default async function handler(req, res) {
     if (!providerResult?.ok && reservationId && !allowanceFinalized) {
       const { error } = await releaseAiAllowance(reservationId)
       if (error) {
-        console.error('Failed to release AI allowance after upstream rejection:', error)
+        logServerError({
+          event: 'ai_generate.allowance_release_failed',
+          route: '/api/ai-generate',
+          req,
+          error,
+          meta: { provider: normalizedProvider, phase: 'upstream_rejected' },
+        })
       }
     }
 
+    const durationMs = performance.now() - startedAt
+    const outcome = providerResult?.ok ? 'success' : 'upstream_error'
+    recordServerMetric('ai_generate.request', 1, { provider: normalizedProvider, source: usageSource, outcome })
+    recordServerMetric('ai_generate.duration_ms', Math.round(durationMs), { provider: normalizedProvider, outcome })
     return
   } catch (err) {
     if (reservationId && !allowanceFinalized) {
       const { error } = await releaseAiAllowance(reservationId)
       if (error) {
-        console.error('Failed to release AI allowance after proxy error:', error)
+        logServerError({
+          event: 'ai_generate.allowance_release_failed',
+          route: '/api/ai-generate',
+          req,
+          error,
+          meta: { provider: normalizedProvider, phase: 'proxy_error' },
+        })
       }
     }
 
+    const durationMs = performance.now() - startedAt
     if (isAbortError(err)) {
-      console.error('AI provider timed out:', err.message)
+      logServerError({
+        event: 'ai_generate.timeout',
+        route: '/api/ai-generate',
+        req,
+        status: 504,
+        durationMs,
+        error: err,
+        meta: { provider: normalizedProvider, source: usageSource },
+      })
+      recordServerMetric('ai_generate.request', 1, { provider: normalizedProvider, source: usageSource, outcome: 'timeout' })
+      recordServerMetric('ai_generate.duration_ms', Math.round(durationMs), { provider: normalizedProvider, outcome: 'timeout' })
       if (!res.headersSent) {
         return res.status(504).json({ error: 'AI provider timed out. Please retry in a moment or use a shorter request.' })
       }
@@ -221,7 +262,17 @@ export default async function handler(req, res) {
       return
     }
 
-    console.error('AI proxy error:', err.message)
+    logServerError({
+      event: 'ai_generate.proxy_error',
+      route: '/api/ai-generate',
+      req,
+      status: 500,
+      durationMs,
+      error: err,
+      meta: { provider: normalizedProvider, source: usageSource },
+    })
+    recordServerMetric('ai_generate.request', 1, { provider: normalizedProvider, source: usageSource, outcome: 'error' })
+    recordServerMetric('ai_generate.duration_ms', Math.round(durationMs), { provider: normalizedProvider, outcome: 'error' })
     if (res.headersSent) {
       if (!res.writableEnded) {
         res.end()

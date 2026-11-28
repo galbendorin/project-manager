@@ -3,6 +3,7 @@ import {
   getAdminSupabase,
   requireAuthenticatedUser,
 } from './_auth.js';
+import { logServerError, logServerWarn, recordServerMetric } from './_observability.js';
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
 import {
   deactivatePushSubscription,
@@ -95,7 +96,12 @@ export const createShoppingListNotifyHandler = ({
           await deactivatePush(row.endpoint);
           continue;
         }
-        console.warn('Shopping push delivery failed:', error?.message || error);
+        logServerWarn({
+          event: 'shopping_notify.push_failed',
+          route: '/api/shopping-list-notify',
+          status: statusCode || undefined,
+          error,
+        });
       }
     }
 
@@ -121,6 +127,7 @@ export const createShoppingListNotifyHandler = ({
       return res.status(503).json({ error: 'Background alerts are not configured yet.' });
     }
 
+    const startedAt = performance.now();
     try {
       const user = await requireUser(req, res);
       if (!user) return;
@@ -167,7 +174,13 @@ export const createShoppingListNotifyHandler = ({
           .eq('is_active', true);
 
         if (subscriptionError) {
-          console.error('Failed to load push subscription for test alert:', subscriptionError);
+          logServerError({
+            event: 'shopping_notify.load_test_subscription_failed',
+            route: '/api/shopping-list-notify',
+            req,
+            status: 500,
+            error: subscriptionError,
+          });
           return res.status(500).json({ error: 'Unable to load this device alert subscription.' });
         }
 
@@ -204,6 +217,10 @@ export const createShoppingListNotifyHandler = ({
           };
 
         const delivery = await sendToSubscriptions({ subscriptions, payload });
+        const testDurationMs = performance.now() - startedAt;
+        const testOutcome = delivery.sent > 0 ? 'success' : 'error';
+        recordServerMetric('shopping_notify.request', 1, { kind: requestedKind, test: true, outcome: testOutcome });
+        recordServerMetric('shopping_notify.duration_ms', Math.round(testDurationMs), { kind: requestedKind, outcome: testOutcome });
         if (delivery.sent === 0) {
           return res.status(502).json({
             ok: false,
@@ -232,7 +249,13 @@ export const createShoppingListNotifyHandler = ({
         .maybeSingle();
 
       if (projectError) {
-        console.error('Failed to load shopping project for alerts:', projectError);
+        logServerError({
+          event: 'shopping_notify.load_project_failed',
+          route: '/api/shopping-list-notify',
+          req,
+          status: 500,
+          error: projectError,
+        });
         return res.status(500).json({ error: 'Unable to load the Shopping List project.' });
       }
 
@@ -256,7 +279,13 @@ export const createShoppingListNotifyHandler = ({
         .eq('project_id', projectId);
 
       if (membersError) {
-        console.error('Failed to load Shopping List members for push:', membersError);
+        logServerError({
+          event: 'shopping_notify.load_members_failed',
+          route: '/api/shopping-list-notify',
+          req,
+          status: 500,
+          error: membersError,
+        });
         return res.status(500).json({ error: 'Unable to load Shopping List members.' });
       }
 
@@ -276,7 +305,13 @@ export const createShoppingListNotifyHandler = ({
         .eq('is_active', true);
 
       if (subscriptionError) {
-        console.error('Failed to load push subscriptions for Shopping List:', subscriptionError);
+        logServerError({
+          event: 'shopping_notify.load_subscriptions_failed',
+          route: '/api/shopping-list-notify',
+          req,
+          status: 500,
+          error: subscriptionError,
+        });
         return res.status(500).json({ error: 'Unable to load phone alert subscriptions.' });
       }
 
@@ -296,9 +331,22 @@ export const createShoppingListNotifyHandler = ({
       };
 
       const delivery = await sendToSubscriptions({ subscriptions, payload });
+      const durationMs = performance.now() - startedAt;
+      const outcome = delivery.sent > 0 ? 'success' : delivery.failed > 0 ? 'error' : 'empty';
+      recordServerMetric('shopping_notify.request', 1, { kind: eventType, test: false, outcome });
+      recordServerMetric('shopping_notify.duration_ms', Math.round(durationMs), { kind: eventType, outcome });
       return res.status(200).json({ ok: true, ...delivery });
     } catch (error) {
-      console.error('Shopping push notify error:', error);
+      const durationMs = performance.now() - startedAt;
+      logServerError({
+        event: 'shopping_notify.failed',
+        route: '/api/shopping-list-notify',
+        req,
+        status: 500,
+        durationMs,
+        error,
+      });
+      recordServerMetric('shopping_notify.request', 1, { kind: 'shopping-list', outcome: 'error' });
       return res.status(500).json({ error: 'Unable to send Shopping List alerts right now.' });
     }
   };

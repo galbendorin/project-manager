@@ -1,5 +1,6 @@
 import { handleSchedule } from '@vercel/schedules';
 import { getAdminSupabase } from './_auth.js';
+import { logServerError, logServerInfo, recordServerMetric } from './_observability.js';
 import {
   deactivatePushSubscription,
   isWebPushConfigured,
@@ -324,10 +325,12 @@ export const createHabitRemindersDispatcher = ({
             await deactivatePush(row.endpoint);
             return { ok: false, deactivated: true };
           }
-          console.error('Habit reminder push delivery failed:', {
-            reminderId: reminder.id,
-            statusCode,
-            message: error?.message,
+          logServerError({
+            event: 'habit_reminders.push_failed',
+            route: '/api/habit-reminders-dispatch',
+            error,
+            status: statusCode || undefined,
+            meta: { reminderId: reminder.id },
           });
           return { ok: false, deactivated: false };
         }
@@ -374,10 +377,41 @@ export const createHabitRemindersDispatcher = ({
 const dispatchHabitReminders = createHabitRemindersDispatcher();
 
 export const POST = handleSchedule(async (metadata) => {
-  const result = await dispatchHabitReminders();
-  console.info('Habit reminders schedule run completed:', {
-    schedule: metadata?.name || 'habit-reminders-dispatch',
-    executionId: metadata?.executionId || '',
-    ...result,
-  });
+  const startedAt = performance.now();
+  const scheduleName = metadata?.name || 'habit-reminders-dispatch';
+  try {
+    const result = await dispatchHabitReminders();
+    const durationMs = performance.now() - startedAt;
+    const outcome = result?.ok ? 'success' : 'skipped';
+
+    logServerInfo({
+      event: 'habit_reminders.dispatch_completed',
+      route: '/api/habit-reminders-dispatch',
+      durationMs,
+      status: 200,
+      meta: {
+        schedule: scheduleName,
+        executionId: metadata?.executionId || '',
+        ...result,
+      },
+    });
+    recordServerMetric('habit_reminders.dispatch', 1, { outcome, skipped: result?.skipped || 'none' });
+    recordServerMetric('habit_reminders.dispatch.duration_ms', Math.round(durationMs), { outcome });
+  } catch (error) {
+    const durationMs = performance.now() - startedAt;
+    logServerError({
+      event: 'habit_reminders.dispatch_failed',
+      route: '/api/habit-reminders-dispatch',
+      durationMs,
+      status: 500,
+      error,
+      meta: {
+        schedule: scheduleName,
+        executionId: metadata?.executionId || '',
+      },
+    });
+    recordServerMetric('habit_reminders.dispatch', 1, { outcome: 'error' });
+    recordServerMetric('habit_reminders.dispatch.duration_ms', Math.round(durationMs), { outcome: 'error' });
+    throw error;
+  }
 });

@@ -7,6 +7,7 @@ import App from './App';
 import './styles/index.css';
 import { isSupabaseConfigured, supabaseConfigStatus } from './lib/supabase';
 import { registerServiceWorker } from './utils/registerServiceWorker';
+import { installGlobalErrorTelemetry } from './utils/clientErrorTelemetry';
 import AppErrorBoundary, { AppStartupRendered, AppStartupReady } from './components/AppErrorBoundary';
 
 const DEFAULT_VIEWPORT =
@@ -50,6 +51,7 @@ window.addEventListener('DOMContentLoaded', () => {
   applyStandaloneViewport();
 }, { once: true });
 window.addEventListener('pageshow', applyStandaloneViewport);
+installGlobalErrorTelemetry();
 registerServiceWorker();
 
 const missingConfigLabel = import.meta.env.DEV ? 'Local setup' : 'Configuration';
