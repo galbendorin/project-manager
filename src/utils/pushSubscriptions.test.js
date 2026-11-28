@@ -339,3 +339,81 @@ test('createShoppingListNotifyHandler rejects invalid test endpoints with 400 an
   assert.deepEqual(notifyRes.body, { ok: true, sent: 0, failed: 1 });
   assert.deepEqual(deactivatedEndpoints, ['https://169.254.169.254/tampered']);
 });
+
+test('createPushSubscriptionsHandler GET serves public VAPID key and 503 when unconfigured', async () => {
+  const unconfiguredHandler = createPushSubscriptionsHandler({
+    applyCors: () => {},
+    isPushConfigured: () => false,
+    getPublicKey: () => '',
+  });
+  const unavailableRes = createMockRes();
+  await unconfiguredHandler({ method: 'GET', headers: {} }, unavailableRes);
+  assert.equal(unavailableRes.statusCode, 503);
+
+  const configuredHandler = createPushSubscriptionsHandler({
+    applyCors: () => {},
+    isPushConfigured: () => true,
+    getPublicKey: () => 'test-vapid-public-key',
+  });
+  const okRes = createMockRes();
+  await configuredHandler({ method: 'GET', headers: {} }, okRes);
+  assert.equal(okRes.statusCode, 200);
+  assert.equal(okRes.headers['Cache-Control'], 'public, max-age=300');
+  assert.deepEqual(okRes.body, { ok: true, publicKey: 'test-vapid-public-key' });
+});
+
+test('createShoppingListNotifyHandler supports habit-reminder test alerts targeting /habits', async () => {
+  const sentPayloads = [];
+  const handler = createShoppingListNotifyHandler({
+    supabase: {
+      from() {
+        return {
+          select() { return this; },
+          eq() { return this; },
+          then(resolve, reject) {
+            return Promise.resolve({
+              data: [
+                {
+                  endpoint: 'https://fcm.googleapis.com/fcm/send/abc-123',
+                  subscription: buildValidSubscription(),
+                },
+              ],
+              error: null,
+            }).then(resolve, reject);
+          },
+        };
+      },
+    },
+    applyCors: () => {},
+    requireUser: async () => ({ id: 'user-1', email: 'u@example.com' }),
+    rateLimit: async () => ({ ok: true }),
+    isPushConfigured: () => true,
+    sendPush: async ({ payload }) => {
+      sentPayloads.push(payload);
+      return {};
+    },
+    deactivatePush: async () => {},
+  });
+
+  const habitRes = createMockRes();
+  await handler(
+    {
+      method: 'POST',
+      headers: {},
+      body: {
+        test: true,
+        kind: 'habit-reminder',
+        endpoint: 'https://fcm.googleapis.com/fcm/send/abc-123',
+      },
+    },
+    habitRes,
+  );
+
+  assert.equal(habitRes.statusCode, 200);
+  assert.equal(habitRes.body.ok, true);
+  assert.equal(habitRes.body.message, 'Test habit reminder sent to this device.');
+  assert.equal(sentPayloads.length, 1);
+  assert.equal(sentPayloads[0].data.kind, 'habit-reminder');
+  assert.equal(sentPayloads[0].data.url, '/habits');
+  assert.equal(sentPayloads[0].title, 'Habit reminder test');
+});

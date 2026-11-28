@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useHabitsData } from '../hooks/useHabitsData';
 import {
+  disablePushAlerts,
+  enablePushAlerts,
   isPushNotificationsSupported,
-  requestAppNotificationPermission,
   sendHabitReminderTestAlert,
   showAppNotification,
+  syncExistingPushSubscription,
 } from '../utils/pushNotifications';
 import {
   buildHabitTrendBuckets,
+  buildLocalHabitReminderKey,
   cycleHabitStatus,
   formatHabitDateKey,
   formatHabitDisplayDate,
@@ -16,7 +19,9 @@ import {
   getHabitStreak,
   getHabitWeekDays,
   getHabitWeekStart,
+  hasFiredLocalHabitReminder,
   isHabitSuccess,
+  markLocalHabitReminderFired,
   normalizeHabitReminderTime,
   normalizeHabitReminderWeekdays,
   summarizeHabitRange,
@@ -460,29 +465,71 @@ const RemindersView = ({
   onAddReminder,
   onDeleteReminder,
   onUpdateReminder,
+  pushState,
+  onPushStateChange,
   saving,
 }) => {
   const habitById = new Map(habits.map((habit) => [habit.id, habit]));
   const [deviceMessage, setDeviceMessage] = useState('');
+  const [deviceMessageTone, setDeviceMessageTone] = useState('info');
   const [deviceBusy, setDeviceBusy] = useState(false);
-  const pushSupported = isPushNotificationsSupported();
-  const notificationPermission = typeof window !== 'undefined' && 'Notification' in window
-    ? window.Notification.permission
-    : 'unsupported';
 
-  const handleEnable = async () => {
+  const updatePushState = (result) => {
+    onPushStateChange({
+      supported: Boolean(result?.supported),
+      enabled: Boolean(result?.enabled),
+      permission: result?.permission || 'default',
+      checked: true,
+    });
+  };
+
+  const handleTogglePush = async () => {
     setDeviceBusy(true);
-    const result = await requestAppNotificationPermission();
-    setDeviceMessage(result.message || 'Reminder status updated.');
-    setDeviceBusy(false);
+    const enabling = !pushState.enabled;
+    try {
+      const result = enabling
+        ? await enablePushAlerts()
+        : await disablePushAlerts();
+      updatePushState(result);
+      setDeviceMessageTone(enabling && !result.enabled ? 'error' : 'info');
+      setDeviceMessage(result.message || 'Alert status updated.');
+    } catch (error) {
+      setDeviceMessageTone('error');
+      setDeviceMessage(error?.message || 'Unable to update phone alert settings right now.');
+    } finally {
+      setDeviceBusy(false);
+    }
   };
 
   const handleTest = async () => {
     setDeviceBusy(true);
-    const result = await sendHabitReminderTestAlert();
-    setDeviceMessage(result.message || 'Test reminder requested.');
-    setDeviceBusy(false);
+    try {
+      const result = await sendHabitReminderTestAlert();
+      onPushStateChange((current) => ({
+        ...current,
+        supported: Boolean(result.supported),
+        permission: result.permission || current.permission,
+        enabled: result.enabled === false ? false : current.enabled,
+        checked: true,
+      }));
+      const testFailed = Boolean(result.message && !/sent/i.test(result.message));
+      setDeviceMessageTone(testFailed ? 'error' : 'info');
+      setDeviceMessage(result.message || 'Test reminder requested.');
+    } catch (error) {
+      setDeviceMessageTone('error');
+      setDeviceMessage(error?.message || 'Unable to send a test reminder right now.');
+    } finally {
+      setDeviceBusy(false);
+    }
   };
+
+  const statusBadge = pushState.permission === 'denied'
+    ? { label: 'Blocked in browser settings', className: 'bg-rose-50 text-rose-700' }
+    : pushState.enabled
+      ? { label: 'Background alerts on', className: 'bg-emerald-50 text-emerald-700' }
+      : pushState.checked
+        ? { label: 'Background alerts off', className: 'bg-amber-50 text-amber-800' }
+        : { label: 'Checking alert status...', className: 'bg-slate-100 text-slate-600' };
 
   return (
     <div className="space-y-4">
@@ -492,37 +539,41 @@ const RemindersView = ({
             <p className="pm-kicker">Reminders</p>
             <h2 className="mt-1 text-2xl font-bold text-slate-950">Phone reminders</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-              Enable notifications on this device, then create one or more habit reminders. Device reminders work best when the app is installed and allowed to send notifications.
+              Enable phone alerts on this device so reminders arrive even when PM Workspace is closed. Reminders check every 15 minutes and trigger in your reminder timezone.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={handleEnable}
-              disabled={deviceBusy || !pushSupported}
-              className="pm-toolbar-primary rounded-2xl px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+              onClick={handleTogglePush}
+              disabled={deviceBusy || !pushState.supported}
+              className={`${pushState.enabled ? 'pm-subtle-button' : 'pm-toolbar-primary text-white'} min-h-[44px] rounded-2xl px-4 py-2 text-sm font-bold disabled:opacity-50`}
             >
-              {notificationPermission === 'granted' ? 'Reminders on' : 'Enable reminders'}
+              {pushState.enabled ? 'Turn off alerts' : 'Enable phone alerts'}
             </button>
             <button
               type="button"
               onClick={handleTest}
-              disabled={deviceBusy || notificationPermission !== 'granted'}
-              className="pm-subtle-button rounded-2xl px-4 py-2 text-sm font-bold disabled:opacity-50"
+              disabled={deviceBusy || !pushState.enabled}
+              className="pm-subtle-button min-h-[44px] rounded-2xl px-4 py-2 text-sm font-bold disabled:opacity-50"
             >
               Test
             </button>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
-          <span className={`rounded-full px-3 py-1 ${pushSupported ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-            {pushSupported ? 'This device supports reminders' : 'This browser does not support reminders'}
+          <span className={`rounded-full px-3 py-1 ${pushState.supported ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+            {pushState.supported ? 'Background push supported' : 'This browser does not support background alerts'}
           </span>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
-            Permission: {notificationPermission}
+          <span className={`rounded-full px-3 py-1 ${statusBadge.className}`}>
+            {statusBadge.label}
           </span>
         </div>
-        {deviceMessage ? <div className="mt-3 rounded-2xl bg-blue-50 px-3 py-2 text-sm text-blue-700">{deviceMessage}</div> : null}
+        {deviceMessage ? (
+          <div className={`mt-3 rounded-2xl px-3 py-2 text-sm ${deviceMessageTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
+            {deviceMessage}
+          </div>
+        ) : null}
         {reminderError ? <div className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-sm text-amber-800">{reminderError}</div> : null}
       </div>
 
@@ -541,21 +592,21 @@ const RemindersView = ({
                     <div className="text-2xl font-black tracking-[-0.03em] text-slate-950">{reminder.reminderTime}</div>
                     <div className="mt-1 text-sm font-bold text-slate-700">{reminder.title}</div>
                     <div className="mt-1 text-xs font-semibold text-slate-500">
-                      {habit?.name || 'Journal'} - {formatReminderFrequency(reminder)}
+                      {habit?.name || 'Journal'} · {formatReminderFrequency(reminder)} · {reminder.timezone || 'Europe/London'}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => onUpdateReminder(reminder.id, { isEnabled: !reminder.isEnabled })}
-                      className={`rounded-2xl px-3 py-2 text-xs font-bold ${reminder.isEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}
+                      className={`min-h-[44px] rounded-2xl px-3.5 py-2 text-xs font-bold ${reminder.isEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}
                     >
                       {reminder.isEnabled ? 'On' : 'Off'}
                     </button>
                     <button
                       type="button"
                       onClick={() => onDeleteReminder(reminder.id)}
-                      className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700"
+                      className="min-h-[44px] rounded-2xl bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700"
                     >
                       Delete
                     </button>
@@ -650,6 +701,14 @@ export default function HabitsView({ currentUserId }) {
   const [activeTab, setActiveTab] = useState('journal');
   const [selectedCell, setSelectedCell] = useState(null);
   const firedReminderKeysRef = useRef(new Set());
+  const [pushState, setPushState] = useState(() => ({
+    supported: isPushNotificationsSupported(),
+    enabled: false,
+    permission: typeof window !== 'undefined' && 'Notification' in window
+      ? window.Notification.permission
+      : 'unsupported',
+    checked: false,
+  }));
   const {
     addHabit,
     addReminder,
@@ -693,21 +752,78 @@ export default function HabitsView({ currentUserId }) {
   ), [entries, habits, selectedDate]);
 
   useEffect(() => {
-    if (!reminders.length || typeof window === 'undefined') return undefined;
+    let active = true;
+    void syncExistingPushSubscription()
+      .then((result) => {
+        if (!active) return;
+        setPushState({
+          supported: Boolean(result.supported),
+          enabled: Boolean(result.enabled),
+          permission: result.permission || 'default',
+          checked: true,
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        setPushState((current) => ({
+          ...current,
+          enabled: false,
+          permission: typeof window !== 'undefined' && 'Notification' in window
+            ? window.Notification.permission
+            : current.permission,
+          checked: true,
+        }));
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (
+      !reminders.length
+      || typeof window === 'undefined'
+      || !pushState.checked
+      || pushState.enabled
+      || pushState.permission !== 'granted'
+    ) {
+      return undefined;
+    }
 
     const tick = () => {
       const now = new Date();
       const dateKey = formatHabitDateKey(now);
       const time = getNowTime();
-      const dueReminders = getDueHabitReminders({ reminders, dateKey, time });
+      const dueReminders = getDueHabitReminders({ reminders, dateKey, time })
+        .filter((reminder) => reminder.lastTriggeredDate !== dateKey);
       dueReminders.forEach((reminder) => {
-        const key = `${reminder.id}:${dateKey}:${time}`;
-        if (firedReminderKeysRef.current.has(key)) return;
+        const key = buildLocalHabitReminderKey({
+          reminderId: reminder.id,
+          dateKey,
+          time,
+        });
+        if (
+          firedReminderKeysRef.current.has(key)
+          || hasFiredLocalHabitReminder({
+            userId: currentUserId,
+            dateKey,
+            reminderId: reminder.id,
+            time,
+          })
+        ) {
+          return;
+        }
         firedReminderKeysRef.current.add(key);
+        markLocalHabitReminderFired({
+          userId: currentUserId,
+          dateKey,
+          reminderId: reminder.id,
+          time,
+        });
         void showAppNotification({
           title: 'Habit reminder',
           body: reminder.title || 'It is time to update your journal.',
-          tag: `habit-reminder:${reminder.id}`,
+          tag: `habit-reminder:${reminder.id}:${dateKey}`,
           url: '/habits',
           kind: 'habit-reminder',
         });
@@ -717,7 +833,7 @@ export default function HabitsView({ currentUserId }) {
     tick();
     const intervalId = window.setInterval(tick, 30_000);
     return () => window.clearInterval(intervalId);
-  }, [reminders]);
+  }, [currentUserId, pushState.checked, pushState.enabled, pushState.permission, reminders]);
 
   if (loading) {
     return <div className="flex min-h-[420px] items-center justify-center text-sm font-semibold text-slate-500">Loading Habits...</div>;
@@ -808,6 +924,8 @@ export default function HabitsView({ currentUserId }) {
               onAddReminder={addReminder}
               onDeleteReminder={deleteReminder}
               onUpdateReminder={updateReminder}
+              pushState={pushState}
+              onPushStateChange={setPushState}
               saving={saving}
             />
           ) : (

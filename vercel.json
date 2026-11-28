@@ -43,7 +43,26 @@
       ]
     }
   ],
+  "functions": {
+    "api/habit-reminders-dispatch.js": {
+      "experimentalTriggers": [
+        {
+          "type": "schedule/v1beta"
+        }
+      ]
+    }
+  },
+  "schedules": {
+    "habit-reminders-dispatch": {
+      "schedule": "*/15 * * * *",
+      "function": "api/habit-reminders-dispatch"
+    }
+  },
   "rewrites": [
+    {
+      "source": "/api/push-public-key",
+      "destination": "/api/push-subscriptions"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"

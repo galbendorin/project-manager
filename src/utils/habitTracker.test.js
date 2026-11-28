@@ -4,12 +4,16 @@ import assert from 'node:assert/strict';
 import {
   buildHabitTrendBuckets,
   cycleHabitStatus,
+  evaluateHabitReminderSchedule,
   getDueHabitReminders,
+  getHabitLocalClockParts,
   getHabitStreak,
   getHabitWeekDays,
   getHabitWeekStart,
+  hasFiredLocalHabitReminder,
   isHabitReminderDueOnDate,
   isHabitSuccess,
+  markLocalHabitReminderFired,
   normalizeHabitReminderTime,
   normalizeHabitReminderWeekdays,
   summarizeHabitRange,
@@ -137,5 +141,140 @@ test('getDueHabitReminders returns reminders matching date and time', () => {
   assert.deepEqual(
     getDueHabitReminders({ reminders, dateKey: '2026-04-26', time: '21:55' }).map((reminder) => reminder.id),
     ['daily']
+  );
+});
+
+test('getHabitLocalClockParts formats local wall clock and falls back safely for invalid timezones', () => {
+  const summerUtc = new Date('2026-07-15T20:05:00Z');
+  const london = getHabitLocalClockParts(summerUtc, 'Europe/London');
+  assert.equal(london.dateKey, '2026-07-15');
+  assert.equal(london.time, '21:05');
+  assert.equal(london.minutesSinceMidnight, 21 * 60 + 5);
+  assert.equal(london.timeZone, 'Europe/London');
+
+  const newYork = getHabitLocalClockParts(summerUtc, 'America/New_York');
+  assert.equal(newYork.dateKey, '2026-07-15');
+  assert.equal(newYork.time, '16:05');
+
+  const fallback = getHabitLocalClockParts(summerUtc, 'Not/A_Timezone');
+  assert.equal(fallback.timeZone, 'Europe/London');
+  assert.equal(fallback.time, '21:05');
+});
+
+test('evaluateHabitReminderSchedule enforces jitter window, midnight rollover, weekdays, and idempotency', () => {
+  const reminder = {
+    id: 'r1',
+    reminder_time: '21:00:00',
+    frequency: 'daily',
+    timezone: 'Europe/London',
+    is_enabled: true,
+    last_triggered_date: null,
+  };
+
+  assert.deepEqual(
+    evaluateHabitReminderSchedule({ reminder, now: new Date('2026-07-15T19:59:00Z') }).reason,
+    'outside_window',
+  );
+
+  const dueBst = evaluateHabitReminderSchedule({ reminder, now: new Date('2026-07-15T20:14:00Z') });
+  assert.equal(dueBst.due, true);
+  assert.equal(dueBst.dateKey, '2026-07-15');
+  assert.equal(dueBst.elapsedMinutes, 14);
+
+  const dueWindowEdge = evaluateHabitReminderSchedule({ reminder, now: new Date('2026-07-15T21:00:00Z') });
+  assert.equal(dueWindowEdge.due, true);
+
+  const pastWindow = evaluateHabitReminderSchedule({ reminder, now: new Date('2026-07-15T21:01:00Z') });
+  assert.equal(pastWindow.due, false);
+  assert.equal(pastWindow.reason, 'outside_window');
+
+  const alreadySent = evaluateHabitReminderSchedule({
+    reminder: { ...reminder, last_triggered_date: '2026-07-15' },
+    now: new Date('2026-07-15T20:20:00Z'),
+  });
+  assert.equal(alreadySent.due, false);
+  assert.equal(alreadySent.reason, 'already_triggered');
+
+  const lateReminder = {
+    id: 'r2',
+    reminder_time: '23:50:00',
+    frequency: 'weekdays',
+    timezone: 'Europe/London',
+    is_enabled: true,
+    last_triggered_date: null,
+  };
+  // 2026-11-28 is Saturday; 2026-11-27 is Friday (weekday). 00:05 GMT belongs to Friday's 23:50 occurrence.
+  const rolloverDue = evaluateHabitReminderSchedule({
+    reminder: lateReminder,
+    now: new Date('2026-11-28T00:05:00Z'),
+  });
+  assert.equal(rolloverDue.due, true);
+  assert.equal(rolloverDue.dateKey, '2026-11-27');
+  assert.equal(rolloverDue.elapsedMinutes, 15);
+});
+
+test('local habit reminder dedupe persists across reloads and prunes stale entries', () => {
+  const store = new Map();
+  const storage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => { store.set(key, value); },
+  };
+
+  assert.equal(
+    hasFiredLocalHabitReminder({
+      userId: 'user-1',
+      dateKey: '2026-11-28',
+      reminderId: 'rem-1',
+      time: '21:00',
+      storage,
+    }),
+    false,
+  );
+
+  markLocalHabitReminderFired({
+    userId: 'user-1',
+    dateKey: '2026-11-25',
+    reminderId: 'rem-old',
+    time: '08:00',
+    storage,
+  });
+
+  markLocalHabitReminderFired({
+    userId: 'user-1',
+    dateKey: '2026-11-28',
+    reminderId: 'rem-1',
+    time: '21:00',
+    storage,
+  });
+
+  assert.equal(
+    hasFiredLocalHabitReminder({
+      userId: 'user-1',
+      dateKey: '2026-11-28',
+      reminderId: 'rem-1',
+      time: '21:00',
+      storage,
+    }),
+    true,
+  );
+  assert.equal(
+    hasFiredLocalHabitReminder({
+      userId: 'user-1',
+      dateKey: '2026-11-28',
+      reminderId: 'rem-1',
+      time: '21:01',
+      storage,
+    }),
+    false,
+  );
+  assert.equal(
+    hasFiredLocalHabitReminder({
+      userId: 'user-1',
+      dateKey: '2026-11-25',
+      reminderId: 'rem-old',
+      time: '08:00',
+      storage,
+    }),
+    false,
   );
 });

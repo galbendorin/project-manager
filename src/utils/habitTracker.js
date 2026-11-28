@@ -187,3 +187,203 @@ export const getDueHabitReminders = ({ reminders = [], dateKey = getHabitTodayKe
     && isHabitReminderDueOnDate(reminder, dateKey)
   ));
 };
+
+export const DEFAULT_HABIT_REMINDER_TIMEZONE = 'Europe/London';
+
+const HABIT_CLOCK_FORMATTER_OPTIONS = {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+};
+
+const resolveClockFormatter = (timeZone = DEFAULT_HABIT_REMINDER_TIMEZONE) => {
+  const requested = String(timeZone || '').trim() || DEFAULT_HABIT_REMINDER_TIMEZONE;
+  try {
+    return {
+      timeZone: requested,
+      formatter: new Intl.DateTimeFormat('en-CA', {
+        ...HABIT_CLOCK_FORMATTER_OPTIONS,
+        timeZone: requested,
+      }),
+    };
+  } catch {
+    return {
+      timeZone: DEFAULT_HABIT_REMINDER_TIMEZONE,
+      formatter: new Intl.DateTimeFormat('en-CA', {
+        ...HABIT_CLOCK_FORMATTER_OPTIONS,
+        timeZone: DEFAULT_HABIT_REMINDER_TIMEZONE,
+      }),
+    };
+  }
+};
+
+export const getHabitLocalClockParts = (now = new Date(), timeZone = DEFAULT_HABIT_REMINDER_TIMEZONE) => {
+  const date = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const { timeZone: resolvedTimeZone, formatter } = resolveClockFormatter(timeZone);
+  const parts = {};
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== 'literal') {
+      parts[part.type] = part.value;
+    }
+  }
+
+  const hourNumber = Number(parts.hour) % 24;
+  const minuteNumber = Number(parts.minute) || 0;
+  const hour = String(hourNumber).padStart(2, '0');
+  const minute = String(minuteNumber).padStart(2, '0');
+
+  return {
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${hour}:${minute}`,
+    minutesSinceMidnight: (hourNumber * 60) + minuteNumber,
+    timeZone: resolvedTimeZone,
+  };
+};
+
+export const evaluateHabitReminderSchedule = ({
+  reminder = {},
+  now = new Date(),
+  windowMinutes = 60,
+} = {}) => {
+  const isEnabled = reminder.isEnabled ?? reminder.is_enabled;
+  if (isEnabled === false) {
+    return { due: false, reason: 'disabled' };
+  }
+
+  const clock = getHabitLocalClockParts(now, reminder.timezone || DEFAULT_HABIT_REMINDER_TIMEZONE);
+  if (!clock) {
+    return { due: false, reason: 'invalid_time' };
+  }
+
+  const reminderTime = normalizeHabitReminderTime(reminder.reminderTime || reminder.reminder_time);
+  const [targetHour, targetMinute] = reminderTime.split(':').map(Number);
+  const targetMinutes = (targetHour * 60) + targetMinute;
+
+  let elapsedMinutes;
+  let occurrenceDateKey;
+  if (clock.minutesSinceMidnight >= targetMinutes) {
+    elapsedMinutes = clock.minutesSinceMidnight - targetMinutes;
+    occurrenceDateKey = clock.dateKey;
+  } else {
+    elapsedMinutes = clock.minutesSinceMidnight + 1440 - targetMinutes;
+    occurrenceDateKey = addHabitDays(clock.dateKey, -1);
+  }
+
+  if (elapsedMinutes < 0 || elapsedMinutes > windowMinutes) {
+    return {
+      due: false,
+      reason: 'outside_window',
+      elapsedMinutes,
+      dateKey: occurrenceDateKey,
+      reminderTime,
+      timeZone: clock.timeZone,
+    };
+  }
+
+  if (!isHabitReminderDueOnDate({ ...reminder, isEnabled: true, reminderTime }, occurrenceDateKey)) {
+    return {
+      due: false,
+      reason: 'weekday_mismatch',
+      elapsedMinutes,
+      dateKey: occurrenceDateKey,
+      reminderTime,
+      timeZone: clock.timeZone,
+    };
+  }
+
+  const lastTriggeredDate = String(
+    reminder.lastTriggeredDate ?? reminder.last_triggered_date ?? '',
+  ).trim().slice(0, 10);
+
+  if (lastTriggeredDate && lastTriggeredDate >= occurrenceDateKey) {
+    return {
+      due: false,
+      reason: 'already_triggered',
+      elapsedMinutes,
+      dateKey: occurrenceDateKey,
+      reminderTime,
+      timeZone: clock.timeZone,
+    };
+  }
+
+  return {
+    due: true,
+    reason: 'due',
+    elapsedMinutes,
+    dateKey: occurrenceDateKey,
+    reminderTime,
+    timeZone: clock.timeZone,
+  };
+};
+
+export const HABIT_LOCAL_FIRED_STORAGE_PREFIX = 'pmw-habit-reminders-fired-v1';
+
+const getDefaultLocalHabitStorage = () => (
+  typeof window !== 'undefined' ? window.localStorage : null
+);
+
+export const buildLocalHabitReminderKey = ({ reminderId = '', dateKey = '', time = '' } = {}) => (
+  `${String(reminderId || '').trim()}:${String(dateKey || '').trim()}:${normalizeHabitReminderTime(time)}`
+);
+
+const readLocalHabitFiredRecords = ({ userId = 'local', storage = getDefaultLocalHabitStorage() } = {}) => {
+  if (!storage?.getItem) return [];
+  try {
+    const raw = storage.getItem(`${HABIT_LOCAL_FIRED_STORAGE_PREFIX}:${String(userId || '').trim() || 'local'}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((entry) => entry && typeof entry.dateKey === 'string' && typeof entry.key === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+export const hasFiredLocalHabitReminder = ({
+  userId = 'local',
+  dateKey = '',
+  reminderId = '',
+  time = '',
+  storage = getDefaultLocalHabitStorage(),
+} = {}) => {
+  const key = buildLocalHabitReminderKey({ reminderId, dateKey, time });
+  return readLocalHabitFiredRecords({ userId, storage }).some(
+    (entry) => entry.dateKey === dateKey && entry.key === key,
+  );
+};
+
+export const markLocalHabitReminderFired = ({
+  userId = 'local',
+  dateKey = '',
+  reminderId = '',
+  time = '',
+  storage = getDefaultLocalHabitStorage(),
+} = {}) => {
+  const key = buildLocalHabitReminderKey({ reminderId, dateKey, time });
+  const cutoffDateKey = addHabitDays(dateKey, -2);
+  const existing = readLocalHabitFiredRecords({ userId, storage })
+    .filter((entry) => entry.dateKey >= cutoffDateKey);
+
+  if (!existing.some((entry) => entry.dateKey === dateKey && entry.key === key)) {
+    existing.push({ dateKey, key });
+  }
+
+  if (storage?.setItem) {
+    try {
+      storage.setItem(
+        `${HABIT_LOCAL_FIRED_STORAGE_PREFIX}:${String(userId || '').trim() || 'local'}`,
+        JSON.stringify(existing),
+      );
+    } catch {
+      // Ignore storage quota or Safari private browsing errors.
+    }
+  }
+
+  return key;
+};
