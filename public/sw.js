@@ -224,7 +224,8 @@ self.addEventListener('notificationclick', (event) => {
   const kind = event.notification?.data?.kind || 'shopping-list';
   const fallbackUrl = kind === 'habit-reminder' ? '/habits' : '/shopping';
   const rawUrl = event.notification?.data?.url || fallbackUrl;
-  const targetUrl = new URL(rawUrl, self.location.origin).toString();
+  const targetUrl = new URL(rawUrl, self.location.origin);
+  const targetHref = targetUrl.toString();
 
   event.waitUntil((async () => {
     const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -238,18 +239,22 @@ self.addEventListener('notificationclick', (event) => {
             url: rawUrl,
           });
         }
+        const sameDestination = (
+          clientUrl.pathname === targetUrl.pathname
+          && clientUrl.search === targetUrl.search
+        );
         if ('focus' in client) {
           await client.focus();
         }
-        if ('navigate' in client) {
-          await client.navigate(targetUrl);
+        if (!sameDestination && 'navigate' in client) {
+          await client.navigate(targetHref);
         }
         return;
       }
     }
 
     if (clients.openWindow) {
-      await clients.openWindow(targetUrl);
+      await clients.openWindow(targetHref);
     }
   })());
 });

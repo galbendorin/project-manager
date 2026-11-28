@@ -320,3 +320,70 @@ export const evaluateHabitReminderSchedule = ({
     timeZone: clock.timeZone,
   };
 };
+
+export const HABIT_LOCAL_FIRED_STORAGE_PREFIX = 'pmw-habit-reminders-fired-v1';
+
+const getDefaultLocalHabitStorage = () => (
+  typeof window !== 'undefined' ? window.localStorage : null
+);
+
+export const buildLocalHabitReminderKey = ({ reminderId = '', dateKey = '', time = '' } = {}) => (
+  `${String(reminderId || '').trim()}:${String(dateKey || '').trim()}:${normalizeHabitReminderTime(time)}`
+);
+
+const readLocalHabitFiredRecords = ({ userId = 'local', storage = getDefaultLocalHabitStorage() } = {}) => {
+  if (!storage?.getItem) return [];
+  try {
+    const raw = storage.getItem(`${HABIT_LOCAL_FIRED_STORAGE_PREFIX}:${String(userId || '').trim() || 'local'}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((entry) => entry && typeof entry.dateKey === 'string' && typeof entry.key === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+export const hasFiredLocalHabitReminder = ({
+  userId = 'local',
+  dateKey = '',
+  reminderId = '',
+  time = '',
+  storage = getDefaultLocalHabitStorage(),
+} = {}) => {
+  const key = buildLocalHabitReminderKey({ reminderId, dateKey, time });
+  return readLocalHabitFiredRecords({ userId, storage }).some(
+    (entry) => entry.dateKey === dateKey && entry.key === key,
+  );
+};
+
+export const markLocalHabitReminderFired = ({
+  userId = 'local',
+  dateKey = '',
+  reminderId = '',
+  time = '',
+  storage = getDefaultLocalHabitStorage(),
+} = {}) => {
+  const key = buildLocalHabitReminderKey({ reminderId, dateKey, time });
+  const cutoffDateKey = addHabitDays(dateKey, -2);
+  const existing = readLocalHabitFiredRecords({ userId, storage })
+    .filter((entry) => entry.dateKey >= cutoffDateKey);
+
+  if (!existing.some((entry) => entry.dateKey === dateKey && entry.key === key)) {
+    existing.push({ dateKey, key });
+  }
+
+  if (storage?.setItem) {
+    try {
+      storage.setItem(
+        `${HABIT_LOCAL_FIRED_STORAGE_PREFIX}:${String(userId || '').trim() || 'local'}`,
+        JSON.stringify(existing),
+      );
+    } catch {
+      // Ignore storage quota or Safari private browsing errors.
+    }
+  }
+
+  return key;
+};

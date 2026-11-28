@@ -486,28 +486,48 @@ test('empty caches from failed legacy installs do not displace previous working 
   ]);
 });
 
-test('habit-reminder push notifications route to /habits without posting shopping messages', async () => {
-  const navigations = [];
-  const worker = createWorker({
+test('habit-reminder push notifications route to /habits without reloading an already-open /habits window', async () => {
+  const shoppingNavigations = [];
+  const shoppingWorker = createWorker({
     windows: [{
-      url: `${origin}/habits`,
-      navigate: async (target) => { navigations.push(target); },
+      url: `${origin}/shopping`,
+      navigate: async (target) => { shoppingNavigations.push(target); },
     }],
   });
 
-  await worker.push({
+  await shoppingWorker.push({
     title: 'Evening check-in',
     body: 'Time to log in Track Habits.',
     data: { kind: 'habit-reminder', url: '/habits' },
   });
 
-  assert.equal(worker.notifications.length, 1);
-  assert.equal(worker.notifications[0].options.data.url, '/habits');
-  assert.equal(worker.postedMessages.length, 0);
+  assert.equal(shoppingWorker.notifications.length, 1);
+  assert.equal(shoppingWorker.notifications[0].options.data.url, '/habits');
+  assert.equal(shoppingWorker.postedMessages.length, 0);
 
-  await worker.notificationClick({ data: worker.notifications[0].options.data });
-  assert.equal(worker.postedMessages.length, 0);
-  assert.deepEqual(navigations, [`${origin}/habits`]);
+  await shoppingWorker.notificationClick({ data: shoppingWorker.notifications[0].options.data });
+  assert.equal(shoppingWorker.postedMessages.length, 0);
+  assert.deepEqual(shoppingNavigations, [`${origin}/habits`]);
+
+  const sameRouteNavigations = [];
+  let focusCalls = 0;
+  const habitsWorker = createWorker({
+    windows: [{
+      url: `${origin}/habits`,
+      focus: async () => { focusCalls += 1; },
+      navigate: async (target) => { sameRouteNavigations.push(target); },
+    }],
+  });
+
+  await habitsWorker.push({
+    title: 'Evening check-in',
+    body: 'Time to log in Track Habits.',
+    data: { kind: 'habit-reminder', url: '/habits' },
+  });
+  await habitsWorker.notificationClick({ data: habitsWorker.notifications[0].options.data });
+  assert.equal(focusCalls, 1);
+  assert.deepEqual(sameRouteNavigations, []);
+  assert.equal(habitsWorker.postedMessages.length, 0);
 });
 
 test('shopping-list push notifications continue posting shopping sync messages and routing to /shopping', async () => {

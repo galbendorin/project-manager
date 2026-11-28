@@ -10,8 +10,10 @@ import {
   getHabitStreak,
   getHabitWeekDays,
   getHabitWeekStart,
+  hasFiredLocalHabitReminder,
   isHabitReminderDueOnDate,
   isHabitSuccess,
+  markLocalHabitReminderFired,
   normalizeHabitReminderTime,
   normalizeHabitReminderWeekdays,
   summarizeHabitRange,
@@ -209,4 +211,70 @@ test('evaluateHabitReminderSchedule enforces jitter window, midnight rollover, w
   assert.equal(rolloverDue.due, true);
   assert.equal(rolloverDue.dateKey, '2026-11-27');
   assert.equal(rolloverDue.elapsedMinutes, 15);
+});
+
+test('local habit reminder dedupe persists across reloads and prunes stale entries', () => {
+  const store = new Map();
+  const storage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => { store.set(key, value); },
+  };
+
+  assert.equal(
+    hasFiredLocalHabitReminder({
+      userId: 'user-1',
+      dateKey: '2026-11-28',
+      reminderId: 'rem-1',
+      time: '21:00',
+      storage,
+    }),
+    false,
+  );
+
+  markLocalHabitReminderFired({
+    userId: 'user-1',
+    dateKey: '2026-11-25',
+    reminderId: 'rem-old',
+    time: '08:00',
+    storage,
+  });
+
+  markLocalHabitReminderFired({
+    userId: 'user-1',
+    dateKey: '2026-11-28',
+    reminderId: 'rem-1',
+    time: '21:00',
+    storage,
+  });
+
+  assert.equal(
+    hasFiredLocalHabitReminder({
+      userId: 'user-1',
+      dateKey: '2026-11-28',
+      reminderId: 'rem-1',
+      time: '21:00',
+      storage,
+    }),
+    true,
+  );
+  assert.equal(
+    hasFiredLocalHabitReminder({
+      userId: 'user-1',
+      dateKey: '2026-11-28',
+      reminderId: 'rem-1',
+      time: '21:01',
+      storage,
+    }),
+    false,
+  );
+  assert.equal(
+    hasFiredLocalHabitReminder({
+      userId: 'user-1',
+      dateKey: '2026-11-25',
+      reminderId: 'rem-old',
+      time: '08:00',
+      storage,
+    }),
+    false,
+  );
 });

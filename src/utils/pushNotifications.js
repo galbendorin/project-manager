@@ -110,7 +110,16 @@ export const showAppNotification = async ({
     const notification = new window.Notification(title, options);
     notification.onclick = () => {
       window.focus();
-      if (url) window.location.assign(url);
+      if (url) {
+        const targetUrl = new URL(url, window.location.origin);
+        const sameDestination = (
+          window.location.pathname === targetUrl.pathname
+          && window.location.search === targetUrl.search
+        );
+        if (!sameDestination) {
+          window.location.assign(targetUrl.toString());
+        }
+      }
     };
     return { ok: true, message: 'Reminder sent to this device.' };
   } catch (error) {

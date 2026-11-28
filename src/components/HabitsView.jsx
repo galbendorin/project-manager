@@ -10,6 +10,7 @@ import {
 } from '../utils/pushNotifications';
 import {
   buildHabitTrendBuckets,
+  buildLocalHabitReminderKey,
   cycleHabitStatus,
   formatHabitDateKey,
   formatHabitDisplayDate,
@@ -18,7 +19,9 @@ import {
   getHabitStreak,
   getHabitWeekDays,
   getHabitWeekStart,
+  hasFiredLocalHabitReminder,
   isHabitSuccess,
+  markLocalHabitReminderFired,
   normalizeHabitReminderTime,
   normalizeHabitReminderWeekdays,
   summarizeHabitRange,
@@ -794,9 +797,29 @@ export default function HabitsView({ currentUserId }) {
       const dueReminders = getDueHabitReminders({ reminders, dateKey, time })
         .filter((reminder) => reminder.lastTriggeredDate !== dateKey);
       dueReminders.forEach((reminder) => {
-        const key = `${reminder.id}:${dateKey}:${time}`;
-        if (firedReminderKeysRef.current.has(key)) return;
+        const key = buildLocalHabitReminderKey({
+          reminderId: reminder.id,
+          dateKey,
+          time,
+        });
+        if (
+          firedReminderKeysRef.current.has(key)
+          || hasFiredLocalHabitReminder({
+            userId: currentUserId,
+            dateKey,
+            reminderId: reminder.id,
+            time,
+          })
+        ) {
+          return;
+        }
         firedReminderKeysRef.current.add(key);
+        markLocalHabitReminderFired({
+          userId: currentUserId,
+          dateKey,
+          reminderId: reminder.id,
+          time,
+        });
         void showAppNotification({
           title: 'Habit reminder',
           body: reminder.title || 'It is time to update your journal.',
@@ -810,7 +833,7 @@ export default function HabitsView({ currentUserId }) {
     tick();
     const intervalId = window.setInterval(tick, 30_000);
     return () => window.clearInterval(intervalId);
-  }, [pushState.checked, pushState.enabled, pushState.permission, reminders]);
+  }, [currentUserId, pushState.checked, pushState.enabled, pushState.permission, reminders]);
 
   if (loading) {
     return <div className="flex min-h-[420px] items-center justify-center text-sm font-semibold text-slate-500">Loading Habits...</div>;
