@@ -16,8 +16,8 @@ permissions:
   contents: read
 
 jobs:
-  dr-rehearsal-and-backup:
-    # Pin to ubuntu-24.04 for consistent toolchain alongside CI.
+  dr-rehearsal-and-health:
+    # Pin to ubuntu-24.04 with Node 22 (native WebSocket support & consistent toolchain).
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -56,9 +56,27 @@ jobs:
             console.log('Health check passed:', JSON.stringify(body.checks));
           " "$RESPONSE"
 
+  encrypted-project-backup:
+    # Run independently so a Vercel/app outage never skips a Supabase backup.
+    if: github.event_name == 'schedule' || inputs.run_project_backup != false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Run and encrypt weekly project backup (when configured)
         id: encrypted_backup
-        if: github.event_name == 'schedule' || inputs.run_project_backup != false
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
