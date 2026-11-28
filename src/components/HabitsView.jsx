@@ -738,15 +738,27 @@ export default function HabitsView({ currentUserId }) {
 
   useEffect(() => {
     let active = true;
-    void syncExistingPushSubscription().then((result) => {
-      if (!active) return;
-      setPushState({
-        supported: Boolean(result.supported),
-        enabled: Boolean(result.enabled),
-        permission: result.permission || 'default',
-        checked: true,
+    void syncExistingPushSubscription()
+      .then((result) => {
+        if (!active) return;
+        setPushState({
+          supported: Boolean(result.supported),
+          enabled: Boolean(result.enabled),
+          permission: result.permission || 'default',
+          checked: true,
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        setPushState((current) => ({
+          ...current,
+          enabled: false,
+          permission: typeof window !== 'undefined' && 'Notification' in window
+            ? window.Notification.permission
+            : current.permission,
+          checked: true,
+        }));
       });
-    });
     return () => {
       active = false;
     };

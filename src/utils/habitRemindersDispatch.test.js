@@ -15,6 +15,9 @@ const createDispatcherSupabaseStub = ({
 
   const buildFilterExecutor = (table, action = 'select', payload = null) => {
     const filters = [];
+    let orderCol = null;
+    let ascending = true;
+    let rangeBounds = null;
     const chain = {
       select() {
         if (action === 'update') {
@@ -51,6 +54,15 @@ const createDispatcherSupabaseStub = ({
         filters.push({ op: 'in', col, val });
         return chain;
       },
+      order(col, opts = {}) {
+        orderCol = col;
+        ascending = opts.ascending !== false;
+        return chain;
+      },
+      range(from, to) {
+        rangeBounds = { from, to };
+        return chain;
+      },
       then(resolve, reject) {
         if (action === 'update') {
           const idFilter = filters.find((f) => f.col === 'id')?.val;
@@ -72,6 +84,15 @@ const createDispatcherSupabaseStub = ({
           if (filter.op === 'eq') rows = rows.filter((row) => row[filter.col] === filter.val);
           if (filter.op === 'is') rows = rows.filter((row) => row[filter.col] === filter.val);
           if (filter.op === 'in') rows = rows.filter((row) => filter.val.includes(row[filter.col]));
+        }
+        if (orderCol) {
+          rows.sort((left, right) => {
+            const cmp = String(left[orderCol] ?? '').localeCompare(String(right[orderCol] ?? ''));
+            return ascending ? cmp : -cmp;
+          });
+        }
+        if (rangeBounds) {
+          rows = rows.slice(rangeBounds.from, rangeBounds.to + 1);
         }
         return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
       },
@@ -322,4 +343,90 @@ test('habit-reminders-dispatch exposes POST schedule handler without a default e
     new Request('https://example.test/api/habit-reminders-dispatch', { method: 'POST' }),
   );
   assert.equal(missingHeadersRes.status, 400);
+});
+
+test('createHabitRemindersDispatcher paginates reminders and chunks subscription and habit lookups', async () => {
+  const reminders = [
+    {
+      id: 'rem-1',
+      user_id: 'user-1',
+      habit_id: 'hab-1',
+      title: 'Already sent',
+      reminder_time: '21:00:00',
+      frequency: 'daily',
+      weekdays: [],
+      timezone: 'Europe/London',
+      is_enabled: true,
+      last_triggered_date: '2026-11-28',
+    },
+    {
+      id: 'rem-2',
+      user_id: 'user-1',
+      habit_id: 'hab-2',
+      title: 'Page 1 due',
+      reminder_time: '21:00:00',
+      frequency: 'daily',
+      weekdays: [],
+      timezone: 'Europe/London',
+      is_enabled: true,
+      last_triggered_date: null,
+    },
+    {
+      id: 'rem-3',
+      user_id: 'user-2',
+      habit_id: 'hab-3',
+      title: 'Page 2 due',
+      reminder_time: '21:00:00',
+      frequency: 'daily',
+      weekdays: [],
+      timezone: 'Europe/London',
+      is_enabled: true,
+      last_triggered_date: null,
+    },
+  ];
+  const subscriptions = [
+    {
+      id: 'sub-1',
+      user_id: 'user-1',
+      endpoint: 'https://fcm.googleapis.com/fcm/send/u1',
+      is_active: true,
+      subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/u1' },
+    },
+    {
+      id: 'sub-2',
+      user_id: 'user-2',
+      endpoint: 'https://fcm.googleapis.com/fcm/send/u2',
+      is_active: true,
+      subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/u2' },
+    },
+  ];
+  const habits = [
+    { id: 'hab-1', user_id: 'user-1', name: 'Habit 1', archived_at: null },
+    { id: 'hab-2', user_id: 'user-1', name: 'Habit 2', archived_at: null },
+    { id: 'hab-3', user_id: 'user-2', name: 'Habit 3', archived_at: null },
+  ];
+
+  const supabase = createDispatcherSupabaseStub({ reminders, subscriptions, habits });
+  const sentPayloads = [];
+  const dispatch = createHabitRemindersDispatcher({
+    supabase,
+    now: () => new Date('2026-11-28T21:10:00Z'),
+    pageSize: 2,
+    idChunkSize: 1,
+    isPushConfigured: () => true,
+    sendPush: async ({ subscription, payload }) => {
+      sentPayloads.push({ endpoint: subscription.endpoint, title: payload.title });
+    },
+    deactivatePush: async () => {},
+  });
+
+  const result = await dispatch();
+  assert.equal(result.remindersChecked, 3);
+  assert.equal(result.dueCount, 2);
+  assert.equal(result.claimed, 2);
+  assert.equal(result.sent, 2);
+  assert.deepEqual(sentPayloads, [
+    { endpoint: 'https://fcm.googleapis.com/fcm/send/u1', title: 'Page 1 due' },
+    { endpoint: 'https://fcm.googleapis.com/fcm/send/u2', title: 'Page 2 due' },
+  ]);
 });

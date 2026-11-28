@@ -8,11 +8,68 @@ import {
 import { evaluateHabitReminderSchedule } from '../src/utils/habitTracker.js';
 
 const PERMANENT_PUSH_FAILURE_CODES = new Set([404, 410]);
+const DEFAULT_PAGE_SIZE = 500;
+const DEFAULT_ID_CHUNK_SIZE = 200;
+
+const fetchAllPagedRows = async (buildQuery, { pageSize = DEFAULT_PAGE_SIZE, orderColumn = 'id' } = {}) => {
+  const rows = [];
+  let offset = 0;
+
+  while (true) {
+    let query = buildQuery();
+    const canOrder = typeof query?.order === 'function';
+    const canRange = typeof query?.range === 'function';
+    if (canOrder) {
+      query = query.order(orderColumn, { ascending: true });
+    }
+    if (canRange) {
+      query = query.range(offset, offset + pageSize - 1);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      return { data: null, error };
+    }
+
+    const batch = data || [];
+    rows.push(...batch);
+
+    if (!canRange || batch.length < pageSize) {
+      break;
+    }
+    offset += pageSize;
+  }
+
+  return { data: rows, error: null };
+};
+
+const fetchRowsByIdChunks = async (ids, buildChunkQuery, { chunkSize = DEFAULT_ID_CHUNK_SIZE, pageSize = DEFAULT_PAGE_SIZE, orderColumn = 'id' } = {}) => {
+  if (!ids.length) {
+    return { data: [], error: null };
+  }
+
+  const rows = [];
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    const chunk = ids.slice(index, index + chunkSize);
+    const result = await fetchAllPagedRows(() => buildChunkQuery(chunk), {
+      pageSize,
+      orderColumn,
+    });
+    if (result.error) {
+      return result;
+    }
+    rows.push(...result.data);
+  }
+
+  return { data: rows, error: null };
+};
 
 export const createHabitRemindersDispatcher = ({
   supabase = getAdminSupabase(),
   now = () => new Date(),
   windowMinutes = 60,
+  pageSize = DEFAULT_PAGE_SIZE,
+  idChunkSize = DEFAULT_ID_CHUNK_SIZE,
   isPushConfigured = isWebPushConfigured,
   sendPush = sendWebPushNotification,
   deactivatePush = deactivatePushSubscription,
@@ -45,10 +102,13 @@ export const createHabitRemindersDispatcher = ({
 
   const currentNow = typeof now === 'function' ? now() : new Date(now);
 
-  const { data: reminders, error: remindersError } = await supabase
-    .from('habit_reminders')
-    .select('id, user_id, habit_id, title, reminder_time, frequency, weekdays, timezone, is_enabled, last_triggered_date')
-    .eq('is_enabled', true);
+  const { data: reminders, error: remindersError } = await fetchAllPagedRows(
+    () => supabase
+      .from('habit_reminders')
+      .select('id, user_id, habit_id, title, reminder_time, frequency, weekdays, timezone, is_enabled, last_triggered_date')
+      .eq('is_enabled', true),
+    { pageSize },
+  );
 
   if (remindersError) {
     throw new Error(`Failed to load habit reminders: ${remindersError.message || 'unknown error'}`);
@@ -86,17 +146,23 @@ export const createHabitRemindersDispatcher = ({
   const habitIds = [...new Set(dueEntries.map(({ reminder }) => reminder.habit_id).filter(Boolean))];
 
   const [subscriptionsResult, habitsResult] = await Promise.all([
-    supabase
-      .from('push_subscriptions')
-      .select('user_id, endpoint, subscription')
-      .in('user_id', userIds)
-      .eq('is_active', true),
-    habitIds.length > 0
-      ? supabase
+    fetchRowsByIdChunks(
+      userIds,
+      (userChunk) => supabase
+        .from('push_subscriptions')
+        .select('id, user_id, endpoint, subscription')
+        .in('user_id', userChunk)
+        .eq('is_active', true),
+      { chunkSize: idChunkSize, pageSize },
+    ),
+    fetchRowsByIdChunks(
+      habitIds,
+      (habitChunk) => supabase
         .from('habit_items')
         .select('id, user_id, name, archived_at')
-        .in('id', habitIds)
-      : Promise.resolve({ data: [], error: null }),
+        .in('id', habitChunk),
+      { chunkSize: idChunkSize, pageSize },
+    ),
   ]);
 
   if (subscriptionsResult.error) {
