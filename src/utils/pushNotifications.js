@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 
-const PUSH_PUBLIC_KEY_ENDPOINT = '/api/push-public-key';
+const PUSH_PUBLIC_KEY_ENDPOINT = '/api/push-subscriptions';
 const PUSH_SUBSCRIPTIONS_ENDPOINT = '/api/push-subscriptions';
 const SHOPPING_NOTIFY_ENDPOINT = '/api/shopping-list-notify';
 
@@ -118,13 +118,22 @@ export const showAppNotification = async ({
   }
 };
 
-export const sendHabitReminderTestAlert = async () => {
+const sendServerPushTestAlert = async ({
+  kind = 'shopping-list',
+  unsupportedMessage = 'This browser does not support background alerts.',
+  blockedMessage = 'Notifications are blocked. Allow them in browser settings, then try the test again.',
+  unenabledMessage = 'Enable phone alerts first, then send a test alert.',
+  missingSubscriptionMessage = 'No alert subscription was found on this device. Turn alerts on, then try the test again.',
+  signInMessage = 'Sign in again before sending a test alert.',
+  successFallback = 'Test alert sent to this device.',
+  failureFallback = 'Unable to send a test alert right now.',
+} = {}) => {
   if (!isPushNotificationsSupported()) {
     return {
       supported: false,
       enabled: false,
       permission: 'unsupported',
-      message: 'This browser does not support reminders.',
+      message: unsupportedMessage,
     };
   }
 
@@ -134,27 +143,74 @@ export const sendHabitReminderTestAlert = async () => {
       supported: true,
       enabled: false,
       permission,
-      message: permission === 'denied'
-        ? 'Notifications are blocked. Allow them in browser settings, then try the test again.'
-        : 'Enable reminders first, then send a test reminder.',
+      message: permission === 'denied' ? blockedMessage : unenabledMessage,
     };
   }
 
-  const result = await showAppNotification({
-    title: 'Habit reminder test',
-    body: 'Reminders are working on this device.',
-    tag: 'habit-reminder-test',
-    url: '/habits',
-    kind: 'habit-reminder',
-  });
+  const subscription = await getCurrentPushSubscription();
+  const endpoint = String(subscription?.endpoint || '').trim();
+  if (!endpoint) {
+    return {
+      supported: true,
+      enabled: false,
+      permission,
+      message: missingSubscriptionMessage,
+    };
+  }
 
-  return {
-    supported: true,
-    enabled: result.ok,
-    permission,
-    message: result.message || (result.ok ? 'Test reminder sent.' : 'Unable to send a test reminder.'),
-  };
+  const headers = await buildAuthHeaders();
+  if (!headers.Authorization) {
+    return {
+      supported: true,
+      enabled: true,
+      permission,
+      message: signInMessage,
+    };
+  }
+
+  const requestBody = kind === 'habit-reminder'
+    ? { test: true, endpoint, kind: 'habit-reminder' }
+    : { test: true, endpoint };
+
+  try {
+    const response = await fetch(SHOPPING_NOTIFY_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(requestBody),
+    });
+    const data = await parseJsonResponse(response);
+    const subscriptionMissing = response.status === 404 || response.status === 400;
+
+    return {
+      supported: true,
+      enabled: response.ok ? true : !subscriptionMissing,
+      permission,
+      message: response.ok
+        ? (data?.message || successFallback)
+        : (data?.error || failureFallback),
+    };
+  } catch (error) {
+    return {
+      supported: true,
+      enabled: true,
+      permission,
+      message: error?.message || failureFallback,
+    };
+  }
 };
+
+export const sendHabitReminderTestAlert = () => sendServerPushTestAlert({
+  kind: 'habit-reminder',
+  unsupportedMessage: 'This browser does not support background reminders.',
+  unenabledMessage: 'Enable phone alerts first, then send a test reminder.',
+  missingSubscriptionMessage: 'No alert subscription was found on this device. Enable phone alerts, then try the test again.',
+  signInMessage: 'Sign in again before sending a test reminder.',
+  successFallback: 'Test habit reminder sent to this device.',
+  failureFallback: 'Unable to send a test reminder right now.',
+});
 
 export const syncExistingPushSubscription = async () => {
   if (!isPushNotificationsSupported()) {
@@ -364,77 +420,6 @@ export const notifyShoppingListSubscribers = async ({
   }
 };
 
-export const sendShoppingTestAlert = async () => {
-  if (!isPushNotificationsSupported()) {
-    return {
-      supported: false,
-      enabled: false,
-      permission: 'unsupported',
-      message: 'This browser does not support background alerts.',
-    };
-  }
-
-  const permission = window.Notification.permission;
-  if (permission !== 'granted') {
-    return {
-      supported: true,
-      enabled: false,
-      permission,
-      message: permission === 'denied'
-        ? 'Notifications are blocked. Allow them in browser settings, then try the test again.'
-        : 'Enable phone alerts first, then send a test alert.',
-    };
-  }
-
-  const subscription = await getCurrentPushSubscription();
-  const endpoint = String(subscription?.endpoint || '').trim();
-  if (!endpoint) {
-    return {
-      supported: true,
-      enabled: false,
-      permission,
-      message: 'No alert subscription was found on this device. Turn alerts on, then try the test again.',
-    };
-  }
-
-  const headers = await buildAuthHeaders();
-  if (!headers.Authorization) {
-    return {
-      supported: true,
-      enabled: true,
-      permission,
-      message: 'Sign in again before sending a test alert.',
-    };
-  }
-
-  try {
-    const response = await fetch(SHOPPING_NOTIFY_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-      },
-      body: JSON.stringify({
-        test: true,
-        endpoint,
-      }),
-    });
-    const data = await parseJsonResponse(response);
-
-    return {
-      supported: true,
-      enabled: response.ok,
-      permission,
-      message: response.ok
-        ? (data?.message || 'Test alert sent to this device.')
-        : (data?.error || 'Unable to send a test alert right now.'),
-    };
-  } catch (error) {
-    return {
-      supported: true,
-      enabled: true,
-      permission,
-      message: error?.message || 'Unable to send a test alert right now.',
-    };
-  }
-};
+export const sendShoppingTestAlert = () => sendServerPushTestAlert({
+  kind: 'shopping-list',
+});

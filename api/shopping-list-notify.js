@@ -175,18 +175,33 @@ export const createShoppingListNotifyHandler = ({
           return res.status(404).json({ error: 'No active alert subscription was found for this device. Turn alerts off and on again, then retry.' });
         }
 
-        const payload = {
-          title: 'Shopping List alert test',
-          body: 'Alerts are working on this device.',
-          icon: '/pmworkspace-icon-192.png',
-          badge: '/pmworkspace-icon-192.png',
-          tag: `shopping-test:${user.id}`,
-          data: {
-            url: '/shopping',
-            kind: 'shopping-list',
-            eventType: 'test',
-          },
-        };
+        const requestedKind = req.body?.kind === 'habit-reminder' ? 'habit-reminder' : 'shopping-list';
+        const isHabitTest = requestedKind === 'habit-reminder';
+        const payload = isHabitTest
+          ? {
+            title: 'Habit reminder test',
+            body: 'Background habit reminders are working on this device.',
+            icon: '/pmworkspace-icon-192.png',
+            badge: '/pmworkspace-icon-192.png',
+            tag: `habit-test:${user.id}`,
+            data: {
+              url: '/habits',
+              kind: 'habit-reminder',
+              eventType: 'test',
+            },
+          }
+          : {
+            title: 'Shopping List alert test',
+            body: 'Alerts are working on this device.',
+            icon: '/pmworkspace-icon-192.png',
+            badge: '/pmworkspace-icon-192.png',
+            tag: `shopping-test:${user.id}`,
+            data: {
+              url: '/shopping',
+              kind: 'shopping-list',
+              eventType: 'test',
+            },
+          };
 
         const delivery = await sendToSubscriptions({ subscriptions, payload });
         if (delivery.sent === 0) {
@@ -200,7 +215,9 @@ export const createShoppingListNotifyHandler = ({
         return res.status(200).json({
           ok: true,
           ...delivery,
-          message: 'Test alert sent to this device.',
+          message: isHabitTest
+            ? 'Test habit reminder sent to this device.'
+            : 'Test alert sent to this device.',
         });
       }
 

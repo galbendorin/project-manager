@@ -189,6 +189,9 @@ self.addEventListener('push', (event) => {
     };
   }
 
+  const kind = data?.data?.kind || 'shopping-list';
+  const fallbackUrl = kind === 'habit-reminder' ? '/habits' : '/shopping';
+  const targetUrl = data?.data?.url || fallbackUrl;
   const title = data.title || 'PM Workspace';
   const options = {
     body: data.body || 'You have a new update.',
@@ -196,18 +199,21 @@ self.addEventListener('push', (event) => {
     badge: data.badge || '/pmworkspace-icon-192.png',
     tag: data.tag || 'pmworkspace-update',
     data: {
-      url: data?.data?.url || '/shopping',
+      kind,
+      url: targetUrl,
       ...data?.data,
     },
   };
 
   event.waitUntil((async () => {
-    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    await Promise.all(clientList.map((client) => client.postMessage({
-      type: 'shopping-list-updated',
-      projectId: options?.data?.projectId || '',
-      url: options?.data?.url || '/shopping',
-    })));
+    if (kind === 'shopping-list') {
+      const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      await Promise.all(clientList.map((client) => client.postMessage({
+        type: 'shopping-list-updated',
+        projectId: options?.data?.projectId || '',
+        url: targetUrl,
+      })));
+    }
     await self.registration.showNotification(title, options);
   })());
 });
@@ -215,18 +221,23 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetUrl = new URL(event.notification?.data?.url || '/shopping', self.location.origin).toString();
+  const kind = event.notification?.data?.kind || 'shopping-list';
+  const fallbackUrl = kind === 'habit-reminder' ? '/habits' : '/shopping';
+  const rawUrl = event.notification?.data?.url || fallbackUrl;
+  const targetUrl = new URL(rawUrl, self.location.origin).toString();
 
   event.waitUntil((async () => {
     const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of clientList) {
       const clientUrl = new URL(client.url);
       if (clientUrl.origin === self.location.origin) {
-        client.postMessage({
-          type: 'shopping-list-open',
-          projectId: event.notification?.data?.projectId || '',
-          url: event.notification?.data?.url || '/shopping',
-        });
+        if (kind === 'shopping-list') {
+          client.postMessage({
+            type: 'shopping-list-open',
+            projectId: event.notification?.data?.projectId || '',
+            url: rawUrl,
+          });
+        }
         if ('focus' in client) {
           await client.focus();
         }

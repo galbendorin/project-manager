@@ -29,10 +29,26 @@ function createWorker({
   ]));
   const networkCalls = [];
   const backgroundEvents = [];
+  const notifications = [];
+  const postedMessages = [];
+  const openedWindows = [];
   const timers = new Map();
   let nextTimer = 0;
   let claims = 0;
   let skipWaitingCalls = 0;
+  const wrappedWindows = windows.map((win) => ({
+    ...win,
+    postMessage: (msg) => {
+      postedMessages.push(msg);
+      return win.postMessage?.(msg);
+    },
+    focus: async () => win.focus?.(),
+  }));
+  const clientsApi = {
+    claim: async () => { claims += 1; },
+    matchAll: async () => wrappedWindows,
+    openWindow: async (url) => { openedWindows.push(url); },
+  };
   const checkCache = async (operation, name, url) => {
     if (failCache(operation, name, url)) throw new Error(`Cache Storage ${operation} failed`);
     if (hangCache(operation, name, url)) await new Promise(() => {});
@@ -79,11 +95,14 @@ function createWorker({
       location: { origin },
       addEventListener: (type, listener) => listeners.set(type, listener),
       skipWaiting: async () => { skipWaitingCalls += 1; },
-      clients: {
-        claim: async () => { claims += 1; },
-        matchAll: async () => windows,
+      clients: clientsApi,
+      registration: {
+        showNotification: async (title, options) => {
+          notifications.push({ title, options });
+        },
       },
     },
+    clients: clientsApi,
     caches,
     Request: BrowserRequest,
     Response,
@@ -106,6 +125,9 @@ function createWorker({
   return {
     networkCalls,
     storedCaches,
+    notifications,
+    postedMessages,
+    openedWindows,
     get claims() { return claims; },
     get skipWaitingCalls() { return skipWaitingCalls; },
     cached: (name, url) => storedCaches.get(name)?.get(cacheKey(url))?.clone(),
@@ -118,6 +140,28 @@ function createWorker({
     async lifecycle(type) {
       const pending = [];
       listeners.get(type)({ waitUntil: (promise) => pending.push(promise) });
+      await Promise.all(pending);
+    },
+    async push(payload) {
+      const pending = [];
+      listeners.get('push')({
+        data: {
+          json: () => payload,
+          text: () => JSON.stringify(payload),
+        },
+        waitUntil: (promise) => pending.push(promise),
+      });
+      await Promise.all(pending);
+    },
+    async notificationClick(notification) {
+      const pending = [];
+      listeners.get('notificationclick')({
+        notification: {
+          ...notification,
+          close: () => {},
+        },
+        waitUntil: (promise) => pending.push(promise),
+      });
       await Promise.all(pending);
     },
     async request(url, options) {
@@ -440,4 +484,48 @@ test('empty caches from failed legacy installs do not displace previous working 
   assert.deepEqual([...worker.storedCaches.keys()], [
     'pmworkspace-shell-previous2', 'pmworkspace-shell-previous1', activeCache,
   ]);
+});
+
+test('habit-reminder push notifications route to /habits without posting shopping messages', async () => {
+  const navigations = [];
+  const worker = createWorker({
+    windows: [{
+      url: `${origin}/habits`,
+      navigate: async (target) => { navigations.push(target); },
+    }],
+  });
+
+  await worker.push({
+    title: 'Evening check-in',
+    body: 'Time to log in Track Habits.',
+    data: { kind: 'habit-reminder', url: '/habits' },
+  });
+
+  assert.equal(worker.notifications.length, 1);
+  assert.equal(worker.notifications[0].options.data.url, '/habits');
+  assert.equal(worker.postedMessages.length, 0);
+
+  await worker.notificationClick({ data: worker.notifications[0].options.data });
+  assert.equal(worker.postedMessages.length, 0);
+  assert.deepEqual(navigations, [`${origin}/habits`]);
+});
+
+test('shopping-list push notifications continue posting shopping sync messages and routing to /shopping', async () => {
+  const worker = createWorker({
+    windows: [{ url: `${origin}/shopping` }],
+  });
+
+  await worker.push({
+    title: 'Shopping List updated',
+    body: 'Added Milk.',
+    data: { kind: 'shopping-list', projectId: 'proj-1', url: '/shopping' },
+  });
+
+  assert.equal(worker.postedMessages.length, 1);
+  assert.equal(worker.postedMessages[0].type, 'shopping-list-updated');
+  assert.equal(worker.postedMessages[0].projectId, 'proj-1');
+
+  await worker.notificationClick({ data: worker.notifications[0].options.data });
+  assert.equal(worker.postedMessages.length, 2);
+  assert.equal(worker.postedMessages[1].type, 'shopping-list-open');
 });

@@ -5,6 +5,8 @@ import {
 } from './_auth.js';
 import { checkRateLimit, getClientIp, sendRateLimitResponse } from './_rateLimit.js';
 import {
+  getWebPushPublicKey,
+  isWebPushConfigured,
   validateAndNormalizePushSubscription,
   validatePushEndpointUrl,
 } from './_webPush.js';
@@ -47,6 +49,8 @@ export const createPushSubscriptionsHandler = ({
   sendRateLimit = sendRateLimitResponse,
   validateEndpoint = validatePushEndpointUrl,
   validateSubscription = validateAndNormalizePushSubscription,
+  getPublicKey = getWebPushPublicKey,
+  isPushConfigured = isWebPushConfigured,
 } = {}) => async function handler(req, res) {
   const loadExistingPushSubscription = async (endpoint = '') => supabase
     .from('push_subscriptions')
@@ -60,8 +64,26 @@ export const createPushSubscriptionsHandler = ({
     return res.status(200).end();
   }
 
-  if (!['POST', 'DELETE'].includes(req.method)) {
+  if (!['GET', 'POST', 'DELETE'].includes(req.method)) {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  if (req.method === 'GET') {
+    if (!isPushConfigured()) {
+      return res.status(503).json({
+        error: 'Push alerts are not configured on this server yet.',
+      });
+    }
+
+    const publicKey = getPublicKey();
+    if (!publicKey) {
+      return res.status(503).json({
+        error: 'Push public key is unavailable.',
+      });
+    }
+
+    res.setHeader?.('Cache-Control', 'public, max-age=300');
+    return res.status(200).json({ ok: true, publicKey });
   }
 
   if (!supabase) {
