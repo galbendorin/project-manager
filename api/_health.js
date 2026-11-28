@@ -111,12 +111,7 @@ export const createHealthHandler = ({
 
   const commitSha = String(env.VERCEL_GIT_COMMIT_SHA || '').trim();
   const billingConfigured = Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
-  const aiConfigured = Boolean(
-    env.PLATFORM_AI_KEY
-    || env.ANTHROPIC_API_KEY
-    || env.OPENAI_API_KEY
-    || env.GEMINI_API_KEY,
-  );
+  const aiConfigured = Boolean(String(env.PLATFORM_AI_KEY || '').trim());
 
   return res.status(statusCode).json({
     ok: healthy,

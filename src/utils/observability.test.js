@@ -184,7 +184,7 @@ test('createHealthHandler reports 200 when Supabase is healthy, 503 when degrade
       },
     },
     isPushConfigured: () => false,
-    env: {},
+    env: { ANTHROPIC_API_KEY: 'unused-for-platform-ai' },
     timeoutMs: 25,
   });
 
@@ -194,6 +194,7 @@ test('createHealthHandler reports 200 when Supabase is healthy, 503 when degrade
   assert.equal(timeoutRes.body.ok, false);
   assert.equal(timeoutRes.body.status, 'degraded');
   assert.equal(timeoutRes.body.checks.supabase, 'error');
+  assert.equal(timeoutRes.body.checks.ai, 'unconfigured');
 
   const methodRes = createMockRes();
   await okHandler({ method: 'POST', headers: {} }, methodRes);
